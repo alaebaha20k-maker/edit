@@ -13,7 +13,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from duration_calculator import DurationCalculator, calculate_durations
 from ffmpeg_processor import FFmpegProcessor
-from whisper_handler import generate_captions
 from file_validator import validate_files
 from utils import (
     ensure_directory_exists,
@@ -53,19 +52,17 @@ class VideoEditorSystem:
         self,
         visual_media,
         audio_files,
-        whisper_model="base",
         output_filename=None,
         cleanup_temp=True
     ):
         """
-        Main processing pipeline for video project
+        Main processing pipeline for video project - ULTRA OPTIMIZED (No Captions)
 
         Args:
             visual_media: List of dicts with 'rank', 'type', 'path'
                          Example: [{'rank': 1, 'type': 'video', 'path': 'intro.mp4'}, ...]
             audio_files: List of dicts with 'rank', 'path'
                         Example: [{'rank': 1, 'path': 'narration.mp3'}, ...]
-            whisper_model: Whisper model size (tiny, base, small, medium, large)
             output_filename: Custom output filename (optional)
             cleanup_temp: Clean up temporary files after processing
 
@@ -92,14 +89,14 @@ class VideoEditorSystem:
 
         try:
             # STEP 1: Validate all files
-            print_processing_step(1, 10, "Validating Input Files")
+            print_processing_step(1, 8, "Validating Input Files")
             validate_files(visual_media, audio_files)
             print(f"✓ All files validated successfully")
             print(f"  • Visual media: {len(visual_media)} files")
             print(f"  • Audio files: {len(audio_files)} files")
 
             # STEP 2: Sort by ranking
-            print_processing_step(2, 10, "Sorting Files by Rank")
+            print_processing_step(2, 8, "Sorting Files by Rank")
             visual_media = sort_by_rank(visual_media)
             audio_files = sort_by_rank(audio_files)
             print("✓ Files sorted by ranking")
@@ -112,7 +109,7 @@ class VideoEditorSystem:
             print(f"  • Images: {len(images)}")
 
             # STEP 3: Calculate durations
-            print_processing_step(3, 10, "Calculating Durations")
+            print_processing_step(3, 8, "Calculating Durations")
 
             durations = calculate_durations(
                 [v['path'] for v in videos],
@@ -123,7 +120,7 @@ class VideoEditorSystem:
             DurationCalculator.print_duration_summary(durations)
 
             # STEP 4: Convert images to video clips
-            print_processing_step(4, 10, "Converting Images to Video Clips")
+            print_processing_step(4, 8, "Converting Images to Video Clips")
 
             image_videos = []
             for idx, img in enumerate(images):
@@ -144,7 +141,7 @@ class VideoEditorSystem:
             print(f"✓ Converted {len(images)} images to video clips")
 
             # STEP 5: Normalize video clips
-            print_processing_step(5, 10, "Normalizing Video Clips")
+            print_processing_step(5, 8, "Normalizing Video Clips")
 
             normalized_videos = []
             for idx, vid in enumerate(videos):
@@ -161,7 +158,7 @@ class VideoEditorSystem:
             print(f"✓ Normalized {len(videos)} video clips")
 
             # STEP 6: Build concatenation sequence (maintain ranking order)
-            print_processing_step(6, 10, "Building Video Sequence")
+            print_processing_step(6, 8, "Building Video Sequence")
 
             concat_list = []
             video_idx = 0
@@ -178,7 +175,7 @@ class VideoEditorSystem:
             print(f"✓ Sequence built: {len(concat_list)} clips in ranked order")
 
             # STEP 7: Concatenate video clips
-            print_processing_step(7, 10, "Concatenating Video Clips")
+            print_processing_step(7, 8, "Concatenating Video Clips")
 
             concatenated_video = os.path.join(self.temp_dir, "concatenated_video.mp4")
             self.ffmpeg.concatenate_videos(concat_list, concatenated_video)
@@ -186,8 +183,8 @@ class VideoEditorSystem:
 
             print(f"✓ Video clips concatenated")
 
-            # STEP 8: Merge audio files
-            print_processing_step(8, 10, "Merging Audio Files")
+            # STEP 8: Merge audio files and create final video
+            print_processing_step(8, 8, "Merging Audio & Creating Final Video")
 
             merged_audio = os.path.join(self.temp_dir, "merged_audio.mp3")
             self.ffmpeg.concatenate_audio(
@@ -198,28 +195,7 @@ class VideoEditorSystem:
 
             print(f"✓ Audio files merged")
 
-            # STEP 9: Generate captions with Whisper AI
-            print_processing_step(9, 10, "Generating Captions (Whisper AI)")
-
-            srt_file = os.path.join(self.temp_dir, "captions.srt")
-
-            try:
-                generate_captions(merged_audio, srt_file, model_size=whisper_model)
-                self.temp_files.append(srt_file)
-                print(f"✓ Captions generated")
-            except ImportError as e:
-                print_warning_message(
-                    "Whisper not installed. Skipping caption generation.\n"
-                    "Install with: pip install openai-whisper"
-                )
-                # Create empty SRT file
-                with open(srt_file, 'w', encoding='utf-8') as f:
-                    f.write("")
-                self.temp_files.append(srt_file)
-
-            # STEP 10: Final assembly
-            print_processing_step(10, 10, "Creating Final Video")
-
+            # Create final video (no captions for maximum speed)
             if output_filename is None:
                 output_filename = f"{project_id}_final.mp4"
 
@@ -228,7 +204,6 @@ class VideoEditorSystem:
             self.ffmpeg.final_assembly(
                 concatenated_video,
                 merged_audio,
-                srt_file,
                 final_output
             )
 
@@ -249,7 +224,6 @@ class VideoEditorSystem:
                 'videos_count': len(videos),
                 'images_count': len(images),
                 'audio_files_count': len(audio_files),
-                'whisper_model': whisper_model,
                 'visual_media': visual_media,
                 'audio_files': audio_files,
                 'durations': durations
@@ -324,7 +298,6 @@ def main():
         result = editor.process_video_project(
             visual_media=visual_media,
             audio_files=audio_files,
-            whisper_model="base",
             cleanup_temp=True
         )
 

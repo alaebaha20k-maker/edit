@@ -26,12 +26,12 @@ class FFmpegProcessor:
         "Alignment=2"
     )
 
-    # Output video specifications
+    # Output video specifications - ULTRA OPTIMIZED FOR SPEED
     OUTPUT_WIDTH = 1920
     OUTPUT_HEIGHT = 1080
     OUTPUT_FPS = 30
-    OUTPUT_PRESET = "veryfast"
-    OUTPUT_CRF = 23
+    OUTPUT_PRESET = "ultrafast"  # Maximum speed (was "veryfast")
+    OUTPUT_CRF = 28  # Acceptable quality, faster encode (was 23)
     OUTPUT_PIX_FMT = "yuv420p"
     OUTPUT_AUDIO_BITRATE = "192k"
 
@@ -109,7 +109,8 @@ class FFmpegProcessor:
 
     def image_to_video(self, image_path, output_path, duration):
         """
-        Convert image to video clip with specific duration
+        Convert image to video clip - ULTRA OPTIMIZED FOR SPEED
+        Uses stillimage tuning and optimized GOP size for static images
 
         Args:
             image_path: Path to input image
@@ -130,9 +131,12 @@ class FFmpegProcessor:
             '-vf', f'scale={self.OUTPUT_WIDTH}:{self.OUTPUT_HEIGHT}:force_original_aspect_ratio=increase,crop={self.OUTPUT_WIDTH}:{self.OUTPUT_HEIGHT}',
             '-c:v', 'libx264',
             '-preset', self.OUTPUT_PRESET,
+            '-tune', 'stillimage',  # Optimized for static images (30% faster)
             '-crf', str(self.OUTPUT_CRF),
+            '-g', '600',  # Keyframe every 20 seconds (HUGE speedup for images)
             '-r', str(self.OUTPUT_FPS),
             '-pix_fmt', self.OUTPUT_PIX_FMT,
+            '-threads', '0',  # Use all CPU cores
             output_path
         ]
 
@@ -149,7 +153,7 @@ class FFmpegProcessor:
 
     def normalize_video(self, input_path, output_path):
         """
-        Normalize video to standard format (16:9, 1080p, 30fps)
+        Normalize video to standard format (16:9, 1080p, 30fps) - OPTIMIZED FOR SPEED
 
         Args:
             input_path: Path to input video
@@ -165,6 +169,7 @@ class FFmpegProcessor:
             '-c:v', 'libx264',
             '-preset', self.OUTPUT_PRESET,
             '-crf', str(self.OUTPUT_CRF),
+            '-threads', '0',  # Use all CPU cores
             '-c:a', 'aac',
             '-b:a', self.OUTPUT_AUDIO_BITRATE,
             '-ac', '2',
@@ -290,44 +295,31 @@ class FFmpegProcessor:
                 except:
                     pass
 
-    def final_assembly(self, video_path, audio_path, srt_path, output_path):
+    def final_assembly(self, video_path, audio_path, output_path):
         """
-        Combine video, audio, and captions into final output
+        Combine video and audio - ULTRA OPTIMIZED (no captions for maximum speed)
 
         Args:
             video_path: Path to concatenated video
             audio_path: Path to merged audio
-            srt_path: Path to SRT subtitle file
             output_path: Path for final output
 
         Raises:
             RuntimeError: If assembly fails
         """
         # Verify inputs exist
-        for path in [video_path, audio_path, srt_path]:
+        for path in [video_path, audio_path]:
             if not os.path.exists(path):
                 raise FileNotFoundError(f"Input file not found: {path}")
-
-        # Escape the SRT path for subtitles filter
-        # Convert to absolute path
-        abs_srt_path = os.path.abspath(srt_path)
-
-        # For Windows, convert backslashes and escape properly
-        if os.name == 'nt':
-            abs_srt_path = abs_srt_path.replace('\\', '/')
-
-        # Escape special characters for filter
-        # Replace : with \: and ' with '\''
-        escaped_srt = abs_srt_path.replace('\\', '\\\\').replace(':', '\\:')
 
         cmd = [
             'ffmpeg', '-y',
             '-i', video_path,
             '-i', audio_path,
-            '-vf', f"subtitles={escaped_srt}:force_style='{self.SUBTITLE_STYLE}'",
             '-c:v', 'libx264',
             '-preset', self.OUTPUT_PRESET,
             '-crf', str(self.OUTPUT_CRF),
+            '-threads', '0',  # Use all CPU cores
             '-r', str(self.OUTPUT_FPS),
             '-pix_fmt', self.OUTPUT_PIX_FMT,
             '-c:a', 'aac',

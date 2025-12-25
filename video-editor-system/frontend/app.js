@@ -303,13 +303,11 @@ async function processVideo() {
             file_id: f.fileId
         }));
 
-        const whisperModel = document.getElementById('whisper-model').value;
         const outputFilename = document.getElementById('output-filename').value || undefined;
 
         const requestData = {
             visual_media: visualMedia,
             audio_files: audioFiles,
-            whisper_model: whisperModel,
             output_filename: outputFilename
         };
 

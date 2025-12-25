@@ -147,7 +147,7 @@ def upload_file():
 @app.route('/api/process', methods=['POST'])
 def process_video():
     """
-    Process video project
+    Process video project - ULTRA OPTIMIZED (No Captions)
 
     Request JSON:
         {
@@ -158,7 +158,6 @@ def process_video():
             'audio_files': [
                 {'rank': 1, 'file_id': '...'}
             ],
-            'whisper_model': 'base',  # optional
             'output_filename': 'my_video.mp4'  # optional
         }
 
@@ -177,7 +176,6 @@ def process_video():
 
         visual_media = data.get('visual_media', [])
         audio_files = data.get('audio_files', [])
-        whisper_model = data.get('whisper_model', 'base')
         output_filename = data.get('output_filename')
 
         if not visual_media:
@@ -232,7 +230,6 @@ def process_video():
             result = editor.process_video_project(
                 visual_media=visual_media,
                 audio_files=audio_files,
-                whisper_model=whisper_model,
                 output_filename=output_filename,
                 cleanup_temp=True
             )

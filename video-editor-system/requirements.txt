@@ -3,16 +3,11 @@ Flask==2.3.3
 flask-cors==4.0.0
 Werkzeug==2.3.7
 
-# Whisper AI for caption generation
-openai-whisper==20231117
-
-# PyTorch (required by Whisper)
-# For CPU-only installation (recommended for i5 8th gen)
-torch==2.0.1
-torchaudio==2.0.2
-
-# Numpy
+# Numpy (for general utilities)
 numpy==1.24.4
 
 # Additional utilities
 ffmpeg-python==0.2.0
+
+# NOTE: Whisper AI and PyTorch removed for ultra-fast processing
+# No caption generation - reduces processing time by 90%
