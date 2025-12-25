@@ -198,6 +198,10 @@ class VideoEditorSystem:
             # Create final video (no captions for maximum speed)
             if output_filename is None:
                 output_filename = f"{project_id}_final.mp4"
+            else:
+                # Ensure .mp4 extension exists (prevent FFmpeg output format errors)
+                if not output_filename.lower().endswith('.mp4'):
+                    output_filename = f"{output_filename}.mp4"
 
             final_output = os.path.join(self.output_dir, output_filename)
 
