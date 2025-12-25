@@ -397,10 +397,11 @@ function showResult(result) {
     const section = document.getElementById('result-section');
     const infoDiv = document.getElementById('result-info');
 
-    const outputPath = result.output_path.split('/').pop();
+    // Use output_filename from backend (works on all platforms)
+    const outputFilename = result.output_filename || result.output_path.split('/').pop().split('\\').pop();
 
     infoDiv.innerHTML = `
-        <p><strong>Output File:</strong> ${outputPath}</p>
+        <p><strong>Output File:</strong> ${outputFilename}</p>
         <p><strong>Duration:</strong> ${result.duration.toFixed(2)} seconds</p>
         <p><strong>File Size:</strong> ${result.file_size}</p>
     `;
@@ -410,7 +411,7 @@ function showResult(result) {
     // Setup download button
     const downloadBtn = document.getElementById('download-btn');
     downloadBtn.onclick = () => {
-        window.location.href = `${API_BASE}/download/${outputPath}`;
+        window.location.href = `${API_BASE}/download/${outputFilename}`;
     };
 
     // Re-enable process button

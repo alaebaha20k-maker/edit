@@ -253,6 +253,7 @@ class VideoEditorSystem:
             return {
                 'success': True,
                 'output_path': final_output,
+                'output_filename': output_filename,  # Just filename for download
                 'project_id': project_id,
                 'metadata_path': metadata_path,
                 'duration': final_duration,
