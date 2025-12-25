@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Editor System - Automated Video Creation</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎬 Automated Video Editor</h1>
+            <p class="subtitle">Upload, Rank, and Create Professional Videos with AI Captions</p>
+        </header>
+
+        <div class="main-content">
+            <!-- Visual Media Section -->
+            <section class="upload-section">
+                <div class="section-header">
+                    <h2>📹 Line 1: Videos & Images</h2>
+                    <p>Upload and rank your visual media (videos and images)</p>
+                </div>
+
+                <div class="upload-zone" id="visual-dropzone">
+                    <div class="dropzone-content">
+                        <div class="upload-icon">📁</div>
+                        <p><strong>Drag & drop files here</strong></p>
+                        <p>or</p>
+                        <label for="visual-file-input" class="file-label">
+                            <input type="file" id="visual-file-input" accept="video/*,image/*" multiple style="display: none;">
+                            <span class="btn btn-secondary">Browse Files</span>
+                        </label>
+                        <p class="hint">Supported: MP4, MOV, JPG, PNG</p>
+                    </div>
+                </div>
+
+                <div id="visual-media-list" class="file-list"></div>
+            </section>
+
+            <!-- Audio Section -->
+            <section class="upload-section">
+                <div class="section-header">
+                    <h2>🎵 Line 2: Audio Files</h2>
+                    <p>Upload and rank your audio tracks (narration, music)</p>
+                </div>
+
+                <div class="upload-zone" id="audio-dropzone">
+                    <div class="dropzone-content">
+                        <div class="upload-icon">🎧</div>
+                        <p><strong>Drag & drop audio files here</strong></p>
+                        <p>or</p>
+                        <label for="audio-file-input" class="file-label">
+                            <input type="file" id="audio-file-input" accept="audio/*" multiple style="display: none;">
+                            <span class="btn btn-secondary">Browse Files</span>
+                        </label>
+                        <p class="hint">Supported: MP3, WAV, AAC, M4A</p>
+                    </div>
+                </div>
+
+                <div id="audio-list" class="file-list"></div>
+            </section>
+
+            <!-- Duration Info -->
+            <section class="info-section">
+                <h3>📊 Duration Calculation Preview</h3>
+                <div class="duration-grid">
+                    <div class="duration-item">
+                        <span class="duration-label">Total Audio Duration:</span>
+                        <span id="total-audio" class="duration-value">0:00</span>
+                    </div>
+                    <div class="duration-item">
+                        <span class="duration-label">Total Video Duration:</span>
+                        <span id="total-video" class="duration-value">0:00</span>
+                    </div>
+                    <div class="duration-item">
+                        <span class="duration-label">Duration per Image:</span>
+                        <span id="image-duration" class="duration-value">0:00</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Settings -->
+            <section class="settings-section">
+                <h3>⚙️ Settings</h3>
+                <div class="settings-grid">
+                    <div class="setting-item">
+                        <label for="whisper-model">Whisper Model:</label>
+                        <select id="whisper-model" class="select-input">
+                            <option value="tiny">Tiny (Fastest)</option>
+                            <option value="base" selected>Base (Recommended)</option>
+                            <option value="small">Small (Better Accuracy)</option>
+                            <option value="medium">Medium (Slow)</option>
+                        </select>
+                    </div>
+                    <div class="setting-item">
+                        <label for="output-filename">Output Filename:</label>
+                        <input type="text" id="output-filename" class="text-input" placeholder="final_video.mp4">
+                    </div>
+                </div>
+            </section>
+
+            <!-- Process Button -->
+            <div class="action-section">
+                <button id="process-btn" class="btn btn-primary" onclick="processVideo()">
+                    🚀 Create Video
+                </button>
+            </div>
+
+            <!-- Progress Section -->
+            <section id="progress-section" class="progress-section hidden">
+                <h3>⏳ Processing Video...</h3>
+                <div class="progress-bar-container">
+                    <div id="progress-fill" class="progress-bar-fill"></div>
+                </div>
+                <p id="progress-text" class="progress-text">Initializing...</p>
+            </section>
+
+            <!-- Result Section -->
+            <section id="result-section" class="result-section hidden">
+                <h3>✅ Video Created Successfully!</h3>
+                <div id="result-info" class="result-info"></div>
+                <button id="download-btn" class="btn btn-success">📥 Download Video</button>
+            </section>
+        </div>
+
+        <footer>
+            <p>Automated Video Editing System | Powered by FFmpeg & Whisper AI</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

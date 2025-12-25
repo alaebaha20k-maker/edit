@@ -1,0 +1,79 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Project specific
+uploads/*
+!uploads/.gitkeep
+temp/*
+!temp/.gitkeep
+output/*
+!output/.gitkeep
+sample_data/*.mp4
+sample_data/*.mp3
+sample_data/*.jpg
+sample_data/*.png
+!sample_data/README.txt
+
+# Logs
+*.log
+logs/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Whisper models cache
+~/.cache/whisper/
+
+# Flask
+instance/
+.webassets-cache
+
+# PyCharm
+.idea/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment variables
+.env
+.env.local
+
+# Test files
+test_*.mp4
+test_*.mp3
+test_*.jpg
