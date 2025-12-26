@@ -273,7 +273,10 @@ class FFmpegProcessor:
                 '-f', 'concat',
                 '-safe', '0',
                 '-i', concat_file,
-                '-c', 'copy',
+                '-c:a', 'libmp3lame',  # Encode to MP3 (handles mixed formats)
+                '-b:a', '192k',        # 192kbps bitrate
+                '-ar', '44100',        # Standard sample rate
+                '-ac', '2',            # Stereo
                 output_path
             ]
 
