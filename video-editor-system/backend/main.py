@@ -53,6 +53,7 @@ class VideoEditorSystem:
         visual_media,
         audio_files,
         output_filename=None,
+        mute_videos=False,
         cleanup_temp=True
     ):
         """
@@ -148,12 +149,13 @@ class VideoEditorSystem:
                 print(f"  Processing video {idx+1}/{len(videos)}: {os.path.basename(vid['path'])}")
 
                 output_path = os.path.join(self.temp_dir, f"normalized_video_{idx:03d}.mp4")
-                self.ffmpeg.normalize_video(vid['path'], output_path)
+                self.ffmpeg.normalize_video(vid['path'], output_path, strip_audio=mute_videos)
 
                 normalized_videos.append(output_path)
                 self.temp_files.append(output_path)
 
-                print(f"    ✓ Normalized to 1080p@30fps")
+                mute_msg = " (audio removed)" if mute_videos else ""
+                print(f"    ✓ Normalized to 1080p@30fps{mute_msg}")
 
             print(f"✓ Normalized {len(videos)} video clips")
 

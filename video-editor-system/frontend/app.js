@@ -304,11 +304,13 @@ async function processVideo() {
         }));
 
         const outputFilename = document.getElementById('output-filename').value || undefined;
+        const muteVideos = document.getElementById('mute-videos').checked;
 
         const requestData = {
             visual_media: visualMedia,
             audio_files: audioFiles,
-            output_filename: outputFilename
+            output_filename: outputFilename,
+            mute_videos: muteVideos
         };
 
         updateProgressText('Sending request to server...');

@@ -152,13 +152,14 @@ class FFmpegProcessor:
 
         return output_path
 
-    def normalize_video(self, input_path, output_path):
+    def normalize_video(self, input_path, output_path, strip_audio=False):
         """
         Normalize video to standard format (16:9, 1080p, 30fps) - OPTIMIZED FOR SPEED
 
         Args:
             input_path: Path to input video
             output_path: Path for output video
+            strip_audio: If True, removes audio from video (mute)
 
         Raises:
             RuntimeError: If normalization fails
@@ -171,11 +172,19 @@ class FFmpegProcessor:
             '-preset', self.OUTPUT_PRESET,
             '-crf', str(self.OUTPUT_CRF),
             '-threads', '0',  # Use all CPU cores
-            '-c:a', 'aac',
-            '-b:a', self.OUTPUT_AUDIO_BITRATE,
-            '-ac', '2',
-            output_path
         ]
+
+        # Add audio handling based on strip_audio flag
+        if strip_audio:
+            cmd.append('-an')  # No audio
+        else:
+            cmd.extend([
+                '-c:a', 'aac',
+                '-b:a', self.OUTPUT_AUDIO_BITRATE,
+                '-ac', '2'
+            ])
+
+        cmd.append(output_path)
 
         self._run_ffmpeg_command(
             cmd,

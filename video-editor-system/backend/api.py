@@ -40,7 +40,7 @@ ensure_directory_exists(OUTPUT_FOLDER)
 
 # Allowed file extensions
 ALLOWED_VIDEO_EXTENSIONS = {'mp4', 'mov', 'avi', 'mkv', 'webm', 'flv'}
-ALLOWED_IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'png', 'bmp', 'gif', 'tiff', 'webp'}
+ALLOWED_IMAGE_EXTENSIONS = {'jpg', 'jpeg', 'jfif', 'png', 'bmp', 'gif', 'tiff', 'webp'}
 ALLOWED_AUDIO_EXTENSIONS = {'mp3', 'wav', 'aac', 'm4a', 'ogg', 'flac'}
 
 # Global processing state (in production, use Redis or database)
@@ -158,7 +158,8 @@ def process_video():
             'audio_files': [
                 {'rank': 1, 'file_id': '...'}
             ],
-            'output_filename': 'my_video.mp4'  # optional
+            'output_filename': 'my_video.mp4',  # optional
+            'mute_videos': false  # optional - if true, removes audio from uploaded videos
         }
 
     Response:
@@ -177,6 +178,7 @@ def process_video():
         visual_media = data.get('visual_media', [])
         audio_files = data.get('audio_files', [])
         output_filename = data.get('output_filename')
+        mute_videos = data.get('mute_videos', False)
 
         if not visual_media:
             return jsonify({'error': 'No visual media provided'}), 400
@@ -231,6 +233,7 @@ def process_video():
                 visual_media=visual_media,
                 audio_files=audio_files,
                 output_filename=output_filename,
+                mute_videos=mute_videos,
                 cleanup_temp=True
             )
 
