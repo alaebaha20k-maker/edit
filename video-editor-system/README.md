@@ -114,7 +114,7 @@ python3 backend/main.py
 
 1. **Upload Visual Media**
    - Drag & drop videos and images into Line 1
-   - Supported formats: MP4, MOV, JPG, PNG
+   - Supported formats: MP4, MOV, JPG, JPEG, JFIF, PNG
    - Rank files in desired order
 
 2. **Upload Audio Files**

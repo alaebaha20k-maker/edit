@@ -13,7 +13,7 @@ class FileValidator:
     """Validates media files for processing"""
 
     VALID_VIDEO_FORMATS = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv']
-    VALID_IMAGE_FORMATS = ['.jpg', '.jpeg', '.png', '.bmp', '.gif', '.tiff', '.webp']
+    VALID_IMAGE_FORMATS = ['.jpg', '.jpeg', '.jfif', '.png', '.bmp', '.gif', '.tiff', '.webp']
     VALID_AUDIO_FORMATS = ['.mp3', '.wav', '.aac', '.m4a', '.ogg', '.flac']
 
     @staticmethod
