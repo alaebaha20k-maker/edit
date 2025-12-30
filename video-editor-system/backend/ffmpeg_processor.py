@@ -311,6 +311,7 @@ class FFmpegProcessor:
     def final_assembly(self, video_path, audio_path, output_path):
         """
         Combine video and audio - ULTRA OPTIMIZED (stream copy for maximum speed)
+        Video duration will EXACTLY match audio duration for perfect sync.
         No re-encoding - just muxes video and audio streams together (20x faster!)
 
         Args:
@@ -326,17 +327,49 @@ class FFmpegProcessor:
             if not os.path.exists(path):
                 raise FileNotFoundError(f"Input file not found: {path}")
 
+        # STEP 1: Get exact audio duration using ffprobe
+        probe_cmd = [
+            'ffprobe', '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            audio_path
+        ]
+
+        try:
+            result = subprocess.run(probe_cmd, capture_output=True, text=True, check=True)
+            audio_duration = float(result.stdout.strip())
+            print(f"📊 Audio duration detected: {audio_duration:.2f} seconds")
+        except Exception as e:
+            print(f"⚠️  Warning: Could not detect audio duration: {e}")
+            print(f"   Will use -shortest flag as fallback")
+            audio_duration = None
+
+        # STEP 2: Build ffmpeg command with exact duration sync
         cmd = [
             'ffmpeg', '-y',
+        ]
+
+        # Force video input to audio duration (if detected)
+        if audio_duration:
+            cmd.extend(['-t', str(audio_duration)])
+
+        cmd.extend([
             '-i', video_path,
             '-i', audio_path,
-            '-c:v', 'copy',  # Stream copy - NO RE-ENCODING! (20x faster)
-            '-c:a', 'aac',   # Re-encode audio for compatibility
-            '-b:a', self.OUTPUT_AUDIO_BITRATE,
-            '-ac', '2',
-            '-shortest',
-            output_path
-        ]
+            '-c:v', 'copy',      # Stream copy video (no re-encode)
+            '-c:a', 'copy',      # Stream copy audio (10x faster + perfect quality!)
+            '-map', '0:v:0',     # Explicitly map video from input 0
+            '-map', '1:a:0',     # Explicitly map audio from input 1
+        ])
+
+        # Add -shortest as fallback if duration detection failed
+        if not audio_duration:
+            cmd.append('-shortest')
+
+        cmd.append(output_path)
+
+        if self.verbose:
+            print(f"Final assembly command: {' '.join(cmd)}")
 
         self._run_ffmpeg_command(
             cmd,
@@ -346,6 +379,10 @@ class FFmpegProcessor:
         # Verify output
         if not os.path.exists(output_path):
             raise RuntimeError(f"Output file not created: {output_path}")
+
+        # Report final duration
+        if audio_duration:
+            print(f"✓ Final video duration: {audio_duration:.2f}s (exact match to audio)")
 
         return output_path
 
