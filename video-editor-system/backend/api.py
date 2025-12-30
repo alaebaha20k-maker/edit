@@ -301,6 +301,232 @@ def download_file(filename):
         return jsonify({'error': 'File not found'}), 404
 
 
+@app.route('/output', methods=['GET'])
+@app.route('/output/', methods=['GET'])
+def show_output_directory():
+    """Show all files in output directory with download links"""
+    try:
+        from flask import render_template_string
+
+        # Get all files in output directory
+        files = []
+        output_path = os.path.abspath(OUTPUT_FOLDER)
+
+        if os.path.exists(output_path):
+            for filename in os.listdir(output_path):
+                filepath = os.path.join(output_path, filename)
+                if os.path.isfile(filepath):
+                    file_size = os.path.getsize(filepath)
+                    file_size_mb = file_size / (1024 * 1024)
+
+                    # Get file modification time
+                    import time
+                    mtime = os.path.getmtime(filepath)
+                    mod_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(mtime))
+
+                    files.append({
+                        'name': filename,
+                        'size': f"{file_size_mb:.2f} MB",
+                        'modified': mod_time,
+                        'download_url': f"/api/download/{filename}"
+                    })
+
+        # Sort by modification time (newest first)
+        files.sort(key=lambda x: x['modified'], reverse=True)
+
+        # HTML template
+        html = '''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Output Files - Video Editor System</title>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                * {
+                    margin: 0;
+                    padding: 0;
+                    box-sizing: border-box;
+                }
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    min-height: 100vh;
+                    padding: 20px;
+                }
+                .container {
+                    max-width: 1200px;
+                    margin: 0 auto;
+                    background: white;
+                    border-radius: 12px;
+                    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                    overflow: hidden;
+                }
+                .header {
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    padding: 30px;
+                    text-align: center;
+                }
+                .header h1 {
+                    font-size: 2em;
+                    margin-bottom: 10px;
+                }
+                .header p {
+                    opacity: 0.9;
+                    font-size: 1.1em;
+                }
+                .content {
+                    padding: 30px;
+                }
+                .stats {
+                    background: #f8f9fa;
+                    padding: 20px;
+                    border-radius: 8px;
+                    margin-bottom: 30px;
+                    display: flex;
+                    justify-content: space-around;
+                    text-align: center;
+                }
+                .stat-item {
+                    flex: 1;
+                }
+                .stat-value {
+                    font-size: 2em;
+                    font-weight: bold;
+                    color: #667eea;
+                }
+                .stat-label {
+                    color: #666;
+                    margin-top: 5px;
+                }
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-top: 20px;
+                }
+                th {
+                    background: #667eea;
+                    color: white;
+                    padding: 15px;
+                    text-align: left;
+                    font-weight: 600;
+                    font-size: 0.95em;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                }
+                td {
+                    padding: 15px;
+                    border-bottom: 1px solid #e0e0e0;
+                }
+                tr:hover {
+                    background-color: #f8f9fa;
+                }
+                tr:last-child td {
+                    border-bottom: none;
+                }
+                .download-btn {
+                    background: #667eea;
+                    color: white;
+                    padding: 8px 20px;
+                    border-radius: 6px;
+                    text-decoration: none;
+                    display: inline-block;
+                    transition: all 0.3s;
+                    font-weight: 500;
+                }
+                .download-btn:hover {
+                    background: #764ba2;
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+                }
+                .no-files {
+                    text-align: center;
+                    padding: 60px 20px;
+                    color: #666;
+                }
+                .no-files-icon {
+                    font-size: 4em;
+                    margin-bottom: 20px;
+                }
+                .filename {
+                    font-weight: 500;
+                    color: #333;
+                    font-family: 'Courier New', monospace;
+                }
+                .back-link {
+                    display: inline-block;
+                    margin-top: 20px;
+                    color: #667eea;
+                    text-decoration: none;
+                    font-weight: 500;
+                }
+                .back-link:hover {
+                    text-decoration: underline;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>📁 Output Files</h1>
+                    <p>Video Editor System - Generated Videos</p>
+                </div>
+
+                <div class="content">
+                    {% if files %}
+                    <div class="stats">
+                        <div class="stat-item">
+                            <div class="stat-value">{{ files|length }}</div>
+                            <div class="stat-label">Total Files</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value">{{ "%.2f"|format(files|sum(attribute='size')|replace(' MB', '')|float) }} MB</div>
+                            <div class="stat-label">Total Size</div>
+                        </div>
+                    </div>
+
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Filename</th>
+                                <th>Size</th>
+                                <th>Modified</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for file in files %}
+                            <tr>
+                                <td><span class="filename">{{ file.name }}</span></td>
+                                <td>{{ file.size }}</td>
+                                <td>{{ file.modified }}</td>
+                                <td><a href="{{ file.download_url }}" class="download-btn">📥 Download</a></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="no-files">
+                        <div class="no-files-icon">📂</div>
+                        <h2>No files found</h2>
+                        <p>Output directory is empty. Generate some videos to see them here!</p>
+                    </div>
+                    {% endif %}
+
+                    <a href="/" class="back-link">← Back to Video Editor</a>
+                </div>
+            </div>
+        </body>
+        </html>
+        '''
+
+        return render_template_string(html, files=files)
+
+    except Exception as e:
+        return f"<h1>Error</h1><p>{str(e)}</p>", 500
+
+
 @app.route('/api/files', methods=['GET'])
 def list_uploaded_files():
     """List all uploaded files"""

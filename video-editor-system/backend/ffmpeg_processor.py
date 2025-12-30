@@ -135,7 +135,7 @@ class FFmpegProcessor:
             '-tune', 'stillimage',  # Optimized for static images
             '-crf', str(self.OUTPUT_CRF),
             '-g', '600',  # Keyframe every 20 seconds (HUGE speedup for images)
-            '-r', str(self.OUTPUT_FPS),  # Output at 30fps
+            '-r', '1',  # Output at 1fps (10x faster for static images)
             '-pix_fmt', self.OUTPUT_PIX_FMT,
             '-threads', '0',  # Use all CPU cores
             output_path

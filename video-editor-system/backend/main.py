@@ -199,7 +199,10 @@ class VideoEditorSystem:
 
             # Create final video (no captions for maximum speed)
             if output_filename is None:
-                output_filename = f"{project_id}_final.mp4"
+                # Use first audio filename as output name
+                first_audio_path = audio_files[0]['path']
+                audio_basename = os.path.splitext(os.path.basename(first_audio_path))[0]
+                output_filename = f"{audio_basename}.mp4"
             else:
                 # Ensure .mp4 extension exists (prevent FFmpeg output format errors)
                 if not output_filename.lower().endswith('.mp4'):
