@@ -205,15 +205,18 @@ class VideoEditorSystem:
             print(f"✓ Audio files merged")
 
             # Create final video (no captions for maximum speed)
-            if output_filename is None:
+            # Use audio filename if no custom filename provided
+            if not output_filename or output_filename.strip() == '':
                 # Use first audio filename as output name
                 first_audio_path = audio_files[0]['path']
                 audio_basename = os.path.splitext(os.path.basename(first_audio_path))[0]
                 output_filename = f"{audio_basename}.mp4"
+                print(f"📝 Using audio filename: {output_filename}")
             else:
                 # Ensure .mp4 extension exists (prevent FFmpeg output format errors)
                 if not output_filename.lower().endswith('.mp4'):
                     output_filename = f"{output_filename}.mp4"
+                print(f"📝 Using custom filename: {output_filename}")
 
             final_output = os.path.join(self.output_dir, output_filename)
 
