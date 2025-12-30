@@ -193,7 +193,7 @@ def process_video():
                 return jsonify({'error': 'Missing file_id in visual_media'}), 400
 
             # Find file with this ID
-            file_ext = self._find_uploaded_file(file_id)
+            file_ext = _find_uploaded_file(file_id)
             if not file_ext:
                 return jsonify({'error': f'File not found: {file_id}'}), 404
 
@@ -205,7 +205,7 @@ def process_video():
                 return jsonify({'error': 'Missing file_id in audio_files'}), 400
 
             # Find file with this ID
-            file_ext = self._find_uploaded_file(file_id)
+            file_ext = _find_uploaded_file(file_id)
             if not file_ext:
                 return jsonify({'error': f'File not found: {file_id}'}), 404
 
