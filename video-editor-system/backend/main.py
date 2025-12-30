@@ -124,22 +124,29 @@ class VideoEditorSystem:
             print_processing_step(4, 8, "Converting Images to Video Clips")
 
             image_videos = []
-            for idx, img in enumerate(images):
-                print(f"  Processing image {idx+1}/{len(images)}: {os.path.basename(img['path'])}")
 
-                output_path = os.path.join(self.temp_dir, f"image_video_{idx:03d}.mp4")
-                self.ffmpeg.image_to_video(
-                    img['path'],
-                    output_path,
-                    durations['image_duration']
-                )
+            # Only process images if there's time for them
+            if images and durations['image_duration'] > 0:
+                for idx, img in enumerate(images):
+                    print(f"  Processing image {idx+1}/{len(images)}: {os.path.basename(img['path'])}")
 
-                image_videos.append(output_path)
-                self.temp_files.append(output_path)
+                    output_path = os.path.join(self.temp_dir, f"image_video_{idx:03d}.mp4")
+                    self.ffmpeg.image_to_video(
+                        img['path'],
+                        output_path,
+                        durations['image_duration']
+                    )
 
-                print(f"    ✓ Created {durations['image_duration']:.2f}s video clip")
+                    image_videos.append(output_path)
+                    self.temp_files.append(output_path)
 
-            print(f"✓ Converted {len(images)} images to video clips")
+                    print(f"    ✓ Created {durations['image_duration']:.2f}s video clip")
+
+                print(f"✓ Converted {len(images)} images to video clips")
+            elif images and durations['image_duration'] == 0:
+                print(f"⚠️  Skipping {len(images)} images (videos already fill all audio time)")
+            else:
+                print(f"✓ No images to convert")
 
             # STEP 5: Normalize video clips
             print_processing_step(5, 8, "Normalizing Video Clips")

@@ -117,18 +117,16 @@ class DurationCalculator:
         # Calculate remaining time for images
         remaining_time = total_audio_duration - total_video_duration
 
+        # If videos are longer than audio, warn but continue (will be cut in final assembly)
         if remaining_time < 0:
-            raise ValueError(
-                f"Videos are longer than audio! "
-                f"Video total: {total_video_duration:.2f}s, "
-                f"Audio total: {total_audio_duration:.2f}s. "
-                f"Please add more audio or remove video clips."
-            )
+            print(f"⚠️  WARNING: Videos ({total_video_duration:.2f}s) are longer than audio ({total_audio_duration:.2f}s)")
+            print(f"   Video will be cut to {total_audio_duration:.2f}s in final assembly")
+            remaining_time = 0  # No time for images
 
         # Calculate duration per image
         num_images = len(images) if images else 0
 
-        if num_images > 0:
+        if num_images > 0 and remaining_time > 0:
             image_duration = remaining_time / num_images
 
             if image_duration < 0.1:
@@ -141,10 +139,10 @@ class DurationCalculator:
             image_duration = 0
 
             # If no images but remaining time exists, warn
-            if remaining_time > 0.1:
+            if remaining_time > 0.1 and num_images == 0:
                 print(
-                    f"WARNING: {remaining_time:.2f}s of audio will not have video. "
-                    f"Consider adding images or more video clips."
+                    f"⚠️  WARNING: {remaining_time:.2f}s of audio will not have video. "
+                    f"   Consider adding images or more video clips."
                 )
 
         return {
