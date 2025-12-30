@@ -152,9 +152,64 @@ class FFmpegProcessor:
 
         return output_path
 
+    def get_video_specs(self, video_path):
+        """
+        Get video specifications (resolution, fps, codec)
+
+        Args:
+            video_path: Path to video file
+
+        Returns:
+            dict: {'width': int, 'height': int, 'fps': float, 'codec': str}
+        """
+        cmd = [
+            'ffprobe', '-v', 'quiet',
+            '-print_format', 'json',
+            '-show_streams',
+            video_path
+        ]
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            data = json.loads(result.stdout)
+
+            # Find video stream
+            video_stream = None
+            for stream in data.get('streams', []):
+                if stream.get('codec_type') == 'video':
+                    video_stream = stream
+                    break
+
+            if not video_stream:
+                return None
+
+            width = video_stream.get('width', 0)
+            height = video_stream.get('height', 0)
+            codec = video_stream.get('codec_name', '')
+
+            # Parse frame rate (e.g., "30/1" -> 30.0)
+            fps_str = video_stream.get('r_frame_rate', '0/1')
+            if '/' in fps_str:
+                num, den = fps_str.split('/')
+                fps = float(num) / float(den) if float(den) > 0 else 0
+            else:
+                fps = float(fps_str)
+
+            return {
+                'width': width,
+                'height': height,
+                'fps': fps,
+                'codec': codec
+            }
+        except Exception as e:
+            if self.verbose:
+                print(f"    Warning: Could not probe video specs: {e}")
+            return None
+
     def normalize_video(self, input_path, output_path, strip_audio=False):
         """
-        Normalize video to standard format (16:9, 1080p, 30fps) - OPTIMIZED FOR SPEED
+        SMART normalize video to standard format (16:9, 1080p, 30fps) - ULTRA OPTIMIZED
+        Skips re-encoding if video is already at target specs (instant stream copy!)
 
         Args:
             input_path: Path to input video
@@ -164,27 +219,70 @@ class FFmpegProcessor:
         Raises:
             RuntimeError: If normalization fails
         """
-        cmd = [
-            'ffmpeg', '-y',
-            '-i', input_path,
-            '-vf', f'scale={self.OUTPUT_WIDTH}:{self.OUTPUT_HEIGHT}:force_original_aspect_ratio=increase,crop={self.OUTPUT_WIDTH}:{self.OUTPUT_HEIGHT},fps={self.OUTPUT_FPS}',
-            '-c:v', 'libx264',
-            '-preset', self.OUTPUT_PRESET,
-            '-crf', str(self.OUTPUT_CRF),
-            '-threads', '0',  # Use all CPU cores
-        ]
+        # Get video specifications
+        specs = self.get_video_specs(input_path)
 
-        # Add audio handling based on strip_audio flag
-        if strip_audio:
-            cmd.append('-an')  # No audio
+        is_perfect = False
+        if specs:
+            if self.verbose:
+                print(f"    Source: {specs['width']}×{specs['height']}, {specs['fps']:.1f}fps, {specs['codec']}")
+
+            # Check if already perfect (1080p, ~30fps, h264)
+            is_perfect = (
+                specs['width'] == self.OUTPUT_WIDTH and
+                specs['height'] == self.OUTPUT_HEIGHT and
+                29 <= specs['fps'] <= 31 and
+                specs['codec'] == 'h264'
+            )
+
+        if is_perfect:
+            # Perfect specs! Use stream copy (instant, no re-encoding)
+            if self.verbose:
+                print(f"    → Already perfect specs! Using stream copy (10x faster)...")
+
+            cmd = [
+                'ffmpeg', '-y',
+                '-i', input_path,
+                '-c:v', 'copy',  # Stream copy video (instant!)
+            ]
+
+            # Add audio handling
+            if strip_audio:
+                cmd.append('-an')  # No audio
+            else:
+                cmd.extend([
+                    '-c:a', 'aac',
+                    '-b:a', self.OUTPUT_AUDIO_BITRATE,
+                    '-ac', '2'
+                ])
+
+            cmd.append(output_path)
         else:
-            cmd.extend([
-                '-c:a', 'aac',
-                '-b:a', self.OUTPUT_AUDIO_BITRATE,
-                '-ac', '2'
-            ])
+            # Needs conversion
+            if self.verbose and specs:
+                print(f"    → Converting to {self.OUTPUT_WIDTH}x{self.OUTPUT_HEIGHT}@{self.OUTPUT_FPS}fps...")
 
-        cmd.append(output_path)
+            cmd = [
+                'ffmpeg', '-y',
+                '-i', input_path,
+                '-vf', f'scale={self.OUTPUT_WIDTH}:{self.OUTPUT_HEIGHT}:force_original_aspect_ratio=increase,crop={self.OUTPUT_WIDTH}:{self.OUTPUT_HEIGHT},fps={self.OUTPUT_FPS}',
+                '-c:v', 'libx264',
+                '-preset', self.OUTPUT_PRESET,
+                '-crf', str(self.OUTPUT_CRF),
+                '-threads', '0',  # Use all CPU cores
+            ]
+
+            # Add audio handling based on strip_audio flag
+            if strip_audio:
+                cmd.append('-an')  # No audio
+            else:
+                cmd.extend([
+                    '-c:a', 'aac',
+                    '-b:a', self.OUTPUT_AUDIO_BITRATE,
+                    '-ac', '2'
+                ])
+
+            cmd.append(output_path)
 
         self._run_ffmpeg_command(
             cmd,
