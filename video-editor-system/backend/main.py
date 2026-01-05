@@ -287,6 +287,195 @@ class VideoEditorSystem:
 
             raise
 
+    def process_ai_generated_video(
+        self,
+        title,
+        image_urls,
+        audio_paths,
+        output_filename=None,
+        cleanup_temp=True
+    ):
+        """
+        Process AI-generated video from images and multiple audio files
+
+        Args:
+            title: Video title
+            image_urls: List of 6 image URLs from Replicate
+            audio_paths: List of ranked audio file paths
+            output_filename: Custom output filename (optional)
+            cleanup_temp: Clean up temporary files after processing
+
+        Returns:
+            dict with success, output_path, etc.
+
+        Raises:
+            ValueError: If validation fails
+            RuntimeError: If processing fails
+        """
+        import urllib.request
+        import tempfile
+
+        project_id = generate_project_id()
+        print("\n" + "="*60)
+        print(f"🎬 AI VIDEO GENERATION SYSTEM")
+        print(f"   Title: {title}")
+        print(f"   Project ID: {project_id}")
+        print("="*60)
+
+        try:
+            # STEP 1: Download images from URLs
+            print_processing_step(1, 6, "Downloading AI-Generated Images")
+
+            image_files = []
+            for idx, url in enumerate(image_urls):
+                print(f"  Downloading image {idx+1}/{len(image_urls)}...")
+
+                # Download to temp file
+                image_path = os.path.join(self.temp_dir, f"ai_image_{idx:03d}.png")
+
+                urllib.request.urlretrieve(url, image_path)
+                image_files.append(image_path)
+                self.temp_files.append(image_path)
+
+                print(f"    ✓ Downloaded: {os.path.basename(image_path)}")
+
+            print(f"✓ Downloaded {len(image_urls)} images")
+
+            # STEP 2: Calculate duration per image
+            print_processing_step(2, 6, "Calculating Durations")
+
+            # Calculate total audio duration
+            total_audio_duration = 0
+            for audio_path in audio_paths:
+                duration = self.ffmpeg.get_duration(audio_path)
+                total_audio_duration += duration
+
+            # Divide equally among images
+            image_duration = total_audio_duration / len(image_files)
+
+            print(f"  • Total audio: {format_time(total_audio_duration)}")
+            print(f"  • Per image: {format_time(image_duration)}")
+            print(f"✓ Durations calculated")
+
+            # STEP 3: Convert images to video clips with zoom effect
+            print_processing_step(3, 6, "Converting Images to Video Clips")
+
+            image_videos = []
+            for idx, img_path in enumerate(image_files):
+                print(f"  Processing image {idx+1}/{len(image_files)}...")
+
+                output_path = os.path.join(self.temp_dir, f"image_video_{idx:03d}.mp4")
+                self.ffmpeg.image_to_video(img_path, output_path, image_duration)
+
+                image_videos.append(output_path)
+                self.temp_files.append(output_path)
+
+                print(f"    ✓ Created {image_duration:.2f}s video clip")
+
+            print(f"✓ Converted {len(image_files)} images to video clips")
+
+            # STEP 4: Concatenate video clips
+            print_processing_step(4, 6, "Concatenating Video Clips")
+
+            concatenated_video = os.path.join(self.temp_dir, "concatenated_video.mp4")
+            self.ffmpeg.concatenate_videos(image_videos, concatenated_video)
+            self.temp_files.append(concatenated_video)
+
+            print(f"✓ Video clips concatenated")
+
+            # STEP 5: Concatenate audio files
+            print_processing_step(5, 6, "Concatenating Audio Files")
+
+            merged_audio = os.path.join(self.temp_dir, "merged_audio.mp3")
+            self.ffmpeg.concatenate_audio(audio_paths, merged_audio)
+            self.temp_files.append(merged_audio)
+
+            print(f"✓ Audio files concatenated")
+
+            # STEP 6: Create final video
+            print_processing_step(6, 6, "Creating Final Video")
+
+            # Use title for filename if not provided
+            if not output_filename or output_filename.strip() == '':
+                # Sanitize title for filename
+                safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).rstrip()
+                safe_title = safe_title.replace(' ', '_')[:50]  # Limit length
+                output_filename = f"{safe_title}.mp4"
+                print(f"📝 Using title as filename: {output_filename}")
+            else:
+                if not output_filename.lower().endswith('.mp4'):
+                    output_filename = f"{output_filename}.mp4"
+                print(f"📝 Using custom filename: {output_filename}")
+
+            final_output = os.path.join(self.output_dir, output_filename)
+
+            self.ffmpeg.final_assembly(
+                concatenated_video,
+                merged_audio,
+                final_output
+            )
+
+            print(f"✓ Final video created")
+
+            # Get final video info
+            final_duration = self.ffmpeg.get_duration(final_output)
+            final_size = get_file_size(final_output)
+
+            # Save project metadata
+            metadata = {
+                'project_id': project_id,
+                'title': title,
+                'output_file': output_filename,
+                'duration_seconds': final_duration,
+                'duration_formatted': format_time(final_duration),
+                'file_size': final_size,
+                'images_count': len(image_files),
+                'audio_files_count': len(audio_paths),
+                'type': 'ai_generated'
+            }
+
+            metadata_path = save_project_metadata(project_id, metadata, self.output_dir)
+
+            # Clean up temporary files
+            if cleanup_temp:
+                print(f"\n🧹 Cleaning up temporary files...")
+                self.ffmpeg.cleanup_temp_files(self.temp_files)
+                print(f"   ✓ Cleaned up {len(self.temp_files)} temporary files")
+
+            # Print success summary
+            print_success_message("AI VIDEO GENERATION COMPLETE!")
+
+            print(f"📊 Project Summary:")
+            print(f"  • Title: {title}")
+            print(f"  • Output file: {final_output}")
+            print(f"  • Duration: {format_time(final_duration)} ({final_duration:.2f}s)")
+            print(f"  • File size: {final_size}")
+            print(f"  • Images: {len(image_files)}")
+            print(f"  • Audio parts: {len(audio_paths)}")
+            print(f"  • Metadata: {metadata_path}")
+
+            return {
+                'success': True,
+                'output_path': final_output,
+                'output_filename': output_filename,
+                'project_id': project_id,
+                'metadata_path': metadata_path,
+                'duration': final_duration,
+                'file_size': final_size
+            }
+
+        except Exception as e:
+            print_error_message(f"AI video generation failed: {str(e)}")
+
+            # Clean up on error
+            if cleanup_temp:
+                try:
+                    self.ffmpeg.cleanup_temp_files(self.temp_files)
+                except:
+                    pass
+
+            raise
+
 
 def main():
     """Example usage of video editing system"""

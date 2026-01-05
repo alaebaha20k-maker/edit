@@ -571,6 +571,344 @@ def _find_uploaded_file(file_id):
     return None
 
 
+# =============================================================================
+# AI VIDEO GENERATOR ROUTES
+# =============================================================================
+
+@app.route('/api/niches', methods=['GET', 'POST'])
+def manage_niches():
+    """Get all niches or create new niche"""
+    from niche_manager import NicheManager
+
+    try:
+        if request.method == 'GET':
+            niches = NicheManager.get_all_niches()
+            return jsonify({'niches': niches})
+
+        elif request.method == 'POST':
+            data = request.get_json()
+
+            if not data:
+                return jsonify({'error': 'No data provided'}), 400
+
+            name = data.get('name')
+            language = data.get('language')
+            writing_guidelines = data.get('writing_guidelines')
+
+            if not name or not language or not writing_guidelines:
+                return jsonify({'error': 'Missing required fields: name, language, writing_guidelines'}), 400
+
+            niche = NicheManager.create_niche(name, language, writing_guidelines)
+
+            return jsonify({
+                'success': True,
+                'niche': niche
+            }), 201
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/niches/<niche_id>', methods=['GET'])
+def get_niche(niche_id):
+    """Get specific niche by ID"""
+    from niche_manager import NicheManager
+
+    try:
+        niche = NicheManager.get_niche(niche_id)
+
+        if not niche:
+            return jsonify({'error': 'Niche not found'}), 404
+
+        return jsonify({'niche': niche})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/image-styles', methods=['GET', 'POST'])
+def manage_image_styles():
+    """Get all image styles or create new style"""
+    from image_style_manager import ImageStyleManager
+
+    try:
+        if request.method == 'GET':
+            styles = ImageStyleManager.get_all_styles()
+            return jsonify({'styles': styles})
+
+        elif request.method == 'POST':
+            data = request.get_json()
+
+            if not data:
+                return jsonify({'error': 'No data provided'}), 400
+
+            name = data.get('name')
+            prompts = data.get('prompts')
+
+            if not name or not prompts:
+                return jsonify({'error': 'Missing required fields: name, prompts'}), 400
+
+            if not isinstance(prompts, list) or len(prompts) != 6:
+                return jsonify({'error': 'prompts must be an array of exactly 6 strings'}), 400
+
+            style = ImageStyleManager.create_style(name, prompts)
+
+            return jsonify({
+                'success': True,
+                'style': style
+            }), 201
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/image-styles/<style_id>', methods=['GET'])
+def get_image_style(style_id):
+    """Get specific image style by ID"""
+    from image_style_manager import ImageStyleManager
+
+    try:
+        style = ImageStyleManager.get_style(style_id)
+
+        if not style:
+            return jsonify({'error': 'Image style not found'}), 404
+
+        return jsonify({'style': style})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/generate-script', methods=['POST'])
+def generate_script():
+    """Generate AI script using Gemini"""
+    from script_generator import ScriptGenerator
+    from config import Config
+
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        title = data.get('title')
+        niche_id = data.get('niche_id')
+
+        if not title or not niche_id:
+            return jsonify({'error': 'Missing required fields: title, niche_id'}), 400
+
+        # Validate API key
+        errors = Config.validate_api_keys()
+        if any('GEMINI' in e for e in errors):
+            return jsonify({'error': 'Gemini API key not configured'}), 500
+
+        # Generate script
+        generator = ScriptGenerator()
+        script = generator.generate_script(title, niche_id)
+
+        return jsonify({
+            'success': True,
+            'script': script,
+            'length': len(script)
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/generate-images', methods=['POST'])
+def generate_images():
+    """Generate AI images using Replicate"""
+    from image_generator import ImageGenerator
+    from config import Config
+
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        title = data.get('title')
+        script = data.get('script')
+        style_id = data.get('style_id')
+
+        if not title or not script or not style_id:
+            return jsonify({'error': 'Missing required fields: title, script, style_id'}), 400
+
+        # Validate API key
+        errors = Config.validate_api_keys()
+        if any('REPLICATE' in e for e in errors):
+            return jsonify({'error': 'Replicate API token not configured'}), 500
+
+        # Generate images
+        generator = ImageGenerator()
+        image_urls = generator.generate_images(title, script, style_id)
+
+        return jsonify({
+            'success': True,
+            'image_urls': image_urls,
+            'count': len(image_urls)
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/process-ai-video', methods=['POST'])
+def process_ai_video():
+    """
+    Process AI-generated video from images and audio files
+
+    Request JSON:
+        {
+            'title': 'Video Title',
+            'image_urls': ['url1', 'url2', ...],  # 6 image URLs
+            'audio_files': [
+                {'rank': 1, 'file_id': '...'},
+                {'rank': 2, 'file_id': '...'}
+            ],
+            'output_filename': 'my_video.mp4',  # optional
+            'niche_id': 'uuid',  # for tracking
+            'style_id': 'uuid',  # for tracking
+            'script': 'generated script text'  # for tracking
+        }
+
+    Response:
+        {
+            'success': true,
+            'job_id': 'unique-job-id',
+            'status': 'completed',
+            'result': {...}
+        }
+    """
+    from database import VideoDatabase
+
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        title = data.get('title')
+        image_urls = data.get('image_urls', [])
+        audio_files = data.get('audio_files', [])
+        output_filename = data.get('output_filename')
+        niche_id = data.get('niche_id')
+        style_id = data.get('style_id')
+        script = data.get('script', '')
+
+        if not title:
+            return jsonify({'error': 'Missing title'}), 400
+
+        if not image_urls or len(image_urls) != 6:
+            return jsonify({'error': 'Must provide exactly 6 image URLs'}), 400
+
+        if not audio_files:
+            return jsonify({'error': 'No audio files provided'}), 400
+
+        # Convert file IDs to paths
+        audio_paths = []
+        for item in audio_files:
+            file_id = item.get('file_id')
+            if not file_id:
+                return jsonify({'error': 'Missing file_id in audio_files'}), 400
+
+            # Find file with this ID
+            file_ext = _find_uploaded_file(file_id)
+            if not file_ext:
+                return jsonify({'error': f'Audio file not found: {file_id}'}), 404
+
+            audio_paths.append(os.path.join(app.config['UPLOAD_FOLDER'], f"{file_id}.{file_ext}"))
+
+        # Generate job ID
+        job_id = str(uuid.uuid4())
+
+        # Store job info
+        processing_jobs[job_id] = {
+            'status': 'processing',
+            'progress': 0,
+            'message': 'Starting AI video processing...'
+        }
+
+        # Process video
+        try:
+            editor = VideoEditorSystem(
+                temp_dir=TEMP_FOLDER,
+                output_dir=OUTPUT_FOLDER,
+                verbose=True
+            )
+
+            result = editor.process_ai_generated_video(
+                title=title,
+                image_urls=image_urls,
+                audio_paths=audio_paths,
+                output_filename=output_filename,
+                cleanup_temp=True
+            )
+
+            # Save to video database
+            if niche_id and style_id:
+                VideoDatabase.create(
+                    title=title,
+                    niche_id=niche_id,
+                    style_id=style_id,
+                    script=script,
+                    image_urls=image_urls,
+                    audio_paths=audio_paths,
+                    output_path=result['output_path']
+                )
+
+            # Update job status
+            processing_jobs[job_id] = {
+                'status': 'completed',
+                'progress': 100,
+                'message': 'AI video processing complete',
+                'result': result
+            }
+
+            return jsonify({
+                'success': True,
+                'job_id': job_id,
+                'status': 'completed',
+                'result': result
+            })
+
+        except Exception as e:
+            processing_jobs[job_id] = {
+                'status': 'failed',
+                'progress': 0,
+                'message': str(e)
+            }
+
+            return jsonify({
+                'success': False,
+                'job_id': job_id,
+                'error': str(e)
+            }), 500
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/videos/recent', methods=['GET'])
+def get_recent_videos():
+    """Get recent AI-generated videos"""
+    from database import VideoDatabase
+
+    try:
+        limit = request.args.get('limit', 10, type=int)
+        videos = VideoDatabase.get_recent(limit)
+
+        return jsonify({'videos': videos})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# =============================================================================
+# ERROR HANDLERS
+# =============================================================================
+
 @app.errorhandler(413)
 def file_too_large(e):
     """Handle file too large error"""

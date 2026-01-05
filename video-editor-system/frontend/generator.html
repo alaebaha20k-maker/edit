@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Video Generator - Complete Workflow</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .workflow-container {
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+        .step-section {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .step-header {
+            font-size: 1.5em;
+            margin-bottom: 20px;
+            color: #667eea;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .step-number {
+            background: #667eea;
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+        .step-content {
+            margin-left: 50px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            font-family: inherit;
+        }
+        .form-group textarea {
+            min-height: 150px;
+            resize: vertical;
+        }
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+        .btn-secondary {
+            background: #48bb78;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background: #38a169;
+        }
+        .status-box {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        .status-success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .status-error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .status-info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        .hidden {
+            display: none !important;
+        }
+        .loading-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .audio-list {
+            margin-top: 15px;
+        }
+        .audio-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .script-preview {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .image-preview {
+            width: 100%;
+            border-radius: 8px;
+            border: 2px solid #e0e0e0;
+        }
+    </style>
+</head>
+<body>
+    <div class="workflow-container">
+        <header style="text-align: center; margin-bottom: 30px;">
+            <h1 style="color: #667eea; font-size: 2.5em;">🎬 AI Video Generator</h1>
+            <p style="color: #666; font-size: 1.2em;">Complete AI-Powered Video Creation Workflow</p>
+            <p><a href="/" style="color: #667eea;">← Back to Manual Editor</a></p>
+        </header>
+
+        <!-- Step 1: Select Niche & Style -->
+        <div class="step-section">
+            <div class="step-header">
+                <div class="step-number">1</div>
+                <div>Select Niche & Image Style</div>
+            </div>
+            <div class="step-content">
+                <div class="form-group">
+                    <label for="niche-select">Choose Niche:</label>
+                    <select id="niche-select">
+                        <option value="">Loading niches...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="style-select">Choose Image Style:</label>
+                    <select id="style-select">
+                        <option value="">Loading styles...</option>
+                    </select>
+                </div>
+                <div id="selection-status"></div>
+            </div>
+        </div>
+
+        <!-- Step 2: Enter Title -->
+        <div class="step-section">
+            <div class="step-header">
+                <div class="step-number">2</div>
+                <div>Enter Video Title</div>
+            </div>
+            <div class="step-content">
+                <div class="form-group">
+                    <label for="video-title">Title:</label>
+                    <input type="text" id="video-title" placeholder="The Zen Trader's Guide to Emotional Control">
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: Generate Script -->
+        <div class="step-section">
+            <div class="step-header">
+                <div class="step-number">3</div>
+                <div>Generate AI Script</div>
+            </div>
+            <div class="step-content">
+                <button class="btn btn-primary" onclick="generateScript()">🤖 Generate Script with Gemini AI</button>
+                <div id="script-status"></div>
+                <div id="script-preview-container" class="hidden">
+                    <h4>Generated Script Preview:</h4>
+                    <div id="script-preview" class="script-preview"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 4: Generate Images -->
+        <div class="step-section">
+            <div class="step-header">
+                <div class="step-number">4</div>
+                <div>Generate AI Images</div>
+            </div>
+            <div class="step-content">
+                <button class="btn btn-primary" onclick="generateImages()">🎨 Generate 6 Images with Replicate</button>
+                <div id="images-status"></div>
+                <div id="images-preview-container" class="hidden">
+                    <h4>Generated Images:</h4>
+                    <div id="images-preview" class="image-grid"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 5: Upload Audio Files -->
+        <div class="step-section">
+            <div class="step-header">
+                <div class="step-number">5</div>
+                <div>Upload Audio Files</div>
+            </div>
+            <div class="step-content">
+                <div class="form-group">
+                    <label>Upload Audio Parts (in order):</label>
+                    <input type="file" id="audio-input" accept="audio/*" multiple>
+                </div>
+                <div id="audio-list" class="audio-list"></div>
+            </div>
+        </div>
+
+        <!-- Step 6: Create Video -->
+        <div class="step-section">
+            <div class="step-header">
+                <div class="step-number">6</div>
+                <div>Create Final Video</div>
+            </div>
+            <div class="step-content">
+                <button class="btn btn-secondary" onclick="createVideo()" style="font-size: 18px; padding: 16px 32px;">
+                    🚀 Create Video
+                </button>
+                <div id="video-status"></div>
+                <div id="video-result" class="hidden"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global state
+        let niches = [];
+        let styles = [];
+        let generatedScript = '';
+        let generatedImages = [];
+        let uploadedAudioFiles = [];
+
+        // Load niches and styles on page load
+        window.addEventListener('DOMContentLoaded', async () => {
+            await loadNiches();
+            await loadStyles();
+        });
+
+        async function loadNiches() {
+            try {
+                const response = await fetch('/api/niches');
+                const data = await response.json();
+                niches = data.niches || [];
+
+                const select = document.getElementById('niche-select');
+                if (niches.length === 0) {
+                    select.innerHTML = '<option value="">No niches found - create one first</option>';
+                } else {
+                    select.innerHTML = '<option value="">-- Select a niche --</option>';
+                    niches.forEach(niche => {
+                        const option = document.createElement('option');
+                        option.value = niche.id;
+                        option.textContent = `${niche.name} (${niche.language})`;
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading niches:', error);
+                document.getElementById('niche-select').innerHTML = '<option value="">Error loading niches</option>';
+            }
+        }
+
+        async function loadStyles() {
+            try {
+                const response = await fetch('/api/image-styles');
+                const data = await response.json();
+                styles = data.styles || [];
+
+                const select = document.getElementById('style-select');
+                if (styles.length === 0) {
+                    select.innerHTML = '<option value="">No styles found - create one first</option>';
+                } else {
+                    select.innerHTML = '<option value="">-- Select an image style --</option>';
+                    styles.forEach(style => {
+                        const option = document.createElement('option');
+                        option.value = style.id;
+                        option.textContent = style.name;
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading styles:', error);
+                document.getElementById('style-select').innerHTML = '<option value="">Error loading styles</option>';
+            }
+        }
+
+        async function generateScript() {
+            const nicheId = document.getElementById('niche-select').value;
+            const title = document.getElementById('video-title').value.trim();
+            const statusDiv = document.getElementById('script-status');
+
+            if (!nicheId) {
+                statusDiv.innerHTML = '<div class="status-box status-error">Please select a niche first</div>';
+                return;
+            }
+
+            if (!title) {
+                statusDiv.innerHTML = '<div class="status-box status-error">Please enter a video title first</div>';
+                return;
+            }
+
+            statusDiv.innerHTML = '<div class="status-box status-info"><div class="loading-spinner"></div><p>Generating script with Gemini AI... This may take 1-2 minutes...</p></div>';
+
+            try {
+                const response = await fetch('/api/generate-script', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, niche_id: nicheId })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    generatedScript = data.script;
+                    statusDiv.innerHTML = `<div class="status-box status-success">✅ Script generated successfully! (${data.length} characters)</div>`;
+
+                    document.getElementById('script-preview').textContent = generatedScript.substring(0, 1000) + '...';
+                    document.getElementById('script-preview-container').classList.remove('hidden');
+                } else {
+                    statusDiv.innerHTML = `<div class="status-box status-error">❌ Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status-box status-error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        async function generateImages() {
+            const styleId = document.getElementById('style-select').value;
+            const title = document.getElementById('video-title').value.trim();
+            const statusDiv = document.getElementById('images-status');
+
+            if (!styleId) {
+                statusDiv.innerHTML = '<div class="status-box status-error">Please select an image style first</div>';
+                return;
+            }
+
+            if (!title) {
+                statusDiv.innerHTML = '<div class="status-box status-error">Please enter a video title first</div>';
+                return;
+            }
+
+            if (!generatedScript) {
+                statusDiv.innerHTML = '<div class="status-box status-error">Please generate script first</div>';
+                return;
+            }
+
+            statusDiv.innerHTML = '<div class="status-box status-info"><div class="loading-spinner"></div><p>Generating 6 images with Replicate... This may take 1-2 minutes...</p></div>';
+
+            try {
+                const response = await fetch('/api/generate-images', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, script: generatedScript, style_id: styleId })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    generatedImages = data.image_urls;
+                    statusDiv.innerHTML = `<div class="status-box status-success">✅ Generated ${data.count} images successfully!</div>`;
+
+                    const previewDiv = document.getElementById('images-preview');
+                    previewDiv.innerHTML = '';
+                    generatedImages.forEach((url, idx) => {
+                        const img = document.createElement('img');
+                        img.src = url;
+                        img.className = 'image-preview';
+                        img.alt = `Generated Image ${idx + 1}`;
+                        previewDiv.appendChild(img);
+                    });
+                    document.getElementById('images-preview-container').classList.remove('hidden');
+                } else {
+                    statusDiv.innerHTML = `<div class="status-box status-error">❌ Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status-box status-error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        document.getElementById('audio-input').addEventListener('change', async (e) => {
+            const files = Array.from(e.target.files);
+            const listDiv = document.getElementById('audio-list');
+
+            listDiv.innerHTML = '<div class="status-box status-info">Uploading audio files...</div>';
+
+            uploadedAudioFiles = [];
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('type', 'audio');
+
+                try {
+                    const response = await fetch('/api/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        uploadedAudioFiles.push({
+                            rank: i + 1,
+                            file_id: data.file_id,
+                            filename: data.filename
+                        });
+                    }
+                } catch (error) {
+                    console.error('Upload error:', error);
+                }
+            }
+
+            // Display uploaded files
+            listDiv.innerHTML = '';
+            uploadedAudioFiles.forEach((audio, idx) => {
+                const item = document.createElement('div');
+                item.className = 'audio-item';
+                item.innerHTML = `
+                    <span>Part ${idx + 1}: ${audio.filename}</span>
+                    <span>✅ Uploaded</span>
+                `;
+                listDiv.appendChild(item);
+            });
+        });
+
+        async function createVideo() {
+            const nicheId = document.getElementById('niche-select').value;
+            const styleId = document.getElementById('style-select').value;
+            const title = document.getElementById('video-title').value.trim();
+            const statusDiv = document.getElementById('video-status');
+
+            if (!nicheId || !styleId || !title) {
+                statusDiv.innerHTML = '<div class="status-box status-error">Please complete all previous steps</div>';
+                return;
+            }
+
+            if (generatedImages.length !== 6) {
+                statusDiv.innerHTML = '<div class="status-box status-error">Please generate 6 images first</div>';
+                return;
+            }
+
+            if (uploadedAudioFiles.length === 0) {
+                statusDiv.innerHTML = '<div class="status-box status-error">Please upload at least one audio file</div>';
+                return;
+            }
+
+            statusDiv.innerHTML = '<div class="status-box status-info"><div class="loading-spinner"></div><p>Creating video... This may take a few minutes...</p></div>';
+
+            try {
+                const response = await fetch('/api/process-ai-video', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title,
+                        image_urls: generatedImages,
+                        audio_files: uploadedAudioFiles,
+                        niche_id: nicheId,
+                        style_id: styleId,
+                        script: generatedScript
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    statusDiv.innerHTML = `<div class="status-box status-success">✅ Video created successfully!</div>`;
+
+                    const resultDiv = document.getElementById('video-result');
+                    resultDiv.innerHTML = `
+                        <div class="status-box status-success">
+                            <h3>🎉 Video Created!</h3>
+                            <p><strong>Filename:</strong> ${data.result.output_filename}</p>
+                            <p><strong>Duration:</strong> ${data.result.duration.toFixed(2)}s</p>
+                            <p><strong>Size:</strong> ${data.result.file_size}</p>
+                            <p>
+                                <a href="/api/download/${data.result.output_filename}" class="btn btn-primary" style="display: inline-block; margin-top: 10px;">
+                                    📥 Download Video
+                                </a>
+                            </p>
+                        </div>
+                    `;
+                    resultDiv.classList.remove('hidden');
+                } else {
+                    statusDiv.innerHTML = `<div class="status-box status-error">❌ Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status-box status-error">❌ Error: ${error.message}</div>`;
+            }
+        }
+    </script>
+</body>
+</html>
