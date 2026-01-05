@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Niche - AI Video Generator</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .form-container {
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 30px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .form-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-header h1 {
+            color: #667eea;
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+        .form-group {
+            margin-bottom: 25px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+        }
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            font-family: inherit;
+            transition: border-color 0.3s;
+        }
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .form-group textarea {
+            min-height: 120px;
+            resize: vertical;
+            font-family: 'Courier New', monospace;
+        }
+        .form-group small {
+            display: block;
+            margin-top: 5px;
+            color: #666;
+            font-size: 12px;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: #667eea;
+            color: white;
+            flex: 1;
+        }
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+        .btn-secondary {
+            background: #48bb78;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background: #38a169;
+        }
+        .btn-clear {
+            background: #ed8936;
+            color: white;
+        }
+        .btn-clear:hover {
+            background: #dd6b20;
+        }
+        .btn-cancel {
+            background: #e53e3e;
+            color: white;
+        }
+        .btn-cancel:hover {
+            background: #c53030;
+        }
+        .status-message {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .status-success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .status-error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="form-container">
+        <div class="form-header">
+            <h1>📝 Create Custom Niche</h1>
+            <p style="color: #666;">Define your content topic and writing style</p>
+            <p><a href="/generator.html" style="color: #667eea;">← Back to AI Generator</a></p>
+        </div>
+
+        <div id="status-message" class="status-message"></div>
+
+        <form id="nicheForm" onsubmit="saveNiche(event)">
+            <div class="form-group">
+                <label for="name">Niche Name *</label>
+                <input type="text" id="name" required placeholder="Trading Psychology">
+                <small>The name of your content niche</small>
+            </div>
+
+            <div class="form-group">
+                <label for="language">Language *</label>
+                <input type="text" id="language" required placeholder="English">
+                <small>Primary language for content generation</small>
+            </div>
+
+            <div class="form-group">
+                <label for="productName">Product Name</label>
+                <input type="text" id="productName" placeholder="THE 7-FIGURE TRADER'S MIND VAULT">
+                <small>Your product/course name (optional)</small>
+            </div>
+
+            <div class="form-group">
+                <label for="productTagline">Product Tagline</label>
+                <textarea id="productTagline" placeholder="The Complete Psychology System That Separates The Top 5% From Everyone Else"></textarea>
+                <small>Product positioning statement</small>
+            </div>
+
+            <div class="form-group">
+                <label for="productValue">Product Value Proposition</label>
+                <textarea id="productValue" placeholder="Everything the elite traders studied to master their psychology..."></textarea>
+                <small>What makes your product valuable</small>
+            </div>
+
+            <div class="form-group">
+                <label for="integrationStyle">Integration Style Guidelines</label>
+                <textarea id="integrationStyle" rows="8"></textarea>
+                <small>How to naturally integrate product mentions</small>
+            </div>
+
+            <div class="form-group">
+                <label for="forbiddenLanguage">Forbidden Language</label>
+                <textarea id="forbiddenLanguage" rows="5"></textarea>
+                <small>What language to avoid</small>
+            </div>
+
+            <div class="form-group">
+                <label for="qualityRules">Quality Rules</label>
+                <textarea id="qualityRules" rows="12"></textarea>
+                <small>Writing quality standards</small>
+            </div>
+
+            <div class="form-group">
+                <label for="nicheExamples">Niche-Specific Examples</label>
+                <textarea id="nicheExamples" rows="5"></textarea>
+                <small>Authorities, books, concepts relevant to this niche</small>
+            </div>
+
+            <div class="form-group">
+                <label for="ctaTemplate">CTA Template</label>
+                <textarea id="ctaTemplate" rows="10"></textarea>
+                <small>Call-to-action template for endings</small>
+            </div>
+
+            <div class="form-group">
+                <label for="notes">Additional Notes</label>
+                <textarea id="notes" rows="3"></textarea>
+                <small>Any additional guidelines or context</small>
+            </div>
+
+            <div class="btn-group">
+                <button type="submit" class="btn btn-primary">💾 SAVE NICHE</button>
+                <button type="button" class="btn btn-secondary" onclick="prefillTradingExample()">📋 LOAD EXAMPLE</button>
+                <button type="button" class="btn btn-clear" onclick="clearForm()">🗑️ CLEAR FORM</button>
+                <button type="button" class="btn btn-cancel" onclick="window.location.href='/generator.html'">❌ CANCEL</button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        // Pre-fill form with Trading Psychology example on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            // Only pre-fill if form is empty
+            if (!document.getElementById('name').value) {
+                prefillTradingExample();
+            }
+        });
+
+        function prefillTradingExample() {
+            document.getElementById('name').value = 'Trading Psychology';
+            document.getElementById('language').value = 'English';
+
+            document.getElementById('productName').value = 'THE 7-FIGURE TRADER\'S MIND VAULT';
+            document.getElementById('productTagline').value = 'The Complete Psychology System That Separates The Top 5% From Everyone Else';
+            document.getElementById('productValue').value = 'Everything the elite traders studied to master their psychology - the frameworks, the audiobooks, the mental systems that turned struggling traders into consistent winners.';
+
+            document.getElementById('integrationStyle').value = `✅ Frame as: WHAT THE ELITE ACTUALLY STUDY
+✅ Contrast with: what amateurs chase (indicators, signals)
+✅ Create curiosity: "This is what you'll discover inside..."
+✅ Positioning: "The frameworks that turned struggling traders into consistent winners"
+✅ Authority: "What every 7-figure trader has studied and mastered"
+✅ Exclusivity: "The mental systems most traders never even know exist"
+✅ End with: "Link in the description" (NO price, NO urgency, just access)`;
+
+            document.getElementById('forbiddenLanguage').value = `❌ NO price mention (no $67, no "affordable", no cost talk)
+❌ NO "buy now", "limited time", "discount", "special offer"
+❌ NO desperate sales language
+❌ NO breaking educational tone`;
+
+            document.getElementById('qualityRules').value = `✅ Vary every paragraph opening (never repeat transitions)
+✅ MAXIMUM 20 WORDS PER SENTENCE (strict limit for voice-ready flow)
+✅ Mix sentence lengths: short punches (6-10 words) + explanations (12-18 words MAX)
+✅ Use specific numbers ($8,432 not "$8,000", "6 weeks" not "a while")
+✅ Educational tone - teaching not selling
+✅ Professional confidence without hype
+✅ Natural language - conversational but intelligent
+✅ Real trader examples when appropriate (Seykota, Livermore, Tudor Jones, Minervini, O'Neil)
+✅ Clean psychological frameworks explained clearly
+✅ CLEAN VOICE-READY TEXT - absolutely NO markdown, asterisks, or formatting
+✅ Include "Link in description" at LEAST once in this section`;
+
+            document.getElementById('nicheExamples').value = `Authorities: Seykota, Livermore, Tudor Jones, Minervini, O'Neil
+Books: Trading in the Zone, The Disciplined Trader, Market Wizards
+Concepts: Smart money, liquidity, position sizing, risk management
+Mistakes: Chasing breakouts, placing stops where everyone else does
+Metrics: Win rate, R-multiples, account size, time to profitability`;
+
+            document.getElementById('ctaTemplate').value = `Look, you can keep doing what you've been doing and hope something changes. Keep chasing indicators while your account bleeds. Keep making the same psychological mistakes that destroy 95% of traders.
+
+Or you can equip yourself with the same mental frameworks that 7-figure traders use every single day.
+
+Inside {PRODUCT_NAME}, you get the complete psychology transformation system. Every framework that separates the top 5% from everyone else. Trading in the Zone. The Disciplined Trader. Market Wizards. Every mental system that elite traders studied to rewire their brains for consistency.
+
+The frameworks that turn emotional gamblers into disciplined professionals. The exact mental tools that make the difference between blowing up and compounding wealth.
+
+This is what the top 5% actually study while everyone else chases the next hot indicator.
+
+Link in the description. This is the difference between staying stuck and finally breaking through.
+
+If you got value from this, hit subscribe. Let me know in the comments what clicked for you. I'll see you in the next one.`;
+
+            document.getElementById('notes').value = 'Always use trading terminology naturally. Focus on psychology not tactics. Reference market conditions from 2008, 2020. Mention compound growth examples.';
+        }
+
+        function clearForm() {
+            if (confirm('Clear all fields and start fresh?')) {
+                document.getElementById('nicheForm').reset();
+            }
+        }
+
+        async function saveNiche(event) {
+            event.preventDefault();
+
+            const statusDiv = document.getElementById('status-message');
+            statusDiv.style.display = 'none';
+
+            // Build writing guidelines from all fields
+            const writingGuidelines = `
+# ${document.getElementById('name').value} - Writing Guidelines
+
+## Product Information
+**Product Name:** ${document.getElementById('productName').value}
+**Tagline:** ${document.getElementById('productTagline').value}
+**Value Proposition:** ${document.getElementById('productValue').value}
+
+## Integration Style
+${document.getElementById('integrationStyle').value}
+
+## Forbidden Language
+${document.getElementById('forbiddenLanguage').value}
+
+## Quality Rules
+${document.getElementById('qualityRules').value}
+
+## Niche-Specific Examples
+${document.getElementById('nicheExamples').value}
+
+## CTA Template
+${document.getElementById('ctaTemplate').value}
+
+## Additional Notes
+${document.getElementById('notes').value}
+`.trim();
+
+            const nicheData = {
+                name: document.getElementById('name').value,
+                language: document.getElementById('language').value,
+                writing_guidelines: writingGuidelines
+            };
+
+            try {
+                const response = await fetch('/api/niches', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(nicheData)
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    statusDiv.className = 'status-message status-success';
+                    statusDiv.textContent = `✅ Niche "${nicheData.name}" saved successfully!`;
+                    statusDiv.style.display = 'block';
+
+                    // Redirect after 2 seconds
+                    setTimeout(() => {
+                        window.location.href = '/generator.html';
+                    }, 2000);
+                } else {
+                    statusDiv.className = 'status-message status-error';
+                    statusDiv.textContent = `❌ Error: ${data.error}`;
+                    statusDiv.style.display = 'block';
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message status-error';
+                statusDiv.textContent = `❌ Error: ${error.message}`;
+                statusDiv.style.display = 'block';
+            }
+        }
+    </script>
+</body>
+</html>

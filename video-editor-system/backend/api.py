@@ -930,12 +930,37 @@ if __name__ == '__main__':
     print("="*60)
     print("🎬 VIDEO EDITOR API SERVER")
     print("="*60)
-    print(f"Upload folder: {os.path.abspath(UPLOAD_FOLDER)}")
-    print(f"Output folder: {os.path.abspath(OUTPUT_FOLDER)}")
-    print(f"Temp folder: {os.path.abspath(TEMP_FOLDER)}")
+
+    # Initialize database (will auto-create files if needed)
+    print("\n📦 Initializing database...")
+    from database import initialize_database
+    initialize_database()
+
+    # Create directories
+    print("\n📁 Ensuring directories exist...")
+    ensure_directory_exists(UPLOAD_FOLDER)
+    ensure_directory_exists(TEMP_FOLDER)
+    ensure_directory_exists(OUTPUT_FOLDER)
+
+    print(f"\n📂 Upload folder: {os.path.abspath(UPLOAD_FOLDER)}")
+    print(f"📂 Output folder: {os.path.abspath(OUTPUT_FOLDER)}")
+    print(f"📂 Temp folder: {os.path.abspath(TEMP_FOLDER)}")
+
+    # Check for data directory
+    data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
+    if os.path.exists(data_dir):
+        print(f"📂 Data folder: {os.path.abspath(data_dir)}")
+
     print("="*60)
-    print("Starting server on http://localhost:5000")
+    print("🚀 Starting server on http://localhost:5000")
     print("="*60)
+    print("\n📋 Available pages:")
+    print("   • Main editor:     http://localhost:5000/")
+    print("   • Create niche:    http://localhost:5000/niche-creator.html")
+    print("   • Create style:    http://localhost:5000/style-creator.html")
+    print("   • AI generator:    http://localhost:5000/generator.html")
+    print("   • Output files:    http://localhost:5000/output")
+    print("="*60 + "\n")
 
     app.run(
         host='0.0.0.0',

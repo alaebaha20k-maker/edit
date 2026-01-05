@@ -246,6 +246,42 @@ class VideoDatabase(Database):
         return video
 
 
+def initialize_database():
+    """
+    Initialize database files if they don't exist
+    Called automatically on import
+    """
+    try:
+        # Ensure data directory exists
+        Config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Create empty database files if they don't exist
+        if not Config.NICHES_DB.exists():
+            Config.NICHES_DB.parent.mkdir(parents=True, exist_ok=True)
+            with open(Config.NICHES_DB, 'w', encoding='utf-8') as f:
+                json.dump([], f, indent=2)
+            print(f"✅ Created {Config.NICHES_DB}")
+
+        if not Config.IMAGE_STYLES_DB.exists():
+            Config.IMAGE_STYLES_DB.parent.mkdir(parents=True, exist_ok=True)
+            with open(Config.IMAGE_STYLES_DB, 'w', encoding='utf-8') as f:
+                json.dump([], f, indent=2)
+            print(f"✅ Created {Config.IMAGE_STYLES_DB}")
+
+        if not Config.VIDEOS_DB.exists():
+            Config.VIDEOS_DB.parent.mkdir(parents=True, exist_ok=True)
+            with open(Config.VIDEOS_DB, 'w', encoding='utf-8') as f:
+                json.dump([], f, indent=2)
+            print(f"✅ Created {Config.VIDEOS_DB}")
+
+    except Exception as e:
+        print(f"⚠️  Warning: Database initialization error: {e}")
+
+
+# AUTO-INITIALIZE on import
+initialize_database()
+
+
 if __name__ == "__main__":
     # Test database operations
     print("Testing database operations...")

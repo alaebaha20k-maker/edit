@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Image Style - AI Video Generator</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .form-container {
+            max-width: 900px;
+            margin: 40px auto;
+            padding: 30px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .form-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-header h1 {
+            color: #667eea;
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+        .form-group {
+            margin-bottom: 25px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+        }
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            font-family: inherit;
+            transition: border-color 0.3s;
+        }
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .form-group textarea {
+            min-height: 120px;
+            resize: vertical;
+            font-family: 'Courier New', monospace;
+        }
+        .form-group small {
+            display: block;
+            margin-top: 5px;
+            color: #666;
+            font-size: 12px;
+        }
+        .prompt-label {
+            background: #667eea;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            display: inline-block;
+            margin-bottom: 8px;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: #667eea;
+            color: white;
+            flex: 1;
+        }
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+        .btn-secondary {
+            background: #48bb78;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background: #38a169;
+        }
+        .btn-clear {
+            background: #ed8936;
+            color: white;
+        }
+        .btn-clear:hover {
+            background: #dd6b20;
+        }
+        .btn-cancel {
+            background: #e53e3e;
+            color: white;
+        }
+        .btn-cancel:hover {
+            background: #c53030;
+        }
+        .status-message {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .status-success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .status-error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="form-container">
+        <div class="form-header">
+            <h1>🎨 Create Image Style</h1>
+            <p style="color: #666;">Define 6 image prompts for AI generation</p>
+            <p><a href="/generator.html" style="color: #667eea;">← Back to AI Generator</a></p>
+        </div>
+
+        <div id="status-message" class="status-message"></div>
+
+        <form id="styleForm" onsubmit="saveStyle(event)">
+            <div class="form-group">
+                <label for="name">Style Name *</label>
+                <input type="text" id="name" required placeholder="Stick Figure Trading">
+                <small>Unique name for this image style</small>
+            </div>
+
+            <div class="form-group">
+                <label for="description">Description</label>
+                <textarea id="description" rows="2" placeholder="Minimalist stick figures on white background, professional trading visuals"></textarea>
+                <small>Brief description of the visual style</small>
+            </div>
+
+            <div class="form-group">
+                <label for="theme">Visual Theme</label>
+                <input type="text" id="theme" placeholder="Clean, professional, educational, modern">
+                <small>Overall aesthetic and mood</small>
+            </div>
+
+            <hr style="margin: 30px 0; border: none; border-top: 2px solid #e0e0e0;">
+
+            <h3 style="color: #667eea; margin-bottom: 20px;">Color Palette</h3>
+
+            <div class="form-group">
+                <label for="colorPrimary">Primary Color</label>
+                <input type="text" id="colorPrimary" placeholder="Navy Blue #2C3E50">
+            </div>
+
+            <div class="form-group">
+                <label for="colorSecondary">Secondary Color</label>
+                <input type="text" id="colorSecondary" placeholder="Red #E74C3C">
+            </div>
+
+            <div class="form-group">
+                <label for="colorAccents">Accent Colors</label>
+                <input type="text" id="colorAccents" placeholder="Green #27AE60, Orange #F39C12">
+            </div>
+
+            <div class="form-group">
+                <label for="colorBg">Background Color</label>
+                <input type="text" id="colorBg" placeholder="White #FFFFFF">
+            </div>
+
+            <hr style="margin: 30px 0; border: none; border-top: 2px solid #e0e0e0;">
+
+            <h3 style="color: #667eea; margin-bottom: 20px;">Image Prompts (6 Required)</h3>
+            <p style="color: #666; margin-bottom: 20px;">Use dynamic variables: {TITLE_KEYWORDS}, {EMOTIONAL_STATE}, {CHART_PATTERN}, {TRADING_ACTION}, {MARKET_CONDITION}, {MINDSET_CONCEPT}</p>
+
+            <div class="form-group">
+                <span class="prompt-label">Prompt 1 - Thumbnail/Intro</span>
+                <textarea id="template1" rows="6" required></textarea>
+                <small>Opening image or thumbnail design</small>
+            </div>
+
+            <div class="form-group">
+                <span class="prompt-label">Prompt 2 - Problem/Struggle</span>
+                <textarea id="template2" rows="6" required></textarea>
+                <small>Show the challenge or problem state</small>
+            </div>
+
+            <div class="form-group">
+                <span class="prompt-label">Prompt 3 - Conflict/Decision</span>
+                <textarea id="template3" rows="6" required></textarea>
+                <small>Internal conflict or decision point</small>
+            </div>
+
+            <div class="form-group">
+                <span class="prompt-label">Prompt 4 - Solution/Framework</span>
+                <textarea id="template4" rows="6" required></textarea>
+                <small>Teaching moment or framework explanation</small>
+            </div>
+
+            <div class="form-group">
+                <span class="prompt-label">Prompt 5 - Success/Clarity</span>
+                <textarea id="template5" rows="6" required></textarea>
+                <small>Breakthrough or success state</small>
+            </div>
+
+            <div class="form-group">
+                <span class="prompt-label">Prompt 6 - Transformation/Comparison</span>
+                <textarea id="template6" rows="6" required></textarea>
+                <small>Before/after or final transformation</small>
+            </div>
+
+            <div class="btn-group">
+                <button type="submit" class="btn btn-primary">💾 SAVE IMAGE STYLE</button>
+                <button type="button" class="btn btn-secondary" onclick="prefillStickFigureExample()">📋 LOAD EXAMPLE</button>
+                <button type="button" class="btn btn-clear" onclick="clearForm()">🗑️ CLEAR FORM</button>
+                <button type="button" class="btn btn-cancel" onclick="window.location.href='/generator.html'">❌ CANCEL</button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        // Pre-fill form with Stick Figure Trading example on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            if (!document.getElementById('name').value) {
+                prefillStickFigureExample();
+            }
+        });
+
+        function prefillStickFigureExample() {
+            document.getElementById('name').value = 'Stick Figure Trading';
+            document.getElementById('description').value = 'Minimalist stick figures on white background, professional trading visuals';
+            document.getElementById('theme').value = 'Clean, professional, educational, modern';
+
+            document.getElementById('colorPrimary').value = 'Navy Blue #2C3E50';
+            document.getElementById('colorSecondary').value = 'Red #E74C3C';
+            document.getElementById('colorAccents').value = 'Green #27AE60, Orange #F39C12';
+            document.getElementById('colorBg').value = 'White #FFFFFF';
+
+            document.getElementById('template1').value = `YouTube thumbnail design, professional trading content, RED rectangular banner at top (#E74C3C), white bold text inside red banner reading {TITLE_KEYWORDS}, below banner: minimalist stick figure at trading desk, computer showing candlestick chart, {EMOTIONAL_STATE} body language, clean white background, simple clean lines, limited color palette (red banner, navy blue figure #2C3E50, orange/yellow accents #F39C12, green for profits #27AE60, red for losses), professional digital art style, 16:9 aspect ratio, high contrast for mobile viewing`;
+
+            document.getElementById('template2').value = `Minimalist stick figure illustration, stressed trader hunched forward showing frustration, navy blue stick figure (#2C3E50), gripping head with hands, sitting at trading desk, computer monitor showing RED declining candlestick chart, stress lines radiating from figure, thought bubble: {WORRIED_THOUGHT}, scattered papers on desk, coffee cup, tense body language, clean white background, professional digital art, simple clean lines, limited color palette (navy blue figure, red losing chart #E74C3C, dark gray accents #34495E), sense of chaos and stress`;
+
+            document.getElementById('template3').value = `Minimalist stick figure illustration, conflicted trader showing indecision, navy blue stick figure (#2C3E50), sitting at trading desk with hand on chin in contemplative pose, computer monitor showing {CHART_PATTERN}, two thought bubbles showing internal conflict - left bubble: {FEAR_THOUGHT}, right bubble: {HOPE_THOUGHT}, clean white background, professional digital art, simple clean lines, limited color palette (navy blue, orange accents #F39C12, gray #95A5A6), sense of internal battle`;
+
+            document.getElementById('template4').value = `Minimalist stick figure illustration, confident trader in teaching pose, navy blue stick figure (#2C3E50), sitting at organized trading desk, single clean monitor showing {FRAMEWORK_VISUAL}, thought bubble: {KEY_INSIGHT}, calm focused body language, clean minimalist background, professional digital art, simple clean lines, limited color palette (navy blue, green success indicators #27AE60, orange framework highlights #F39C12), sense of clarity and understanding, educational diagram style on screen`;
+
+            document.getElementById('template5').value = `Minimalist stick figure illustration, calm professional trader in zen-like posture, navy blue stick figure (#2C3E50), sitting relaxed at trading desk, single monitor showing GREEN ascending candlestick chart, small risk label 0.1 on desk, thought bubble: {DISCIPLINED_THOUGHT}, peaceful body language, clean organized environment, professional digital art, simple clean lines, limited color palette (navy blue, green winning chart #27AE60, white background #FFFFFF), sense of control and peace`;
+
+            document.getElementById('template6').value = `Minimalist stick figure split-screen comparison, LEFT SIDE: stressed amateur trader hunched over desk, RED declining chart on monitor, label 10.0 high risk visible, thought bubble: {AMATEUR_MINDSET}, chaotic environment | VERTICAL DIVIDING LINE in center | RIGHT SIDE: calm professional trader in zen posture, GREEN ascending chart on monitor, label 0.1 small risk visible, thought bubble: {PRO_MINDSET}, organized environment | both traders navy blue (#2C3E50), professional digital art, simple clean lines, clear before/after contrast, limited color palette (navy blue figures, red for losses #E74C3C, green for wins #27AE60, white background #FFFFFF), powerful transformation visual`;
+        }
+
+        function clearForm() {
+            if (confirm('Clear all fields and start fresh?')) {
+                document.getElementById('styleForm').reset();
+            }
+        }
+
+        async function saveStyle(event) {
+            event.preventDefault();
+
+            const statusDiv = document.getElementById('status-message');
+            statusDiv.style.display = 'none';
+
+            const prompts = [
+                document.getElementById('template1').value,
+                document.getElementById('template2').value,
+                document.getElementById('template3').value,
+                document.getElementById('template4').value,
+                document.getElementById('template5').value,
+                document.getElementById('template6').value
+            ];
+
+            const styleData = {
+                name: document.getElementById('name').value,
+                prompts: prompts
+            };
+
+            try {
+                const response = await fetch('/api/image-styles', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(styleData)
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    statusDiv.className = 'status-message status-success';
+                    statusDiv.textContent = `✅ Image style "${styleData.name}" saved successfully!`;
+                    statusDiv.style.display = 'block';
+
+                    // Redirect after 2 seconds
+                    setTimeout(() => {
+                        window.location.href = '/generator.html';
+                    }, 2000);
+                } else {
+                    statusDiv.className = 'status-message status-error';
+                    statusDiv.textContent = `❌ Error: ${data.error}`;
+                    statusDiv.style.display = 'block';
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message status-error';
+                statusDiv.textContent = `❌ Error: ${error.message}`;
+                statusDiv.style.display = 'block';
+            }
+        }
+    </script>
+</body>
+</html>
