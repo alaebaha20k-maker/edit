@@ -609,18 +609,27 @@ def manage_niches():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/niches/<niche_id>', methods=['GET'])
-def get_niche(niche_id):
-    """Get specific niche by ID"""
+@app.route('/api/niches/<niche_id>', methods=['GET', 'DELETE'])
+def manage_niche(niche_id):
+    """Get or delete specific niche by ID"""
     from niche_manager import NicheManager
 
     try:
-        niche = NicheManager.get_niche(niche_id)
+        if request.method == 'GET':
+            niche = NicheManager.get_niche(niche_id)
 
-        if not niche:
-            return jsonify({'error': 'Niche not found'}), 404
+            if not niche:
+                return jsonify({'error': 'Niche not found'}), 404
 
-        return jsonify({'niche': niche})
+            return jsonify({'niche': niche})
+
+        elif request.method == 'DELETE':
+            success = NicheManager.delete_niche(niche_id)
+
+            if success:
+                return jsonify({'success': True, 'message': 'Niche deleted'})
+            else:
+                return jsonify({'error': 'Niche not found'}), 404
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -662,18 +671,27 @@ def manage_image_styles():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/image-styles/<style_id>', methods=['GET'])
-def get_image_style(style_id):
-    """Get specific image style by ID"""
+@app.route('/api/image-styles/<style_id>', methods=['GET', 'DELETE'])
+def manage_image_style(style_id):
+    """Get or delete specific image style by ID"""
     from image_style_manager import ImageStyleManager
 
     try:
-        style = ImageStyleManager.get_style(style_id)
+        if request.method == 'GET':
+            style = ImageStyleManager.get_style(style_id)
 
-        if not style:
-            return jsonify({'error': 'Image style not found'}), 404
+            if not style:
+                return jsonify({'error': 'Image style not found'}), 404
 
-        return jsonify({'style': style})
+            return jsonify({'style': style})
+
+        elif request.method == 'DELETE':
+            success = ImageStyleManager.delete_style(style_id)
+
+            if success:
+                return jsonify({'success': True, 'message': 'Image style deleted'})
+            else:
+                return jsonify({'error': 'Image style not found'}), 404
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500

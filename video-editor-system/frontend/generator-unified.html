@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Video Generator - All-in-One</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 12px 12px 0 0;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .header h1 {
+            color: #667eea;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        .section {
+            background: white;
+            padding: 30px;
+            margin-top: 2px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .section:last-child {
+            border-radius: 0 0 12px 12px;
+        }
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #667eea;
+            margin-bottom: 25px;
+        }
+        .section-title {
+            font-size: 1.5em;
+            color: #667eea;
+            font-weight: 600;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-primary { background: #667eea; color: white; }
+        .btn-primary:hover { background: #5568d3; }
+        .btn-success { background: #48bb78; color: white; }
+        .btn-success:hover { background: #38a169; }
+        .btn-danger { background: #e53e3e; color: white; }
+        .btn-danger:hover { background: #c53030; }
+        .btn-secondary { background: #718096; color: white; }
+        .btn-secondary:hover { background: #4a5568; }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .form-group textarea {
+            min-height: 100px;
+            font-family: 'Courier New', monospace;
+        }
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border: 2px solid #e0e0e0;
+        }
+        .item-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: white;
+            border-radius: 6px;
+            border: 1px solid #e0e0e0;
+        }
+        .item-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .collapse-content {
+            display: none;
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .collapse-content.active {
+            display: block;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-ok { background: #48bb78; }
+        .status-missing { background: #e53e3e; }
+        .radio-group {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .radio-option {
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 2px solid #e0e0e0;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .radio-option:hover {
+            border-color: #667eea;
+        }
+        .radio-option.active {
+            border-color: #667eea;
+            background: #eef2ff;
+        }
+        .upload-area {
+            border: 2px dashed #cbd5e0;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            margin: 15px 0;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .upload-area:hover {
+            border-color: #667eea;
+            background: #f7fafc;
+        }
+        .media-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: white;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            border: 1px solid #e0e0e0;
+        }
+        .media-info {
+            flex: 1;
+        }
+        .media-rank {
+            width: 60px;
+            margin: 0 10px;
+        }
+        .hidden { display: none !important; }
+        .alert {
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+        .alert-success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .alert-error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .alert-info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #e0e0e0;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🎬 AI Video Generator - All-in-One</h1>
+            <p style="color: #666; font-size: 1.1em;">Complete video creation system with AI & manual options</p>
+            <p><a href="/" style="color: #667eea;">← Back to Manual Editor</a></p>
+        </div>
+
+        <!-- Section 1: API Configuration -->
+        <div class="section">
+            <div class="section-header">
+                <h2 class="section-title">⚙️ API Configuration</h2>
+                <div>
+                    <span class="status-indicator" id="api-status-indicator"></span>
+                    <span id="api-status-text">Checking...</span>
+                </div>
+            </div>
+
+            <div class="grid-2">
+                <div class="form-group">
+                    <label>Gemini API Key <a href="https://aistudio.google.com/app/apikey" target="_blank" style="font-size: 12px;">(Get Key)</a></label>
+                    <input type="password" id="gemini-key" placeholder="AIza...">
+                </div>
+                <div class="form-group">
+                    <label>Replicate API Token <a href="https://replicate.com/account/api-tokens" target="_blank" style="font-size: 12px;">(Get Token)</a></label>
+                    <input type="password" id="replicate-token" placeholder="r8_...">
+                </div>
+            </div>
+            <button class="btn btn-primary" onclick="saveAPIConfig()">💾 Save API Configuration</button>
+        </div>
+
+        <!-- Section 2: Manage Niches -->
+        <div class="section">
+            <div class="section-header">
+                <h2 class="section-title">📝 Manage Niches</h2>
+                <button class="btn btn-success" onclick="toggleAddNiche()">+ Add New Niche</button>
+            </div>
+
+            <div id="niches-list" class="item-list"></div>
+
+            <div id="add-niche-form" class="collapse-content">
+                <h3>Add New Niche</h3>
+                <div class="form-group">
+                    <label>Niche Name</label>
+                    <input type="text" id="new-niche-name" placeholder="Trading Psychology">
+                </div>
+                <div class="form-group">
+                    <label>Language</label>
+                    <input type="text" id="new-niche-language" placeholder="English">
+                </div>
+                <div class="form-group">
+                    <label>Writing Guidelines (Paste complete guidelines)</label>
+                    <textarea id="new-niche-guidelines" rows="10"></textarea>
+                </div>
+                <button class="btn btn-primary" onclick="saveNiche()">Save Niche</button>
+                <button class="btn btn-secondary" onclick="toggleAddNiche()">Cancel</button>
+            </div>
+        </div>
+
+        <!-- Section 3: Manage Image Styles -->
+        <div class="section">
+            <div class="section-header">
+                <h2 class="section-title">🎨 Manage Image Styles</h2>
+                <button class="btn btn-success" onclick="toggleAddStyle()">+ Add New Style</button>
+            </div>
+
+            <div id="styles-list" class="item-list"></div>
+
+            <div id="add-style-form" class="collapse-content">
+                <h3>Add New Image Style</h3>
+                <div class="form-group">
+                    <label>Style Name</label>
+                    <input type="text" id="new-style-name" placeholder="Stick Figure Trading">
+                </div>
+                <div class="form-group">
+                    <label>Prompt 1 (Opening/Thumbnail)</label>
+                    <textarea id="new-style-prompt1" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Prompt 2 (Problem/Struggle)</label>
+                    <textarea id="new-style-prompt2" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Prompt 3 (Conflict/Decision)</label>
+                    <textarea id="new-style-prompt3" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Prompt 4 (Solution/Framework)</label>
+                    <textarea id="new-style-prompt4" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Prompt 5 (Success/Clarity)</label>
+                    <textarea id="new-style-prompt5" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Prompt 6 (Transformation)</label>
+                    <textarea id="new-style-prompt6" rows="3"></textarea>
+                </div>
+                <button class="btn btn-primary" onclick="saveStyle()">Save Style</button>
+                <button class="btn btn-secondary" onclick="toggleAddStyle()">Cancel</button>
+            </div>
+        </div>
+
+        <!-- Section 4: Generate Video -->
+        <div class="section">
+            <div class="section-header">
+                <h2 class="section-title">🎬 Generate Video</h2>
+            </div>
+
+            <div id="generation-alerts"></div>
+
+            <!-- Step 1: Script (Optional) -->
+            <div class="card" style="margin-bottom: 20px;">
+                <h3>Step 1: Script Generation (Optional)</h3>
+                <p style="color: #666; margin-bottom: 15px;">Generate AI script or skip if you already have your script</p>
+
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Select Niche</label>
+                        <select id="gen-niche-select">
+                            <option value="">-- Select Niche --</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Video Title</label>
+                        <input type="text" id="gen-title" placeholder="The Zen Trader's Guide">
+                    </div>
+                </div>
+                <button class="btn btn-primary" onclick="generateScript()">🤖 Generate Script with AI</button>
+                <div id="script-status"></div>
+            </div>
+
+            <!-- Step 2: Visual Media -->
+            <div class="card" style="margin-bottom: 20px;">
+                <h3>Step 2: Visual Media</h3>
+                <p style="color: #666; margin-bottom: 15px;">Choose how to create your video visuals</p>
+
+                <div class="radio-group">
+                    <div class="radio-option" onclick="selectMediaOption('ai-images')">
+                        <input type="radio" name="media-option" value="ai-images" id="opt-ai-images">
+                        <label for="opt-ai-images" style="cursor: pointer; margin-left: 10px;">
+                            <strong>🤖 Auto-Generate 6 Images with AI</strong><br>
+                            <small>Uses Replicate to generate 6 images based on your script and style</small>
+                        </label>
+                    </div>
+
+                    <div class="radio-option" onclick="selectMediaOption('manual-images')">
+                        <input type="radio" name="media-option" value="manual-images" id="opt-manual-images">
+                        <label for="opt-manual-images" style="cursor: pointer; margin-left: 10px;">
+                            <strong>📁 Upload Images Manually</strong><br>
+                            <small>Upload any number of images and rank them</small>
+                        </label>
+                    </div>
+
+                    <div class="radio-option" onclick="selectMediaOption('manual-videos')">
+                        <input type="radio" name="media-option" value="manual-videos" id="opt-manual-videos">
+                        <label for="opt-manual-videos" style="cursor: pointer; margin-left: 10px;">
+                            <strong>🎥 Upload Videos Manually</strong><br>
+                            <small>Upload any number of videos and rank them</small>
+                        </label>
+                    </div>
+
+                    <div class="radio-option" onclick="selectMediaOption('mixed')">
+                        <input type="radio" name="media-option" value="mixed" id="opt-mixed">
+                        <label for="opt-mixed" style="cursor: pointer; margin-left: 10px;">
+                            <strong>🎨 Mix Images + Videos</strong><br>
+                            <small>Upload both images and videos, rank them together</small>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- AI Images Option -->
+                <div id="ai-images-section" class="hidden">
+                    <div class="form-group">
+                        <label>Select Image Style</label>
+                        <select id="gen-style-select">
+                            <option value="">-- Select Style --</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" onclick="generateImages()">🎨 Generate 6 Images</button>
+                    <div id="images-status"></div>
+                </div>
+
+                <!-- Manual Images Option -->
+                <div id="manual-images-section" class="hidden">
+                    <div class="upload-area" onclick="document.getElementById('image-upload').click()">
+                        <p>📷 Click to upload images (JPG, PNG, etc.)</p>
+                        <input type="file" id="image-upload" accept="image/*" multiple style="display:none;" onchange="handleImageUpload(event)">
+                    </div>
+                    <div id="uploaded-images-list"></div>
+                </div>
+
+                <!-- Manual Videos Option -->
+                <div id="manual-videos-section" class="hidden">
+                    <div class="upload-area" onclick="document.getElementById('video-upload').click()">
+                        <p>🎥 Click to upload videos (MP4, MOV, etc.)</p>
+                        <input type="file" id="video-upload" accept="video/*" multiple style="display:none;" onchange="handleVideoUpload(event)">
+                    </div>
+                    <div id="uploaded-videos-list"></div>
+                </div>
+
+                <!-- Mixed Option -->
+                <div id="mixed-section" class="hidden">
+                    <div class="grid-2">
+                        <div class="upload-area" onclick="document.getElementById('mixed-image-upload').click()">
+                            <p>📷 Upload Images</p>
+                            <input type="file" id="mixed-image-upload" accept="image/*" multiple style="display:none;" onchange="handleMixedImageUpload(event)">
+                        </div>
+                        <div class="upload-area" onclick="document.getElementById('mixed-video-upload').click()">
+                            <p>🎥 Upload Videos</p>
+                            <input type="file" id="mixed-video-upload" accept="video/*" multiple style="display:none;" onchange="handleMixedVideoUpload(event)">
+                        </div>
+                    </div>
+                    <div id="mixed-media-list"></div>
+                </div>
+            </div>
+
+            <!-- Step 3: Audio -->
+            <div class="card" style="margin-bottom: 20px;">
+                <h3>Step 3: Audio (Voice Narration)</h3>
+                <p style="color: #666; margin-bottom: 15px;">Upload your voice narration audio files (create externally with ElevenLabs, etc.)</p>
+
+                <div class="upload-area" onclick="document.getElementById('audio-upload').click()">
+                    <p>🎤 Click to upload audio files (MP3, WAV, etc.)</p>
+                    <input type="file" id="audio-upload" accept="audio/*" multiple style="display:none;" onchange="handleAudioUpload(event)">
+                </div>
+                <div id="uploaded-audio-list"></div>
+            </div>
+
+            <!-- Step 4: Process -->
+            <div class="card">
+                <h3>Step 4: Create Final Video</h3>
+                <p style="color: #666; margin-bottom: 15px;">Process everything into final video</p>
+
+                <button class="btn btn-success" onclick="processVideo()" style="font-size: 18px; padding: 15px 30px;">
+                    🚀 GENERATE FINAL VIDEO
+                </button>
+
+                <div id="processing-status" class="hidden">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill" style="width: 0%;">0%</div>
+                    </div>
+                    <p id="processing-message"></p>
+                </div>
+
+                <div id="video-result" class="hidden"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="unified-generator.js"></script>
+</body>
+</html>
