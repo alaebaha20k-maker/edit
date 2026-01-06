@@ -16,10 +16,11 @@ class ScriptGenerator:
 
     def __init__(self):
         """Initialize Gemini API"""
-        if not Config.GEMINI_API_KEY:
-            raise ValueError("GEMINI_API_KEY not set in config or environment")
+        api_key = Config.get_gemini_api_key()
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY not set. Configure at /api-config.html or set environment variable")
 
-        genai.configure(api_key=Config.GEMINI_API_KEY)
+        genai.configure(api_key=api_key)
 
         # Configure generation settings
         self.generation_config = {

@@ -16,12 +16,13 @@ class ImageGenerator:
 
     def __init__(self):
         """Initialize Replicate API"""
-        if not Config.REPLICATE_API_TOKEN:
-            raise ValueError("REPLICATE_API_TOKEN not set in config or environment")
+        api_token = Config.get_replicate_api_token()
+        if not api_token:
+            raise ValueError("REPLICATE_API_TOKEN not set. Configure at /api-config.html or set environment variable")
 
         # Set API token
         import os
-        os.environ['REPLICATE_API_TOKEN'] = Config.REPLICATE_API_TOKEN
+        os.environ['REPLICATE_API_TOKEN'] = api_token
 
     def generate_images(self, title: str, script: str, style_id: str) -> List[str]:
         """

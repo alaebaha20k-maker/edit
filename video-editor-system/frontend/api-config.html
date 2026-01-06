@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Configuration - AI Video Generator</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .config-container {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 30px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .config-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .config-header h1 {
+            color: #667eea;
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+        .info-box {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            margin-bottom: 30px;
+            border-radius: 4px;
+        }
+        .info-box h3 {
+            color: #1976d2;
+            margin-bottom: 10px;
+        }
+        .info-box a {
+            color: #1976d2;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .info-box a:hover {
+            text-decoration: underline;
+        }
+        .form-group {
+            margin-bottom: 25px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+            font-size: 16px;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            font-family: 'Courier New', monospace;
+            transition: border-color 0.3s;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .form-group small {
+            display: block;
+            margin-top: 5px;
+            color: #666;
+            font-size: 13px;
+        }
+        .key-input-wrapper {
+            position: relative;
+        }
+        .toggle-visibility {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 20px;
+            color: #666;
+            padding: 5px;
+        }
+        .toggle-visibility:hover {
+            color: #333;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 14px 28px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: #667eea;
+            color: white;
+            flex: 1;
+        }
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+        .btn-secondary {
+            background: #48bb78;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background: #38a169;
+        }
+        .btn-danger {
+            background: #e53e3e;
+            color: white;
+        }
+        .btn-danger:hover {
+            background: #c53030;
+        }
+        .status-message {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .status-success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .status-error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .status-warning {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+        }
+        .config-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        .status-ok {
+            background: #48bb78;
+        }
+        .status-missing {
+            background: #e53e3e;
+        }
+    </style>
+</head>
+<body>
+    <div class="config-container">
+        <div class="config-header">
+            <h1>⚙️ API Configuration</h1>
+            <p style="color: #666;">Configure your AI service API keys</p>
+            <p><a href="/generator.html" style="color: #667eea;">← Back to AI Generator</a></p>
+        </div>
+
+        <div id="status-message" class="status-message"></div>
+
+        <div class="info-box">
+            <h3>🔑 Get Your API Keys:</h3>
+            <p style="margin: 10px 0;">
+                <strong>Gemini API:</strong> <a href="https://aistudio.google.com/app/apikey" target="_blank">https://aistudio.google.com/app/apikey</a>
+            </p>
+            <p style="margin: 10px 0;">
+                <strong>Replicate API:</strong> <a href="https://replicate.com/account/api-tokens" target="_blank">https://replicate.com/account/api-tokens</a>
+            </p>
+            <p style="margin-top: 15px; font-size: 13px; color: #666;">
+                💡 Your API keys are stored securely on your server and never transmitted to external services except when generating content.
+            </p>
+        </div>
+
+        <div id="config-status" class="config-status">
+            <div class="status-indicator status-missing" id="gemini-indicator"></div>
+            <span id="gemini-status">Gemini API: Not configured</span>
+            <div class="status-indicator status-missing" id="replicate-indicator" style="margin-left: 20px;"></div>
+            <span id="replicate-status">Replicate API: Not configured</span>
+        </div>
+
+        <form id="configForm" onsubmit="saveConfig(event)">
+            <div class="form-group">
+                <label for="gemini-key">Gemini API Key</label>
+                <div class="key-input-wrapper">
+                    <input type="password" id="gemini-key" placeholder="AIza...">
+                    <button type="button" class="toggle-visibility" onclick="toggleVisibility('gemini-key')">👁️</button>
+                </div>
+                <small>Used for AI script generation (60,000+ character scripts)</small>
+            </div>
+
+            <div class="form-group">
+                <label for="replicate-token">Replicate API Token</label>
+                <div class="key-input-wrapper">
+                    <input type="password" id="replicate-token" placeholder="r8_...">
+                    <button type="button" class="toggle-visibility" onclick="toggleVisibility('replicate-token')">👁️</button>
+                </div>
+                <small>Used for AI image generation (6 images per video, ~$0.018 per video)</small>
+            </div>
+
+            <div class="btn-group">
+                <button type="submit" class="btn btn-primary">💾 SAVE CONFIGURATION</button>
+                <button type="button" class="btn btn-secondary" onclick="testConnection()">🔍 TEST CONNECTION</button>
+                <button type="button" class="btn btn-danger" onclick="clearConfig()">🗑️ CLEAR KEYS</button>
+            </div>
+        </form>
+
+        <div style="margin-top: 40px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
+            <h3 style="color: #333; margin-bottom: 15px;">ℹ️ About API Keys</h3>
+            <ul style="color: #666; line-height: 1.8;">
+                <li><strong>Security:</strong> Keys are stored in <code>data/api_config.json</code> on your server</li>
+                <li><strong>Persistence:</strong> Keys remain saved even after server restart</li>
+                <li><strong>Privacy:</strong> Keys never leave your server except to call AI services</li>
+                <li><strong>Costs:</strong> Gemini has free tier, Replicate charges ~$0.003 per image</li>
+                <li><strong>Testing:</strong> Use "Test Connection" to verify your keys work</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // Load current configuration on page load
+        window.addEventListener('DOMContentLoaded', async () => {
+            await loadConfig();
+        });
+
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const data = await response.json();
+
+                if (data.gemini_configured) {
+                    document.getElementById('gemini-key').placeholder = '••••••••••••••••••••';
+                    document.getElementById('gemini-indicator').className = 'status-indicator status-ok';
+                    document.getElementById('gemini-status').textContent = 'Gemini API: Configured ✓';
+                }
+
+                if (data.replicate_configured) {
+                    document.getElementById('replicate-token').placeholder = '••••••••••••••••••••';
+                    document.getElementById('replicate-indicator').className = 'status-indicator status-ok';
+                    document.getElementById('replicate-status').textContent = 'Replicate API: Configured ✓';
+                }
+
+                // If both configured, show success message
+                if (data.gemini_configured && data.replicate_configured) {
+                    const statusDiv = document.getElementById('status-message');
+                    statusDiv.className = 'status-message status-success';
+                    statusDiv.textContent = '✅ All API keys configured! You can start generating videos.';
+                    statusDiv.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Error loading config:', error);
+            }
+        }
+
+        function toggleVisibility(inputId) {
+            const input = document.getElementById(inputId);
+            if (input.type === 'password') {
+                input.type = 'text';
+            } else {
+                input.type = 'password';
+            }
+        }
+
+        async function saveConfig(event) {
+            event.preventDefault();
+
+            const statusDiv = document.getElementById('status-message');
+            statusDiv.style.display = 'none';
+
+            const geminiKey = document.getElementById('gemini-key').value.trim();
+            const replicateToken = document.getElementById('replicate-token').value.trim();
+
+            if (!geminiKey && !replicateToken) {
+                statusDiv.className = 'status-message status-error';
+                statusDiv.textContent = '❌ Please enter at least one API key';
+                statusDiv.style.display = 'block';
+                return;
+            }
+
+            const configData = {};
+            if (geminiKey) configData.gemini_api_key = geminiKey;
+            if (replicateToken) configData.replicate_api_token = replicateToken;
+
+            try {
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(configData)
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    statusDiv.className = 'status-message status-success';
+                    statusDiv.textContent = '✅ Configuration saved successfully!';
+                    statusDiv.style.display = 'block';
+
+                    // Clear input fields
+                    document.getElementById('gemini-key').value = '';
+                    document.getElementById('replicate-token').value = '';
+
+                    // Reload config status
+                    await loadConfig();
+
+                    // Scroll to top
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                } else {
+                    statusDiv.className = 'status-message status-error';
+                    statusDiv.textContent = `❌ Error: ${data.error}`;
+                    statusDiv.style.display = 'block';
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message status-error';
+                statusDiv.textContent = `❌ Error: ${error.message}`;
+                statusDiv.style.display = 'block';
+            }
+        }
+
+        async function testConnection() {
+            const statusDiv = document.getElementById('status-message');
+            statusDiv.className = 'status-message status-warning';
+            statusDiv.textContent = '🔍 Testing API connections...';
+            statusDiv.style.display = 'block';
+
+            try {
+                const response = await fetch('/api/config/test');
+                const data = await response.json();
+
+                if (data.gemini_ok && data.replicate_ok) {
+                    statusDiv.className = 'status-message status-success';
+                    statusDiv.textContent = '✅ All API connections working!';
+                } else {
+                    let message = '⚠️ Connection issues: ';
+                    const issues = [];
+                    if (!data.gemini_ok) issues.push('Gemini API failed');
+                    if (!data.replicate_ok) issues.push('Replicate API failed');
+                    statusDiv.className = 'status-message status-warning';
+                    statusDiv.textContent = message + issues.join(', ');
+                }
+                statusDiv.style.display = 'block';
+            } catch (error) {
+                statusDiv.className = 'status-message status-error';
+                statusDiv.textContent = `❌ Test failed: ${error.message}`;
+                statusDiv.style.display = 'block';
+            }
+        }
+
+        async function clearConfig() {
+            if (!confirm('Are you sure you want to clear all API keys? This cannot be undone.')) {
+                return;
+            }
+
+            const statusDiv = document.getElementById('status-message');
+
+            try {
+                const response = await fetch('/api/config', {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    statusDiv.className = 'status-message status-success';
+                    statusDiv.textContent = '✅ All API keys cleared';
+                    statusDiv.style.display = 'block';
+
+                    // Reset status indicators
+                    document.getElementById('gemini-indicator').className = 'status-indicator status-missing';
+                    document.getElementById('gemini-status').textContent = 'Gemini API: Not configured';
+                    document.getElementById('replicate-indicator').className = 'status-indicator status-missing';
+                    document.getElementById('replicate-status').textContent = 'Replicate API: Not configured';
+
+                    // Reset placeholders
+                    document.getElementById('gemini-key').placeholder = 'AIza...';
+                    document.getElementById('replicate-token').placeholder = 'r8_...';
+                } else {
+                    statusDiv.className = 'status-message status-error';
+                    statusDiv.textContent = `❌ Error: ${data.error}`;
+                    statusDiv.style.display = 'block';
+                }
+            } catch (error) {
+                statusDiv.className = 'status-message status-error';
+                statusDiv.textContent = `❌ Error: ${error.message}`;
+                statusDiv.style.display = 'block';
+            }
+        }
+    </script>
+</body>
+</html>

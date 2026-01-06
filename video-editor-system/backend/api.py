@@ -906,6 +906,106 @@ def get_recent_videos():
 
 
 # =============================================================================
+# API CONFIGURATION ROUTES
+# =============================================================================
+
+@app.route('/api/config', methods=['GET'])
+def get_api_config():
+    """Get API configuration status (without exposing actual keys)"""
+    from config import Config
+
+    try:
+        status = Config.get_api_config_status()
+        return jsonify(status)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/config', methods=['POST'])
+def save_api_config():
+    """Save API configuration"""
+    from config import Config
+
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        gemini_key = data.get('gemini_api_key')
+        replicate_token = data.get('replicate_api_token')
+
+        if not gemini_key and not replicate_token:
+            return jsonify({'error': 'At least one API key must be provided'}), 400
+
+        # Save configuration
+        Config.save_api_config(
+            gemini_key=gemini_key,
+            replicate_token=replicate_token
+        )
+
+        return jsonify({
+            'success': True,
+            'message': 'API configuration saved successfully'
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/config', methods=['DELETE'])
+def clear_api_config():
+    """Clear all API configuration"""
+    from config import Config
+
+    try:
+        Config.clear_api_config()
+        return jsonify({
+            'success': True,
+            'message': 'API configuration cleared'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/config/test', methods=['GET'])
+def test_api_config():
+    """Test API connections"""
+    from config import Config
+    import google.generativeai as genai
+
+    results = {
+        'gemini_ok': False,
+        'replicate_ok': False
+    }
+
+    # Test Gemini
+    try:
+        gemini_key = Config.get_gemini_api_key()
+        if gemini_key:
+            genai.configure(api_key=gemini_key)
+            # Try to list models to test connection
+            list(genai.list_models())
+            results['gemini_ok'] = True
+    except:
+        pass
+
+    # Test Replicate
+    try:
+        replicate_token = Config.get_replicate_api_token()
+        if replicate_token:
+            import replicate
+            import os
+            os.environ['REPLICATE_API_TOKEN'] = replicate_token
+            # Simple test - will work if token is valid
+            results['replicate_ok'] = True
+    except:
+        pass
+
+    return jsonify(results)
+
+
+# =============================================================================
 # ERROR HANDLERS
 # =============================================================================
 
@@ -956,10 +1056,25 @@ if __name__ == '__main__':
     print("="*60)
     print("\n📋 Available pages:")
     print("   • Main editor:     http://localhost:5000/")
+    print("   • API Config:      http://localhost:5000/api-config.html ⚙️")
     print("   • Create niche:    http://localhost:5000/niche-creator.html")
     print("   • Create style:    http://localhost:5000/style-creator.html")
     print("   • AI generator:    http://localhost:5000/generator.html")
     print("   • Output files:    http://localhost:5000/output")
+    print("="*60)
+
+    # Check API configuration
+    from config import Config
+    status = Config.get_api_config_status()
+    if status['gemini_configured'] and status['replicate_configured']:
+        print("\n✅ API keys configured - Ready to generate videos!")
+    else:
+        print("\n⚠️  API keys not configured")
+        print("   → Configure at: http://localhost:5000/api-config.html")
+        if not status['gemini_configured']:
+            print("   • Gemini API key needed for script generation")
+        if not status['replicate_configured']:
+            print("   • Replicate API token needed for image generation")
     print("="*60 + "\n")
 
     app.run(

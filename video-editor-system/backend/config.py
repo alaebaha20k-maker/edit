@@ -5,14 +5,101 @@ Handles API keys and system settings
 """
 
 import os
+import json
 from pathlib import Path
 
 class Config:
     """Configuration manager for API keys and paths"""
 
-    # API Keys (set via environment variables)
-    GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
-    REPLICATE_API_TOKEN = os.getenv('REPLICATE_API_TOKEN', '')
+    # Paths (define first so we can use them)
+    BASE_DIR = Path(__file__).parent.parent.resolve()
+    BACKEND_DIR = BASE_DIR / 'backend'
+    DATA_DIR = BASE_DIR / 'data'
+    UPLOADS_DIR = BASE_DIR / 'uploads'
+    OUTPUT_DIR = BASE_DIR / 'output'
+    TEMP_DIR = BASE_DIR / 'temp'
+
+    # API Config file
+    API_CONFIG_FILE = DATA_DIR / 'api_config.json'
+
+    # API Keys - read from saved config file, fallback to environment variables
+    _saved_config = None
+
+    @classmethod
+    def _load_saved_config(cls):
+        """Load API keys from saved config file"""
+        if cls._saved_config is not None:
+            return cls._saved_config
+
+        if cls.API_CONFIG_FILE.exists():
+            try:
+                with open(cls.API_CONFIG_FILE, 'r') as f:
+                    cls._saved_config = json.load(f)
+                    return cls._saved_config
+            except:
+                pass
+
+        cls._saved_config = {}
+        return cls._saved_config
+
+    @classmethod
+    def get_gemini_api_key(cls):
+        """Get Gemini API key from saved config or environment"""
+        saved = cls._load_saved_config()
+        return saved.get('gemini_api_key') or os.getenv('GEMINI_API_KEY', '')
+
+    @classmethod
+    def get_replicate_api_token(cls):
+        """Get Replicate API token from saved config or environment"""
+        saved = cls._load_saved_config()
+        return saved.get('replicate_api_token') or os.getenv('REPLICATE_API_TOKEN', '')
+
+    # For backward compatibility, make them accessible as class attributes
+    GEMINI_API_KEY = property(lambda self: self.get_gemini_api_key())
+    REPLICATE_API_TOKEN = property(lambda self: self.get_replicate_api_token())
+
+    @classmethod
+    def save_api_config(cls, gemini_key=None, replicate_token=None):
+        """Save API keys to config file"""
+        cls.DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Load existing config
+        config = {}
+        if cls.API_CONFIG_FILE.exists():
+            try:
+                with open(cls.API_CONFIG_FILE, 'r') as f:
+                    config = json.load(f)
+            except:
+                pass
+
+        # Update keys (only if provided)
+        if gemini_key:
+            config['gemini_api_key'] = gemini_key
+        if replicate_token:
+            config['replicate_api_token'] = replicate_token
+
+        # Save to file
+        with open(cls.API_CONFIG_FILE, 'w') as f:
+            json.dump(config, f, indent=2)
+
+        # Clear cache so next access reloads
+        cls._saved_config = None
+
+    @classmethod
+    def clear_api_config(cls):
+        """Clear all saved API keys"""
+        if cls.API_CONFIG_FILE.exists():
+            cls.API_CONFIG_FILE.unlink()
+        cls._saved_config = None
+
+    @classmethod
+    def get_api_config_status(cls):
+        """Get status of API configuration"""
+        return {
+            'gemini_configured': bool(cls.get_gemini_api_key()),
+            'replicate_configured': bool(cls.get_replicate_api_token()),
+            'config_file_exists': cls.API_CONFIG_FILE.exists()
+        }
 
     # Gemini Settings
     GEMINI_MODEL = 'gemini-2.0-flash-exp'
@@ -24,14 +111,6 @@ class Config:
     # Replicate Settings
     REPLICATE_MODEL = 'black-forest-labs/flux-schnell'
     REPLICATE_COST_PER_IMAGE = 0.003
-
-    # Paths
-    BASE_DIR = Path(__file__).parent.parent.resolve()
-    BACKEND_DIR = BASE_DIR / 'backend'
-    DATA_DIR = BASE_DIR / 'data'
-    UPLOADS_DIR = BASE_DIR / 'uploads'
-    OUTPUT_DIR = BASE_DIR / 'output'
-    TEMP_DIR = BASE_DIR / 'temp'
 
     # Database files
     NICHES_DB = DATA_DIR / 'niches.json'
@@ -65,11 +144,11 @@ class Config:
         """Validate that required API keys are set"""
         errors = []
 
-        if not cls.GEMINI_API_KEY:
-            errors.append("GEMINI_API_KEY not set. Set environment variable or update config.py")
+        if not cls.get_gemini_api_key():
+            errors.append("GEMINI_API_KEY not set. Configure via web UI at /api-config.html or set environment variable")
 
-        if not cls.REPLICATE_API_TOKEN:
-            errors.append("REPLICATE_API_TOKEN not set. Set environment variable or update config.py")
+        if not cls.get_replicate_api_token():
+            errors.append("REPLICATE_API_TOKEN not set. Configure via web UI at /api-config.html or set environment variable")
 
         return errors
 
@@ -83,8 +162,8 @@ class Config:
             'target_script_length': cls.TARGET_SCRIPT_LENGTH,
             'data_dir': str(cls.DATA_DIR),
             'api_keys_set': {
-                'gemini': bool(cls.GEMINI_API_KEY),
-                'replicate': bool(cls.REPLICATE_API_TOKEN)
+                'gemini': bool(cls.get_gemini_api_key()),
+                'replicate': bool(cls.get_replicate_api_token())
             }
         }
 
