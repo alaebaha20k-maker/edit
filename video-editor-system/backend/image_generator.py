@@ -26,7 +26,8 @@ class ImageGenerator:
 
     def generate_images(self, title: str, script: str, style_id: str) -> List[str]:
         """
-        Generate 6 images for video
+        Generate 6 images for video with rate limit handling
+        For Replicate accounts with < $5 credit: 6 requests per minute max
 
         Args:
             title: Video title
@@ -34,38 +35,100 @@ class ImageGenerator:
             style_id: Image style ID with 6 prompt templates
 
         Returns:
-            List of 6 image URLs
+            List of image URLs (may be less than 6 if some fail)
         """
+        import time
+
         # Get image style
         style = ImageStyleManager.get_style(style_id)
         if not style:
             raise ValueError(f"Image style not found: {style_id}")
 
-        print(f"🎨 Generating {Config.IMAGES_PER_VIDEO} images")
+        print(f"\n🎨 Generating {Config.IMAGES_PER_VIDEO} images")
         print(f"   Style: {style['name']}")
+
+        # CRITICAL: For < $5 accounts, limit is 6 req/min
+        # That's 1 request every 10 seconds minimum
+        DELAY_BETWEEN_REQUESTS = 11  # 11 seconds = safe margin
+
+        print(f"⏱️  Rate limit mode: {DELAY_BETWEEN_REQUESTS}s delay between images")
+        print(f"⏱️  Estimated time: ~{DELAY_BETWEEN_REQUESTS * (Config.IMAGES_PER_VIDEO - 1)}s total\n")
 
         # Extract variables from title and script
         variables = self._extract_variables(title, script)
-        print(f"   Variables extracted: {len(variables)} items")
+        print(f"   Variables extracted: {len(variables)} items\n")
 
-        # Generate each image
+        # Generate each image with rate limiting
         image_urls = []
         for i, prompt_template in enumerate(style['prompts']):
             # Replace variables in prompt
             final_prompt = self._replace_variables(prompt_template, variables)
 
-            print(f"   Generating image {i+1}/{Config.IMAGES_PER_VIDEO}...")
-            print(f"     Prompt: {final_prompt[:100]}...")
+            print(f"🎨 Generating image {i+1}/{Config.IMAGES_PER_VIDEO}...")
+            print(f"   Prompt: {final_prompt[:80]}...")
 
-            # Generate image
-            image_url = self._generate_single_image(final_prompt)
-            image_urls.append(image_url)
+            # Generate image with retry logic
+            try:
+                image_url = self._generate_single_image_with_retry(final_prompt)
+                image_urls.append(image_url)
+                print(f"   ✅ Generated: {image_url[:60]}...")
+            except Exception as e:
+                print(f"   ❌ Failed: {str(e)}")
+                print(f"   ⚠️  Continuing with remaining images...")
 
-            print(f"     ✓ Generated: {image_url[:60]}...")
+            # Wait between requests to respect rate limit (except after last image)
+            if i < len(style['prompts']) - 1:
+                print(f"   ⏳ Waiting {DELAY_BETWEEN_REQUESTS}s before next image...\n")
+                time.sleep(DELAY_BETWEEN_REQUESTS)
 
-        print(f"   ✅ All {Config.IMAGES_PER_VIDEO} images generated!")
+        print(f"\n✅ Generated {len(image_urls)}/{Config.IMAGES_PER_VIDEO} images successfully!")
+
+        if len(image_urls) == 0:
+            raise Exception("Failed to generate any images. Please check your Replicate API token and rate limits.")
 
         return image_urls
+
+    def _generate_single_image_with_retry(self, prompt: str, max_retries: int = 3) -> str:
+        """
+        Generate single image with retry logic for rate limits
+
+        Args:
+            prompt: Image generation prompt
+            max_retries: Maximum number of retries for 429 errors
+
+        Returns:
+            Image URL
+        """
+        import time
+        import re
+
+        retry_count = 0
+
+        while retry_count < max_retries:
+            try:
+                return self._generate_single_image(prompt)
+
+            except Exception as e:
+                error_str = str(e)
+
+                # Check if it's a rate limit error (429)
+                if '429' in error_str or 'throttled' in error_str.lower() or 'rate limit' in error_str.lower():
+                    retry_count += 1
+
+                    # Extract wait time from error message
+                    match = re.search(r'resets in ~(\d+)s', error_str)
+                    wait_time = int(match.group(1)) + 2 if match else 15
+
+                    if retry_count < max_retries:
+                        print(f"   ⏳ Rate limit hit! Waiting {wait_time}s (retry {retry_count}/{max_retries})...")
+                        time.sleep(wait_time)
+                    else:
+                        raise Exception(f"Rate limit exceeded after {max_retries} retries. Please wait a minute and try again.")
+                else:
+                    # Other error - don't retry
+                    raise
+
+        raise Exception(f"Failed after {max_retries} retries")
 
     def _generate_single_image(self, prompt: str) -> str:
         """Generate single image using Replicate"""

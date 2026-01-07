@@ -422,7 +422,7 @@ async function generateImages() {
         return;
     }
 
-    statusDiv.innerHTML = '<div class="alert alert-info">🎨 Generating 6 images with Replicate... This may take 1-2 minutes...</div>';
+    statusDiv.innerHTML = '<div class="alert alert-info">🎨 Generating 6 images with Replicate...<br>⏱️ Due to rate limits, this will take ~60 seconds<br>Please be patient while we generate your images!</div>';
 
     try {
         const response = await fetch('/api/generate-images', {
