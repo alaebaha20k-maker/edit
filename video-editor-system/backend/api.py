@@ -290,25 +290,58 @@ def get_job_status(job_id):
 
 @app.route('/api/download/<path:filename>', methods=['GET'])
 def download_file(filename):
-    """Download output file (supports subdirectories)"""
+    """Download output file with debug logging"""
     try:
-        # Check if it's a script file (starts with 'script_')
-        if filename.startswith('script_'):
-            scripts_dir = os.path.join(OUTPUT_FOLDER, 'scripts')
-            return send_from_directory(
-                scripts_dir,
-                filename,
-                as_attachment=True
-            )
+        filepath = os.path.join(OUTPUT_FOLDER, filename)
+
+        print(f"\n{'='*60}")
+        print(f"📥 DOWNLOAD REQUEST")
+        print(f"{'='*60}")
+        print(f"Filename: {filename}")
+        print(f"Full path: {filepath}")
+        print(f"OUTPUT_FOLDER: {OUTPUT_FOLDER}")
+        print(f"Current dir: {os.getcwd()}")
+        print(f"File exists: {os.path.exists(filepath)}")
+
+        if os.path.exists(filepath):
+            file_size = os.path.getsize(filepath)
+            print(f"File size: {file_size:,} bytes")
+            print(f"File readable: {os.access(filepath, os.R_OK)}")
+            print(f"✅ Sending file...")
         else:
-            # Regular output file
-            return send_from_directory(
-                OUTPUT_FOLDER,
-                filename,
-                as_attachment=True
-            )
-    except FileNotFoundError:
+            print(f"❌ File not found!")
+            # List files in output directory
+            if os.path.exists(OUTPUT_FOLDER):
+                files = os.listdir(OUTPUT_FOLDER)
+                print(f"\nFiles in {OUTPUT_FOLDER}:")
+                for f in files:
+                    print(f"  - {f}")
+
+        print(f"{'='*60}\n")
+
+        # Determine mimetype based on file extension
+        if filename.endswith('.txt'):
+            mimetype = 'text/plain'
+        elif filename.endswith('.mp4'):
+            mimetype = 'video/mp4'
+        else:
+            mimetype = None
+
+        return send_from_directory(
+            OUTPUT_FOLDER,
+            filename,
+            as_attachment=True,
+            mimetype=mimetype
+        )
+
+    except FileNotFoundError as e:
+        print(f"❌ FileNotFoundError: {e}")
         return jsonify({'error': 'File not found'}), 404
+    except Exception as e:
+        print(f"❌ Download error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/output', methods=['GET'])
@@ -748,16 +781,18 @@ def generate_script():
         generator = ScriptGenerator()
         result = generator.generate_script(title, niche_id, length=length, verbose=True)
 
-        # SAVE SCRIPT TO FILE (CRITICAL FIX)
-        scripts_dir = os.path.join(Config.OUTPUT_DIR, 'scripts')
-        os.makedirs(scripts_dir, exist_ok=True)
-
+        # SAVE SCRIPT TO FILE - Use OUTPUT_FOLDER directly (same as videos)
         timestamp = int(time.time())
         script_filename = f"script_{timestamp}.txt"
-        script_path = os.path.join(scripts_dir, script_filename)
+        script_path = os.path.join(OUTPUT_FOLDER, script_filename)
+
+        print(f"\n📝 Saving script to: {script_path}")
 
         # Write script with header
         with open(script_path, 'w', encoding='utf-8') as f:
+            f.write(f"{'='*70}\n")
+            f.write(f"  SCRIPT - {title}\n")
+            f.write(f"{'='*70}\n")
             f.write(f"Title: {title}\n")
             f.write(f"Niche: {niche['name']}\n")
             f.write(f"Language: {niche['language']}\n")
@@ -766,8 +801,12 @@ def generate_script():
             f.write(f"Words: {result['stats']['words']:,}\n")
             f.write(f"Quality: {result.get('quality', 'N/A')}\n")
             f.write(f"Narrative Approach: {result.get('approach', 'N/A')}\n")
-            f.write(f"{'='*60}\n\n")
+            f.write(f"{'='*70}\n\n")
             f.write(result['script'])
+
+        print(f"✅ Script saved successfully!")
+        print(f"   File: {script_filename}")
+        print(f"   Size: {os.path.getsize(script_path):,} bytes")
 
         return jsonify({
             'success': True,
