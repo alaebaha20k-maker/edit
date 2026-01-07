@@ -288,15 +288,25 @@ def get_job_status(job_id):
     return jsonify(processing_jobs[job_id])
 
 
-@app.route('/api/download/<filename>', methods=['GET'])
+@app.route('/api/download/<path:filename>', methods=['GET'])
 def download_file(filename):
-    """Download output file"""
+    """Download output file (supports subdirectories)"""
     try:
-        return send_from_directory(
-            OUTPUT_FOLDER,
-            filename,
-            as_attachment=True
-        )
+        # Check if it's a script file (starts with 'script_')
+        if filename.startswith('script_'):
+            scripts_dir = os.path.join(OUTPUT_FOLDER, 'scripts')
+            return send_from_directory(
+                scripts_dir,
+                filename,
+                as_attachment=True
+            )
+        else:
+            # Regular output file
+            return send_from_directory(
+                OUTPUT_FOLDER,
+                filename,
+                as_attachment=True
+            )
     except FileNotFoundError:
         return jsonify({'error': 'File not found'}), 404
 
@@ -702,6 +712,10 @@ def generate_script():
     """Generate AI script using Gemini - EXACT HTML system"""
     from script_generator import ScriptGenerator
     from config import Config
+    from niche_manager import NicheManager
+    from datetime import datetime
+    import os
+    import time
 
     try:
         data = request.get_json()
@@ -725,13 +739,41 @@ def generate_script():
         if any('GEMINI' in e for e in errors):
             return jsonify({'error': 'Gemini API key not configured'}), 500
 
+        # Get niche info for header
+        niche = NicheManager.get_niche(niche_id)
+        if not niche:
+            return jsonify({'error': 'Niche not found'}), 404
+
         # Generate script with EXACT HTML system
         generator = ScriptGenerator()
         result = generator.generate_script(title, niche_id, length=length, verbose=True)
 
+        # SAVE SCRIPT TO FILE (CRITICAL FIX)
+        scripts_dir = os.path.join(Config.OUTPUT_DIR, 'scripts')
+        os.makedirs(scripts_dir, exist_ok=True)
+
+        timestamp = int(time.time())
+        script_filename = f"script_{timestamp}.txt"
+        script_path = os.path.join(scripts_dir, script_filename)
+
+        # Write script with header
+        with open(script_path, 'w', encoding='utf-8') as f:
+            f.write(f"Title: {title}\n")
+            f.write(f"Niche: {niche['name']}\n")
+            f.write(f"Language: {niche['language']}\n")
+            f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Characters: {result['stats']['chars']:,}\n")
+            f.write(f"Words: {result['stats']['words']:,}\n")
+            f.write(f"Quality: {result.get('quality', 'N/A')}\n")
+            f.write(f"Narrative Approach: {result.get('approach', 'N/A')}\n")
+            f.write(f"{'='*60}\n\n")
+            f.write(result['script'])
+
         return jsonify({
             'success': True,
             'script': result['script'],
+            'script_file': script_path,
+            'script_filename': script_filename,
             'length': result['stats']['chars'],
             'words': result['stats']['words'],
             'quality': result['quality'],

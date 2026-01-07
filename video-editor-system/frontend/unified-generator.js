@@ -350,7 +350,20 @@ async function generateScript() {
         if (data.success) {
             generatedScript = data.script;
             const words = Math.round(data.length / 4.5); // Approximate word count
-            statusDiv.innerHTML = `<div class="alert alert-success">✅ Script generated! ${data.length.toLocaleString()} characters (~${words.toLocaleString()} words)<br>Quality: ${data.quality || 'GOOD'} | Narrative: ${data.approach || 'N/A'}</div>`;
+
+            // Create success message with download button
+            statusDiv.innerHTML = `
+                <div class="alert alert-success">
+                    ✅ Script generated! ${data.length.toLocaleString()} characters (~${words.toLocaleString()} words)<br>
+                    Quality: ${data.quality || 'GOOD'} | Narrative: ${data.approach || 'N/A'}<br>
+                    <a href="/api/download/${data.script_filename}"
+                       class="btn btn-primary"
+                       style="margin-top: 10px; display: inline-block; text-decoration: none;"
+                       download="${data.script_filename}">
+                        📥 Download Script
+                    </a>
+                </div>
+            `;
         } else {
             statusDiv.innerHTML = `<div class="alert alert-error">❌ Error: ${data.error}</div>`;
         }

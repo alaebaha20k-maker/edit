@@ -81,16 +81,31 @@ class ImageGenerator:
                 }
             )
 
-            # Output is a list of URLs
-            if isinstance(output, list) and len(output) > 0:
-                return output[0]
-            elif isinstance(output, str):
+            # Handle different output types from Replicate
+            # FileOutput objects are iterable but not subscriptable
+            if hasattr(output, '__iter__') and not isinstance(output, str):
+                # It's iterable (list, generator, or FileOutput iterator)
+                try:
+                    # Try to get first item
+                    for item in output:
+                        # Convert to string (URL)
+                        return str(item)
+                except Exception:
+                    pass
+
+            # If it's already a string (URL), return it
+            if isinstance(output, str):
                 return output
-            else:
-                raise ValueError(f"Unexpected output format: {type(output)}")
+
+            # Try to convert to string
+            try:
+                return str(output)
+            except Exception:
+                raise ValueError(f"Unexpected output format: {type(output).__name__}")
 
         except Exception as e:
             print(f"     ✗ Error generating image: {e}")
+            print(f"     Output type: {type(output).__name__ if 'output' in locals() else 'N/A'}")
             raise
 
     def _extract_variables(self, title: str, script: str) -> Dict[str, str]:
