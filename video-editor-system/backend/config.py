@@ -101,12 +101,15 @@ class Config:
             'config_file_exists': cls.API_CONFIG_FILE.exists()
         }
 
-    # Gemini Settings
-    GEMINI_MODEL = 'gemini-2.0-flash-exp'
-    GEMINI_TEMPERATURE = 0.85
-    GEMINI_MAX_TOKENS = 8192
-    GEMINI_TOP_P = 0.92
-    GEMINI_TOP_K = 35
+    # Gemini Settings - EXACT from HTML reference
+    GEMINI_MODEL = 'gemini-2.5-flash'
+    GEMINI_MAX_TOKENS = 65536  # EXACT from HTML
+    GEMINI_TOP_P = 0.92  # EXACT from HTML
+    GEMINI_TOP_K = 35  # EXACT from HTML
+    # Temperature varies by part: 0.90 (part 1), 0.85 (part 2), 0.80 (part 3)
+    GEMINI_TEMPERATURE_PART1 = 0.90
+    GEMINI_TEMPERATURE_PART2 = 0.85
+    GEMINI_TEMPERATURE_PART3 = 0.80
 
     # Replicate Settings
     REPLICATE_MODEL = 'black-forest-labs/flux-schnell'
@@ -121,10 +124,13 @@ class Config:
     IMAGES_PER_VIDEO = 6
     IMAGE_DURATION_SECONDS = 5.0  # Duration for each image in video
 
-    # Script generation settings
-    TARGET_SCRIPT_LENGTH = 60000  # Target characters for script
-    MIN_SCRIPT_LENGTH = 50000
-    MAX_SCRIPT_LENGTH = 70000
+    # Script generation settings - EXACT from HTML reference
+    # Script length options: 30K, 60K, 100K (ONLY these values allowed)
+    SCRIPT_LENGTH_MEDIUM = 30000  # ~6,500 words, 20 min video
+    SCRIPT_LENGTH_FULL = 60000  # ~13,000 words, 45 min video [DEFAULT]
+    SCRIPT_LENGTH_EPIC = 100000  # ~22,000 words, 70 min video
+    TARGET_SCRIPT_LENGTH = SCRIPT_LENGTH_FULL  # Default
+    VALID_SCRIPT_LENGTHS = [30000, 60000, 100000]
 
     @classmethod
     def ensure_directories(cls):

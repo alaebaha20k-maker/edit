@@ -359,6 +359,32 @@
                         <input type="text" id="gen-title" placeholder="The Zen Trader's Guide">
                     </div>
                 </div>
+                <div class="form-group">
+                    <label>Script Length</label>
+                    <div class="radio-group" style="display: flex; gap: 15px; flex-wrap: wrap;">
+                        <div class="radio-option" style="flex: 1; min-width: 200px;">
+                            <input type="radio" name="script-length" value="30000" id="length-30k">
+                            <label for="length-30k" style="cursor: pointer; margin-left: 8px;">
+                                <strong>📝 Medium Script (30K)</strong><br>
+                                <small style="color: #666;">~6,500 words, 20 min video</small>
+                            </label>
+                        </div>
+                        <div class="radio-option" style="flex: 1; min-width: 200px;">
+                            <input type="radio" name="script-length" value="60000" id="length-60k" checked>
+                            <label for="length-60k" style="cursor: pointer; margin-left: 8px;">
+                                <strong>📖 Full Script (60K)</strong> [DEFAULT]<br>
+                                <small style="color: #666;">~13,000 words, 45 min video</small>
+                            </label>
+                        </div>
+                        <div class="radio-option" style="flex: 1; min-width: 200px;">
+                            <input type="radio" name="script-length" value="100000" id="length-100k">
+                            <label for="length-100k" style="cursor: pointer; margin-left: 8px;">
+                                <strong>📚 Epic Script (100K)</strong><br>
+                                <small style="color: #666;">~22,000 words, 70 min video</small>
+                            </label>
+                        </div>
+                    </div>
+                </div>
                 <button class="btn btn-primary" onclick="generateScript()">🤖 Generate Script with AI</button>
                 <div id="script-status"></div>
             </div>

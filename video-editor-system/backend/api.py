@@ -699,7 +699,7 @@ def manage_image_style(style_id):
 
 @app.route('/api/generate-script', methods=['POST'])
 def generate_script():
-    """Generate AI script using Gemini"""
+    """Generate AI script using Gemini - EXACT HTML system"""
     from script_generator import ScriptGenerator
     from config import Config
 
@@ -711,23 +711,33 @@ def generate_script():
 
         title = data.get('title')
         niche_id = data.get('niche_id')
+        length = data.get('length', 60000)  # Default to 60K if not provided
 
         if not title or not niche_id:
             return jsonify({'error': 'Missing required fields: title, niche_id'}), 400
+
+        # Validate length (must be 30K, 60K, or 100K)
+        if length not in Config.VALID_SCRIPT_LENGTHS:
+            return jsonify({'error': f'Invalid length. Must be one of: {Config.VALID_SCRIPT_LENGTHS}'}), 400
 
         # Validate API key
         errors = Config.validate_api_keys()
         if any('GEMINI' in e for e in errors):
             return jsonify({'error': 'Gemini API key not configured'}), 500
 
-        # Generate script
+        # Generate script with EXACT HTML system
         generator = ScriptGenerator()
-        script = generator.generate_script(title, niche_id)
+        result = generator.generate_script(title, niche_id, length=length, verbose=True)
 
         return jsonify({
             'success': True,
-            'script': script,
-            'length': len(script)
+            'script': result['script'],
+            'length': result['stats']['chars'],
+            'words': result['stats']['words'],
+            'quality': result['quality'],
+            'approach': result['approach'],
+            'time': result['stats']['time'],
+            'issues': result.get('issues', [])
         })
 
     except Exception as e:

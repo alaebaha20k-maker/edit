@@ -321,6 +321,10 @@ async function generateScript() {
     const title = document.getElementById('gen-title').value.trim();
     const statusDiv = document.getElementById('script-status');
 
+    // Get selected script length (30K, 60K, or 100K)
+    const lengthRadio = document.querySelector('input[name="script-length"]:checked');
+    const length = lengthRadio ? parseInt(lengthRadio.value) : 60000; // Default 60K
+
     if (!nicheId) {
         statusDiv.innerHTML = '<div class="alert alert-error">Please select a niche</div>';
         return;
@@ -331,20 +335,22 @@ async function generateScript() {
         return;
     }
 
-    statusDiv.innerHTML = '<div class="alert alert-info">🤖 Generating script with Gemini AI... This may take 1-2 minutes...</div>';
+    const lengthLabel = length === 30000 ? 'Medium (30K)' : length === 100000 ? 'Epic (100K)' : 'Full (60K)';
+    statusDiv.innerHTML = `<div class="alert alert-info">🤖 Generating ${lengthLabel} script with Gemini AI... This may take 1-2 minutes...</div>`;
 
     try {
         const response = await fetch('/api/generate-script', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title, niche_id: nicheId })
+            body: JSON.stringify({ title, niche_id: nicheId, length })
         });
 
         const data = await response.json();
 
         if (data.success) {
             generatedScript = data.script;
-            statusDiv.innerHTML = `<div class="alert alert-success">✅ Script generated! (${data.length} characters)</div>`;
+            const words = Math.round(data.length / 4.5); // Approximate word count
+            statusDiv.innerHTML = `<div class="alert alert-success">✅ Script generated! ${data.length.toLocaleString()} characters (~${words.toLocaleString()} words)<br>Quality: ${data.quality || 'GOOD'} | Narrative: ${data.approach || 'N/A'}</div>`;
         } else {
             statusDiv.innerHTML = `<div class="alert alert-error">❌ Error: ${data.error}</div>`;
         }
