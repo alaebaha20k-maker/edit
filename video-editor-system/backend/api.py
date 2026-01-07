@@ -779,7 +779,8 @@ def generate_script():
             'quality': result['quality'],
             'approach': result['approach'],
             'time': result['stats']['time'],
-            'issues': result.get('issues', [])
+            'issues': result.get('issues', []),
+            'suggestions': result.get('suggestions', [])
         })
 
     except Exception as e:

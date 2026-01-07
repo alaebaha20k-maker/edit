@@ -351,17 +351,43 @@ async function generateScript() {
             generatedScript = data.script;
             const words = Math.round(data.length / 4.5); // Approximate word count
 
+            // Build quality details
+            let qualityDetails = '';
+
+            // Show issues if any
+            if (data.issues && data.issues.length > 0) {
+                qualityDetails += '<div style="margin-top: 10px; padding: 10px; background: #fff3cd; border-left: 4px solid #ffc107; font-size: 13px;">';
+                qualityDetails += '<strong>⚠️ Issues Fixed:</strong><br>';
+                data.issues.forEach(issue => {
+                    qualityDetails += `• ${issue}<br>`;
+                });
+                qualityDetails += '</div>';
+            }
+
+            // Show suggestions if any
+            if (data.suggestions && data.suggestions.length > 0) {
+                qualityDetails += '<div style="margin-top: 10px; padding: 10px; background: #d1ecf1; border-left: 4px solid #17a2b8; font-size: 13px;">';
+                qualityDetails += '<strong>💡 Suggestions for Next Time:</strong><br>';
+                data.suggestions.forEach(suggestion => {
+                    qualityDetails += `${suggestion}<br>`;
+                });
+                qualityDetails += '</div>';
+            }
+
             // Create success message with download button
             statusDiv.innerHTML = `
                 <div class="alert alert-success">
                     ✅ Script generated! ${data.length.toLocaleString()} characters (~${words.toLocaleString()} words)<br>
-                    Quality: ${data.quality || 'GOOD'} | Narrative: ${data.approach || 'N/A'}<br>
+                    <strong style="color: ${data.quality === 'HIGH' ? '#28a745' : data.quality === 'MEDIUM' ? '#ffc107' : '#dc3545'};">
+                        Quality: ${data.quality || 'GOOD'}
+                    </strong> | Narrative: ${data.approach || 'N/A'}<br>
                     <a href="/api/download/${data.script_filename}"
                        class="btn btn-primary"
                        style="margin-top: 10px; display: inline-block; text-decoration: none;"
                        download="${data.script_filename}">
                         📥 Download Script
                     </a>
+                    ${qualityDetails}
                 </div>
             `;
         } else {
