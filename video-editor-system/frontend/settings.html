@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⚙️ Settings - AI Video Generator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+            animation: fadeIn 0.6s ease;
+        }
+
+        .header h1 {
+            font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+
+        .header p {
+            font-size: 18px;
+            opacity: 0.9;
+        }
+
+        /* Navigation */
+        .nav-links {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-bottom: 30px;
+        }
+
+        .nav-links a {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        .nav-links a:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        /* Main Card */
+        .main-card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+            animation: slideUp 0.6s ease;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 16px;
+            color: #666;
+            transition: all 0.3s ease;
+            border-bottom: 3px solid transparent;
+        }
+
+        .tab:hover {
+            background: #f0f1f3;
+            color: #667eea;
+        }
+
+        .tab.active {
+            color: #667eea;
+            background: white;
+            border-bottom: 3px solid #667eea;
+        }
+
+        /* Tab Content */
+        .tab-content {
+            padding: 40px;
+            display: none;
+            animation: fadeIn 0.4s ease;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Form Sections */
+        .form-section {
+            margin-bottom: 30px;
+        }
+
+        .form-section h3 {
+            color: #333;
+            font-size: 20px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .form-section p {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+
+        /* Input Groups */
+        .input-group {
+            margin-bottom: 25px;
+        }
+
+        .input-group label {
+            display: block;
+            color: #333;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .input-group input,
+        .input-group textarea {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            transition: all 0.3s ease;
+        }
+
+        .input-group input:focus,
+        .input-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .input-group textarea {
+            resize: vertical;
+            min-height: 200px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+
+        .input-group small {
+            display: block;
+            color: #999;
+            margin-top: 5px;
+            font-size: 12px;
+        }
+
+        /* API Key Status Indicator */
+        .api-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+
+        .api-status.configured {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .api-status.not-configured {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #6b7280;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #4b5563;
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 15px;
+            margin-top: 30px;
+        }
+
+        /* Voice Cards */
+        .voice-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .voice-card {
+            background: #f8f9fa;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .voice-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+        }
+
+        .voice-card.selected {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.05);
+        }
+
+        .voice-card h4 {
+            color: #333;
+            margin-bottom: 5px;
+            font-size: 18px;
+        }
+
+        .voice-card .voice-info {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        .voice-card .voice-description {
+            color: #888;
+            font-size: 13px;
+            margin-bottom: 15px;
+        }
+
+        .voice-card audio {
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        /* Alerts */
+        .alert {
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+            animation: slideDown 0.3s ease;
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .alert-success {
+            background: #d1fae5;
+            color: #065f46;
+            border: 1px solid #10b981;
+        }
+
+        .alert-error {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #ef4444;
+        }
+
+        .alert-info {
+            background: #dbeafe;
+            color: #1e40af;
+            border: 1px solid #3b82f6;
+        }
+
+        /* Loading Spinner */
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Range Slider */
+        .range-container {
+            margin-top: 10px;
+        }
+
+        .range-container input[type="range"] {
+            width: 100%;
+            height: 6px;
+            border-radius: 5px;
+            background: #e0e0e0;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        .range-container input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #667eea;
+            cursor: pointer;
+        }
+
+        .range-container input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #667eea;
+            cursor: pointer;
+            border: none;
+        }
+
+        .range-value {
+            display: inline-block;
+            margin-left: 10px;
+            font-weight: 600;
+            color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>⚙️ Settings</h1>
+            <p>Configure API keys, generation formulas, and voice settings</p>
+        </div>
+
+        <!-- Navigation -->
+        <div class="nav-links">
+            <a href="/">🎬 Video Editor</a>
+            <a href="/generator.html">🤖 AI Generator</a>
+            <a href="/output">📁 Output Files</a>
+        </div>
+
+        <!-- Main Card -->
+        <div class="main-card">
+            <!-- Tabs -->
+            <div class="tabs">
+                <div class="tab active" data-tab="api-keys">🔑 API Keys</div>
+                <div class="tab" data-tab="formulas">📝 Formulas</div>
+                <div class="tab" data-tab="voices">🎤 Voice Settings</div>
+            </div>
+
+            <!-- Tab 1: API Keys -->
+            <div class="tab-content active" id="api-keys">
+                <div id="alert-api-keys" class="alert"></div>
+
+                <div class="form-section">
+                    <h3>🤖 Gemini API Key
+                        <span id="status-gemini" class="api-status not-configured">Not Configured</span>
+                    </h3>
+                    <p>Required for AI script generation and title generation</p>
+                    <div class="input-group">
+                        <label for="gemini-key">Gemini API Key</label>
+                        <input type="password" id="gemini-key" placeholder="AIza...">
+                        <small>Get your key from: <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a></small>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3>🎨 Replicate API Token
+                        <span id="status-replicate" class="api-status not-configured">Not Configured</span>
+                    </h3>
+                    <p>Required for AI image generation (Flux model)</p>
+                    <div class="input-group">
+                        <label for="replicate-token">Replicate API Token</label>
+                        <input type="password" id="replicate-token" placeholder="r8_...">
+                        <small>Get your token from: <a href="https://replicate.com/account/api-tokens" target="_blank">Replicate Dashboard</a></small>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3>🎤 Inworld AI API Key
+                        <span id="status-inworld" class="api-status not-configured">Optional</span>
+                    </h3>
+                    <p>Optional: For AI voice generation (text-to-speech)</p>
+                    <div class="input-group">
+                        <label for="inworld-key">Inworld AI API Key (Base64 Credential)</label>
+                        <input type="password" id="inworld-key" placeholder="Base64 encoded credential">
+                        <small>Get your key from: <a href="https://studio.inworld.ai/" target="_blank">Inworld Studio</a></small>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3>📸 Pexels API Key
+                        <span id="status-pexels" class="api-status not-configured">Optional</span>
+                    </h3>
+                    <p>Optional: For stock footage and photos</p>
+                    <div class="input-group">
+                        <label for="pexels-key">Pexels API Key</label>
+                        <input type="password" id="pexels-key" placeholder="Pexels API key">
+                        <small>Get your key from: <a href="https://www.pexels.com/api/" target="_blank">Pexels API</a></small>
+                    </div>
+                </div>
+
+                <div class="button-group">
+                    <button class="btn btn-primary" id="save-api-keys">
+                        💾 Save API Keys
+                    </button>
+                    <button class="btn btn-secondary" id="show-keys">
+                        👁️ Show/Hide Keys
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tab 2: Formulas -->
+            <div class="tab-content" id="formulas">
+                <div id="alert-formulas" class="alert"></div>
+
+                <div class="form-section">
+                    <h3>📌 Title Generation Formula</h3>
+                    <p>Customize how AI generates video titles. Use {topic} as placeholder.</p>
+                    <div class="input-group">
+                        <textarea id="title-formula" placeholder="Loading..."></textarea>
+                        <small>Template for Gemini to generate engaging video titles</small>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3>📖 Script Generation Formula</h3>
+                    <p>Customize how AI generates video scripts. Use {topic}, {target_length}, {word_count} as placeholders.</p>
+                    <div class="input-group">
+                        <textarea id="script-formula" placeholder="Loading..."></textarea>
+                        <small>Template for Gemini to generate comprehensive video scripts</small>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3>🎨 Image Prompt Generation Formula</h3>
+                    <p>Customize how AI generates image prompts. Use {topic}, {count}, {style} as placeholders.</p>
+                    <div class="input-group">
+                        <textarea id="image-formula" placeholder="Loading..."></textarea>
+                        <small>Template for Gemini to generate image prompts for Flux/Replicate</small>
+                    </div>
+                </div>
+
+                <div class="button-group">
+                    <button class="btn btn-primary" id="save-formulas">
+                        💾 Save Formulas
+                    </button>
+                    <button class="btn btn-secondary" id="reset-formulas">
+                        🔄 Reset to Defaults
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tab 3: Voice Settings -->
+            <div class="tab-content" id="voices">
+                <div id="alert-voices" class="alert"></div>
+
+                <div class="form-section">
+                    <h3>🎤 Default Voice</h3>
+                    <p>Select your preferred voice for AI text-to-speech generation</p>
+
+                    <h4 style="margin-top: 20px; color: #666;">English Voices (US)</h4>
+                    <div class="voice-grid" id="voices-en"></div>
+
+                    <h4 style="margin-top: 30px; color: #666;">French Voices (France)</h4>
+                    <div class="voice-grid" id="voices-fr"></div>
+                </div>
+
+                <div class="form-section">
+                    <h3>⚡ Speaking Rate</h3>
+                    <p>Adjust the speed of voice generation</p>
+                    <div class="range-container">
+                        <input type="range" id="speaking-rate" min="0.8" max="1.5" step="0.1" value="1.0">
+                        <span class="range-value" id="speaking-rate-value">1.0x</span>
+                    </div>
+                    <small>0.8x = Slower, 1.0x = Normal, 1.5x = Faster</small>
+                </div>
+
+                <div class="button-group">
+                    <button class="btn btn-primary" id="save-voice-settings">
+                        💾 Save Voice Settings
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                const targetTab = tab.dataset.tab;
+
+                // Update active tab
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+
+                // Update active content
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+                document.getElementById(targetTab).classList.add('active');
+            });
+        });
+
+        // Show alert
+        function showAlert(section, message, type = 'success') {
+            const alert = document.getElementById(`alert-${section}`);
+            alert.className = `alert alert-${type} show`;
+            alert.textContent = message;
+
+            setTimeout(() => {
+                alert.classList.remove('show');
+            }, 5000);
+        }
+
+        // Load settings on page load
+        async function loadSettings() {
+            try {
+                const response = await fetch('/api/settings');
+                const data = await response.json();
+
+                if (data.success) {
+                    const settings = data.settings;
+
+                    // Update API key status indicators
+                    updateStatusIndicator('gemini', settings.api_keys.gemini.configured);
+                    updateStatusIndicator('replicate', settings.api_keys.replicate.configured);
+                    updateStatusIndicator('inworld', settings.api_keys.inworld.configured);
+                    updateStatusIndicator('pexels', settings.api_keys.pexels.configured);
+                }
+            } catch (error) {
+                console.error('Error loading settings:', error);
+            }
+        }
+
+        // Update status indicator
+        function updateStatusIndicator(key, configured) {
+            const indicator = document.getElementById(`status-${key}`);
+            if (configured) {
+                indicator.className = 'api-status configured';
+                indicator.textContent = '✓ Configured';
+            } else {
+                indicator.className = 'api-status not-configured';
+                indicator.textContent = key === 'gemini' || key === 'replicate' ? 'Required' : 'Optional';
+            }
+        }
+
+        // Save API Keys
+        document.getElementById('save-api-keys').addEventListener('click', async () => {
+            const gemini = document.getElementById('gemini-key').value;
+            const replicate = document.getElementById('replicate-token').value;
+            const inworld = document.getElementById('inworld-key').value;
+            const pexels = document.getElementById('pexels-key').value;
+
+            const button = document.getElementById('save-api-keys');
+            button.disabled = true;
+            button.innerHTML = '<div class="spinner"></div> Saving...';
+
+            try {
+                const response = await fetch('/api/settings/api-keys', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ gemini, replicate, inworld, pexels })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showAlert('api-keys', '✓ API keys saved successfully!', 'success');
+
+                    // Update status indicators
+                    if (gemini) updateStatusIndicator('gemini', true);
+                    if (replicate) updateStatusIndicator('replicate', true);
+                    if (inworld) updateStatusIndicator('inworld', true);
+                    if (pexels) updateStatusIndicator('pexels', true);
+
+                    // Clear input fields
+                    document.getElementById('gemini-key').value = '';
+                    document.getElementById('replicate-token').value = '';
+                    document.getElementById('inworld-key').value = '';
+                    document.getElementById('pexels-key').value = '';
+                } else {
+                    showAlert('api-keys', '✗ Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('api-keys', '✗ Error saving API keys: ' + error.message, 'error');
+            } finally {
+                button.disabled = false;
+                button.innerHTML = '💾 Save API Keys';
+            }
+        });
+
+        // Show/Hide Keys
+        document.getElementById('show-keys').addEventListener('click', () => {
+            const inputs = ['gemini-key', 'replicate-token', 'inworld-key', 'pexels-key'];
+            inputs.forEach(id => {
+                const input = document.getElementById(id);
+                input.type = input.type === 'password' ? 'text' : 'password';
+            });
+        });
+
+        // Load formulas
+        async function loadFormulas() {
+            const formulas = ['title', 'script', 'image'];
+
+            for (const type of formulas) {
+                try {
+                    const response = await fetch(`/api/settings/formulas/${type}`);
+                    const data = await response.json();
+
+                    if (data.success) {
+                        document.getElementById(`${type}-formula`).value = data.formula;
+                    }
+                } catch (error) {
+                    console.error(`Error loading ${type} formula:`, error);
+                }
+            }
+        }
+
+        // Save formulas
+        document.getElementById('save-formulas').addEventListener('click', async () => {
+            const titleFormula = document.getElementById('title-formula').value;
+            const scriptFormula = document.getElementById('script-formula').value;
+            const imageFormula = document.getElementById('image-formula').value;
+
+            const button = document.getElementById('save-formulas');
+            button.disabled = true;
+            button.innerHTML = '<div class="spinner"></div> Saving...';
+
+            try {
+                const response = await fetch('/api/settings/formulas', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title_formula: titleFormula,
+                        script_formula: scriptFormula,
+                        image_formula: imageFormula
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showAlert('formulas', '✓ Formulas saved successfully!', 'success');
+                } else {
+                    showAlert('formulas', '✗ Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('formulas', '✗ Error saving formulas: ' + error.message, 'error');
+            } finally {
+                button.disabled = false;
+                button.innerHTML = '💾 Save Formulas';
+            }
+        });
+
+        // Reset formulas (reload from server)
+        document.getElementById('reset-formulas').addEventListener('click', async () => {
+            if (confirm('Reset all formulas to defaults? This will overwrite your current formulas.')) {
+                await loadFormulas();
+                showAlert('formulas', 'ℹ️ Formulas reset to defaults. Click Save to confirm.', 'info');
+            }
+        });
+
+        // Load voices
+        async function loadVoices() {
+            try {
+                const response = await fetch('/api/settings/voices');
+                const data = await response.json();
+
+                if (data.success) {
+                    const voices = data.voices;
+                    const currentSettings = data.current_settings;
+
+                    // Separate EN and FR voices
+                    const enVoices = Object.entries(voices).filter(([id, v]) => v.language === 'en-US');
+                    const frVoices = Object.entries(voices).filter(([id, v]) => v.language === 'fr-FR');
+
+                    // Render EN voices
+                    const enContainer = document.getElementById('voices-en');
+                    enContainer.innerHTML = enVoices.map(([id, voice]) => `
+                        <div class="voice-card ${currentSettings.default_voice === id ? 'selected' : ''}" data-voice-id="${id}">
+                            <h4>${voice.name}</h4>
+                            <div class="voice-info">${voice.gender} • ${voice.language}</div>
+                            <div class="voice-description">${voice.description}</div>
+                        </div>
+                    `).join('');
+
+                    // Render FR voices
+                    const frContainer = document.getElementById('voices-fr');
+                    frContainer.innerHTML = frVoices.map(([id, voice]) => `
+                        <div class="voice-card ${currentSettings.default_voice === id ? 'selected' : ''}" data-voice-id="${id}">
+                            <h4>${voice.name}</h4>
+                            <div class="voice-info">${voice.gender} • ${voice.language}</div>
+                            <div class="voice-description">${voice.description}</div>
+                        </div>
+                    `).join('');
+
+                    // Add click handlers
+                    document.querySelectorAll('.voice-card').forEach(card => {
+                        card.addEventListener('click', () => {
+                            document.querySelectorAll('.voice-card').forEach(c => c.classList.remove('selected'));
+                            card.classList.add('selected');
+                        });
+                    });
+
+                    // Set speaking rate
+                    const speakingRate = currentSettings.speaking_rate || 1.0;
+                    document.getElementById('speaking-rate').value = speakingRate;
+                    document.getElementById('speaking-rate-value').textContent = speakingRate + 'x';
+                }
+            } catch (error) {
+                console.error('Error loading voices:', error);
+            }
+        }
+
+        // Update speaking rate display
+        document.getElementById('speaking-rate').addEventListener('input', (e) => {
+            document.getElementById('speaking-rate-value').textContent = e.target.value + 'x';
+        });
+
+        // Save voice settings
+        document.getElementById('save-voice-settings').addEventListener('click', async () => {
+            const selectedCard = document.querySelector('.voice-card.selected');
+            if (!selectedCard) {
+                showAlert('voices', '✗ Please select a voice', 'error');
+                return;
+            }
+
+            const defaultVoice = selectedCard.dataset.voiceId;
+            const speakingRate = parseFloat(document.getElementById('speaking-rate').value);
+
+            const button = document.getElementById('save-voice-settings');
+            button.disabled = true;
+            button.innerHTML = '<div class="spinner"></div> Saving...';
+
+            try {
+                const response = await fetch('/api/settings/voice', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ default_voice: defaultVoice, speaking_rate: speakingRate })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showAlert('voices', '✓ Voice settings saved successfully!', 'success');
+                } else {
+                    showAlert('voices', '✗ Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('voices', '✗ Error saving voice settings: ' + error.message, 'error');
+            } finally {
+                button.disabled = false;
+                button.innerHTML = '💾 Save Voice Settings';
+            }
+        });
+
+        // Initialize on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            loadSettings();
+            loadFormulas();
+            loadVoices();
+        });
+    </script>
+</body>
+</html>

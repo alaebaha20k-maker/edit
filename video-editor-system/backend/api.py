@@ -1116,6 +1116,168 @@ def test_api_config():
 
 
 # =============================================================================
+# SETTINGS MANAGEMENT ROUTES (NEW)
+# =============================================================================
+
+@app.route('/api/settings', methods=['GET'])
+def get_settings():
+    """Get all settings including API keys status, formulas, and voice settings"""
+    from settings_manager import SettingsManager
+
+    try:
+        summary = SettingsManager.get_settings_summary()
+        return jsonify({
+            'success': True,
+            'settings': summary
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/settings/api-keys', methods=['POST'])
+def save_api_keys():
+    """Save API keys (Gemini, Replicate, Inworld AI, Pexels)"""
+    from settings_manager import SettingsManager
+
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        gemini = data.get('gemini')
+        replicate = data.get('replicate')
+        inworld = data.get('inworld')
+        pexels = data.get('pexels')
+
+        # Save API keys
+        settings = SettingsManager.save_api_keys(
+            gemini=gemini,
+            replicate=replicate,
+            inworld=inworld,
+            pexels=pexels
+        )
+
+        # Get validation status
+        validation = SettingsManager.validate_api_keys()
+
+        return jsonify({
+            'success': True,
+            'message': 'API keys saved successfully',
+            'validation': validation
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/settings/formulas', methods=['POST'])
+def save_formulas():
+    """Save generation formulas (title, script, image)"""
+    from settings_manager import SettingsManager
+
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        title_formula = data.get('title_formula')
+        script_formula = data.get('script_formula')
+        image_formula = data.get('image_formula')
+
+        # Save formulas
+        success = SettingsManager.save_formulas(
+            title_formula=title_formula,
+            script_formula=script_formula,
+            image_formula=image_formula
+        )
+
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Formulas saved successfully'
+            })
+        else:
+            return jsonify({'error': 'Failed to save formulas'}), 500
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/settings/formulas/<formula_type>', methods=['GET'])
+def get_formula(formula_type):
+    """Get a specific formula (title, script, or image)"""
+    from settings_manager import SettingsManager
+
+    try:
+        if formula_type not in ['title', 'script', 'image']:
+            return jsonify({'error': 'Invalid formula type. Must be: title, script, or image'}), 400
+
+        formula = SettingsManager.load_formula(formula_type)
+
+        return jsonify({
+            'success': True,
+            'formula_type': formula_type,
+            'formula': formula
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/settings/voices', methods=['GET'])
+def get_voices():
+    """Get all available Inworld AI voices"""
+    from settings_manager import SettingsManager
+
+    try:
+        voices = SettingsManager.get_all_voices()
+        voice_settings = SettingsManager.get_voice_settings()
+
+        return jsonify({
+            'success': True,
+            'voices': voices,
+            'current_settings': voice_settings
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/settings/voice', methods=['POST'])
+def save_voice_settings():
+    """Save voice settings (default voice, speaking rate)"""
+    from settings_manager import SettingsManager
+
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        default_voice = data.get('default_voice')
+        speaking_rate = data.get('speaking_rate')
+
+        # Save voice settings
+        settings = SettingsManager.save_voice_settings(
+            default_voice=default_voice,
+            speaking_rate=speaking_rate
+        )
+
+        return jsonify({
+            'success': True,
+            'message': 'Voice settings saved successfully',
+            'settings': settings
+        })
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# =============================================================================
 # ERROR HANDLERS
 # =============================================================================
 

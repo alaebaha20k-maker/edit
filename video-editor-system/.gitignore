@@ -48,6 +48,9 @@ sample_data/*.jpg
 sample_data/*.png
 !sample_data/README.txt
 
+# User data and settings (contains API keys)
+data/
+
 # Logs
 *.log
 logs/
