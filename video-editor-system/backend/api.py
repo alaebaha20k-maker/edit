@@ -877,6 +877,93 @@ def generate_image_prompts_route():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/fetch-stock', methods=['POST'])
+def fetch_stock_route():
+    """Fetch stock footage/photos from Pexels (NEW SYSTEM)"""
+    from stock_footage import fetch_and_download_stock, extract_keywords_from_script
+    from settings_manager import SettingsManager
+
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        query_or_script = data.get('query') or data.get('script')
+        count = data.get('count', 5)
+        media_type = data.get('media_type', 'both')  # 'videos', 'photos', or 'both'
+        auto_extract = data.get('auto_extract', True)
+
+        if not query_or_script:
+            return jsonify({'error': 'Missing required field: query or script'}), 400
+
+        # Validate media_type
+        if media_type not in ['videos', 'photos', 'both']:
+            return jsonify({'error': 'media_type must be: videos, photos, or both'}), 400
+
+        # Validate count (1-20)
+        if not isinstance(count, int) or count < 1 or count > 20:
+            return jsonify({'error': 'Count must be an integer between 1 and 20'}), 400
+
+        # Get Pexels API key from settings
+        pexels_api_key = SettingsManager.get_api_key('pexels')
+        if not pexels_api_key:
+            return jsonify({'error': 'Pexels API key not configured in settings'}), 500
+
+        # Fetch and download
+        result = fetch_and_download_stock(
+            api_key=pexels_api_key,
+            query_or_script=query_or_script,
+            count=count,
+            media_type=media_type,
+            auto_extract=auto_extract,
+            output_dir='output/stock'
+        )
+
+        return jsonify({
+            'success': True,
+            'query': result['query'],
+            'media_info': result['media_info'],
+            'downloaded_paths': result['downloaded_paths'],
+            'count': result['count']
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/extract-keywords', methods=['POST'])
+def extract_keywords_route():
+    """Extract keywords from script for stock search"""
+    from stock_footage import extract_keywords_from_script
+
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        script = data.get('script')
+        max_keywords = data.get('max_keywords', 5)
+
+        if not script:
+            return jsonify({'error': 'Missing required field: script'}), 400
+
+        # Extract keywords
+        keywords = extract_keywords_from_script(script, max_keywords=max_keywords)
+
+        return jsonify({
+            'success': True,
+            'keywords': keywords,
+            'query': ' '.join(keywords)
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/generate-images', methods=['POST'])
 def generate_images():
     """Generate AI images using Replicate"""
