@@ -826,6 +826,57 @@ def generate_script():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/generate-image-prompts', methods=['POST'])
+def generate_image_prompts_route():
+    """Generate image prompts from script using Gemini + Image Formula (NEW SYSTEM)"""
+    from image_prompts_generator import generate_image_prompts
+    from settings_manager import SettingsManager
+
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        script = data.get('script')
+        count = data.get('count', 6)  # Default to 6 images
+
+        if not script:
+            return jsonify({'error': 'Missing required field: script'}), 400
+
+        # Validate count (3-30)
+        if not isinstance(count, int) or count < 3 or count > 30:
+            return jsonify({'error': 'Count must be an integer between 3 and 30'}), 400
+
+        # Get Gemini API key from settings
+        gemini_api_key = SettingsManager.get_api_key('gemini')
+        if not gemini_api_key:
+            return jsonify({'error': 'Gemini API key not configured in settings'}), 500
+
+        # Load image formula from settings
+        image_formula = SettingsManager.load_formula('image')
+
+        # Generate prompts
+        prompts = generate_image_prompts(
+            script_text=script,
+            image_formula=image_formula,
+            count=count,
+            gemini_api_key=gemini_api_key,
+            verbose=True
+        )
+
+        return jsonify({
+            'success': True,
+            'prompts': prompts,
+            'count': len(prompts)
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/generate-images', methods=['POST'])
 def generate_images():
     """Generate AI images using Replicate"""
