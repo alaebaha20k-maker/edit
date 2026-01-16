@@ -1470,6 +1470,128 @@ def save_voice_settings():
 
 
 # =============================================================================
+# MEDIA UPLOAD & PREVIEW ROUTES
+# =============================================================================
+
+@app.route('/api/upload-media', methods=['POST'])
+def upload_media_route():
+    """Upload multiple media files"""
+    import time
+
+    try:
+        files = request.files.getlist('files')
+        media_type = request.form.get('type', 'image')
+
+        if not files:
+            return jsonify({'error': 'No files provided'}), 400
+
+        uploaded_files = []
+
+        for file in files:
+            if file.filename == '':
+                continue
+
+            # Generate unique filename
+            timestamp = int(time.time() * 1000)
+            ext = file.filename.rsplit('.', 1)[1].lower()
+            filename = f"{media_type}_{timestamp}_{len(uploaded_files)}.{ext}"
+            filepath = os.path.join(UPLOAD_FOLDER, filename)
+
+            file.save(filepath)
+            uploaded_files.append(filepath)
+
+        return jsonify({
+            'success': True,
+            'files': uploaded_files,
+            'count': len(uploaded_files)
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/preview-image/<filename>', methods=['GET'])
+def preview_image_route(filename):
+    """Serve image for preview"""
+    try:
+        # Search in output/images subdirectories
+        images_base = 'output/images'
+
+        if os.path.exists(images_base):
+            for subdir in os.listdir(images_base):
+                subdir_path = os.path.join(images_base, subdir)
+                if os.path.isdir(subdir_path):
+                    image_path = os.path.join(subdir_path, filename)
+                    if os.path.exists(image_path):
+                        return send_file(image_path, mimetype='image/jpeg')
+
+        # Also check uploads folder
+        upload_path = os.path.join(UPLOAD_FOLDER, filename)
+        if os.path.exists(upload_path):
+            return send_file(upload_path, mimetype='image/jpeg')
+
+        # Check stock folder
+        stock_path = os.path.join('output/stock', filename)
+        if os.path.exists(stock_path):
+            return send_file(stock_path, mimetype='image/jpeg')
+
+        return jsonify({'error': 'Image not found'}), 404
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/preview-video/<filename>', methods=['GET'])
+def preview_video_route(filename):
+    """Serve video for preview"""
+    try:
+        # Check output folder
+        output_path = os.path.join(OUTPUT_FOLDER, filename)
+        if os.path.exists(output_path):
+            return send_file(output_path, mimetype='video/mp4')
+
+        # Check uploads folder
+        upload_path = os.path.join(UPLOAD_FOLDER, filename)
+        if os.path.exists(upload_path):
+            return send_file(upload_path, mimetype='video/mp4')
+
+        # Check stock folder
+        stock_path = os.path.join('output/stock', filename)
+        if os.path.exists(stock_path):
+            return send_file(stock_path, mimetype='video/mp4')
+
+        # Check edited folder
+        edited_path = os.path.join('output/edited', filename)
+        if os.path.exists(edited_path):
+            return send_file(edited_path, mimetype='video/mp4')
+
+        return jsonify({'error': 'Video not found'}), 404
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/preview-audio/<filename>', methods=['GET'])
+def preview_audio_route(filename):
+    """Serve audio for preview"""
+    try:
+        # Check voices folder
+        voices_path = os.path.join('output/voices', filename)
+        if os.path.exists(voices_path):
+            return send_file(voices_path, mimetype='audio/mpeg')
+
+        # Check uploads folder
+        upload_path = os.path.join(UPLOAD_FOLDER, filename)
+        if os.path.exists(upload_path):
+            return send_file(upload_path, mimetype='audio/mpeg')
+
+        return jsonify({'error': 'Audio not found'}), 404
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# =============================================================================
 # ERROR HANDLERS
 # =============================================================================
 
