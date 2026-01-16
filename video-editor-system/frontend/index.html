@@ -3,126 +3,523 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Video Editor System - Automated Video Creation</title>
-    <link rel="stylesheet" href="styles.css">
+    <title>AI Video Studio - Professional Video Creation Platform</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>🎬 Automated Video Editor</h1>
-            <p class="subtitle">Upload, Rank, and Create Professional Videos - Ultra Fast Processing</p>
-        </header>
+    <!-- HEADER -->
+    <header>
+        <div class="header-left">
+            <h1>🎬 AI VIDEO STUDIO</h1>
+            <span class="tagline">Professional AI-Powered Video Creation</span>
+        </div>
+        <div class="header-right">
+            <button id="settingsBtn" class="btn-header">⚙️ Settings</button>
+        </div>
+    </header>
 
-        <div class="main-content">
-            <!-- Visual Media Section -->
-            <section class="upload-section">
-                <div class="section-header">
-                    <h2>📹 Line 1: Videos & Images</h2>
-                    <p>Upload and rank your visual media (videos and images)</p>
+    <!-- SIDEBAR NAVIGATION -->
+    <nav id="sidebar">
+        <button class="nav-btn active" onclick="showTab('dashboard')" data-tab="dashboard">
+            <span class="nav-icon">📋</span>
+            <span class="nav-text">Dashboard</span>
+        </button>
+        <button class="nav-btn" onclick="showTab('generator')" data-tab="generator">
+            <span class="nav-icon">🎬</span>
+            <span class="nav-text">AI Generator</span>
+        </button>
+        <button class="nav-btn" onclick="showTab('editor')" data-tab="editor">
+            <span class="nav-icon">✂️</span>
+            <span class="nav-text">MR BAHA Editor</span>
+        </button>
+        <button class="nav-btn" onclick="showTab('output')" data-tab="output">
+            <span class="nav-icon">📁</span>
+            <span class="nav-text">Output Files</span>
+        </button>
+    </nav>
+
+    <!-- MAIN CONTENT AREA -->
+    <main id="content">
+
+        <!-- ============================================ -->
+        <!-- DASHBOARD TAB -->
+        <!-- ============================================ -->
+        <div id="tab-dashboard" class="tab-content active">
+            <h2>📋 Dashboard</h2>
+            <div class="dashboard-grid">
+                <div class="dashboard-card">
+                    <div class="card-icon">🎬</div>
+                    <h3>Quick Generate</h3>
+                    <p>Start creating AI videos instantly</p>
+                    <button onclick="showTab('generator')" class="btn-primary">Start Generating</button>
                 </div>
-
-                <div class="upload-zone" id="visual-dropzone">
-                    <div class="dropzone-content">
-                        <div class="upload-icon">📁</div>
-                        <p><strong>Drag & drop files here</strong></p>
-                        <p>or</p>
-                        <label for="visual-file-input" class="file-label">
-                            <input type="file" id="visual-file-input" accept="video/*,image/*,.jfif" multiple style="display: none;">
-                            <span class="btn btn-secondary">Browse Files</span>
-                        </label>
-                        <p class="hint">Supported: MP4, MOV, JPG, JPEG, JFIF, PNG</p>
-                    </div>
+                <div class="dashboard-card">
+                    <div class="card-icon">✂️</div>
+                    <h3>Video Editor</h3>
+                    <p>Edit videos with timeline tools</p>
+                    <button onclick="showTab('editor')" class="btn-primary">Open Editor</button>
                 </div>
-
-                <div id="visual-media-list" class="file-list"></div>
-            </section>
-
-            <!-- Audio Section -->
-            <section class="upload-section">
-                <div class="section-header">
-                    <h2>🎵 Line 2: Audio Files</h2>
-                    <p>Upload and rank your audio tracks (narration, music)</p>
+                <div class="dashboard-card">
+                    <div class="card-icon">⚙️</div>
+                    <h3>Settings</h3>
+                    <p>Configure API keys and formulas</p>
+                    <button onclick="openSettings()" class="btn-primary">Configure</button>
                 </div>
-
-                <div class="upload-zone" id="audio-dropzone">
-                    <div class="dropzone-content">
-                        <div class="upload-icon">🎧</div>
-                        <p><strong>Drag & drop audio files here</strong></p>
-                        <p>or</p>
-                        <label for="audio-file-input" class="file-label">
-                            <input type="file" id="audio-file-input" accept="audio/*" multiple style="display: none;">
-                            <span class="btn btn-secondary">Browse Files</span>
-                        </label>
-                        <p class="hint">Supported: MP3, WAV, AAC, M4A</p>
-                    </div>
+                <div class="dashboard-card">
+                    <div class="card-icon">📁</div>
+                    <h3>Output Files</h3>
+                    <p>Browse generated videos</p>
+                    <button onclick="showTab('output')" class="btn-primary">Browse Files</button>
                 </div>
-
-                <div id="audio-list" class="file-list"></div>
-            </section>
-
-            <!-- Duration Info -->
-            <section class="info-section">
-                <h3>📊 Duration Calculation Preview</h3>
-                <div class="duration-grid">
-                    <div class="duration-item">
-                        <span class="duration-label">Total Audio Duration:</span>
-                        <span id="total-audio" class="duration-value">0:00</span>
-                    </div>
-                    <div class="duration-item">
-                        <span class="duration-label">Total Video Duration:</span>
-                        <span id="total-video" class="duration-value">0:00</span>
-                    </div>
-                    <div class="duration-item">
-                        <span class="duration-label">Duration per Image:</span>
-                        <span id="image-duration" class="duration-value">0:00</span>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Settings -->
-            <section class="settings-section">
-                <h3>⚙️ Settings</h3>
-                <div class="settings-grid">
-                    <div class="setting-item">
-                        <label for="output-filename">Output Filename (optional - leave empty to use audio filename):</label>
-                        <input type="text" id="output-filename" class="text-input" placeholder="Leave empty to auto-name from audio file">
-                    </div>
-                    <div class="setting-item">
-                        <label for="mute-videos" style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
-                            <input type="checkbox" id="mute-videos" style="width: 20px; height: 20px; cursor: pointer;">
-                            <span>🔇 Mute all uploaded videos (remove video audio tracks)</span>
-                        </label>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Process Button -->
-            <div class="action-section">
-                <button id="process-btn" class="btn btn-primary" onclick="processVideo()">
-                    🚀 Create Video
-                </button>
             </div>
 
-            <!-- Progress Section -->
-            <section id="progress-section" class="progress-section hidden">
-                <h3>⏳ Processing Video...</h3>
-                <div class="progress-bar-container">
-                    <div id="progress-fill" class="progress-bar-fill"></div>
+            <div class="info-section">
+                <h3>✨ Features</h3>
+                <div class="features-grid">
+                    <div class="feature-item">✅ AI Script Generation (Gemini 2.5)</div>
+                    <div class="feature-item">✅ AI Image Generation (Replicate Flux)</div>
+                    <div class="feature-item">✅ Stock Footage (Pexels)</div>
+                    <div class="feature-item">✅ AI Voices (Inworld AI)</div>
+                    <div class="feature-item">✅ Timeline Video Editor</div>
+                    <div class="feature-item">✅ 720p/1080p Export</div>
                 </div>
-                <p id="progress-text" class="progress-text">Initializing...</p>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- AI GENERATOR TAB -->
+        <!-- ============================================ -->
+        <div id="tab-generator" class="tab-content">
+            <h2>🎬 AI Video Generator</h2>
+            <p class="subtitle">Create professional AI-powered videos with custom scripts, images, and voices</p>
+
+            <!-- Step 1: Title -->
+            <section class="step">
+                <h3><span class="step-number">1</span> Video Title</h3>
+                <div class="mode-selector">
+                    <label class="radio-label">
+                        <input type="radio" name="titleMode" value="manual" checked onchange="toggleTitleMode()">
+                        <span>✍️ Manual Input</span>
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="titleMode" value="auto" onchange="toggleTitleMode()">
+                        <span>🤖 AI Generate (Gemini)</span>
+                    </label>
+                </div>
+
+                <div id="titleManualSection">
+                    <input type="text" id="titleInput" placeholder="Enter your video title..." class="input-large">
+                </div>
+
+                <div id="titleAutoSection" style="display: none;">
+                    <input type="text" id="titleTopic" placeholder="Enter topic (e.g., 'Space exploration')..." class="input-large">
+                    <button onclick="generateTitle()" class="btn-secondary">🤖 Generate Title</button>
+                </div>
+
+                <div id="titleResult" class="result-box" style="display: none;"></div>
             </section>
 
-            <!-- Result Section -->
-            <section id="result-section" class="result-section hidden">
-                <h3>✅ Video Created Successfully!</h3>
-                <div id="result-info" class="result-info"></div>
-                <button id="download-btn" class="btn btn-success">📥 Download Video</button>
+            <!-- Step 2: Script -->
+            <section class="step">
+                <h3><span class="step-number">2</span> Video Script</h3>
+                <div class="mode-selector">
+                    <label class="radio-label">
+                        <input type="radio" name="scriptMode" value="manual" checked onchange="toggleScriptMode()">
+                        <span>✍️ Manual Input</span>
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="scriptMode" value="auto" onchange="toggleScriptMode()">
+                        <span>🤖 AI Generate (Gemini)</span>
+                    </label>
+                </div>
+
+                <div id="scriptManualSection">
+                    <textarea id="scriptInput" rows="10" placeholder="Paste or write your script here..." class="textarea-large"></textarea>
+                </div>
+
+                <div id="scriptAutoSection" style="display: none;">
+                    <select id="scriptLength" class="select-large">
+                        <option value="30000">Short (~20 min video) - 30K chars</option>
+                        <option value="60000" selected>Medium (~45 min video) - 60K chars</option>
+                        <option value="100000">Long (~70 min video) - 100K chars</option>
+                    </select>
+                    <button onclick="generateScript()" class="btn-secondary">🤖 Generate Script</button>
+                </div>
+
+                <div id="scriptResult" class="result-box" style="display: none;"></div>
+                <div id="scriptStats" class="stats-box" style="display: none;"></div>
+            </section>
+
+            <!-- Step 3: Media (Images/Videos) -->
+            <section class="step">
+                <h3><span class="step-number">3</span> Media (Images & Videos)</h3>
+                <div class="media-options">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="useAiImages" onchange="toggleMediaSection('ai')">
+                        <span>🎨 AI Images (Replicate Flux)</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="useManualMedia" onchange="toggleMediaSection('manual')">
+                        <span>📤 Upload Images/Videos</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="useStockFootage" onchange="toggleMediaSection('stock')">
+                        <span>📹 Stock Footage (Pexels)</span>
+                    </label>
+                </div>
+
+                <!-- AI Images Section -->
+                <div id="aiImagesSection" class="subsection" style="display: none;">
+                    <label>Number of AI Images:</label>
+                    <input type="number" id="aiImageCount" value="6" min="3" max="30" class="input-medium">
+                    <button onclick="generateAiImages()" class="btn-secondary">🎨 Generate AI Images</button>
+                    <div id="aiImageProgress" class="progress-box" style="display: none;"></div>
+                    <div id="aiImagePreview" class="image-grid"></div>
+                </div>
+
+                <!-- Manual Upload Section -->
+                <div id="manualMediaSection" class="subsection" style="display: none;">
+                    <div class="upload-zone" id="mediaDropzone">
+                        <div class="upload-icon">📁</div>
+                        <p><strong>Drag & drop images/videos here</strong></p>
+                        <p>or</p>
+                        <input type="file" id="mediaUpload" accept="image/*,video/*" multiple style="display: none;">
+                        <button onclick="document.getElementById('mediaUpload').click()" class="btn-secondary">Browse Files</button>
+                    </div>
+                    <div id="manualMediaPreview" class="image-grid"></div>
+                </div>
+
+                <!-- Stock Footage Section -->
+                <div id="stockFootageSection" class="subsection" style="display: none;">
+                    <label>Search Keywords (auto-extracted from script or manual):</label>
+                    <input type="text" id="stockKeywords" placeholder="E.g., space, galaxy, astronaut" class="input-large">
+                    <button onclick="extractKeywords()" class="btn-secondary">🔍 Auto-Extract Keywords</button>
+                    <div class="stock-options">
+                        <label class="radio-label">
+                            <input type="radio" name="stockType" value="videos" checked>
+                            <span>📹 Videos</span>
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="stockType" value="photos">
+                            <span>📷 Photos</span>
+                        </label>
+                    </div>
+                    <label>Number of items:</label>
+                    <input type="number" id="stockCount" value="5" min="1" max="20" class="input-medium">
+                    <button onclick="fetchStockFootage()" class="btn-secondary">📹 Fetch Stock Footage</button>
+                    <div id="stockProgress" class="progress-box" style="display: none;"></div>
+                    <div id="stockPreview" class="image-grid"></div>
+                </div>
+            </section>
+
+            <!-- Step 4: Audio/Voice -->
+            <section class="step">
+                <h3><span class="step-number">4</span> Audio & Voice</h3>
+                <div class="mode-selector">
+                    <label class="radio-label">
+                        <input type="radio" name="voiceMode" value="manual" checked onchange="toggleVoiceMode()">
+                        <span>📤 Upload Audio</span>
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="voiceMode" value="auto" onchange="toggleVoiceMode()">
+                        <span>🎙️ AI Voice (Inworld AI)</span>
+                    </label>
+                </div>
+
+                <div id="voiceManualSection">
+                    <div class="upload-zone" id="audioDropzone">
+                        <div class="upload-icon">🎵</div>
+                        <p><strong>Upload audio files</strong></p>
+                        <input type="file" id="audioUpload" accept="audio/*" multiple style="display: none;">
+                        <button onclick="document.getElementById('audioUpload').click()" class="btn-secondary">Browse Audio</button>
+                        <p class="hint">MP3, WAV, AAC, M4A supported</p>
+                    </div>
+                    <div id="audioList" class="file-list"></div>
+                </div>
+
+                <div id="voiceAutoSection" style="display: none;">
+                    <label>Select Voice:</label>
+                    <select id="voiceSelect" class="select-large">
+                        <option value="dennis">Dennis - Male Professional (English)</option>
+                        <option value="marcus">Marcus - Male Energetic (English)</option>
+                        <option value="ava">Ava - Female Professional (English)</option>
+                        <option value="emma">Emma - Female Friendly (English)</option>
+                        <option value="brian">Brian - Male Narrative (English)</option>
+                        <option value="claire">Claire - Female Elegant (French)</option>
+                        <option value="lucas">Lucas - Male Smooth (French)</option>
+                    </select>
+                    <label>Speaking Rate:</label>
+                    <input type="range" id="speakingRate" min="0.5" max="1.5" step="0.1" value="1.0" class="slider">
+                    <span id="speakingRateValue">1.0x</span>
+                    <button onclick="generateVoice()" class="btn-secondary">🎙️ Generate Voice</button>
+                    <div id="voiceProgress" class="progress-box" style="display: none;"></div>
+                </div>
+            </section>
+
+            <!-- Step 5: Quality & Processing -->
+            <section class="step">
+                <h3><span class="step-number">5</span> Video Quality & Processing</h3>
+                <div class="quality-selector">
+                    <label class="quality-option">
+                        <input type="radio" name="quality" value="720" checked>
+                        <div class="quality-card">
+                            <div class="quality-icon">📺</div>
+                            <div class="quality-title">720p HD</div>
+                            <div class="quality-desc">Standard Quality</div>
+                        </div>
+                    </label>
+                    <label class="quality-option">
+                        <input type="radio" name="quality" value="1080">
+                        <div class="quality-card">
+                            <div class="quality-icon">🎬</div>
+                            <div class="quality-title">1080p Full HD</div>
+                            <div class="quality-desc">High Quality</div>
+                        </div>
+                    </label>
+                </div>
+
+                <button onclick="processVideo()" class="btn-primary btn-large">🚀 GENERATE VIDEO</button>
+
+                <div id="videoProgress" class="progress-container" style="display: none;">
+                    <div class="progress-header">
+                        <h4>⏳ Processing Video...</h4>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="progressFill" class="progress-fill"></div>
+                    </div>
+                    <div id="progressText" class="progress-text">Initializing...</div>
+                </div>
+
+                <div id="videoResult" class="result-container" style="display: none;">
+                    <h3>✅ Video Generated Successfully!</h3>
+                    <div id="videoInfo" class="video-info"></div>
+                    <button id="downloadBtn" class="btn-success btn-large">📥 Download Video</button>
+                </div>
             </section>
         </div>
 
-        <footer>
-            <p>Automated Video Editing System | Powered by FFmpeg & Whisper AI</p>
-        </footer>
+        <!-- ============================================ -->
+        <!-- MR BAHA EDITOR TAB -->
+        <!-- ============================================ -->
+        <div id="tab-editor" class="tab-content">
+            <h2>✂️ MR BAHA Editor</h2>
+            <p class="subtitle">CapCut-style timeline video editor with professional editing tools</p>
+
+            <!-- Upload Section -->
+            <section class="editor-upload">
+                <div class="upload-zone" id="editorUploadZone">
+                    <div class="upload-icon">🎥</div>
+                    <p><strong>Drag & drop video file or click to browse</strong></p>
+                    <input type="file" id="editorVideoInput" accept="video/*" style="display: none;">
+                    <button onclick="document.getElementById('editorVideoInput').click()" class="btn-primary">Browse Video</button>
+                    <p class="hint">Supported: MP4, MOV, AVI, MKV, WebM</p>
+                </div>
+            </section>
+
+            <!-- Video Preview & Controls -->
+            <section id="editorPreviewSection" class="editor-preview" style="display: none;">
+                <div class="preview-container">
+                    <video id="editorVideoPreview" controls></video>
+                </div>
+                <div class="playback-controls">
+                    <button class="control-btn" id="editorPlayBtn" onclick="editorPlayPause()">▶️</button>
+                    <button class="control-btn" id="editorStopBtn" onclick="editorStop()">⏹️</button>
+                    <span class="time-display" id="editorTimeDisplay">0:00 / 0:00</span>
+                    <div class="seek-bar" id="editorSeekBar">
+                        <div id="editorSeekFill" class="seek-fill"></div>
+                    </div>
+                    <button class="control-btn" id="editorMuteBtn" onclick="editorMute()">🔊</button>
+                </div>
+            </section>
+
+            <!-- Timeline Section -->
+            <section id="editorTimelineSection" class="editor-timeline" style="display: none;">
+                <div class="timeline-header">
+                    <h3>⏱️ Timeline</h3>
+                    <div class="timeline-info">
+                        <span id="editorClipCount">0 clips</span> |
+                        <span id="editorTotalDuration">Total: 0:00</span>
+                    </div>
+                </div>
+                <div class="timeline-container">
+                    <div id="editorPlayhead" class="playhead"></div>
+                    <div id="editorTimelineTrack" class="timeline-track">
+                        <p class="timeline-empty">Upload a video to start editing</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Edit Tools -->
+            <section id="editorToolsSection" class="editor-tools" style="display: none;">
+                <div class="tool-group">
+                    <span class="tool-label">✂️ Edit:</span>
+                    <button class="btn-tool" onclick="editorSplit()">Split at Playhead</button>
+                    <button class="btn-tool btn-danger" onclick="editorDelete()">Delete Clip</button>
+                </div>
+                <div class="tool-group">
+                    <span class="tool-label">➕ Add:</span>
+                    <button class="btn-tool" onclick="editorShowOverlay()">Add Text Overlay</button>
+                </div>
+                <div class="tool-group">
+                    <span class="tool-label">🔄 Order:</span>
+                    <button class="btn-tool" onclick="editorMoveLeft()">← Move Left</button>
+                    <button class="btn-tool" onclick="editorMoveRight()">Move Right →</button>
+                </div>
+            </section>
+
+            <!-- Overlay Input -->
+            <section id="editorOverlaySection" class="overlay-input" style="display: none;">
+                <h3>Add Text Overlay</h3>
+                <input type="text" id="overlayText" placeholder="Enter overlay text..." class="input-large">
+                <div class="overlay-controls">
+                    <div>
+                        <label>Position X:</label>
+                        <input type="number" id="overlayX" value="100" min="0" class="input-small">
+                    </div>
+                    <div>
+                        <label>Position Y:</label>
+                        <input type="number" id="overlayY" value="100" min="0" class="input-small">
+                    </div>
+                    <div>
+                        <label>Font Size:</label>
+                        <input type="number" id="overlaySize" value="48" min="12" max="200" class="input-small">
+                    </div>
+                    <div>
+                        <label>Color:</label>
+                        <input type="color" id="overlayColor" value="#ffffff" class="input-small">
+                    </div>
+                    <div>
+                        <label>Start (sec):</label>
+                        <input type="number" id="overlayStart" value="0" min="0" step="0.1" class="input-small">
+                    </div>
+                    <div>
+                        <label>Duration (sec):</label>
+                        <input type="number" id="overlayDuration" value="3" min="0.1" step="0.1" class="input-small">
+                    </div>
+                </div>
+                <div class="button-group">
+                    <button onclick="editorConfirmOverlay()" class="btn-success">✅ Add Overlay</button>
+                    <button onclick="editorCancelOverlay()" class="btn-secondary">❌ Cancel</button>
+                </div>
+            </section>
+
+            <!-- Export Section -->
+            <section id="editorExportSection" class="editor-export" style="display: none;">
+                <h3>🎯 Export Video</h3>
+                <div class="quality-selector">
+                    <label class="quality-option">
+                        <input type="radio" name="editorQuality" value="720" checked>
+                        <div class="quality-card">
+                            <div class="quality-icon">📺</div>
+                            <div class="quality-title">720p HD</div>
+                        </div>
+                    </label>
+                    <label class="quality-option">
+                        <input type="radio" name="editorQuality" value="1080">
+                        <div class="quality-card">
+                            <div class="quality-icon">🎬</div>
+                            <div class="quality-title">1080p Full HD</div>
+                        </div>
+                    </label>
+                </div>
+                <button onclick="editorExport()" class="btn-primary btn-large">🚀 Export Final Video</button>
+                <div id="editorExportProgress" class="progress-container" style="display: none;"></div>
+            </section>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- OUTPUT FILES TAB -->
+        <!-- ============================================ -->
+        <div id="tab-output" class="tab-content">
+            <h2>📁 Output Files</h2>
+            <p class="subtitle">Browse and download your generated videos</p>
+
+            <div class="file-browser">
+                <button onclick="refreshOutputFiles()" class="btn-secondary">🔄 Refresh</button>
+                <div id="outputFileList" class="file-list-container">
+                    <p class="loading">Loading files...</p>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- ============================================ -->
+    <!-- SETTINGS MODAL -->
+    <!-- ============================================ -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>⚙️ Settings</h2>
+                <button onclick="closeSettings()" class="btn-close">✕</button>
+            </div>
+
+            <div class="modal-body">
+                <!-- API Keys Tab -->
+                <div class="settings-section">
+                    <h3>🔑 API Keys</h3>
+                    <div class="input-group">
+                        <label>Gemini API Key (Required for AI generation)</label>
+                        <div class="password-input">
+                            <input type="password" id="geminiKey" placeholder="Enter Gemini API key..." class="input-large">
+                            <button onclick="togglePassword('geminiKey')" class="btn-toggle">👁️</button>
+                        </div>
+                        <span class="hint">Get from: https://aistudio.google.com/app/apikey</span>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Replicate API Token (Required for AI images)</label>
+                        <div class="password-input">
+                            <input type="password" id="replicateKey" placeholder="Enter Replicate token..." class="input-large">
+                            <button onclick="togglePassword('replicateKey')" class="btn-toggle">👁️</button>
+                        </div>
+                        <span class="hint">Get from: https://replicate.com/account/api-tokens</span>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Inworld AI API Key (Optional - for AI voices)</label>
+                        <div class="password-input">
+                            <input type="password" id="inworldKey" placeholder="Enter Inworld API key..." class="input-large">
+                            <button onclick="togglePassword('inworldKey')" class="btn-toggle">👁️</button>
+                        </div>
+                        <span class="hint">Get from: https://studio.inworld.ai/</span>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Pexels API Key (Optional - for stock footage)</label>
+                        <div class="password-input">
+                            <input type="password" id="pexelsKey" placeholder="Enter Pexels API key..." class="input-large">
+                            <button onclick="togglePassword('pexelsKey')" class="btn-toggle">👁️</button>
+                        </div>
+                        <span class="hint">Get from: https://www.pexels.com/api/</span>
+                    </div>
+                </div>
+
+                <!-- Formulas Section -->
+                <div class="settings-section">
+                    <h3>📝 Generation Formulas</h3>
+                    <div class="input-group">
+                        <label>Title Generation Formula</label>
+                        <textarea id="titleFormula" rows="4" placeholder="Custom formula for title generation..." class="textarea-large"></textarea>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Script Generation Formula</label>
+                        <textarea id="scriptFormula" rows="8" placeholder="Custom formula for script generation..." class="textarea-large"></textarea>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Image Style Formula</label>
+                        <textarea id="imageFormula" rows="8" placeholder="Custom formula for image style..." class="textarea-large"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button onclick="saveSettings()" class="btn-success btn-large">💾 Save Settings</button>
+                <button onclick="closeSettings()" class="btn-secondary">Cancel</button>
+            </div>
+        </div>
     </div>
 
     <script src="app.js"></script>
