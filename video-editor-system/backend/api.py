@@ -8,6 +8,8 @@ import os
 import sys
 import json
 import uuid
+import time
+import subprocess
 from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
@@ -1591,6 +1593,162 @@ def preview_audio_route(filename):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/editor/process', methods=['POST'])
+def editor_process_route():
+    """
+    Process video from MR BAHA Editor timeline
+
+    Request JSON:
+        {
+            "clips": [
+                {"id": "clip1", "start": 0, "end": 10, "videoPath": "uploads/video.mp4"},
+                {"id": "clip2", "start": 10, "end": 20, "videoPath": "uploads/video.mp4", "overlay": {...}}
+            ],
+            "quality": "720" or "1080"
+        }
+
+    Response:
+        {
+            "success": true,
+            "output_path": "output/edited/edited_video_123.mp4",
+            "message": "Video exported successfully"
+        }
+    """
+    try:
+        data = request.json
+        clips = data.get('clips', [])
+        quality = data.get('quality', '720')
+
+        if not clips:
+            return jsonify({'success': False, 'error': 'No clips provided'}), 400
+
+        # Create output directory
+        output_dir = 'output/edited'
+        ensure_directory_exists(output_dir)
+
+        # Generate unique output filename
+        timestamp = int(time.time() * 1000)
+        output_filename = f'edited_video_{timestamp}.mp4'
+        output_path = os.path.join(output_dir, output_filename)
+
+        # Process each clip
+        temp_clips = []
+        temp_dir = TEMP_FOLDER
+
+        for i, clip in enumerate(clips):
+            clip_path = clip.get('videoPath', '')
+            start_time = clip.get('start', 0)
+            end_time = clip.get('end', 0)
+            duration = end_time - start_time
+
+            if not os.path.exists(clip_path):
+                continue
+
+            # Extract clip segment
+            temp_clip = os.path.join(temp_dir, f'clip_{i}.mp4')
+
+            cmd = [
+                'ffmpeg', '-y',
+                '-i', clip_path,
+                '-ss', str(start_time),
+                '-t', str(duration),
+                '-c:v', 'libx264',
+                '-preset', 'fast',
+                '-crf', '23',
+                '-c:a', 'aac',
+                '-b:a', '128k',
+                temp_clip
+            ]
+
+            subprocess.run(cmd, check=True, capture_output=True)
+
+            # Add overlay if present
+            if 'overlay' in clip:
+                overlay = clip['overlay']
+                text = overlay.get('text', '')
+                x = overlay.get('x', 100)
+                y = overlay.get('y', 100)
+                size = overlay.get('size', 48)
+                color = overlay.get('color', 'white')
+
+                overlay_clip = os.path.join(temp_dir, f'overlay_{i}.mp4')
+
+                cmd = [
+                    'ffmpeg', '-y',
+                    '-i', temp_clip,
+                    '-vf', f"drawtext=text='{text}':fontsize={size}:fontcolor={color}:x={x}:y={y}",
+                    '-c:a', 'copy',
+                    overlay_clip
+                ]
+
+                subprocess.run(cmd, check=True, capture_output=True)
+                temp_clips.append(overlay_clip)
+            else:
+                temp_clips.append(temp_clip)
+
+        # Concatenate all clips
+        if temp_clips:
+            # Create concat file
+            concat_file = os.path.join(temp_dir, f'concat_{timestamp}.txt')
+            with open(concat_file, 'w') as f:
+                for clip in temp_clips:
+                    f.write(f"file '{os.path.abspath(clip)}'\n")
+
+            # Set quality parameters
+            if quality == '1080':
+                scale = 'scale=1920:1080'
+                crf = '18'
+            else:
+                scale = 'scale=1280:720'
+                crf = '23'
+
+            # Final concatenation
+            cmd = [
+                'ffmpeg', '-y',
+                '-f', 'concat',
+                '-safe', '0',
+                '-i', concat_file,
+                '-vf', scale,
+                '-c:v', 'libx264',
+                '-preset', 'medium',
+                '-crf', crf,
+                '-c:a', 'aac',
+                '-b:a', '192k',
+                output_path
+            ]
+
+            subprocess.run(cmd, check=True, capture_output=True)
+
+            # Cleanup temp files
+            for clip in temp_clips:
+                if os.path.exists(clip):
+                    os.remove(clip)
+            if os.path.exists(concat_file):
+                os.remove(concat_file)
+
+            return jsonify({
+                'success': True,
+                'output_path': output_path,
+                'message': 'Video exported successfully'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'No valid clips to process'
+            }), 400
+
+    except subprocess.CalledProcessError as e:
+        return jsonify({
+            'success': False,
+            'error': f'FFmpeg error: {e.stderr.decode() if e.stderr else str(e)}'
+        }), 500
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 # =============================================================================
 # ERROR HANDLERS
 # =============================================================================
@@ -1641,13 +1799,14 @@ if __name__ == '__main__':
     print("🚀 Starting server on http://localhost:5000")
     print("="*60)
     print("\n📋 Available pages:")
-    print("   • Main editor:     http://localhost:5000/")
-    print("   • Settings:        http://localhost:5000/settings.html ⚙️")
-    print("   • API Config:      http://localhost:5000/api-config.html")
-    print("   • AI generator:    http://localhost:5000/generator.html")
-    print("   • Create niche:    http://localhost:5000/niche-creator.html")
-    print("   • Create style:    http://localhost:5000/style-creator.html")
-    print("   • Output files:    http://localhost:5000/output")
+    print("   • Automated editor: http://localhost:5000/")
+    print("   • MR BAHA Editor:   http://localhost:5000/editor.html 🎬")
+    print("   • Settings:         http://localhost:5000/settings.html ⚙️")
+    print("   • AI generator:     http://localhost:5000/generator.html")
+    print("   • API Config:       http://localhost:5000/api-config.html")
+    print("   • Create niche:     http://localhost:5000/niche-creator.html")
+    print("   • Create style:     http://localhost:5000/style-creator.html")
+    print("   • Output files:     http://localhost:5000/output")
     print("="*60)
 
     # Check API configuration
