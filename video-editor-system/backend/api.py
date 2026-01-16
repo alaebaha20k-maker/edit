@@ -1642,10 +1642,11 @@ if __name__ == '__main__':
     print("="*60)
     print("\n📋 Available pages:")
     print("   • Main editor:     http://localhost:5000/")
-    print("   • API Config:      http://localhost:5000/api-config.html ⚙️")
+    print("   • Settings:        http://localhost:5000/settings.html ⚙️")
+    print("   • API Config:      http://localhost:5000/api-config.html")
+    print("   • AI generator:    http://localhost:5000/generator.html")
     print("   • Create niche:    http://localhost:5000/niche-creator.html")
     print("   • Create style:    http://localhost:5000/style-creator.html")
-    print("   • AI generator:    http://localhost:5000/generator.html")
     print("   • Output files:    http://localhost:5000/output")
     print("="*60)
 
