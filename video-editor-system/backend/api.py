@@ -1138,6 +1138,60 @@ def process_ai_video():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/process-final-video', methods=['POST'])
+def process_final_video_route():
+    """Process all media into final video (NEW SYSTEM)"""
+    from video_processor import process_final_video
+    import time
+
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        title = data.get('title', 'video')
+        media_items = data.get('media_items', [])
+        audio_files = data.get('audio_files', [])
+        quality = data.get('quality', '1080')
+
+        if not media_items:
+            return jsonify({'error': 'No media items provided'}), 400
+
+        if not audio_files:
+            return jsonify({'error': 'No audio files provided'}), 400
+
+        # Validate quality
+        if quality not in ['720', '1080']:
+            return jsonify({'error': 'Quality must be 720 or 1080'}), 400
+
+        # Safe filename
+        safe_title = re.sub(r'[^a-z0-9]', '_', title.lower())[:50]
+        timestamp = int(time.time())
+        output_filename = f"{safe_title}_{timestamp}.mp4"
+        output_path = os.path.join(OUTPUT_FOLDER, output_filename)
+
+        # Process video
+        result = process_final_video(
+            media_items=media_items,
+            audio_files=audio_files,
+            output_path=output_path,
+            quality=quality,
+            verbose=True
+        )
+
+        return jsonify({
+            'success': True,
+            'output_filename': output_filename,
+            **result
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/videos/recent', methods=['GET'])
 def get_recent_videos():
     """Get recent AI-generated videos"""
