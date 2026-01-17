@@ -575,62 +575,54 @@ async function processVideo() {
 document.addEventListener('DOMContentLoaded', () => {
     const editorVideoInput = document.getElementById('editorVideoInput');
     if (editorVideoInput) {
-        editorVideoInput.addEventListener('change', async (e) => {
+        editorVideoInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
 
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('type', 'video');
-
-            try {
-                const response = await fetch('/api/upload', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                const data = await response.json();
-                if (data.success) {
-                    await loadEditorVideo(data.file_path);
-                }
-            } catch (error) {
-                alert('Error uploading video: ' + error.message);
-            }
+            // Use local file URL - no need to upload to server first
+            const fileUrl = URL.createObjectURL(file);
+            loadEditorVideo(fileUrl, file.name);
         });
     }
 });
 
-async function loadEditorVideo(filePath) {
-    const preview = document.getElementById('editorVideoPreview');
-    preview.src = `/api/preview-video/${filePath.split('/').pop()}`;
-    preview.load();
+function loadEditorVideo(fileUrl, fileName) {
+    try {
+        const preview = document.getElementById('editorVideoPreview');
+        preview.src = fileUrl;
+        preview.load();
 
-    appState.editorVideo = {
-        path: filePath,
-        duration: 0
-    };
+        appState.editorVideo = {
+            path: fileUrl,
+            fileName: fileName || 'video.mp4',
+            duration: 0
+        };
 
-    // Show sections
-    document.getElementById('editorPreviewSection').style.display = 'block';
-    document.getElementById('editorTimelineSection').style.display = 'block';
-    document.getElementById('editorToolsSection').style.display = 'block';
-    document.getElementById('editorExportSection').style.display = 'block';
+        // Show sections
+        document.getElementById('editorPreviewSection').style.display = 'block';
+        document.getElementById('editorTimelineSection').style.display = 'block';
+        document.getElementById('editorToolsSection').style.display = 'block';
+        document.getElementById('editorExportSection').style.display = 'block';
 
-    // Wait for metadata
-    preview.addEventListener('loadedmetadata', () => {
-        appState.editorVideo.duration = preview.duration;
+        // Wait for metadata
+        preview.addEventListener('loadedmetadata', () => {
+            appState.editorVideo.duration = preview.duration;
 
-        // Create initial clip
-        appState.editorClips = [{
-            id: 'clip-0',
-            videoPath: filePath,
-            start: 0,
-            end: preview.duration,
-            duration: preview.duration
-        }];
+            // Create initial clip
+            appState.editorClips = [{
+                id: 'clip-0',
+                videoPath: fileUrl,
+                start: 0,
+                end: preview.duration,
+                duration: preview.duration
+            }];
 
-        updateEditorTimeline();
-    });
+            updateEditorTimeline();
+        });
+    } catch (error) {
+        alert('Error loading video: ' + error.message);
+        console.error('Editor load error:', error);
+    }
 }
 
 // =============================================================================
