@@ -213,21 +213,30 @@ async function generateTitle() {
             throw new Error('Gemini API key not found. Please configure in Settings.');
         }
 
-        const prompt = `Generate a catchy, engaging YouTube video title about: ${topic}. Make it attention-grabbing and viral-worthy. Return ONLY the title, nothing else.`;
+        // Use custom formula if available, otherwise use default
+        const customFormula = settings.formulas?.title?.trim();
+        const prompt = customFormula
+            ? customFormula.replace('{topic}', topic)
+            : `Generate a catchy, engaging YouTube video title about: ${topic}. Make it attention-grabbing and viral-worthy. Return ONLY the title, nothing else.`;
 
         const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }]
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: {
+                        temperature: 0.9,
+                        maxOutputTokens: 1024
+                    }
                 })
             }
         );
 
         if (!response.ok) {
-            throw new Error(`Gemini API error: ${response.status}`);
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(`Gemini API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
         }
 
         const data = await response.json();
@@ -300,9 +309,9 @@ const cleanScript = (text) => {
         .trim();
 };
 
-const callGemini = async (apiKey, prompt) => {
+const callGemini = async (apiKey, prompt, maxTokens = 8192) => {
     const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
         {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -310,13 +319,16 @@ const callGemini = async (apiKey, prompt) => {
                 contents: [{ parts: [{ text: prompt }] }],
                 generationConfig: {
                     temperature: 0.9,
-                    maxOutputTokens: 8192
+                    maxOutputTokens: maxTokens
                 }
             })
         }
     );
 
-    if (!response.ok) throw new Error(`Gemini API error: ${response.status}`);
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`Gemini API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
+    }
 
     const data = await response.json();
     return data.candidates[0].content.parts[0].text;
@@ -356,10 +368,16 @@ async function generateScript() {
         let fullScript = '';
         let lastSentences = '';
 
+        // Check if custom formula exists
+        const customFormula = settings.formulas?.script?.trim();
+        const useCustomFormula = customFormula && customFormula.length > 0;
+
         // CHUNK 1: Hook + Intro
         if (resultBox) resultBox.innerHTML = '<p>⏳ Chunk 1/3: Generating hook and intro...</p>';
 
-        const chunk1Prompt = `Create an engaging video script about: "${title}"
+        const chunk1Prompt = useCustomFormula
+            ? customFormula.replace('{title}', title).replace('{chunk}', '1').replace('{focus}', 'Hook + Intro')
+            : `Create an engaging video script about: "${title}"
 
 Target length: ${chunkSize} characters
 This is PART 1 of 3. Focus on:
@@ -379,7 +397,9 @@ Write engaging, conversational narration script.`;
         // CHUNK 2: Examples + Depth
         if (resultBox) resultBox.innerHTML = '<p>⏳ Chunk 2/3: Adding examples and depth...</p>';
 
-        const chunk2Prompt = `Continue this script seamlessly:
+        const chunk2Prompt = useCustomFormula
+            ? customFormula.replace('{title}', title).replace('{chunk}', '2').replace('{focus}', 'Examples + Depth').replace('{previous}', lastSentences)
+            : `Continue this script seamlessly:
 
 Previous ending: "${lastSentences}"
 
@@ -401,7 +421,9 @@ Continue naturally from previous part.`;
         // CHUNK 3: Steps + CTA
         if (resultBox) resultBox.innerHTML = '<p>⏳ Chunk 3/3: Adding conclusion and CTA...</p>';
 
-        const chunk3Prompt = `Continue and conclude this script:
+        const chunk3Prompt = useCustomFormula
+            ? customFormula.replace('{title}', title).replace('{chunk}', '3').replace('{focus}', 'Steps + CTA').replace('{previous}', lastSentences)
+            : `Continue and conclude this script:
 
 Previous ending: "${lastSentences}"
 
@@ -688,6 +710,16 @@ function loadEditorVideo(fileUrl, fileName) {
             return;
         }
 
+        // Check file extension
+        const ext = fileName?.toLowerCase().split('.').pop();
+        if (ext === 'mkv') {
+            showNotification('⚠️ MKV format may not work in browser. Please convert to MP4 first.', 'warning');
+        }
+
+        // Clear previous listeners
+        preview.onloadedmetadata = null;
+        preview.onerror = null;
+
         preview.src = fileUrl;
         preview.load();
 
@@ -718,9 +750,21 @@ function loadEditorVideo(fileUrl, fileName) {
             if (section) section.style.display = 'block';
         });
 
+        // Handle video load error (unsupported format)
+        preview.onerror = () => {
+            showNotification('❌ Video format not supported. Use MP4, WebM, or MOV.', 'error');
+            console.error('Video load error - unsupported format:', fileName);
+        };
+
         // Wait for metadata
-        preview.addEventListener('loadedmetadata', () => {
+        preview.onloadedmetadata = () => {
             const duration = preview.duration;
+
+            if (!duration || duration === Infinity || isNaN(duration)) {
+                showNotification('⚠️ Could not read video duration. File may be corrupted.', 'warning');
+                return;
+            }
+
             window.editorData.duration = duration;
             appState.editorVideo.duration = duration;
 
@@ -737,7 +781,7 @@ function loadEditorVideo(fileUrl, fileName) {
 
             updateEditorTimeline();
             showNotification('✅ Video loaded in editor', 'success');
-        });
+        };
     } catch (error) {
         showNotification('❌ Error loading video: ' + error.message, 'error');
         console.error('Editor load error:', error);
