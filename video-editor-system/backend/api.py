@@ -1749,6 +1749,61 @@ def editor_process_route():
         }), 500
 
 
+@app.route('/api/generate-voice', methods=['POST'])
+def generate_voice():
+    """
+    Generate AI voice using text-to-speech
+
+    Request JSON:
+        {
+            'script': 'Text to convert to speech',
+            'voice': 'voice_name',  # optional
+            'rate': 1.0  # optional, speaking rate
+        }
+
+    Response:
+        {
+            'success': True,
+            'audio_url': '/api/download/voice_xxx.mp3',
+            'duration': 123.45
+        }
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        script = data.get('script', '').strip()
+        voice = data.get('voice', 'en-US-Neural2-C')
+        rate = float(data.get('rate', 1.0))
+
+        if not script:
+            return jsonify({'error': 'Script text is required'}), 400
+
+        # For now, return a placeholder response
+        # TODO: Integrate with actual TTS service (Google Cloud TTS, ElevenLabs, etc.)
+        # Inworld AI doesn't have a direct TTS API - it's for game characters
+        # Better alternatives: Google Cloud TTS, Amazon Polly, ElevenLabs
+
+        return jsonify({
+            'success': False,
+            'error': 'Voice generation requires TTS service integration (Google Cloud TTS, ElevenLabs, or Azure TTS). Inworld AI is for game characters, not TTS. Please integrate one of these services in the backend.',
+            'suggested_services': [
+                'Google Cloud Text-to-Speech (https://cloud.google.com/text-to-speech)',
+                'ElevenLabs (https://elevenlabs.io)',
+                'Amazon Polly (https://aws.amazon.com/polly/)',
+                'Azure Cognitive Services Speech (https://azure.microsoft.com/en-us/services/cognitive-services/text-to-speech/)'
+            ]
+        }), 501  # 501 Not Implemented
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 # =============================================================================
 # ERROR HANDLERS
 # =============================================================================

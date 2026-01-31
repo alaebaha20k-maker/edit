@@ -391,19 +391,24 @@
 
             <!-- Edit Tools -->
             <section id="editorToolsSection" class="editor-tools" style="display: none;">
+                <div style="background: rgba(102, 126, 234, 0.1); padding: 10px; border-radius: 8px; margin-bottom: 15px;">
+                    <p style="margin: 0; font-size: 13px; color: #aaa;">
+                        <strong>Quick Guide:</strong> 1) Click a clip in timeline to select it 2) Play video to desired cut point 3) Click "Quick Cut" to split
+                    </p>
+                </div>
                 <div class="tool-group">
-                    <span class="tool-label">✂️ Edit:</span>
-                    <button class="btn-tool" onclick="editorSplit()">Split at Playhead</button>
-                    <button class="btn-tool btn-danger" onclick="editorDelete()">Delete Clip</button>
+                    <span class="tool-label">✂️ Quick Edit:</span>
+                    <button class="btn-tool" onclick="editorSplit()" style="background: #667eea; font-weight: bold;">✂️ Quick Cut at Playhead</button>
+                    <button class="btn-tool btn-danger" onclick="editorDelete()">🗑️ Delete Selected Clip</button>
                 </div>
                 <div class="tool-group">
                     <span class="tool-label">➕ Add:</span>
-                    <button class="btn-tool" onclick="editorShowOverlay()">Add Text Overlay</button>
+                    <button class="btn-tool" onclick="editorShowOverlay()">💬 Add Text Overlay</button>
                 </div>
                 <div class="tool-group">
-                    <span class="tool-label">🔄 Order:</span>
-                    <button class="btn-tool" onclick="editorMoveLeft()">← Move Left</button>
-                    <button class="btn-tool" onclick="editorMoveRight()">Move Right →</button>
+                    <span class="tool-label">🔄 Arrange:</span>
+                    <button class="btn-tool" onclick="editorMoveLeft()">← Move Clip Left</button>
+                    <button class="btn-tool" onclick="editorMoveRight()">Move Clip Right →</button>
                 </div>
             </section>
 

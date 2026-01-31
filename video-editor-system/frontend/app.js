@@ -861,13 +861,68 @@ async function generateAiImages() {
             throw new Error('Replicate API token not found. Please configure in Settings.');
         }
 
-        showNotification(`🎨 Generating ${count} images...`, 'info');
+        showNotification(`🎨 Generating ${count} images with AI...`, 'info');
 
-        // This would call your backend API to handle Replicate
-        // For now, showing placeholder
-        if (progressBox) {
-            progressBox.innerHTML = `<p>⚠️ Image generation requires backend API setup</p>`;
+        // Call backend API for Replicate image generation
+        const title = document.getElementById('titleInput')?.value || window.videoData.title || 'Untitled';
+
+        const response = await fetch('/api/generate-images', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title: title,
+                script: script,
+                style_id: 'default',  // TODO: Add style selector
+                count: count
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || `Server error: ${response.status}`);
         }
+
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || 'Image generation failed');
+        }
+
+        const imageUrls = data.image_urls || [];
+
+        if (imageUrls.length === 0) {
+            throw new Error('No images generated');
+        }
+
+        if (progressBox) {
+            progressBox.innerHTML = `<p>✅ Generated ${imageUrls.length} AI images!</p>`;
+        }
+
+        if (previewBox) {
+            previewBox.innerHTML = '';
+
+            imageUrls.forEach((url, index) => {
+                const card = document.createElement('div');
+                card.style.cssText = `
+                    position: relative;
+                    background: rgba(0,0,0,0.3);
+                    border-radius: 10px;
+                    overflow: hidden;
+                    padding: 10px;
+                `;
+
+                card.innerHTML = `
+                    <img src="${url}" alt="AI Image ${index + 1}" style="width: 100%; height: 150px; object-fit: cover; border-radius: 8px;">
+                    <button onclick="addStockToLibrary('${url}', 'image', 'ai')" class="btn-success" style="width: 100%; margin-top: 8px; font-size: 12px;">
+                        ➕ Add to Library
+                    </button>
+                `;
+
+                previewBox.appendChild(card);
+            });
+        }
+
+        showNotification(`✅ Generated ${imageUrls.length} AI images!`, 'success');
 
     } catch (error) {
         console.error('Image generation failed:', error);
@@ -1127,13 +1182,52 @@ async function generateVoice() {
         return;
     }
 
+    const voiceSelect = document.getElementById('voiceSelect');
+    const rateSlider = document.getElementById('speakingRate');
+
+    const voice = voiceSelect ? voiceSelect.value : 'en-US-Neural2-C';
+    const rate = rateSlider ? parseFloat(rateSlider.value) : 1.0;
+
     const progressBox = document.getElementById('voiceProgress');
     if (progressBox) {
         progressBox.style.display = 'block';
-        progressBox.innerHTML = '<p>🎙️ Voice generation requires backend API setup</p>';
+        progressBox.innerHTML = '<p>🎙️ Generating voice... This may take 1-2 minutes...</p>';
     }
 
-    showNotification('⚠️ Voice generation requires Inworld AI backend integration', 'warning');
+    try {
+        showNotification('🎙️ Generating AI voice...', 'info');
+
+        const response = await fetch('/api/generate-voice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                script: script,
+                voice: voice,
+                rate: rate
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || `Server error: ${response.status}`);
+        }
+
+        if (progressBox) {
+            progressBox.innerHTML = `<p>✅ Voice generated! Duration: ${Math.round(data.duration)}s</p>`;
+        }
+
+        showNotification('✅ Voice generated successfully!', 'success');
+
+        // TODO: Add audio player to preview the generated voice
+
+    } catch (error) {
+        console.error('Voice generation failed:', error);
+        if (progressBox) {
+            progressBox.innerHTML = `<p>❌ Error: ${error.message}</p>`;
+        }
+        showNotification('❌ Voice generation failed: ' + error.message, 'error');
+    }
 }
 
 // =============================================================================
