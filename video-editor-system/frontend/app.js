@@ -1138,6 +1138,36 @@ document.addEventListener('DOMContentLoaded', () => {
         useStockFootage.addEventListener('change', () => toggleMediaSection('stock'));
     }
 
+    // Setup drag-and-drop for editor upload zone
+    const editorUploadZone = document.getElementById('editorUploadZone');
+    if (editorUploadZone) {
+        editorUploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            editorUploadZone.style.borderColor = '#667eea';
+            editorUploadZone.style.background = 'rgba(102, 126, 234, 0.1)';
+        });
+
+        editorUploadZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            editorUploadZone.style.borderColor = '#444';
+            editorUploadZone.style.background = 'rgba(255, 255, 255, 0.02)';
+        });
+
+        editorUploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            editorUploadZone.style.borderColor = '#444';
+            editorUploadZone.style.background = 'rgba(255, 255, 255, 0.02)';
+
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('video/')) {
+                const fileUrl = URL.createObjectURL(file);
+                loadEditorVideo(fileUrl, file.name);
+            } else {
+                showNotification('⚠️ Please drop a video file', 'warning');
+            }
+        });
+    }
+
     // Load initial tab
     showTab('dashboard');
 

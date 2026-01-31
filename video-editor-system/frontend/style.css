@@ -1023,3 +1023,65 @@ button:active {
 .mb-20 {
     margin-bottom: 20px;
 }
+
+/* === NOTIFICATION SYSTEM === */
+#notification-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.notification {
+    background: #1e1e2e;
+    color: #ffffff;
+    padding: 15px 25px;
+    border-radius: 10px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    min-width: 300px;
+    max-width: 400px;
+    font-size: 14px;
+    font-weight: 500;
+    border-left: 4px solid #667eea;
+    animation: slideInRight 0.3s ease;
+    transition: opacity 0.3s ease;
+}
+
+.notification-success {
+    border-left-color: #10b981;
+    background: linear-gradient(135deg, #064e3b 0%, #1e1e2e 100%);
+}
+
+.notification-error {
+    border-left-color: #ef4444;
+    background: linear-gradient(135deg, #7f1d1d 0%, #1e1e2e 100%);
+}
+
+.notification-warning {
+    border-left-color: #f59e0b;
+    background: linear-gradient(135deg, #78350f 0%, #1e1e2e 100%);
+}
+
+.notification-info {
+    border-left-color: #3b82f6;
+    background: linear-gradient(135deg, #1e3a8a 0%, #1e1e2e 100%);
+}
+
+.notification.fade-out {
+    opacity: 0;
+    transform: translateX(50px);
+}
+
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
