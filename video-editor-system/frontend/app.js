@@ -916,48 +916,42 @@ async function fetchStockFootage() {
     const query = keywordsInput ? keywordsInput.value.trim() : '';
 
     if (!query) {
-        showNotification('⚠️ Enter search keywords or extract from script', 'warning');
+        showNotification('⚠️ Enter search keywords', 'warning');
         return;
     }
+
+    const sourceSelect = document.getElementById('stockSource');
+    const source = sourceSelect ? sourceSelect.value : 'pexels';
+
+    const typeRadio = document.querySelector('input[name="stockType"]:checked');
+    const type = typeRadio ? typeRadio.value : 'videos';
+
+    const countInput = document.getElementById('stockCount');
+    const count = countInput ? parseInt(countInput.value) : 10;
 
     const progressBox = document.getElementById('stockProgress');
     const previewBox = document.getElementById('stockPreview');
 
     if (progressBox) {
         progressBox.style.display = 'block';
-        progressBox.innerHTML = '<p>📹 Searching Pexels for stock footage...</p>';
+        progressBox.innerHTML = `<p>🔍 Searching ${source} for ${type}...</p>`;
     }
 
     if (previewBox) previewBox.innerHTML = '';
 
     try {
-        const settings = JSON.parse(localStorage.getItem('videoToolSettings') || '{}');
-        const apiKey = settings.api_keys?.pexels;
+        let items = [];
 
-        if (!apiKey) {
-            throw new Error('Pexels API key not found. Please configure in Settings.');
+        if (source === 'pexels') {
+            items = await searchPexels(query, type, count);
+        } else if (source === 'pixabay') {
+            items = await searchPixabay(query, type, count);
+        } else if (source === 'unsplash') {
+            if (type === 'videos') {
+                throw new Error('Unsplash only supports photos');
+            }
+            items = await searchUnsplash(query, count);
         }
-
-        const typeRadio = document.querySelector('input[name="stockType"]:checked');
-        const type = typeRadio ? typeRadio.value : 'videos';
-
-        const countInput = document.getElementById('stockCount');
-        const count = countInput ? parseInt(countInput.value) : 5;
-
-        const endpoint = type === 'videos'
-            ? `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=${count}&orientation=landscape`
-            : `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=${count}&orientation=landscape`;
-
-        const response = await fetch(endpoint, {
-            headers: { 'Authorization': apiKey }
-        });
-
-        if (!response.ok) {
-            throw new Error(`Pexels API error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        const items = type === 'videos' ? data.videos : data.photos;
 
         if (!items || items.length === 0) {
             if (progressBox) {
@@ -977,19 +971,27 @@ async function fetchStockFootage() {
             items.forEach(item => {
                 const card = document.createElement('div');
                 card.className = 'stock-item';
+                card.style.cssText = `
+                    position: relative;
+                    background: rgba(0,0,0,0.3);
+                    border-radius: 10px;
+                    overflow: hidden;
+                    padding: 10px;
+                `;
 
-                if (type === 'videos') {
-                    const hdFile = item.video_files.find(f => f.quality === 'hd' || f.quality === 'sd');
-                    card.innerHTML = `
-                        <img src="${item.image}" alt="Video thumbnail" style="width: 100%; height: 150px; object-fit: cover; border-radius: 10px;">
-                        <p>${item.width}x${item.height} - ${Math.round(item.duration)}s</p>
-                    `;
-                } else {
-                    card.innerHTML = `
-                        <img src="${item.src.medium}" alt="Photo" style="width: 100%; height: 150px; object-fit: cover; border-radius: 10px;">
-                        <p>${item.width}x${item.height}</p>
-                    `;
-                }
+                const imgSrc = item.thumbnail || item.preview || item.image;
+                const mediaType = item.mediaType || type.slice(0, -1); // 'video' or 'photo'
+
+                card.innerHTML = `
+                    <img src="${imgSrc}" alt="${mediaType}" style="width: 100%; height: 150px; object-fit: cover; border-radius: 8px;">
+                    <div style="margin-top: 8px; font-size: 12px; color: #aaa;">
+                        ${item.width && item.height ? `${item.width}x${item.height}` : ''}
+                        ${item.duration ? ` - ${Math.round(item.duration)}s` : ''}
+                    </div>
+                    <button onclick="addStockToLibrary('${item.url}', '${mediaType}', '${source}')" class="btn-success" style="width: 100%; margin-top: 8px; font-size: 12px;">
+                        ➕ Add to Library
+                    </button>
+                `;
 
                 previewBox.appendChild(card);
             });
@@ -1004,6 +1006,104 @@ async function fetchStockFootage() {
         }
         showNotification('❌ Stock search failed: ' + error.message, 'error');
     }
+}
+
+async function searchPexels(query, type, count) {
+    const settings = JSON.parse(localStorage.getItem('videoToolSettings') || '{}');
+    const apiKey = settings.api_keys?.pexels;
+
+    if (!apiKey) {
+        throw new Error('Pexels API key not found. Configure in Settings.');
+    }
+
+    const endpoint = type === 'videos'
+        ? `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&per_page=${count}&orientation=landscape`
+        : `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=${count}&orientation=landscape`;
+
+    const response = await fetch(endpoint, {
+        headers: { 'Authorization': apiKey }
+    });
+
+    if (!response.ok) {
+        throw new Error(`Pexels API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const rawItems = type === 'videos' ? data.videos : data.photos;
+
+    return rawItems.map(item => ({
+        url: type === 'videos' ? item.video_files[0].link : item.src.large,
+        thumbnail: type === 'videos' ? item.image : item.src.medium,
+        width: item.width,
+        height: item.height,
+        duration: item.duration,
+        mediaType: type.slice(0, -1)
+    }));
+}
+
+async function searchPixabay(query, type, count) {
+    const settings = JSON.parse(localStorage.getItem('videoToolSettings') || '{}');
+    const apiKey = settings.api_keys?.pixabay;
+
+    if (!apiKey) {
+        throw new Error('Pixabay API key not found. Configure in Settings.');
+    }
+
+    const endpoint = type === 'videos'
+        ? `https://pixabay.com/api/videos/?key=${apiKey}&q=${encodeURIComponent(query)}&per_page=${count}`
+        : `https://pixabay.com/api/?key=${apiKey}&q=${encodeURIComponent(query)}&per_page=${count}&image_type=photo`;
+
+    const response = await fetch(endpoint);
+
+    if (!response.ok) {
+        throw new Error(`Pixabay API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const rawItems = data.hits;
+
+    return rawItems.map(item => ({
+        url: type === 'videos' ? item.videos.medium.url : item.largeImageURL,
+        thumbnail: type === 'videos' ? (item.videos.tiny?.thumbnail || item.userImageURL) : item.webformatURL,
+        width: type === 'videos' ? item.videos.medium.width : item.imageWidth,
+        height: type === 'videos' ? item.videos.medium.height : item.imageHeight,
+        duration: item.duration,
+        mediaType: type.slice(0, -1)
+    }));
+}
+
+async function searchUnsplash(query, count) {
+    const settings = JSON.parse(localStorage.getItem('videoToolSettings') || '{}');
+    const apiKey = settings.api_keys?.unsplash;
+
+    if (!apiKey) {
+        throw new Error('Unsplash API key not found. Configure in Settings.');
+    }
+
+    const endpoint = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(query)}&per_page=${count}&orientation=landscape`;
+
+    const response = await fetch(endpoint, {
+        headers: { 'Authorization': `Client-ID ${apiKey}` }
+    });
+
+    if (!response.ok) {
+        throw new Error(`Unsplash API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const rawItems = data.results;
+
+    return rawItems.map(item => ({
+        url: item.urls.full,
+        thumbnail: item.urls.small,
+        width: item.width,
+        height: item.height,
+        mediaType: 'photo'
+    }));
+}
+
+function addStockToLibrary(url, type, source) {
+    addToMediaLibrary(null, url, type, source);
 }
 
 // =============================================================================

@@ -214,10 +214,18 @@
 
                 <!-- Stock Footage Section -->
                 <div id="stockFootageSection" class="subsection" style="display: none;">
-                    <label>Search Keywords (auto-extracted from script or manual):</label>
+                    <label>Search Keywords:</label>
                     <input type="text" id="stockKeywords" placeholder="E.g., space, galaxy, astronaut" class="input-large">
-                    <button onclick="extractKeywords()" class="btn-secondary">🔍 Auto-Extract Keywords</button>
-                    <div class="stock-options">
+                    <button onclick="extractKeywords()" class="btn-secondary">🔍 Auto-Extract from Script</button>
+
+                    <div class="stock-options" style="margin: 15px 0;">
+                        <label>Source:</label>
+                        <select id="stockSource" class="input-medium" style="margin-right: 15px;">
+                            <option value="pexels">Pexels (Videos + Photos)</option>
+                            <option value="pixabay">Pixabay (Videos + Photos)</option>
+                            <option value="unsplash">Unsplash (Photos Only)</option>
+                        </select>
+
                         <label class="radio-label">
                             <input type="radio" name="stockType" value="videos" checked>
                             <span>📹 Videos</span>
@@ -227,9 +235,10 @@
                             <span>📷 Photos</span>
                         </label>
                     </div>
+
                     <label>Number of items:</label>
-                    <input type="number" id="stockCount" value="5" min="1" max="20" class="input-medium">
-                    <button onclick="fetchStockFootage()" class="btn-secondary">📹 Fetch Stock Footage</button>
+                    <input type="number" id="stockCount" value="10" min="1" max="50" class="input-medium">
+                    <button onclick="fetchStockFootage()" class="btn-secondary">🔍 Search Stock Media</button>
                     <div id="stockProgress" class="progress-box" style="display: none;"></div>
                     <div id="stockPreview" class="image-grid"></div>
                 </div>
