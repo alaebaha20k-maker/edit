@@ -17,7 +17,10 @@ const appState = {
     selectedClip: null,
     editorVideo: null,
     settings: {},
-    mediaFiles: []
+    mediaFiles: [],
+    titleFormulas: [],
+    scriptFormulas: [],
+    mediaLibrary: []
 };
 
 // Global video data
@@ -140,10 +143,12 @@ const loadSettings = () => {
 
             // Load formula lists
             if (settings.title_formulas) {
+                appState.titleFormulas = settings.title_formulas;
                 renderTitleFormulas(settings.title_formulas);
                 updateTitleFormulaDropdown(settings.title_formulas);
             }
             if (settings.script_formulas) {
+                appState.scriptFormulas = settings.script_formulas;
                 renderScriptFormulas(settings.script_formulas);
                 updateScriptFormulaDropdown(settings.script_formulas);
             }
@@ -160,16 +165,15 @@ const saveSettings = () => {
     try {
         const settings = {
             api_keys: {
-                gemini: document.getElementById('geminiKey').value,
-                replicate: document.getElementById('replicateKey').value,
-                inworld: document.getElementById('inworldKey').value,
-                pexels: document.getElementById('pexelsKey').value
+                gemini: document.getElementById('geminiKey')?.value || '',
+                replicate: document.getElementById('replicateKey')?.value || '',
+                inworld: document.getElementById('inworldKey')?.value || '',
+                pexels: document.getElementById('pexelsKey')?.value || '',
+                pixabay: document.getElementById('pixabayKey')?.value || '',
+                unsplash: document.getElementById('unsplashKey')?.value || ''
             },
-            formulas: {
-                title: document.getElementById('titleFormula').value,
-                script: document.getElementById('scriptFormula').value,
-                image: document.getElementById('imageFormula').value
-            }
+            title_formulas: appState.titleFormulas || [],
+            script_formulas: appState.scriptFormulas || []
         };
 
         localStorage.setItem('videoToolSettings', JSON.stringify(settings));
@@ -183,6 +187,149 @@ const saveSettings = () => {
         showNotification('❌ Failed to save: ' + error.message, 'error');
     }
 };
+
+// =============================================================================
+// FORMULA MANAGEMENT SYSTEM
+// =============================================================================
+function addTitleFormula() {
+    const nameInput = document.getElementById('newTitleFormulaName');
+    const contentInput = document.getElementById('newTitleFormulaContent');
+
+    const name = nameInput?.value.trim();
+    const content = contentInput?.value.trim();
+
+    if (!name || !content) {
+        showNotification('⚠️ Please enter both formula name and content', 'warning');
+        return;
+    }
+
+    if (!appState.titleFormulas) appState.titleFormulas = [];
+
+    appState.titleFormulas.push({ name, content, id: Date.now() });
+
+    renderTitleFormulas(appState.titleFormulas);
+    updateTitleFormulaDropdown(appState.titleFormulas);
+
+    nameInput.value = '';
+    contentInput.value = '';
+
+    showNotification('✅ Title formula added!', 'success');
+}
+
+function deleteTitleFormula(id) {
+    if (!confirm('Delete this formula?')) return;
+
+    appState.titleFormulas = appState.titleFormulas.filter(f => f.id !== id);
+    renderTitleFormulas(appState.titleFormulas);
+    updateTitleFormulaDropdown(appState.titleFormulas);
+
+    showNotification('✅ Formula deleted', 'success');
+}
+
+function renderTitleFormulas(formulas) {
+    const container = document.getElementById('titleFormulasList');
+    if (!container) return;
+
+    if (!formulas || formulas.length === 0) {
+        container.innerHTML = '<p style="color: #888;">No formulas saved yet.</p>';
+        return;
+    }
+
+    container.innerHTML = formulas.map(f => `
+        <div class="formula-item" style="background: rgba(255,255,255,0.05); padding: 15px; margin: 10px 0; border-radius: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+                <div style="flex: 1;">
+                    <strong style="color: #667eea;">${f.name}</strong>
+                    <p style="color: #aaa; margin: 8px 0; font-size: 13px;">${f.content}</p>
+                </div>
+                <button onclick="deleteTitleFormula(${f.id})" class="btn-secondary" style="margin-left: 10px;">🗑️</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function updateTitleFormulaDropdown(formulas) {
+    const dropdown = document.getElementById('titleFormulaSelect');
+    if (!dropdown) return;
+
+    dropdown.innerHTML = '<option value="default">Default Formula (No topic needed)</option>';
+
+    if (formulas && formulas.length > 0) {
+        formulas.forEach(f => {
+            dropdown.innerHTML += `<option value="${f.id}">${f.name}</option>`;
+        });
+    }
+}
+
+function addScriptFormula() {
+    const nameInput = document.getElementById('newScriptFormulaName');
+    const contentInput = document.getElementById('newScriptFormulaContent');
+
+    const name = nameInput?.value.trim();
+    const content = contentInput?.value.trim();
+
+    if (!name || !content) {
+        showNotification('⚠️ Please enter both formula name and content', 'warning');
+        return;
+    }
+
+    if (!appState.scriptFormulas) appState.scriptFormulas = [];
+
+    appState.scriptFormulas.push({ name, content, id: Date.now() });
+
+    renderScriptFormulas(appState.scriptFormulas);
+    updateScriptFormulaDropdown(appState.scriptFormulas);
+
+    nameInput.value = '';
+    contentInput.value = '';
+
+    showNotification('✅ Script formula added!', 'success');
+}
+
+function deleteScriptFormula(id) {
+    if (!confirm('Delete this formula?')) return;
+
+    appState.scriptFormulas = appState.scriptFormulas.filter(f => f.id !== id);
+    renderScriptFormulas(appState.scriptFormulas);
+    updateScriptFormulaDropdown(appState.scriptFormulas);
+
+    showNotification('✅ Formula deleted', 'success');
+}
+
+function renderScriptFormulas(formulas) {
+    const container = document.getElementById('scriptFormulasList');
+    if (!container) return;
+
+    if (!formulas || formulas.length === 0) {
+        container.innerHTML = '<p style="color: #888;">No formulas saved yet.</p>';
+        return;
+    }
+
+    container.innerHTML = formulas.map(f => `
+        <div class="formula-item" style="background: rgba(255,255,255,0.05); padding: 15px; margin: 10px 0; border-radius: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+                <div style="flex: 1;">
+                    <strong style="color: #667eea;">${f.name}</strong>
+                    <p style="color: #aaa; margin: 8px 0; font-size: 13px;">${f.content.substring(0, 150)}${f.content.length > 150 ? '...' : ''}</p>
+                </div>
+                <button onclick="deleteScriptFormula(${f.id})" class="btn-secondary" style="margin-left: 10px;">🗑️</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function updateScriptFormulaDropdown(formulas) {
+    const dropdown = document.getElementById('scriptFormulaSelect');
+    if (!dropdown) return;
+
+    dropdown.innerHTML = '<option value="default">Default 3-Chunk System</option>';
+
+    if (formulas && formulas.length > 0) {
+        formulas.forEach(f => {
+            dropdown.innerHTML += `<option value="${f.id}">${f.name}</option>`;
+        });
+    }
+}
 
 // =============================================================================
 // PROBLEM 3: TITLE GENERATION (FIXED)
@@ -199,17 +346,8 @@ function toggleTitleMode() {
 }
 
 async function generateTitle() {
-    const topicInput = document.getElementById('titleTopic');
-    if (!topicInput) {
-        showNotification('⚠️ Title topic input not found', 'warning');
-        return;
-    }
-
-    const topic = topicInput.value.trim();
-    if (!topic) {
-        showNotification('⚠️ Please enter a topic', 'warning');
-        return;
-    }
+    const formulaSelect = document.getElementById('titleFormulaSelect');
+    const selectedFormulaId = formulaSelect?.value;
 
     const resultBox = document.getElementById('titleResult');
     if (resultBox) {
@@ -225,11 +363,17 @@ async function generateTitle() {
             throw new Error('Gemini API key not found. Please configure in Settings.');
         }
 
-        // Use custom formula if available, otherwise use default
-        const customFormula = settings.formulas?.title?.trim();
-        const prompt = customFormula
-            ? customFormula.replace('{topic}', topic)
-            : `Generate a catchy, engaging YouTube video title about: ${topic}. Make it attention-grabbing and viral-worthy. Return ONLY the title, nothing else.`;
+        // Get formula content
+        let prompt;
+        if (selectedFormulaId === 'default') {
+            prompt = `Generate a catchy, engaging YouTube video title. Make it attention-grabbing and viral-worthy. Return ONLY the title, nothing else.`;
+        } else {
+            const formula = (settings.title_formulas || []).find(f => f.id == selectedFormulaId);
+            if (!formula) {
+                throw new Error('Selected formula not found');
+            }
+            prompt = formula.content;
+        }
 
         const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
@@ -376,13 +520,24 @@ async function generateScript() {
             throw new Error('Gemini API key not found. Please configure in Settings.');
         }
 
+        // Get selected formula
+        const formulaSelect = document.getElementById('scriptFormulaSelect');
+        const selectedFormulaId = formulaSelect?.value;
+
+        let customFormula = null;
+        let useCustomFormula = false;
+
+        if (selectedFormulaId && selectedFormulaId !== 'default') {
+            const formula = (settings.script_formulas || []).find(f => f.id == selectedFormulaId);
+            if (formula) {
+                customFormula = formula.content;
+                useCustomFormula = true;
+            }
+        }
+
         const chunkSize = Math.floor(selectedLength / 3);
         let fullScript = '';
         let lastSentences = '';
-
-        // Check if custom formula exists
-        const customFormula = settings.formulas?.script?.trim();
-        const useCustomFormula = customFormula && customFormula.length > 0;
 
         // CHUNK 1: Hook + Intro
         if (resultBox) resultBox.innerHTML = '<p>⏳ Chunk 1/3: Generating hook and intro...</p>';
@@ -537,6 +692,145 @@ function toggleMediaSection(type) {
         const section = document.getElementById('stockFootageSection');
         if (section) section.style.display = checked ? 'block' : 'none';
     }
+}
+
+// =============================================================================
+// MEDIA LIBRARY WITH RANKING
+// =============================================================================
+function addToMediaLibrary(file, url, type, source = 'upload', muted = false) {
+    const mediaItem = {
+        id: Date.now() + Math.random(),
+        file: file,
+        url: url,
+        type: type, // 'image' or 'video'
+        source: source, // 'upload', 'stock', 'ai'
+        muted: muted,
+        rank: appState.mediaLibrary.length
+    };
+
+    appState.mediaLibrary.push(mediaItem);
+    renderMediaLibrary();
+    showNotification(`✅ Added to media library`, 'success');
+}
+
+function renderMediaLibrary() {
+    const grid = document.getElementById('mediaLibraryGrid');
+    if (!grid) return;
+
+    if (appState.mediaLibrary.length === 0) {
+        grid.innerHTML = '<p style="color: #888; grid-column: 1/-1;">No media added yet. Upload or fetch stock footage above.</p>';
+        return;
+    }
+
+    grid.innerHTML = '';
+
+    appState.mediaLibrary.forEach((media, index) => {
+        const card = document.createElement('div');
+        card.className = 'media-library-card';
+        card.draggable = true;
+        card.dataset.id = media.id;
+        card.dataset.index = index;
+
+        card.style.cssText = `
+            position: relative;
+            background: rgba(0,0,0,0.3);
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: grab;
+            border: 2px solid transparent;
+            transition: all 0.2s;
+        `;
+
+        const isVideo = media.type === 'video';
+
+        const preview = isVideo
+            ? `<video src="${media.url}" style="width: 100%; height: 120px; object-fit: cover;"></video>`
+            : `<img src="${media.url}" style="width: 100%; height: 120px; object-fit: cover;">`;
+
+        const muteToggle = isVideo
+            ? `<label style="display: flex; align-items: center; gap: 5px; font-size: 12px; margin-top: 5px;">
+                <input type="checkbox" ${media.muted ? 'checked' : ''} onchange="toggleMediaMute(${media.id})">
+                <span>Mute</span>
+            </label>`
+            : '';
+
+        card.innerHTML = `
+            ${preview}
+            <div style="padding: 8px;">
+                <div style="font-size: 11px; color: #888; text-transform: uppercase;">${media.source} ${media.type}</div>
+                <div style="font-size: 13px; margin-top: 3px;">Rank: #${index + 1}</div>
+                ${muteToggle}
+                <button onclick="deleteFromMediaLibrary(${media.id})" class="btn-secondary" style="margin-top: 8px; font-size: 11px; padding: 4px 8px;">🗑️ Delete</button>
+            </div>
+        `;
+
+        // Drag events
+        card.addEventListener('dragstart', handleDragStart);
+        card.addEventListener('dragover', handleDragOver);
+        card.addEventListener('drop', handleDrop);
+        card.addEventListener('dragend', handleDragEnd);
+
+        grid.appendChild(card);
+    });
+}
+
+let draggedElement = null;
+
+function handleDragStart(e) {
+    draggedElement = e.target;
+    e.target.style.opacity = '0.5';
+    e.target.style.cursor = 'grabbing';
+}
+
+function handleDragOver(e) {
+    e.preventDefault();
+    const target = e.target.closest('.media-library-card');
+    if (target && target !== draggedElement) {
+        target.style.borderColor = '#667eea';
+    }
+}
+
+function handleDrop(e) {
+    e.preventDefault();
+    const target = e.target.closest('.media-library-card');
+
+    if (target && target !== draggedElement) {
+        const draggedIndex = parseInt(draggedElement.dataset.index);
+        const targetIndex = parseInt(target.dataset.index);
+
+        // Reorder array
+        const item = appState.mediaLibrary.splice(draggedIndex, 1)[0];
+        appState.mediaLibrary.splice(targetIndex, 0, item);
+
+        renderMediaLibrary();
+        showNotification('✅ Media reordered', 'success');
+    }
+
+    target.style.borderColor = 'transparent';
+}
+
+function handleDragEnd(e) {
+    e.target.style.opacity = '1';
+    e.target.style.cursor = 'grab';
+    document.querySelectorAll('.media-library-card').forEach(card => {
+        card.style.borderColor = 'transparent';
+    });
+}
+
+function toggleMediaMute(id) {
+    const media = appState.mediaLibrary.find(m => m.id === id);
+    if (media) {
+        media.muted = !media.muted;
+        showNotification(media.muted ? '🔇 Video muted' : '🔊 Video unmuted', 'info');
+    }
+}
+
+function deleteFromMediaLibrary(id) {
+    if (!confirm('Remove this media from library?')) return;
+
+    appState.mediaLibrary = appState.mediaLibrary.filter(m => m.id !== id);
+    renderMediaLibrary();
+    showNotification('✅ Media removed', 'success');
 }
 
 async function generateAiImages() {
@@ -1254,6 +1548,66 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    // Setup media file upload handler
+    const mediaUpload = document.getElementById('mediaUpload');
+    if (mediaUpload) {
+        mediaUpload.addEventListener('change', (e) => {
+            const files = Array.from(e.target.files);
+            files.forEach(file => {
+                const isVideo = file.type.startsWith('video/');
+                const isImage = file.type.startsWith('image/');
+
+                if (isVideo || isImage) {
+                    const url = URL.createObjectURL(file);
+                    const type = isVideo ? 'video' : 'image';
+                    addToMediaLibrary(file, url, type, 'upload');
+                }
+            });
+
+            // Reset input
+            e.target.value = '';
+        });
+    }
+
+    // Setup media dropzone
+    const mediaDropzone = document.getElementById('mediaDropzone');
+    if (mediaDropzone) {
+        mediaDropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            mediaDropzone.style.borderColor = '#667eea';
+            mediaDropzone.style.background = 'rgba(102, 126, 234, 0.1)';
+        });
+
+        mediaDropzone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            mediaDropzone.style.borderColor = '#444';
+            mediaDropzone.style.background = 'rgba(255, 255, 255, 0.02)';
+        });
+
+        mediaDropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            mediaDropzone.style.borderColor = '#444';
+            mediaDropzone.style.background = 'rgba(255, 255, 255, 0.02)';
+
+            const files = Array.from(e.dataTransfer.files);
+            files.forEach(file => {
+                const isVideo = file.type.startsWith('video/');
+                const isImage = file.type.startsWith('image/');
+
+                if (isVideo || isImage) {
+                    const url = URL.createObjectURL(file);
+                    const type = isVideo ? 'video' : 'image';
+                    addToMediaLibrary(file, url, type, 'upload');
+                } else {
+                    showNotification('⚠️ Only images and videos supported', 'warning');
+                }
+            });
+        });
+    }
+
+    // Load settings and formulas
+    loadSettings();
 
     // Load initial tab
     showTab('dashboard');
