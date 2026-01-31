@@ -123,17 +123,29 @@ const loadSettings = () => {
 
             // Restore API keys
             if (settings.api_keys) {
-                document.getElementById('geminiKey').value = settings.api_keys.gemini || '';
-                document.getElementById('replicateKey').value = settings.api_keys.replicate || '';
-                document.getElementById('inworldKey').value = settings.api_keys.inworld || '';
-                document.getElementById('pexelsKey').value = settings.api_keys.pexels || '';
+                const geminiKey = document.getElementById('geminiKey');
+                const replicateKey = document.getElementById('replicateKey');
+                const inworldKey = document.getElementById('inworldKey');
+                const pexelsKey = document.getElementById('pexelsKey');
+                const pixabayKey = document.getElementById('pixabayKey');
+                const unsplashKey = document.getElementById('unsplashKey');
+
+                if (geminiKey) geminiKey.value = settings.api_keys.gemini || '';
+                if (replicateKey) replicateKey.value = settings.api_keys.replicate || '';
+                if (inworldKey) inworldKey.value = settings.api_keys.inworld || '';
+                if (pexelsKey) pexelsKey.value = settings.api_keys.pexels || '';
+                if (pixabayKey) pixabayKey.value = settings.api_keys.pixabay || '';
+                if (unsplashKey) unsplashKey.value = settings.api_keys.unsplash || '';
             }
 
-            // Restore formulas
-            if (settings.formulas) {
-                document.getElementById('titleFormula').value = settings.formulas.title || '';
-                document.getElementById('scriptFormula').value = settings.formulas.script || '';
-                document.getElementById('imageFormula').value = settings.formulas.image || '';
+            // Load formula lists
+            if (settings.title_formulas) {
+                renderTitleFormulas(settings.title_formulas);
+                updateTitleFormulaDropdown(settings.title_formulas);
+            }
+            if (settings.script_formulas) {
+                renderScriptFormulas(settings.script_formulas);
+                updateScriptFormulaDropdown(settings.script_formulas);
             }
 
             console.log('✅ Settings loaded from localStorage');
@@ -466,6 +478,12 @@ End powerfully and naturally.`;
             `;
         }
 
+        // Show download button
+        const downloadSection = document.getElementById('scriptDownloadSection');
+        if (downloadSection) {
+            downloadSection.style.display = 'block';
+        }
+
         showNotification('✅ Script generated with 3-chunk system!', 'success');
 
     } catch (error) {
@@ -475,6 +493,31 @@ End powerfully and naturally.`;
         }
         showNotification('❌ Script generation failed: ' + error.message, 'error');
     }
+}
+
+// Download generated script as .txt file
+function downloadScript() {
+    const script = document.getElementById('scriptInput')?.value || window.videoData.script || appState.generatedScript;
+
+    if (!script || script.trim().length === 0) {
+        showNotification('⚠️ No script to download', 'warning');
+        return;
+    }
+
+    const title = document.getElementById('titleInput')?.value || window.videoData.title || 'script';
+    const filename = `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_script.txt`;
+
+    const blob = new Blob([script], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showNotification(`✅ Script downloaded: ${filename}`, 'success');
 }
 
 // =============================================================================

@@ -112,7 +112,12 @@
                 </div>
 
                 <div id="titleAutoSection" style="display: none;">
-                    <input type="text" id="titleTopic" placeholder="Enter topic (e.g., 'Space exploration')..." class="input-large">
+                    <div class="input-group">
+                        <label>Select Title Formula</label>
+                        <select id="titleFormulaSelect" class="input-large">
+                            <option value="default">Default Formula</option>
+                        </select>
+                    </div>
                     <button onclick="generateTitle()" class="btn-secondary">🤖 Generate Title</button>
                 </div>
 
@@ -134,20 +139,38 @@
                 </div>
 
                 <div id="scriptManualSection">
-                    <textarea id="scriptInput" rows="10" placeholder="Paste or write your script here..." class="textarea-large"></textarea>
+                    <textarea id="scriptInput" rows="15" placeholder="Paste your script here or upload a file..." class="textarea-large"></textarea>
+                    <div style="margin-top: 10px;">
+                        <input type="file" id="scriptFile" accept=".txt,.md" style="display: none;" onchange="loadScriptFile()">
+                        <button onclick="document.getElementById('scriptFile').click()" class="btn-secondary">📂 Upload Script File</button>
+                    </div>
                 </div>
 
                 <div id="scriptAutoSection" style="display: none;">
-                    <select id="scriptLength" class="select-large">
-                        <option value="30000">Short (~20 min video) - 30K chars</option>
-                        <option value="60000" selected>Medium (~45 min video) - 60K chars</option>
-                        <option value="100000">Long (~70 min video) - 100K chars</option>
-                    </select>
+                    <div class="input-group">
+                        <label>Select Script Formula</label>
+                        <select id="scriptFormulaSelect" class="input-large">
+                            <option value="default">Default 3-Chunk System</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label>Script Length</label>
+                        <select id="scriptLength" class="input-large">
+                            <option value="60000">Short (~6-8 min video)</option>
+                            <option value="90000" selected>Medium (~10-12 min video)</option>
+                            <option value="120000">Long (~15-20 min video)</option>
+                        </select>
+                    </div>
                     <button onclick="generateScript()" class="btn-secondary">🤖 Generate Script</button>
                 </div>
 
                 <div id="scriptResult" class="result-box" style="display: none;"></div>
                 <div id="scriptStats" class="stats-box" style="display: none;"></div>
+
+                <!-- Download Button -->
+                <div id="scriptDownloadSection" style="display: none; margin-top: 15px;">
+                    <button onclick="downloadScript()" class="btn-success">📥 Download Script (.txt)</button>
+                </div>
             </section>
 
             <!-- Step 3: Media (Images/Videos) -->
@@ -493,26 +516,51 @@
                         </div>
                         <span class="hint">Get from: https://www.pexels.com/api/</span>
                     </div>
+
+                    <div class="input-group">
+                        <label>Pixabay API Key (Optional - for stock images)</label>
+                        <div class="password-input">
+                            <input type="password" id="pixabayKey" placeholder="Enter Pixabay API key..." class="input-large">
+                            <button onclick="togglePassword('pixabayKey')" class="btn-toggle">👁️</button>
+                        </div>
+                        <span class="hint">Get from: https://pixabay.com/api/docs/</span>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Unsplash API Key (Optional - for stock images)</label>
+                        <div class="password-input">
+                            <input type="password" id="unsplashKey" placeholder="Enter Unsplash access key..." class="input-large">
+                            <button onclick="togglePassword('unsplashKey')" class="btn-toggle">👁️</button>
+                        </div>
+                        <span class="hint">Get from: https://unsplash.com/developers</span>
+                    </div>
                 </div>
 
                 <!-- Formulas Section -->
                 <div class="settings-section">
-                    <h3>📝 Generation Formulas</h3>
-                    <div class="input-group">
-                        <label>Title Generation Formula</label>
-                        <textarea id="titleFormula" rows="4" placeholder="Example: Generate a viral YouTube title about {topic}. Make it attention-grabbing with emojis." class="textarea-large"></textarea>
-                        <span class="hint">Use {topic} variable. Leave empty to use default formula.</span>
+                    <h3>📝 Title Formulas</h3>
+                    <div id="titleFormulasList">
+                        <!-- Title formulas will be added here -->
                     </div>
-
                     <div class="input-group">
-                        <label>Script Generation Formula</label>
-                        <textarea id="scriptFormula" rows="8" placeholder="Example: Create engaging script for {title}. This is chunk {chunk} focusing on {focus}. Previous: {previous}" class="textarea-large"></textarea>
-                        <span class="hint">Use {title}, {chunk}, {focus}, {previous} variables. Leave empty to use default 3-chunk system.</span>
+                        <label>Add New Title Formula</label>
+                        <input type="text" id="newTitleFormulaName" placeholder="Formula name (e.g., 'Viral Formula', 'Educational Formula')" class="input-large">
+                        <textarea id="newTitleFormulaContent" rows="3" placeholder="Example: Generate a viral YouTube title. Make it click-worthy with emojis and numbers." class="textarea-large" style="margin-top: 10px;"></textarea>
+                        <button onclick="addTitleFormula()" class="btn-secondary" style="margin-top: 10px;">➕ Add Title Formula</button>
                     </div>
+                </div>
 
+                <div class="settings-section">
+                    <h3>📝 Script Formulas</h3>
+                    <div id="scriptFormulasList">
+                        <!-- Script formulas will be added here -->
+                    </div>
                     <div class="input-group">
-                        <label>Image Style Formula</label>
-                        <textarea id="imageFormula" rows="8" placeholder="Custom formula for image style..." class="textarea-large"></textarea>
+                        <label>Add New Script Formula</label>
+                        <input type="text" id="newScriptFormulaName" placeholder="Formula name (e.g., 'Story Formula', 'Tutorial Formula')" class="input-large">
+                        <textarea id="newScriptFormulaContent" rows="5" placeholder="Example: Create engaging script about {title}. Focus on {focus}. Write conversational narration." class="textarea-large" style="margin-top: 10px;"></textarea>
+                        <span class="hint">Use {title}, {chunk}, {focus}, {previous} variables</span>
+                        <button onclick="addScriptFormula()" class="btn-secondary" style="margin-top: 10px;">➕ Add Script Formula</button>
                     </div>
                 </div>
             </div>
