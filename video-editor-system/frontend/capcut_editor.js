@@ -500,11 +500,11 @@ async function capcutExport() {
         exportPercent.textContent = '10%';
 
         const clipsData = capcutClips.map(clip => ({
-            fileId: clip.fileId,
+            file_id: clip.fileId,
             filename: clip.filename,
             type: clip.type,
-            trimStart: clip.trimStart,
-            trimEnd: clip.trimEnd,
+            trim_start: clip.trimStart,
+            trim_end: clip.trimEnd,
             duration: clip.type === 'image' ? (clip.trimEnd - clip.trimStart) : null,
             position: clip.position
         }));
