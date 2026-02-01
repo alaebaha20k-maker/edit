@@ -343,16 +343,16 @@
         <!-- ============================================ -->
         <div id="tab-editor" class="tab-content">
             <h2>✂️ MR BAHA Editor</h2>
-            <p class="subtitle">Professional drag-and-drop timeline editor with automatic transitions • Powered by FFmpeg.wasm</p>
+            <p class="subtitle">Professional drag-and-drop timeline editor with trim, merge, and smooth transitions • Server-side FFmpeg Processing</p>
 
             <!-- Quick Start Guide -->
             <div style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.2), rgba(118, 75, 162, 0.2)); padding: 15px; border-radius: 10px; margin-bottom: 20px;">
                 <h3 style="margin: 0 0 10px 0; font-size: 16px;">🎬 Quick Start:</h3>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; font-size: 13px;">
-                    <div>1️⃣ Drop videos on timeline below</div>
-                    <div>2️⃣ Clips auto-snap with smooth transitions</div>
-                    <div>3️⃣ Drag to reorder • Click transition to change</div>
-                    <div>4️⃣ Click Export when ready</div>
+                    <div>1️⃣ Drop videos/images on timeline</div>
+                    <div>2️⃣ Click clip to trim • Drag to reorder</div>
+                    <div>3️⃣ Select 2 clips → Click Merge</div>
+                    <div>4️⃣ Click Export for final video</div>
                 </div>
             </div>
 
@@ -391,10 +391,10 @@
 
                 <!-- Drop Zone -->
                 <div id="timelineDropZone" style="border: 2px dashed #667eea; border-radius: 10px; padding: 30px; text-align: center; background: rgba(102, 126, 234, 0.05); margin-bottom: 20px; cursor: pointer;" ondragover="timelineDragOver(event)" ondrop="timelineDropFiles(event)" onclick="document.getElementById('timelineFileInput').click()">
-                    <div style="font-size: 48px; margin-bottom: 10px;">📹</div>
-                    <div style="font-size: 16px; font-weight: bold; margin-bottom: 5px;">Drop video files here</div>
-                    <div style="font-size: 13px; color: #aaa;">or click to browse</div>
-                    <input type="file" id="timelineFileInput" accept="video/*" multiple style="display: none;" onchange="timelineSelectFiles(event)">
+                    <div style="font-size: 48px; margin-bottom: 10px;">📹🖼️</div>
+                    <div style="font-size: 16px; font-weight: bold; margin-bottom: 5px;">Drop videos or images here</div>
+                    <div style="font-size: 13px; color: #aaa;">Images will be converted to 5-second clips • Click to browse</div>
+                    <input type="file" id="timelineFileInput" accept="video/*,image/*" multiple style="display: none;" onchange="timelineSelectFiles(event)">
                 </div>
 
                 <!-- Timeline Track -->
@@ -445,6 +445,63 @@
                 <button onclick="closeTransitionModal()" class="btn-secondary" style="width: 100%;">Cancel</button>
             </div>
             <div id="transitionModalOverlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9999;" onclick="closeTransitionModal()"></div>
+
+            <!-- Clip Editing Controls -->
+            <section style="margin-top: 30px; background: rgba(118, 75, 162, 0.05); padding: 20px; border-radius: 10px;" id="clipEditingSection">
+                <h3 style="margin: 0 0 15px 0;">✂️ Edit Clips</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+                    <!-- Trim Clip -->
+                    <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px;">
+                        <div style="font-weight: bold; margin-bottom: 10px;">✂️ Trim Selected Clip</div>
+                        <div style="display: grid; gap: 10px;">
+                            <div>
+                                <label style="font-size: 12px; color: #aaa;">Start Time (seconds):</label>
+                                <input type="number" id="trimStart" min="0" step="0.1" value="0" class="input-medium" style="width: 100%;">
+                            </div>
+                            <div>
+                                <label style="font-size: 12px; color: #aaa;">End Time (seconds):</label>
+                                <input type="number" id="trimEnd" min="0" step="0.1" value="10" class="input-medium" style="width: 100%;">
+                            </div>
+                            <button onclick="trimSelectedClip()" class="btn-primary" style="width: 100%;">✂️ Trim Clip</button>
+                        </div>
+                    </div>
+
+                    <!-- Merge Clips -->
+                    <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px;">
+                        <div style="font-weight: bold; margin-bottom: 10px;">🔗 Merge Clips</div>
+                        <div style="font-size: 12px; color: #aaa; margin-bottom: 10px;">
+                            Select 2 clips by clicking them (hold Ctrl/Cmd)
+                        </div>
+                        <div style="margin-bottom: 10px;">
+                            <label style="font-size: 12px; color: #aaa;">Transition:</label>
+                            <select id="mergeTransition" class="input-medium" style="width: 100%;">
+                                <option value="fade">🌅 Fade</option>
+                                <option value="dissolve">✨ Dissolve</option>
+                                <option value="wipe">➡️ Wipe</option>
+                                <option value="slide">🔄 Slide</option>
+                                <option value="none">⚡ None (instant)</option>
+                            </select>
+                        </div>
+                        <button onclick="mergeSelectedClips()" class="btn-success" style="width: 100%;">🔗 Merge Selected</button>
+                    </div>
+
+                    <!-- Image Duration -->
+                    <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px;">
+                        <div style="font-weight: bold; margin-bottom: 10px;">🖼️ Image Duration</div>
+                        <div style="font-size: 12px; color: #aaa; margin-bottom: 10px;">
+                            Set duration for selected image clip
+                        </div>
+                        <div style="margin-bottom: 10px;">
+                            <label style="font-size: 12px; color: #aaa;">Duration (seconds):</label>
+                            <input type="number" id="imageDuration" min="1" max="30" step="0.5" value="5" class="input-medium" style="width: 100%;">
+                        </div>
+                        <button onclick="setImageDuration()" class="btn-primary" style="width: 100%;">⏱️ Set Duration</button>
+                    </div>
+                </div>
+                <div id="editStatus" style="margin-top: 15px; font-size: 13px; color: #aaa; text-align: center;">
+                    Select a clip to edit
+                </div>
+            </section>
 
             <!-- Export Section -->
             <section style="margin-top: 30px; background: rgba(102, 126, 234, 0.05); padding: 20px; border-radius: 10px;">
@@ -590,10 +647,6 @@
             </div>
         </div>
     </div>
-
-    <!-- FFmpeg.wasm for browser-based video processing -->
-    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.7/dist/umd/ffmpeg.js"></script>
-    <script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
 
     <script src="app.js"></script>
 </body>

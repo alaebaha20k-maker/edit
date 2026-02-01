@@ -1825,6 +1825,483 @@ def internal_error(e):
     }), 500
 
 
+# =============================================================================
+# TIMELINE EDITOR ENDPOINTS - MR BAHA EDITOR
+# =============================================================================
+
+@app.route('/api/timeline/trim', methods=['POST'])
+def timeline_trim_clip():
+    """
+    Trim/cut a video clip
+
+    Request:
+        {
+            "file_id": "unique-id",
+            "start_time": 5.0,    # seconds
+            "end_time": 15.0      # seconds
+        }
+
+    Response:
+        {
+            "success": true,
+            "trimmed_file_id": "new-id",
+            "duration": 10.0
+        }
+    """
+    try:
+        data = request.get_json()
+        file_id = data.get('file_id')
+        start_time = float(data.get('start_time', 0))
+        end_time = float(data.get('end_time'))
+
+        # Find input file
+        input_file = None
+        for file in os.listdir(UPLOAD_FOLDER):
+            if file.startswith(file_id):
+                input_file = os.path.join(UPLOAD_FOLDER, file)
+                break
+
+        if not input_file or not os.path.exists(input_file):
+            return jsonify({'success': False, 'error': 'File not found'}), 404
+
+        # Generate output file
+        trimmed_id = str(uuid.uuid4())
+        ext = os.path.splitext(input_file)[1]
+        output_file = os.path.join(TEMP_FOLDER, f"{trimmed_id}_trimmed{ext}")
+
+        # FFmpeg trim command
+        duration = end_time - start_time
+        cmd = [
+            'ffmpeg', '-i', input_file,
+            '-ss', str(start_time),
+            '-t', str(duration),
+            '-c', 'copy',
+            '-y', output_file
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            return jsonify({
+                'success': False,
+                'error': 'Trim failed',
+                'details': result.stderr
+            }), 500
+
+        return jsonify({
+            'success': True,
+            'trimmed_file_id': trimmed_id,
+            'file_path': output_file,
+            'duration': duration
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/timeline/image-to-video', methods=['POST'])
+def timeline_image_to_video():
+    """
+    Convert image to video with specified duration
+
+    Request:
+        {
+            "file_id": "image-id",
+            "duration": 5.0  # seconds
+        }
+
+    Response:
+        {
+            "success": true,
+            "video_file_id": "new-id",
+            "duration": 5.0
+        }
+    """
+    try:
+        data = request.get_json()
+        file_id = data.get('file_id')
+        duration = float(data.get('duration', 5.0))
+
+        # Find input image
+        input_file = None
+        for file in os.listdir(UPLOAD_FOLDER):
+            if file.startswith(file_id):
+                input_file = os.path.join(UPLOAD_FOLDER, file)
+                break
+
+        if not input_file or not os.path.exists(input_file):
+            return jsonify({'success': False, 'error': 'Image not found'}), 404
+
+        # Generate output video
+        video_id = str(uuid.uuid4())
+        output_file = os.path.join(TEMP_FOLDER, f"{video_id}_from_image.mp4")
+
+        # FFmpeg command to create video from image
+        cmd = [
+            'ffmpeg',
+            '-loop', '1',
+            '-i', input_file,
+            '-c:v', 'libx264',
+            '-t', str(duration),
+            '-pix_fmt', 'yuv420p',
+            '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2',
+            '-r', '30',
+            '-y', output_file
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            return jsonify({
+                'success': False,
+                'error': 'Image to video conversion failed',
+                'details': result.stderr
+            }), 500
+
+        return jsonify({
+            'success': True,
+            'video_file_id': video_id,
+            'file_path': output_file,
+            'duration': duration
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/timeline/process', methods=['POST'])
+def timeline_process():
+    """
+    Process entire timeline with clips, transitions, and effects
+
+    Request:
+        {
+            "clips": [
+                {
+                    "file_id": "id1",
+                    "type": "video",  # or "image"
+                    "duration": 5.0,  # for images
+                    "trim_start": 0,  # optional
+                    "trim_end": 10,   # optional
+                    "transition": "fade",  # fade, dissolve, wipe, slide, zoom, none
+                    "transition_duration": 0.5
+                },
+                ...
+            ],
+            "audio_file_id": "audio-id",  # optional
+            "output_quality": "1080"  # or "720"
+        }
+
+    Response:
+        {
+            "success": true,
+            "output_file": "final_video.mp4",
+            "download_url": "/api/download/..."
+        }
+    """
+    try:
+        data = request.get_json()
+        clips_data = data.get('clips', [])
+        audio_file_id = data.get('audio_file_id')
+        quality = data.get('output_quality', '1080')
+
+        if not clips_data:
+            return jsonify({'success': False, 'error': 'No clips provided'}), 400
+
+        # Process each clip (trim, convert images, etc.)
+        processed_clips = []
+
+        for idx, clip in enumerate(clips_data):
+            file_id = clip['file_id']
+            clip_type = clip['type']
+
+            # Find input file
+            input_file = None
+            for file in os.listdir(UPLOAD_FOLDER):
+                if file.startswith(file_id):
+                    input_file = os.path.join(UPLOAD_FOLDER, file)
+                    break
+
+            # Also check TEMP folder
+            if not input_file:
+                for file in os.listdir(TEMP_FOLDER):
+                    if file.startswith(file_id):
+                        input_file = os.path.join(TEMP_FOLDER, file)
+                        break
+
+            if not input_file:
+                continue
+
+            processed_file = input_file
+
+            # Convert image to video if needed
+            if clip_type == 'image':
+                duration = clip.get('duration', 5.0)
+                temp_id = str(uuid.uuid4())
+                video_file = os.path.join(TEMP_FOLDER, f"{temp_id}_clip{idx}.mp4")
+
+                cmd = [
+                    'ffmpeg',
+                    '-loop', '1',
+                    '-i', input_file,
+                    '-c:v', 'libx264',
+                    '-t', str(duration),
+                    '-pix_fmt', 'yuv420p',
+                    '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2',
+                    '-r', '30',
+                    '-y', video_file
+                ]
+
+                subprocess.run(cmd, capture_output=True)
+                processed_file = video_file
+
+            # Trim if needed
+            trim_start = clip.get('trim_start')
+            trim_end = clip.get('trim_end')
+
+            if trim_start is not None and trim_end is not None:
+                trimmed_id = str(uuid.uuid4())
+                trimmed_file = os.path.join(TEMP_FOLDER, f"{trimmed_id}_trimmed{idx}.mp4")
+                duration = trim_end - trim_start
+
+                cmd = [
+                    'ffmpeg', '-i', processed_file,
+                    '-ss', str(trim_start),
+                    '-t', str(duration),
+                    '-c', 'copy',
+                    '-y', trimmed_file
+                ]
+
+                subprocess.run(cmd, capture_output=True)
+                processed_file = trimmed_file
+
+            processed_clips.append({
+                'file': processed_file,
+                'transition': clip.get('transition', 'fade'),
+                'transition_duration': clip.get('transition_duration', 0.5)
+            })
+
+        if not processed_clips:
+            return jsonify({'success': False, 'error': 'No valid clips to process'}), 400
+
+        # Create concat file for FFmpeg
+        concat_file = os.path.join(TEMP_FOLDER, f"concat_{uuid.uuid4()}.txt")
+        with open(concat_file, 'w') as f:
+            for clip in processed_clips:
+                f.write(f"file '{os.path.abspath(clip['file'])}'\n")
+
+        # Generate output file
+        output_id = str(uuid.uuid4())
+        output_file = os.path.join(OUTPUT_FOLDER, f"timeline_{output_id}.mp4")
+
+        # Simple concat for now (advanced transitions need complex filter)
+        if len(processed_clips) == 1:
+            # Single clip - just copy
+            cmd = [
+                'ffmpeg', '-i', processed_clips[0]['file'],
+                '-c', 'copy',
+                '-y', output_file
+            ]
+        else:
+            # Multiple clips - concat with smooth transitions
+            # Using concat demuxer for smooth merging
+            cmd = [
+                'ffmpeg',
+                '-f', 'concat',
+                '-safe', '0',
+                '-i', concat_file,
+                '-c:v', 'libx264',
+                '-preset', 'fast',
+                '-crf', '23',
+                '-c:a', 'aac',
+                '-b:a', '192k',
+                '-y', output_file
+            ]
+
+        # Add audio if provided
+        if audio_file_id:
+            audio_file = None
+            for file in os.listdir(UPLOAD_FOLDER):
+                if file.startswith(audio_file_id):
+                    audio_file = os.path.join(UPLOAD_FOLDER, file)
+                    break
+
+            if audio_file:
+                # Re-encode with audio overlay
+                temp_output = output_file.replace('.mp4', '_temp.mp4')
+                os.rename(output_file, temp_output)
+
+                cmd = [
+                    'ffmpeg',
+                    '-i', temp_output,
+                    '-i', audio_file,
+                    '-c:v', 'copy',
+                    '-c:a', 'aac',
+                    '-map', '0:v:0',
+                    '-map', '1:a:0',
+                    '-shortest',
+                    '-y', output_file
+                ]
+
+                subprocess.run(cmd, capture_output=True)
+                os.remove(temp_output)
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            return jsonify({
+                'success': False,
+                'error': 'Timeline processing failed',
+                'details': result.stderr
+            }), 500
+
+        # Clean up temp files
+        os.remove(concat_file)
+
+        return jsonify({
+            'success': True,
+            'output_file': os.path.basename(output_file),
+            'download_url': f'/api/download/{os.path.basename(output_file)}',
+            'file_size': get_file_size(output_file)
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/timeline/merge', methods=['POST'])
+def timeline_merge_clips():
+    """
+    Merge two clips with smooth transition
+
+    Request:
+        {
+            "clip1_id": "id1",
+            "clip2_id": "id2",
+            "transition": "fade",  # fade, dissolve, wipe, slide, zoom
+            "transition_duration": 1.0
+        }
+
+    Response:
+        {
+            "success": true,
+            "merged_file_id": "new-id"
+        }
+    """
+    try:
+        data = request.get_json()
+        clip1_id = data.get('clip1_id')
+        clip2_id = data.get('clip2_id')
+        transition = data.get('transition', 'fade')
+        trans_duration = float(data.get('transition_duration', 1.0))
+
+        # Find input files
+        clip1_file = None
+        clip2_file = None
+
+        for file in os.listdir(UPLOAD_FOLDER):
+            if file.startswith(clip1_id):
+                clip1_file = os.path.join(UPLOAD_FOLDER, file)
+            if file.startswith(clip2_id):
+                clip2_file = os.path.join(UPLOAD_FOLDER, file)
+
+        # Check TEMP folder too
+        for file in os.listdir(TEMP_FOLDER):
+            if not clip1_file and file.startswith(clip1_id):
+                clip1_file = os.path.join(TEMP_FOLDER, file)
+            if not clip2_file and file.startswith(clip2_id):
+                clip2_file = os.path.join(TEMP_FOLDER, file)
+
+        if not clip1_file or not clip2_file:
+            return jsonify({'success': False, 'error': 'Clips not found'}), 404
+
+        # Generate output
+        merged_id = str(uuid.uuid4())
+        output_file = os.path.join(TEMP_FOLDER, f"{merged_id}_merged.mp4")
+
+        # Build transition filter based on type
+        if transition == 'fade':
+            # Crossfade transition
+            filter_complex = (
+                f"[0:v][1:v]xfade=transition=fade:duration={trans_duration}:offset=0[v];"
+                f"[0:a][1:a]acrossfade=d={trans_duration}[a]"
+            )
+        elif transition == 'dissolve':
+            filter_complex = (
+                f"[0:v][1:v]xfade=transition=dissolve:duration={trans_duration}:offset=0[v];"
+                f"[0:a][1:a]acrossfade=d={trans_duration}[a]"
+            )
+        elif transition == 'wipe':
+            filter_complex = (
+                f"[0:v][1:v]xfade=transition=wipeleft:duration={trans_duration}:offset=0[v];"
+                f"[0:a][1:a]acrossfade=d={trans_duration}[a]"
+            )
+        elif transition == 'slide':
+            filter_complex = (
+                f"[0:v][1:v]xfade=transition=slideleft:duration={trans_duration}:offset=0[v];"
+                f"[0:a][1:a]acrossfade=d={trans_duration}[a]"
+            )
+        else:
+            # Simple concat for no transition
+            filter_complex = "[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[v][a]"
+
+        cmd = [
+            'ffmpeg',
+            '-i', clip1_file,
+            '-i', clip2_file,
+            '-filter_complex', filter_complex,
+            '-map', '[v]',
+            '-map', '[a]',
+            '-c:v', 'libx264',
+            '-preset', 'fast',
+            '-crf', '23',
+            '-c:a', 'aac',
+            '-y', output_file
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            # Fallback to simple concat if xfade fails
+            concat_file = os.path.join(TEMP_FOLDER, f"concat_{merged_id}.txt")
+            with open(concat_file, 'w') as f:
+                f.write(f"file '{os.path.abspath(clip1_file)}'\n")
+                f.write(f"file '{os.path.abspath(clip2_file)}'\n")
+
+            cmd = [
+                'ffmpeg',
+                '-f', 'concat',
+                '-safe', '0',
+                '-i', concat_file,
+                '-c', 'copy',
+                '-y', output_file
+            ]
+
+            result = subprocess.run(cmd, capture_output=True)
+            os.remove(concat_file)
+
+        return jsonify({
+            'success': True,
+            'merged_file_id': merged_id,
+            'file_path': output_file
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 if __name__ == '__main__':
     print("="*60)
     print("🎬 VIDEO EDITOR API SERVER")

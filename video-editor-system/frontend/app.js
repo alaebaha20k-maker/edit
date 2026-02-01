@@ -1855,63 +1855,27 @@ document.addEventListener('DOMContentLoaded', () => {
     showNotification('✅ AI Video Studio loaded successfully', 'success');
 });
 
+
 // =============================================================================
-// MR BAHA EDITOR - FFmpeg.wasm Timeline Editor
+// MR BAHA EDITOR - Backend FFmpeg Timeline Editor
 // =============================================================================
 
 // Timeline state
 const timelineState = {
-    ffmpeg: null,
-    loaded: false,
-    clips: [], // {id, file, blob, url, name, duration, transition}
+    clips: [], // {id, fileId, file, type, url, name, duration, transition, uploaded}
+    selectedClips: [], // Array of selected clip indices
     currentClipIndex: null,
     selectedTransitionIndex: null,
     zoom: 1,
     isPlaying: false,
-    previewVideo: null,
     currentTime: 0,
     totalDuration: 0
 };
 
-// Initialize FFmpeg.wasm
-async function initFFmpeg() {
-    if (timelineState.loaded) return true;
-
-    try {
-        showNotification('⏳ Loading FFmpeg.wasm...', 'info');
-        const { FFmpeg } = FFmpegWASM;
-        const { fetchFile } = FFmpegUtil;
-
-        timelineState.ffmpeg = new FFmpeg();
-
-        // Set up progress logging
-        timelineState.ffmpeg.on('log', ({ message }) => {
-            console.log('FFmpeg:', message);
-        });
-
-        timelineState.ffmpeg.on('progress', ({ progress }) => {
-            const percent = Math.round(progress * 100);
-            const progressBar = document.getElementById('exportProgressBar');
-            const progressText = document.getElementById('exportProgressText');
-            if (progressBar) progressBar.style.width = percent + '%';
-            if (progressText) progressText.textContent = percent + '%';
-        });
-
-        await timelineState.ffmpeg.load();
-        timelineState.loaded = true;
-        showNotification('✅ FFmpeg.wasm loaded successfully!', 'success');
-        return true;
-    } catch (error) {
-        console.error('FFmpeg load error:', error);
-        showNotification('❌ Failed to load FFmpeg.wasm: ' + error.message, 'error');
-        return false;
-    }
-}
-
 // File selection handlers
 function timelineSelectFiles(event) {
     const files = Array.from(event.target.files);
-    addFilesToTimeline(files);
+    uploadTimelineFiles(files);
 }
 
 function timelineDragOver(event) {
@@ -1923,42 +1887,79 @@ function timelineDragOver(event) {
 function timelineDropFiles(event) {
     event.preventDefault();
     event.stopPropagation();
-    const files = Array.from(event.dataTransfer.files).filter(f => f.type.startsWith('video/'));
-    addFilesToTimeline(files);
+    const files = Array.from(event.dataTransfer.files);
+    uploadTimelineFiles(files);
 }
 
-// Add files to timeline
-async function addFilesToTimeline(files) {
+// Upload files to backend
+async function uploadTimelineFiles(files) {
     if (!files || files.length === 0) return;
 
-    showNotification('⏳ Adding ' + files.length + ' video(s) to timeline...', 'info');
+    showNotification('⏳ Uploading ' + files.length + ' file(s)...', 'info');
 
     for (const file of files) {
-        const url = URL.createObjectURL(file);
-        const video = document.createElement('video');
-        video.src = url;
+        const isVideo = file.type.startsWith('video/');
+        const isImage = file.type.startsWith('image/');
 
-        // Wait for metadata to get duration
-        await new Promise((resolve) => {
-            video.onloadedmetadata = () => resolve();
-        });
+        if (!isVideo && !isImage) {
+            showNotification('⚠️ Skipping unsupported file: ' + file.name, 'warning');
+            continue;
+        }
 
-        const clip = {
-            id: Date.now() + Math.random(),
-            file: file,
-            blob: file,
-            url: url,
-            name: file.name,
-            duration: video.duration,
-            transition: 'fade' // Default transition
-        };
+        try {
+            // Upload to backend
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('type', isVideo ? 'video' : 'image');
 
-        timelineState.clips.push(clip);
+            const response = await fetch('/api/upload', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                const url = URL.createObjectURL(file);
+                let duration = isImage ? 5.0 : 0; // Default 5s for images
+
+                // Get video duration if video file
+                if (isVideo) {
+                    const video = document.createElement('video');
+                    video.src = url;
+                    await new Promise((resolve) => {
+                        video.onloadedmetadata = () => {
+                            duration = video.duration;
+                            resolve();
+                        };
+                    });
+                }
+
+                const clip = {
+                    id: Date.now() + Math.random(),
+                    fileId: data.file_id,
+                    file: file,
+                    type: isVideo ? 'video' : 'image',
+                    url: url,
+                    name: file.name,
+                    duration: duration,
+                    transition: 'fade',
+                    uploaded: true
+                };
+
+                timelineState.clips.push(clip);
+            } else {
+                showNotification('❌ Upload failed: ' + file.name, 'error');
+            }
+        } catch (error) {
+            console.error('Upload error:', error);
+            showNotification('❌ Upload error: ' + error.message, 'error');
+        }
     }
 
     renderTimeline();
     updateTimelineInfo();
-    showNotification('✅ Added ' + files.length + ' clip(s) to timeline', 'success');
+    showNotification('✅ Added ' + files.length + ' file(s) to timeline', 'success');
 }
 
 // Render timeline
@@ -1974,7 +1975,6 @@ function renderTimeline() {
         return;
     }
 
-    // Hide empty message
     if (emptyMsg) emptyMsg.style.display = 'none';
 
     track.innerHTML = '';
@@ -1983,6 +1983,9 @@ function renderTimeline() {
         // Create clip element
         const clipEl = document.createElement('div');
         clipEl.className = 'timeline-clip';
+        if (timelineState.selectedClips.includes(index)) {
+            clipEl.classList.add('selected');
+        }
         clipEl.draggable = true;
         clipEl.dataset.index = index;
 
@@ -1990,7 +1993,8 @@ function renderTimeline() {
         clipEl.style.width = width + 'px';
         clipEl.style.height = '80px';
 
-        clipEl.innerHTML = '<div class="clip-name">' + clip.name + '</div>' +
+        const typeIcon = clip.type === 'image' ? '🖼️' : '📹';
+        clipEl.innerHTML = '<div class="clip-name">' + typeIcon + ' ' + clip.name + '</div>' +
             '<div class="clip-duration">' + formatTime(clip.duration) + '</div>' +
             '<button class="clip-delete" onclick="deleteClip(' + index + ')">×</button>';
 
@@ -1998,11 +2002,17 @@ function renderTimeline() {
         clipEl.addEventListener('dragover', handleClipDragOver);
         clipEl.addEventListener('drop', handleClipDrop);
         clipEl.addEventListener('dragend', handleClipDragEnd);
-        clipEl.addEventListener('click', () => selectClip(index));
+        clipEl.addEventListener('click', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                toggleClipSelection(index);
+            } else {
+                selectClip(index);
+            }
+        });
 
         track.appendChild(clipEl);
 
-        // Add transition icon between clips (except after last clip)
+        // Add transition icon between clips
         if (index < timelineState.clips.length - 1) {
             const transEl = document.createElement('div');
             transEl.className = 'timeline-transition';
@@ -2013,6 +2023,8 @@ function renderTimeline() {
             track.appendChild(transEl);
         }
     });
+
+    updateEditStatus();
 }
 
 // Clip drag-and-drop handlers
@@ -2038,7 +2050,6 @@ function handleClipDrop(event) {
     const targetIndex = parseInt(target.dataset.index);
 
     if (draggedClipIndex !== null && draggedClipIndex !== targetIndex) {
-        // Reorder clips
         const draggedClip = timelineState.clips.splice(draggedClipIndex, 1)[0];
         timelineState.clips.splice(targetIndex, 0, draggedClip);
         renderTimeline();
@@ -2057,6 +2068,7 @@ function deleteClip(index) {
     const clip = timelineState.clips[index];
     URL.revokeObjectURL(clip.url);
     timelineState.clips.splice(index, 1);
+    timelineState.selectedClips = timelineState.selectedClips.filter(i => i !== index);
     renderTimeline();
     updateTimelineInfo();
     showNotification('✅ Clip deleted', 'success');
@@ -2065,10 +2077,18 @@ function deleteClip(index) {
 // Select clip
 function selectClip(index) {
     timelineState.currentClipIndex = index;
-    const clips = document.querySelectorAll('.timeline-clip');
-    clips.forEach((el, i) => {
-        el.classList.toggle('selected', i === index);
-    });
+    timelineState.selectedClips = [index];
+    renderTimeline();
+}
+
+function toggleClipSelection(index) {
+    const idx = timelineState.selectedClips.indexOf(index);
+    if (idx > -1) {
+        timelineState.selectedClips.splice(idx, 1);
+    } else {
+        timelineState.selectedClips.push(index);
+    }
+    renderTimeline();
 }
 
 // Transition selector
@@ -2105,6 +2125,27 @@ function getTransitionIcon(type) {
     return icons[type] || '🌅';
 }
 
+// Update edit status
+function updateEditStatus() {
+    const status = document.getElementById('editStatus');
+    if (!status) return;
+
+    if (timelineState.selectedClips.length === 0) {
+        status.textContent = 'Select a clip to edit';
+        status.style.color = '#aaa';
+    } else if (timelineState.selectedClips.length === 1) {
+        const clip = timelineState.clips[timelineState.selectedClips[0]];
+        status.textContent = 'Selected: ' + clip.name + ' (' + clip.type + ')';
+        status.style.color = '#667eea';
+    } else if (timelineState.selectedClips.length === 2) {
+        status.textContent = '2 clips selected - Ready to merge';
+        status.style.color = '#10b981';
+    } else {
+        status.textContent = timelineState.selectedClips.length + ' clips selected';
+        status.style.color = '#f59e0b';
+    }
+}
+
 // Timeline info updates
 function updateTimelineInfo() {
     const count = timelineState.clips.length;
@@ -2127,7 +2168,181 @@ function timelineZoomOut() {
     renderTimeline();
 }
 
-// Preview playback
+// Trim selected clip
+async function trimSelectedClip() {
+    if (timelineState.selectedClips.length !== 1) {
+        showNotification('⚠️ Please select exactly 1 clip to trim', 'warning');
+        return;
+    }
+
+    const index = timelineState.selectedClips[0];
+    const clip = timelineState.clips[index];
+
+    if (clip.type === 'image') {
+        showNotification('⚠️ Cannot trim image clips. Use "Set Duration" instead.', 'warning');
+        return;
+    }
+
+    const startTime = parseFloat(document.getElementById('trimStart').value);
+    const endTime = parseFloat(document.getElementById('trimEnd').value);
+
+    if (startTime >= endTime) {
+        showNotification('⚠️ End time must be after start time', 'warning');
+        return;
+    }
+
+    if (endTime > clip.duration) {
+        showNotification('⚠️ End time exceeds clip duration', 'warning');
+        return;
+    }
+
+    try {
+        showNotification('⏳ Trimming clip...', 'info');
+
+        const response = await fetch('/api/timeline/trim', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                file_id: clip.fileId,
+                start_time: startTime,
+                end_time: endTime
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            // Update clip with trimmed version
+            clip.fileId = data.trimmed_file_id;
+            clip.duration = data.duration;
+            clip.name = clip.name.replace('.', '_trimmed.');
+
+            renderTimeline();
+            updateTimelineInfo();
+            showNotification('✅ Clip trimmed successfully!', 'success');
+        } else {
+            showNotification('❌ Trim failed: ' + data.error, 'error');
+        }
+    } catch (error) {
+        showNotification('❌ Trim error: ' + error.message, 'error');
+    }
+}
+
+// Set image duration
+async function setImageDuration() {
+    if (timelineState.selectedClips.length !== 1) {
+        showNotification('⚠️ Please select exactly 1 image clip', 'warning');
+        return;
+    }
+
+    const index = timelineState.selectedClips[0];
+    const clip = timelineState.clips[index];
+
+    if (clip.type !== 'image') {
+        showNotification('⚠️ Selected clip is not an image', 'warning');
+        return;
+    }
+
+    const duration = parseFloat(document.getElementById('imageDuration').value);
+
+    if (duration <= 0 || duration > 30) {
+        showNotification('⚠️ Duration must be between 1 and 30 seconds', 'warning');
+        return;
+    }
+
+    try {
+        showNotification('⏳ Converting image to video...', 'info');
+
+        const response = await fetch('/api/timeline/image-to-video', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                file_id: clip.fileId,
+                duration: duration
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            // Update clip to video type
+            clip.type = 'video';
+            clip.fileId = data.video_file_id;
+            clip.duration = duration;
+            clip.name = clip.name.replace(/\.(jpg|jpeg|png|gif)$/i, '_' + duration + 's.mp4');
+
+            renderTimeline();
+            updateTimelineInfo();
+            showNotification('✅ Image converted to ' + duration + 's video!', 'success');
+        } else {
+            showNotification('❌ Conversion failed: ' + data.error, 'error');
+        }
+    } catch (error) {
+        showNotification('❌ Conversion error: ' + error.message, 'error');
+    }
+}
+
+// Merge selected clips
+async function mergeSelectedClips() {
+    if (timelineState.selectedClips.length !== 2) {
+        showNotification('⚠️ Please select exactly 2 clips to merge', 'warning');
+        return;
+    }
+
+    const [idx1, idx2] = timelineState.selectedClips.sort((a, b) => a - b);
+    const clip1 = timelineState.clips[idx1];
+    const clip2 = timelineState.clips[idx2];
+
+    const transition = document.getElementById('mergeTransition').value;
+
+    try {
+        showNotification('⏳ Merging clips with ' + transition + ' transition...', 'info');
+
+        const response = await fetch('/api/timeline/merge', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                clip1_id: clip1.fileId,
+                clip2_id: clip2.fileId,
+                transition: transition,
+                transition_duration: 1.0
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            // Replace both clips with merged clip
+            const mergedClip = {
+                id: Date.now() + Math.random(),
+                fileId: data.merged_file_id,
+                file: null,
+                type: 'video',
+                url: '',
+                name: clip1.name + ' + ' + clip2.name,
+                duration: clip1.duration + clip2.duration,
+                transition: 'fade',
+                uploaded: true
+            };
+
+            // Remove the 2 original clips and add merged clip
+            timelineState.clips.splice(idx2, 1);
+            timelineState.clips.splice(idx1, 1);
+            timelineState.clips.splice(idx1, 0, mergedClip);
+
+            timelineState.selectedClips = [];
+            renderTimeline();
+            updateTimelineInfo();
+            showNotification('✅ Clips merged successfully!', 'success');
+        } else {
+            showNotification('❌ Merge failed: ' + data.error, 'error');
+        }
+    } catch (error) {
+        showNotification('❌ Merge error: ' + error.message, 'error');
+    }
+}
+
+// Preview playback (simplified)
 function timelinePlayPause() {
     const video = document.getElementById('editorVideoPreview');
     const placeholder = document.getElementById('editorPlaceholder');
@@ -2138,7 +2353,6 @@ function timelinePlayPause() {
     }
 
     if (!timelineState.isPlaying) {
-        // Start playing first clip
         if (timelineState.currentClipIndex === null) {
             timelineState.currentClipIndex = 0;
         }
@@ -2150,7 +2364,6 @@ function timelinePlayPause() {
         video.play();
         timelineState.isPlaying = true;
 
-        // Auto-advance to next clip
         video.onended = () => {
             if (timelineState.currentClipIndex < timelineState.clips.length - 1) {
                 timelineState.currentClipIndex++;
@@ -2183,7 +2396,6 @@ function timelineToggleMute() {
 }
 
 function timelineSeek(event) {
-    // Simple seek implementation
     const video = document.getElementById('editorVideoPreview');
     const seekBar = document.getElementById('timelineSeekBar');
     const rect = seekBar.getBoundingClientRect();
@@ -2212,7 +2424,7 @@ setInterval(() => {
     }
 }, 100);
 
-// Export timeline with FFmpeg.wasm
+// Export timeline
 async function exportTimeline() {
     if (timelineState.clips.length === 0) {
         showNotification('⚠️ Add clips to timeline first', 'warning');
@@ -2222,96 +2434,72 @@ async function exportTimeline() {
     const exportBtn = document.getElementById('exportBtn');
     const exportProgress = document.getElementById('exportProgress');
     const statusText = document.getElementById('exportStatusText');
+    const progressBar = document.getElementById('exportProgressBar');
+    const progressText = document.getElementById('exportProgressText');
 
     try {
         exportBtn.disabled = true;
         exportBtn.textContent = '⏳ Exporting...';
         exportProgress.style.display = 'block';
+        statusText.textContent = 'Preparing timeline data...';
+        progressBar.style.width = '10%';
+        progressText.textContent = '10%';
 
-        // Initialize FFmpeg if not loaded
-        if (!timelineState.loaded) {
-            statusText.textContent = 'Loading FFmpeg.wasm...';
-            const loaded = await initFFmpeg();
-            if (!loaded) {
-                throw new Error('Failed to load FFmpeg.wasm');
-            }
-        }
+        // Prepare clips data for backend
+        const clipsData = timelineState.clips.map(clip => ({
+            file_id: clip.fileId,
+            type: clip.type,
+            duration: clip.duration,
+            transition: clip.transition,
+            transition_duration: 0.5
+        }));
 
-        const { fetchFile } = FFmpegUtil;
+        statusText.textContent = 'Processing ' + timelineState.clips.length + ' clips...';
+        progressBar.style.width = '30%';
+        progressText.textContent = '30%';
 
-        // Write all clips to FFmpeg filesystem
-        statusText.textContent = 'Preparing video clips...';
-        for (let i = 0; i < timelineState.clips.length; i++) {
-            const clip = timelineState.clips[i];
-            const filename = 'input' + i + '.mp4';
-            await timelineState.ffmpeg.writeFile(filename, await fetchFile(clip.url));
-        }
+        const response = await fetch('/api/timeline/process', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                clips: clipsData,
+                output_quality: document.getElementById('exportQuality').value
+            })
+        });
 
-        // Build FFmpeg filter complex for transitions
-        statusText.textContent = 'Building video with transitions...';
+        statusText.textContent = 'Merging clips with transitions...';
+        progressBar.style.width = '60%';
+        progressText.textContent = '60%';
 
-        if (timelineState.clips.length === 1) {
-            // Single clip - just copy
-            await timelineState.ffmpeg.exec(['-i', 'input0.mp4', '-c', 'copy', 'output.mp4']);
+        const data = await response.json();
+
+        if (data.success) {
+            statusText.textContent = 'Finalizing export...';
+            progressBar.style.width = '90%';
+            progressText.textContent = '90%';
+
+            // Download the file
+            window.open(data.download_url, '_blank');
+
+            progressBar.style.width = '100%';
+            progressText.textContent = '100%';
+            statusText.textContent = '✅ Export complete!';
+
+            showNotification('✅ Video exported successfully! (' + data.file_size + ')', 'success');
+
+            setTimeout(() => {
+                exportProgress.style.display = 'none';
+            }, 3000);
         } else {
-            // Multiple clips - concatenate with transitions
-            // Simple concat for now (advanced transitions need complex filters)
-            const inputs = [];
-            for (let i = 0; i < timelineState.clips.length; i++) {
-                inputs.push('-i');
-                inputs.push('input' + i + '.mp4');
-            }
-
-            // Build concat filter
-            let filterStr = '';
-            for (let i = 0; i < timelineState.clips.length; i++) {
-                filterStr += '[' + i + ':v:0][' + i + ':a:0]';
-            }
-            filterStr += 'concat=n=' + timelineState.clips.length + ':v=1:a=1[outv][outa]';
-
-            await timelineState.ffmpeg.exec([
-                ...inputs,
-                '-filter_complex', filterStr,
-                '-map', '[outv]',
-                '-map', '[outa]',
-                '-c:v', 'libx264',
-                '-preset', 'fast',
-                '-crf', '23',
-                '-c:a', 'aac',
-                'output.mp4'
-            ]);
+            throw new Error(data.error);
         }
-
-        statusText.textContent = 'Finalizing export...';
-
-        // Read output file
-        const data = await timelineState.ffmpeg.readFile('output.mp4');
-        const blob = new Blob([data.buffer], { type: 'video/mp4' });
-        const url = URL.createObjectURL(blob);
-
-        // Download file
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'mr_baha_edit_' + Date.now() + '.mp4';
-        a.click();
-
-        // Clean up
-        for (let i = 0; i < timelineState.clips.length; i++) {
-            await timelineState.ffmpeg.deleteFile('input' + i + '.mp4');
-        }
-        await timelineState.ffmpeg.deleteFile('output.mp4');
-
-        showNotification('✅ Video exported successfully!', 'success');
-
     } catch (error) {
         console.error('Export error:', error);
         showNotification('❌ Export failed: ' + error.message, 'error');
+        statusText.textContent = '❌ Export failed';
     } finally {
         exportBtn.disabled = false;
         exportBtn.textContent = '🚀 Export Final Video';
-        setTimeout(() => {
-            exportProgress.style.display = 'none';
-        }, 2000);
     }
 }
 
@@ -2322,4 +2510,4 @@ function formatTime(seconds) {
     return mins + ':' + (secs < 10 ? '0' : '') + secs;
 }
 
-console.log('✅ MR BAHA Editor with FFmpeg.wasm initialized');
+console.log('✅ MR BAHA Editor with backend FFmpeg initialized');
