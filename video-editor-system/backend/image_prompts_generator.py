@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 
 
-def generate_image_prompts(script_text, image_formula, count, gemini_api_key, verbose=True):
+def generate_image_prompts(script_text, image_formula, count, gemini_api_key, style="", verbose=True):
     """
     Analyze script and generate N image prompts using image formula
 
@@ -21,6 +21,7 @@ def generate_image_prompts(script_text, image_formula, count, gemini_api_key, ve
         image_formula: User's image style formula from settings
         count: Number of images to generate
         gemini_api_key: Gemini API key
+        style: Image style (e.g., "hand draw cartoon", "realistic photo")
         verbose: Print progress
 
     Returns:
@@ -30,12 +31,20 @@ def generate_image_prompts(script_text, image_formula, count, gemini_api_key, ve
     if verbose:
         print(f"\n🎨 Generating {count} image prompts from script...")
         print(f"   Script length: {len(script_text):,} characters")
+        if style:
+            print(f"   Style: {style}")
 
     # Configure Gemini
     genai.configure(api_key=gemini_api_key)
-    model = genai.GenerativeModel('gemini-2.5-flash')
+    model = genai.GenerativeModel('gemini-2.0-flash-exp')
 
-    # Build prompt for Gemini
+    # Replace {style} placeholder in formula
+    if style:
+        image_formula = image_formula.replace('{style}', style)
+    else:
+        image_formula = image_formula.replace('{style}', 'professional, high-quality')
+
+    # Build prompt for Gemini using FULL SCRIPT (not just 10K)
     prompt = f"""You are an expert at creating image prompts for AI image generation.
 
 TASK:
@@ -44,8 +53,8 @@ Analyze the provided script and generate EXACTLY {count} distinct image prompts 
 IMAGE STYLE FORMULA (FOLLOW THIS EXACTLY):
 {image_formula}
 
-SCRIPT TO ANALYZE:
-{script_text[:10000]}  # Use first 10K chars for analysis
+SCRIPT TO ANALYZE (COMPLETE):
+{script_text}
 
 CRITICAL REQUIREMENTS:
 1. Generate EXACTLY {count} prompts (no more, no less)
@@ -99,10 +108,14 @@ Generate {count} prompts now:"""
 
             # Adjust if needed
             if len(prompts) < count:
-                # Duplicate some prompts with variations
+                # Duplicate prompts in round-robin fashion
+                original_count = len(prompts)
                 while len(prompts) < count:
-                    base_prompt = prompts[len(prompts) % len(prompts)]
-                    prompts.append(base_prompt)  # Simple duplication
+                    # FIX: Use proper round-robin indexing
+                    index = (len(prompts) - original_count) % original_count
+                    base_prompt = prompts[index]
+                    variation = f"{base_prompt}, alternate angle"
+                    prompts.append(variation)
             else:
                 # Trim excess
                 prompts = prompts[:count]

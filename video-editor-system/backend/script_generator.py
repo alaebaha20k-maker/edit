@@ -406,6 +406,207 @@ COMPLETE NOW:"""
 
         return prompt
 
+    def generate_script_oneblock(
+        self,
+        title: str,
+        niche_id: str,
+        length: int = 60000,
+        verbose: bool = True
+    ) -> Dict:
+        """
+        Generate script as ONE CONTINUOUS BLOCK (no parts, no sections)
+        Uses custom script formula from settings
+
+        Args:
+            title: Video title
+            niche_id: Niche ID with writing guidelines
+            length: 30000, 60000, or 100000 ONLY
+            verbose: Print progress
+
+        Returns:
+            Dict with script, stats, quality info
+        """
+        from settings_manager import SettingsManager
+
+        start_time = time.time()
+
+        # Validate length
+        if length not in Config.VALID_SCRIPT_LENGTHS:
+            raise ValueError(f'Length must be one of {Config.VALID_SCRIPT_LENGTHS}')
+
+        # Get niche
+        niche = NicheManager.get_niche(niche_id)
+        if not niche:
+            raise ValueError(f"Niche not found: {niche_id}")
+
+        # Load script formula from settings
+        script_formula = SettingsManager.load_formula('script')
+
+        if verbose:
+            print(f"\n{'='*70}")
+            print(f"🎬 GENERATING ONE-BLOCK SCRIPT")
+            print(f"{'='*70}")
+            print(f"Title: {title}")
+            print(f"Target: {length:,} characters")
+            print(f"Niche: {niche['name']}")
+            print(f"Language: {niche['language']}")
+            print(f"{'='*70}\n")
+
+        # Detect narrative approach
+        approach = self.select_narrative_approach(title)
+        if verbose:
+            print(f"🧠 Narrative Approach: {approach}")
+
+        # Build ONE BLOCK prompt using formula
+        prompt = self._build_oneblock_prompt(
+            title=title,
+            niche_data=niche,
+            formula=script_formula,
+            target_chars=length,
+            approach=approach
+        )
+
+        if verbose:
+            print(f"\n📡 Calling Gemini (ONE continuous generation)...")
+
+        # Generate with higher temperature for creativity
+        model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.88,  # Single optimal temperature
+                max_output_tokens=Config.GEMINI_MAX_TOKENS,
+                top_p=0.95,
+                top_k=40
+            )
+        )
+
+        if verbose:
+            print(f"✅ Response received!")
+
+        # Get script text
+        script = response.text.strip()
+
+        # Clean aggressively (remove ALL artifacts)
+        script = self.clean_script_oneblock(script)
+
+        if verbose:
+            print(f"\n📝 Script length: {len(script):,} characters")
+
+        # Stats
+        char_count = len(script)
+        word_count = len(script.split())
+        generation_time = time.time() - start_time
+
+        # Simple quality check
+        quality = "HIGH" if char_count >= length * 0.9 else "MEDIUM"
+
+        if verbose:
+            print(f"📊 Words: {word_count:,}")
+            print(f"⏱️  Time: {generation_time:.1f}s")
+            print(f"✨ Quality: {quality}")
+            print(f"{'='*70}\n")
+
+        return {
+            'script': script,
+            'approach': approach,
+            'quality': quality,
+            'stats': {
+                'chars': char_count,
+                'words': word_count,
+                'time': generation_time
+            }
+        }
+
+    def _build_oneblock_prompt(self, title, niche_data, formula, target_chars, approach):
+        """Build prompt for ONE BLOCK generation using custom formula"""
+
+        product = niche_data.get('product', 'our platform')
+        language = niche_data['language']
+        guidelines = niche_data['writing_guidelines']
+
+        # Replace placeholders in formula
+        formula_filled = formula.replace('{title}', title)
+        formula_filled = formula_filled.replace('{niche}', niche_data['name'])
+        formula_filled = formula_filled.replace('{language}', language)
+        formula_filled = formula_filled.replace('{guidelines}', guidelines)
+        formula_filled = formula_filled.replace('{length}', f"{target_chars:,}")
+        formula_filled = formula_filled.replace('{approach}', approach)
+
+        # Build comprehensive prompt
+        prompt = f"""{formula_filled}
+
+🎯 CRITICAL REQUIREMENTS:
+
+1. LENGTH: Write exactly {target_chars:,} characters
+2. FORMAT: ONE continuous block from start to finish
+3. NO SECTIONS: No "Part 1", "Part 2", no titles, no headers
+4. NO MARKDOWN: No **, *, __, #, bullets, or formatting
+5. VOICE-READY: Pure narration text ready for TTS
+6. NO META-COMMENTARY: Don't mention "continuing", "as we discussed", etc.
+
+🚫 FORBIDDEN:
+- Section markers or chunk indicators
+- Price mentions ($XX, "affordable", "cheap", "expensive")
+- Markdown formatting
+- Meta-commentary about structure
+- "Let me tell you" (use sparingly, max 1-2 times)
+- "Here's the thing" (use sparingly, max 1-2 times)
+
+✅ MUST INCLUDE:
+- Powerful hook in first 10 seconds
+- Specific examples with real numbers
+- Narrative approach: {approach}
+- Natural flow from beginning to end
+- Clear, actionable takeaways
+- Conversational but authoritative tone
+- Maximum 20 words per sentence
+- Product: {product} (mention naturally 2-3 times)
+
+🎬 OUTPUT FORMAT:
+Start immediately with the hook. Write {target_chars:,} characters of pure voice-ready narration. One continuous block. No breaks, no sections, no meta-commentary.
+
+BEGIN WRITING NOW:"""
+
+        return prompt
+
+    def clean_script_oneblock(self, text: str) -> str:
+        """
+        Aggressively clean script for ONE BLOCK output
+        Remove ALL artifacts, sections, formatting
+        """
+        # Remove section markers and meta-commentary
+        text = re.sub(r'(?i)(part|section|chunk)\s*\d+', '', text)
+        text = re.sub(r'(?i)continue(d|ing)?\s+(seamlessly|from|the)', '', text)
+        text = re.sub(r'(?i)as (we |I )?discussed', '', text)
+        text = re.sub(r'(?i)as (we |I )?mentioned', '', text)
+        text = re.sub(r'(?i)in the previous (part|section)', '', text)
+        text = re.sub(r'(?i)let me continue', '', text)
+        text = re.sub(r'(?i)now let\'?s', 'Let\'s', text)
+
+        # Remove ALL markdown formatting
+        text = re.sub(r'\*\*\*(.+?)\*\*\*', r'\1', text)  # Bold+Italic
+        text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)      # Bold
+        text = re.sub(r'\*(.+?)\*', r'\1', text)          # Italic
+        text = re.sub(r'__(.+?)__', r'\1', text)          # Bold underscore
+        text = re.sub(r'_(.+?)_', r'\1', text)            # Italic underscore
+        text = re.sub(r'~~(.+?)~~', r'\1', text)          # Strikethrough
+        text = re.sub(r'#{1,6}\s+', '', text)             # Headers
+        text = re.sub(r'^\s*[-*+]\s+', '', text, flags=re.MULTILINE)  # Bullets
+        text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)  # Numbered lists
+
+        # Remove price mentions
+        text = re.sub(r'\$\d+[,\d]*', '', text)
+        text = re.sub(r'\d+\s*dollars?', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'\b(price|cost|afford|cheap|expensive|discount|sale|investment)\b', '', text, flags=re.IGNORECASE)
+
+        # Fix spacing issues
+        text = re.sub(r'\s+', ' ', text)           # Multiple spaces → single
+        text = re.sub(r'\n{3,}', '\n\n', text)     # Multiple newlines → double
+        text = re.sub(r'([.!?])\s*([A-Z])', r'\1 \2', text)  # Sentence spacing
+
+        return text.strip()
+
     def generate_script(
         self,
         title: str,
@@ -414,7 +615,9 @@ COMPLETE NOW:"""
         verbose: bool = True
     ) -> Dict:
         """
-        Generate script using EXACT HTML system logic
+        Generate script using EXACT HTML system logic (3 parts)
+
+        NOTE: Use generate_script_oneblock() for ONE CONTINUOUS BLOCK instead
 
         Args:
             title: Video title

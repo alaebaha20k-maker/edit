@@ -742,6 +742,67 @@ def manage_image_style(style_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/generate-title', methods=['POST'])
+def generate_title_route():
+    """Generate AI title using Gemini"""
+    from title_generator import TitleGenerator
+    from config import Config
+    from niche_manager import NicheManager
+
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        topic = data.get('topic')
+        niche_id = data.get('niche_id')
+        count = data.get('count', 1)  # Default 1 title
+
+        if not topic or not niche_id:
+            return jsonify({'error': 'Missing required fields: topic, niche_id'}), 400
+
+        # Validate count (1-5)
+        if not isinstance(count, int) or count < 1 or count > 5:
+            return jsonify({'error': 'Count must be an integer between 1 and 5'}), 400
+
+        # Validate API key
+        errors = Config.validate_api_keys()
+        if any('GEMINI' in e for e in errors):
+            return jsonify({'error': 'Gemini API key not configured'}), 500
+
+        # Validate niche exists
+        niche = NicheManager.get_niche(niche_id)
+        if not niche:
+            return jsonify({'error': 'Niche not found'}), 404
+
+        # Generate title(s)
+        generator = TitleGenerator()
+        titles = generator.generate_title(topic, niche_id, count=count, verbose=True)
+
+        # Return single title or array based on count
+        if count == 1:
+            return jsonify({
+                'success': True,
+                'title': titles,
+                'niche': niche['name'],
+                'language': niche['language']
+            })
+        else:
+            return jsonify({
+                'success': True,
+                'titles': titles,
+                'count': len(titles),
+                'niche': niche['name'],
+                'language': niche['language']
+            })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/generate-script', methods=['POST'])
 def generate_script():
     """Generate AI script using Gemini - EXACT HTML system"""
@@ -779,9 +840,9 @@ def generate_script():
         if not niche:
             return jsonify({'error': 'Niche not found'}), 404
 
-        # Generate script with EXACT HTML system
+        # Generate script as ONE CONTINUOUS BLOCK (no sections)
         generator = ScriptGenerator()
-        result = generator.generate_script(title, niche_id, length=length, verbose=True)
+        result = generator.generate_script_oneblock(title, niche_id, length=length, verbose=True)
 
         # SAVE SCRIPT TO FILE - Use OUTPUT_FOLDER directly (same as videos)
         timestamp = int(time.time())
@@ -842,6 +903,7 @@ def generate_image_prompts_route():
 
         script = data.get('script')
         count = data.get('count', 6)  # Default to 6 images
+        style = data.get('style', '')  # Optional: image style (e.g., "hand draw cartoon")
 
         if not script:
             return jsonify({'error': 'Missing required field: script'}), 400
@@ -858,12 +920,13 @@ def generate_image_prompts_route():
         # Load image formula from settings
         image_formula = SettingsManager.load_formula('image')
 
-        # Generate prompts
+        # Generate prompts with style
         prompts = generate_image_prompts(
             script_text=script,
             image_formula=image_formula,
             count=count,
             gemini_api_key=gemini_api_key,
+            style=style,
             verbose=True
         )
 
