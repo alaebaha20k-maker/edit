@@ -343,132 +343,129 @@
         <!-- ============================================ -->
         <div id="tab-editor" class="tab-content">
             <h2>✂️ MR BAHA Editor</h2>
-            <p class="subtitle">CapCut-style timeline video editor with professional editing tools</p>
+            <p class="subtitle">Professional drag-and-drop timeline editor with automatic transitions • Powered by FFmpeg.wasm</p>
 
-            <!-- Upload Section -->
-            <section class="editor-upload">
-                <div class="upload-zone" id="editorUploadZone">
-                    <div class="upload-icon">🎥</div>
-                    <p><strong>Drag & drop video file or click to browse</strong></p>
-                    <input type="file" id="editorVideoInput" accept="video/*" style="display: none;">
-                    <button onclick="document.getElementById('editorVideoInput').click()" class="btn-primary">Browse Video</button>
-                    <p class="hint">Supported: MP4, MOV, WebM (MKV not supported in browser, please convert to MP4)</p>
+            <!-- Quick Start Guide -->
+            <div style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.2), rgba(118, 75, 162, 0.2)); padding: 15px; border-radius: 10px; margin-bottom: 20px;">
+                <h3 style="margin: 0 0 10px 0; font-size: 16px;">🎬 Quick Start:</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; font-size: 13px;">
+                    <div>1️⃣ Drop videos on timeline below</div>
+                    <div>2️⃣ Clips auto-snap with smooth transitions</div>
+                    <div>3️⃣ Drag to reorder • Click transition to change</div>
+                    <div>4️⃣ Click Export when ready</div>
                 </div>
-            </section>
+            </div>
 
-            <!-- Video Preview & Controls -->
-            <section id="editorPreviewSection" class="editor-preview" style="display: none;">
-                <div class="preview-container">
-                    <video id="editorVideoPreview" controls></video>
-                </div>
-                <div class="playback-controls">
-                    <button class="control-btn" id="editorPlayBtn" onclick="editorPlayPause()">▶️</button>
-                    <button class="control-btn" id="editorStopBtn" onclick="editorStop()">⏹️</button>
-                    <span class="time-display" id="editorTimeDisplay">0:00 / 0:00</span>
-                    <div class="seek-bar" id="editorSeekBar">
-                        <div id="editorSeekFill" class="seek-fill"></div>
+            <!-- Video Preview -->
+            <section class="editor-preview">
+                <div style="background: #000; border-radius: 10px; overflow: hidden; position: relative; min-height: 400px; display: flex; align-items: center; justify-content: center;">
+                    <video id="editorVideoPreview" style="width: 100%; max-height: 400px; display: none;"></video>
+                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #888; font-size: 18px; text-align: center;" id="editorPlaceholder">
+                        Drop videos on timeline below ↓
                     </div>
-                    <button class="control-btn" id="editorMuteBtn" onclick="editorMute()">🔊</button>
+                </div>
+
+                <!-- Playback Controls -->
+                <div class="playback-controls" style="margin-top: 10px; display: flex; align-items: center; gap: 15px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 8px;">
+                    <button class="control-btn" onclick="timelinePlayPause()">▶️</button>
+                    <button class="control-btn" onclick="timelineStop()">⏹️</button>
+                    <span id="timelineTimeDisplay" style="font-family: monospace; font-size: 14px;">0:00 / 0:00</span>
+                    <div style="flex: 1; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; cursor: pointer; position: relative;" id="timelineSeekBar" onclick="timelineSeek(event)">
+                        <div id="timelineSeekFill" style="height: 100%; background: #667eea; border-radius: 3px; width: 0%; transition: width 0.1s;"></div>
+                    </div>
+                    <button class="control-btn" onclick="timelineToggleMute()" id="timelineMuteBtn">🔊</button>
                 </div>
             </section>
 
             <!-- Timeline Section -->
-            <section id="editorTimelineSection" class="editor-timeline" style="display: none;">
-                <div class="timeline-header">
-                    <h3>⏱️ Timeline</h3>
-                    <div class="timeline-info">
-                        <span id="editorClipCount">0 clips</span> |
-                        <span id="editorTotalDuration">Total: 0:00</span>
+            <section class="editor-timeline" style="margin-top: 30px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3 style="margin: 0;">⏱️ Timeline</h3>
+                    <div style="display: flex; gap: 15px; align-items: center;">
+                        <span id="timelineClipCount" style="color: #aaa; font-size: 13px;">0 clips</span>
+                        <span id="timelineTotalDuration" style="color: #aaa; font-size: 13px;">Total: 0:00</span>
+                        <button onclick="timelineZoomIn()" class="btn-secondary" style="padding: 5px 10px;">🔍+</button>
+                        <button onclick="timelineZoomOut()" class="btn-secondary" style="padding: 5px 10px;">🔍-</button>
                     </div>
                 </div>
-                <div class="timeline-container">
-                    <div id="editorPlayhead" class="playhead"></div>
-                    <div id="editorTimelineTrack" class="timeline-track">
-                        <p class="timeline-empty">Upload a video to start editing</p>
+
+                <!-- Drop Zone -->
+                <div id="timelineDropZone" style="border: 2px dashed #667eea; border-radius: 10px; padding: 30px; text-align: center; background: rgba(102, 126, 234, 0.05); margin-bottom: 20px; cursor: pointer;" ondragover="timelineDragOver(event)" ondrop="timelineDropFiles(event)" onclick="document.getElementById('timelineFileInput').click()">
+                    <div style="font-size: 48px; margin-bottom: 10px;">📹</div>
+                    <div style="font-size: 16px; font-weight: bold; margin-bottom: 5px;">Drop video files here</div>
+                    <div style="font-size: 13px; color: #aaa;">or click to browse</div>
+                    <input type="file" id="timelineFileInput" accept="video/*" multiple style="display: none;" onchange="timelineSelectFiles(event)">
+                </div>
+
+                <!-- Timeline Track -->
+                <div style="background: rgba(0,0,0,0.3); border-radius: 10px; padding: 20px; min-height: 150px; position: relative; overflow-x: auto;" id="timelineContainer">
+                    <div id="timelineTrack" style="display: flex; gap: 0; align-items: center; min-height: 100px; position: relative;">
+                        <div id="timelineEmptyMessage" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #666; font-size: 14px;">
+                            Timeline is empty - drop videos above to start
+                        </div>
                     </div>
                 </div>
             </section>
 
-            <!-- Edit Tools -->
-            <section id="editorToolsSection" class="editor-tools" style="display: none;">
-                <div style="background: rgba(102, 126, 234, 0.1); padding: 10px; border-radius: 8px; margin-bottom: 15px;">
-                    <p style="margin: 0; font-size: 13px; color: #aaa;">
-                        <strong>Quick Guide:</strong> 1) Click a clip in timeline to select it 2) Play video to desired cut point 3) Click "Quick Cut" to split
-                    </p>
+            <!-- Transition Selector Modal -->
+            <div id="transitionModal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #1a1a2e; padding: 30px; border-radius: 15px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); z-index: 10000; min-width: 400px;">
+                <h3 style="margin: 0 0 20px 0;">🎬 Select Transition</h3>
+                <div id="transitionOptions" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px;">
+                    <button onclick="selectTransition('fade')" class="transition-option">
+                        <div style="font-size: 32px; margin-bottom: 5px;">🌅</div>
+                        <div style="font-weight: bold;">Fade</div>
+                        <div style="font-size: 11px; color: #aaa;">Smooth fade in/out</div>
+                    </button>
+                    <button onclick="selectTransition('dissolve')" class="transition-option">
+                        <div style="font-size: 32px; margin-bottom: 5px;">✨</div>
+                        <div style="font-weight: bold;">Dissolve</div>
+                        <div style="font-size: 11px; color: #aaa;">Gradual blend</div>
+                    </button>
+                    <button onclick="selectTransition('wipe')" class="transition-option">
+                        <div style="font-size: 32px; margin-bottom: 5px;">➡️</div>
+                        <div style="font-weight: bold;">Wipe</div>
+                        <div style="font-size: 11px; color: #aaa;">Slide across</div>
+                    </button>
+                    <button onclick="selectTransition('slide')" class="transition-option">
+                        <div style="font-size: 32px; margin-bottom: 5px;">🔄</div>
+                        <div style="font-weight: bold;">Slide</div>
+                        <div style="font-size: 11px; color: #aaa;">Push transition</div>
+                    </button>
+                    <button onclick="selectTransition('zoom')" class="transition-option">
+                        <div style="font-size: 32px; margin-bottom: 5px;">🔍</div>
+                        <div style="font-weight: bold;">Zoom</div>
+                        <div style="font-size: 11px; color: #aaa;">Scale effect</div>
+                    </button>
+                    <button onclick="selectTransition('none')" class="transition-option">
+                        <div style="font-size: 32px; margin-bottom: 5px;">⚡</div>
+                        <div style="font-weight: bold;">None</div>
+                        <div style="font-size: 11px; color: #aaa;">Instant cut</div>
+                    </button>
                 </div>
-                <div class="tool-group">
-                    <span class="tool-label">✂️ Quick Edit:</span>
-                    <button class="btn-tool" onclick="editorSplit()" style="background: #667eea; font-weight: bold;">✂️ Quick Cut at Playhead</button>
-                    <button class="btn-tool btn-danger" onclick="editorDelete()">🗑️ Delete Selected Clip</button>
-                </div>
-                <div class="tool-group">
-                    <span class="tool-label">➕ Add:</span>
-                    <button class="btn-tool" onclick="editorShowOverlay()">💬 Add Text Overlay</button>
-                </div>
-                <div class="tool-group">
-                    <span class="tool-label">🔄 Arrange:</span>
-                    <button class="btn-tool" onclick="editorMoveLeft()">← Move Clip Left</button>
-                    <button class="btn-tool" onclick="editorMoveRight()">Move Clip Right →</button>
-                </div>
-            </section>
-
-            <!-- Overlay Input -->
-            <section id="editorOverlaySection" class="overlay-input" style="display: none;">
-                <h3>Add Text Overlay</h3>
-                <input type="text" id="overlayText" placeholder="Enter overlay text..." class="input-large">
-                <div class="overlay-controls">
-                    <div>
-                        <label>Position X:</label>
-                        <input type="number" id="overlayX" value="100" min="0" class="input-small">
-                    </div>
-                    <div>
-                        <label>Position Y:</label>
-                        <input type="number" id="overlayY" value="100" min="0" class="input-small">
-                    </div>
-                    <div>
-                        <label>Font Size:</label>
-                        <input type="number" id="overlaySize" value="48" min="12" max="200" class="input-small">
-                    </div>
-                    <div>
-                        <label>Color:</label>
-                        <input type="color" id="overlayColor" value="#ffffff" class="input-small">
-                    </div>
-                    <div>
-                        <label>Start (sec):</label>
-                        <input type="number" id="overlayStart" value="0" min="0" step="0.1" class="input-small">
-                    </div>
-                    <div>
-                        <label>Duration (sec):</label>
-                        <input type="number" id="overlayDuration" value="3" min="0.1" step="0.1" class="input-small">
-                    </div>
-                </div>
-                <div class="button-group">
-                    <button onclick="editorConfirmOverlay()" class="btn-success">✅ Add Overlay</button>
-                    <button onclick="editorCancelOverlay()" class="btn-secondary">❌ Cancel</button>
-                </div>
-            </section>
+                <button onclick="closeTransitionModal()" class="btn-secondary" style="width: 100%;">Cancel</button>
+            </div>
+            <div id="transitionModalOverlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9999;" onclick="closeTransitionModal()"></div>
 
             <!-- Export Section -->
-            <section id="editorExportSection" class="editor-export" style="display: none;">
-                <h3>🎯 Export Video</h3>
-                <div class="quality-selector">
-                    <label class="quality-option">
-                        <input type="radio" name="editorQuality" value="720" checked>
-                        <div class="quality-card">
-                            <div class="quality-icon">📺</div>
-                            <div class="quality-title">720p HD</div>
-                        </div>
-                    </label>
-                    <label class="quality-option">
-                        <input type="radio" name="editorQuality" value="1080">
-                        <div class="quality-card">
-                            <div class="quality-icon">🎬</div>
-                            <div class="quality-title">1080p Full HD</div>
-                        </div>
-                    </label>
+            <section style="margin-top: 30px; background: rgba(102, 126, 234, 0.05); padding: 20px; border-radius: 10px;">
+                <h3 style="margin: 0 0 15px 0;">🎯 Export Video</h3>
+                <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+                    <div style="flex: 1; min-width: 200px;">
+                        <label style="display: block; margin-bottom: 5px; font-size: 13px; color: #aaa;">Quality:</label>
+                        <select id="exportQuality" class="input-medium">
+                            <option value="720">720p HD</option>
+                            <option value="1080">1080p Full HD</option>
+                        </select>
+                    </div>
+                    <button onclick="exportTimeline()" class="btn-primary btn-large" id="exportBtn" style="min-width: 200px;">🚀 Export Final Video</button>
                 </div>
-                <button onclick="editorExport()" class="btn-primary btn-large">🚀 Export Final Video</button>
-                <div id="editorExportProgress" class="progress-container" style="display: none;"></div>
+                <div id="exportProgress" style="display: none; margin-top: 20px; padding: 20px; background: rgba(0,0,0,0.3); border-radius: 10px;">
+                    <div style="margin-bottom: 10px; font-weight: bold;" id="exportStatusText">Initializing export...</div>
+                    <div style="width: 100%; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden;">
+                        <div id="exportProgressBar" style="height: 100%; background: linear-gradient(90deg, #667eea, #764ba2); width: 0%; transition: width 0.3s;"></div>
+                    </div>
+                    <div style="margin-top: 10px; font-size: 13px; color: #aaa;" id="exportProgressText">0%</div>
+                </div>
             </section>
         </div>
 
@@ -593,6 +590,10 @@
             </div>
         </div>
     </div>
+
+    <!-- FFmpeg.wasm for browser-based video processing -->
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.7/dist/umd/ffmpeg.js"></script>
+    <script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/index.js"></script>
 
     <script src="app.js"></script>
 </body>

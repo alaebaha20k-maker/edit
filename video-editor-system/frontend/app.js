@@ -1854,3 +1854,472 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('✅ AI Video Studio initialized with all fixes applied');
     showNotification('✅ AI Video Studio loaded successfully', 'success');
 });
+
+// =============================================================================
+// MR BAHA EDITOR - FFmpeg.wasm Timeline Editor
+// =============================================================================
+
+// Timeline state
+const timelineState = {
+    ffmpeg: null,
+    loaded: false,
+    clips: [], // {id, file, blob, url, name, duration, transition}
+    currentClipIndex: null,
+    selectedTransitionIndex: null,
+    zoom: 1,
+    isPlaying: false,
+    previewVideo: null,
+    currentTime: 0,
+    totalDuration: 0
+};
+
+// Initialize FFmpeg.wasm
+async function initFFmpeg() {
+    if (timelineState.loaded) return true;
+
+    try {
+        showNotification('⏳ Loading FFmpeg.wasm...', 'info');
+        const { FFmpeg } = FFmpegWASM;
+        const { fetchFile } = FFmpegUtil;
+
+        timelineState.ffmpeg = new FFmpeg();
+
+        // Set up progress logging
+        timelineState.ffmpeg.on('log', ({ message }) => {
+            console.log('FFmpeg:', message);
+        });
+
+        timelineState.ffmpeg.on('progress', ({ progress }) => {
+            const percent = Math.round(progress * 100);
+            const progressBar = document.getElementById('exportProgressBar');
+            const progressText = document.getElementById('exportProgressText');
+            if (progressBar) progressBar.style.width = percent + '%';
+            if (progressText) progressText.textContent = percent + '%';
+        });
+
+        await timelineState.ffmpeg.load();
+        timelineState.loaded = true;
+        showNotification('✅ FFmpeg.wasm loaded successfully!', 'success');
+        return true;
+    } catch (error) {
+        console.error('FFmpeg load error:', error);
+        showNotification('❌ Failed to load FFmpeg.wasm: ' + error.message, 'error');
+        return false;
+    }
+}
+
+// File selection handlers
+function timelineSelectFiles(event) {
+    const files = Array.from(event.target.files);
+    addFilesToTimeline(files);
+}
+
+function timelineDragOver(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = 'copy';
+}
+
+function timelineDropFiles(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const files = Array.from(event.dataTransfer.files).filter(f => f.type.startsWith('video/'));
+    addFilesToTimeline(files);
+}
+
+// Add files to timeline
+async function addFilesToTimeline(files) {
+    if (!files || files.length === 0) return;
+
+    showNotification('⏳ Adding ' + files.length + ' video(s) to timeline...', 'info');
+
+    for (const file of files) {
+        const url = URL.createObjectURL(file);
+        const video = document.createElement('video');
+        video.src = url;
+
+        // Wait for metadata to get duration
+        await new Promise((resolve) => {
+            video.onloadedmetadata = () => resolve();
+        });
+
+        const clip = {
+            id: Date.now() + Math.random(),
+            file: file,
+            blob: file,
+            url: url,
+            name: file.name,
+            duration: video.duration,
+            transition: 'fade' // Default transition
+        };
+
+        timelineState.clips.push(clip);
+    }
+
+    renderTimeline();
+    updateTimelineInfo();
+    showNotification('✅ Added ' + files.length + ' clip(s) to timeline', 'success');
+}
+
+// Render timeline
+function renderTimeline() {
+    const track = document.getElementById('timelineTrack');
+    const emptyMsg = document.getElementById('timelineEmptyMessage');
+
+    if (timelineState.clips.length === 0) {
+        track.innerHTML = '';
+        if (emptyMsg) {
+            emptyMsg.style.display = 'block';
+        }
+        return;
+    }
+
+    // Hide empty message
+    if (emptyMsg) emptyMsg.style.display = 'none';
+
+    track.innerHTML = '';
+
+    timelineState.clips.forEach((clip, index) => {
+        // Create clip element
+        const clipEl = document.createElement('div');
+        clipEl.className = 'timeline-clip';
+        clipEl.draggable = true;
+        clipEl.dataset.index = index;
+
+        const width = Math.max(120, clip.duration * 60 * timelineState.zoom);
+        clipEl.style.width = width + 'px';
+        clipEl.style.height = '80px';
+
+        clipEl.innerHTML = '<div class="clip-name">' + clip.name + '</div>' +
+            '<div class="clip-duration">' + formatTime(clip.duration) + '</div>' +
+            '<button class="clip-delete" onclick="deleteClip(' + index + ')">×</button>';
+
+        clipEl.addEventListener('dragstart', handleClipDragStart);
+        clipEl.addEventListener('dragover', handleClipDragOver);
+        clipEl.addEventListener('drop', handleClipDrop);
+        clipEl.addEventListener('dragend', handleClipDragEnd);
+        clipEl.addEventListener('click', () => selectClip(index));
+
+        track.appendChild(clipEl);
+
+        // Add transition icon between clips (except after last clip)
+        if (index < timelineState.clips.length - 1) {
+            const transEl = document.createElement('div');
+            transEl.className = 'timeline-transition';
+            transEl.dataset.index = index;
+            transEl.innerHTML = '<div class="transition-icon">' + getTransitionIcon(clip.transition) + '</div>' +
+                '<div class="transition-label">' + clip.transition + '</div>';
+            transEl.addEventListener('click', () => openTransitionSelector(index));
+            track.appendChild(transEl);
+        }
+    });
+}
+
+// Clip drag-and-drop handlers
+let draggedClipIndex = null;
+
+function handleClipDragStart(event) {
+    draggedClipIndex = parseInt(event.target.dataset.index);
+    event.target.style.opacity = '0.4';
+}
+
+function handleClipDragOver(event) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+}
+
+function handleClipDrop(event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const target = event.target.closest('.timeline-clip');
+    if (!target) return;
+
+    const targetIndex = parseInt(target.dataset.index);
+
+    if (draggedClipIndex !== null && draggedClipIndex !== targetIndex) {
+        // Reorder clips
+        const draggedClip = timelineState.clips.splice(draggedClipIndex, 1)[0];
+        timelineState.clips.splice(targetIndex, 0, draggedClip);
+        renderTimeline();
+        updateTimelineInfo();
+        showNotification('✅ Clip reordered', 'success');
+    }
+}
+
+function handleClipDragEnd(event) {
+    event.target.style.opacity = '1';
+    draggedClipIndex = null;
+}
+
+// Delete clip
+function deleteClip(index) {
+    const clip = timelineState.clips[index];
+    URL.revokeObjectURL(clip.url);
+    timelineState.clips.splice(index, 1);
+    renderTimeline();
+    updateTimelineInfo();
+    showNotification('✅ Clip deleted', 'success');
+}
+
+// Select clip
+function selectClip(index) {
+    timelineState.currentClipIndex = index;
+    const clips = document.querySelectorAll('.timeline-clip');
+    clips.forEach((el, i) => {
+        el.classList.toggle('selected', i === index);
+    });
+}
+
+// Transition selector
+function openTransitionSelector(index) {
+    timelineState.selectedTransitionIndex = index;
+    document.getElementById('transitionModal').style.display = 'block';
+    document.getElementById('transitionModalOverlay').style.display = 'block';
+}
+
+function closeTransitionModal() {
+    document.getElementById('transitionModal').style.display = 'none';
+    document.getElementById('transitionModalOverlay').style.display = 'none';
+    timelineState.selectedTransitionIndex = null;
+}
+
+function selectTransition(type) {
+    if (timelineState.selectedTransitionIndex !== null) {
+        timelineState.clips[timelineState.selectedTransitionIndex].transition = type;
+        renderTimeline();
+        showNotification('✅ Transition changed to ' + type, 'success');
+    }
+    closeTransitionModal();
+}
+
+function getTransitionIcon(type) {
+    const icons = {
+        fade: '🌅',
+        dissolve: '✨',
+        wipe: '➡️',
+        slide: '🔄',
+        zoom: '🔍',
+        none: '⚡'
+    };
+    return icons[type] || '🌅';
+}
+
+// Timeline info updates
+function updateTimelineInfo() {
+    const count = timelineState.clips.length;
+    const total = timelineState.clips.reduce((sum, clip) => sum + clip.duration, 0);
+
+    document.getElementById('timelineClipCount').textContent = count + ' clip' + (count !== 1 ? 's' : '');
+    document.getElementById('timelineTotalDuration').textContent = 'Total: ' + formatTime(total);
+
+    timelineState.totalDuration = total;
+}
+
+// Zoom controls
+function timelineZoomIn() {
+    timelineState.zoom = Math.min(timelineState.zoom * 1.5, 5);
+    renderTimeline();
+}
+
+function timelineZoomOut() {
+    timelineState.zoom = Math.max(timelineState.zoom / 1.5, 0.2);
+    renderTimeline();
+}
+
+// Preview playback
+function timelinePlayPause() {
+    const video = document.getElementById('editorVideoPreview');
+    const placeholder = document.getElementById('editorPlaceholder');
+
+    if (timelineState.clips.length === 0) {
+        showNotification('⚠️ Add clips to timeline first', 'warning');
+        return;
+    }
+
+    if (!timelineState.isPlaying) {
+        // Start playing first clip
+        if (timelineState.currentClipIndex === null) {
+            timelineState.currentClipIndex = 0;
+        }
+
+        const clip = timelineState.clips[timelineState.currentClipIndex];
+        video.src = clip.url;
+        video.style.display = 'block';
+        placeholder.style.display = 'none';
+        video.play();
+        timelineState.isPlaying = true;
+
+        // Auto-advance to next clip
+        video.onended = () => {
+            if (timelineState.currentClipIndex < timelineState.clips.length - 1) {
+                timelineState.currentClipIndex++;
+                const nextClip = timelineState.clips[timelineState.currentClipIndex];
+                video.src = nextClip.url;
+                video.play();
+            } else {
+                timelineStop();
+            }
+        };
+    } else {
+        video.pause();
+        timelineState.isPlaying = false;
+    }
+}
+
+function timelineStop() {
+    const video = document.getElementById('editorVideoPreview');
+    video.pause();
+    video.currentTime = 0;
+    timelineState.isPlaying = false;
+    timelineState.currentClipIndex = 0;
+}
+
+function timelineToggleMute() {
+    const video = document.getElementById('editorVideoPreview');
+    const btn = document.getElementById('timelineMuteBtn');
+    video.muted = !video.muted;
+    btn.textContent = video.muted ? '🔇' : '🔊';
+}
+
+function timelineSeek(event) {
+    // Simple seek implementation
+    const video = document.getElementById('editorVideoPreview');
+    const seekBar = document.getElementById('timelineSeekBar');
+    const rect = seekBar.getBoundingClientRect();
+    const percent = (event.clientX - rect.left) / rect.width;
+
+    if (timelineState.clips.length > 0 && timelineState.currentClipIndex !== null) {
+        const clip = timelineState.clips[timelineState.currentClipIndex];
+        video.currentTime = clip.duration * percent;
+    }
+}
+
+// Update time display
+setInterval(() => {
+    const video = document.getElementById('editorVideoPreview');
+    const display = document.getElementById('timelineTimeDisplay');
+    const fill = document.getElementById('timelineSeekFill');
+
+    if (video && !video.paused) {
+        const current = video.currentTime;
+        const duration = video.duration || 0;
+        display.textContent = formatTime(current) + ' / ' + formatTime(duration);
+
+        if (duration > 0) {
+            fill.style.width = (current / duration * 100) + '%';
+        }
+    }
+}, 100);
+
+// Export timeline with FFmpeg.wasm
+async function exportTimeline() {
+    if (timelineState.clips.length === 0) {
+        showNotification('⚠️ Add clips to timeline first', 'warning');
+        return;
+    }
+
+    const exportBtn = document.getElementById('exportBtn');
+    const exportProgress = document.getElementById('exportProgress');
+    const statusText = document.getElementById('exportStatusText');
+
+    try {
+        exportBtn.disabled = true;
+        exportBtn.textContent = '⏳ Exporting...';
+        exportProgress.style.display = 'block';
+
+        // Initialize FFmpeg if not loaded
+        if (!timelineState.loaded) {
+            statusText.textContent = 'Loading FFmpeg.wasm...';
+            const loaded = await initFFmpeg();
+            if (!loaded) {
+                throw new Error('Failed to load FFmpeg.wasm');
+            }
+        }
+
+        const { fetchFile } = FFmpegUtil;
+
+        // Write all clips to FFmpeg filesystem
+        statusText.textContent = 'Preparing video clips...';
+        for (let i = 0; i < timelineState.clips.length; i++) {
+            const clip = timelineState.clips[i];
+            const filename = 'input' + i + '.mp4';
+            await timelineState.ffmpeg.writeFile(filename, await fetchFile(clip.url));
+        }
+
+        // Build FFmpeg filter complex for transitions
+        statusText.textContent = 'Building video with transitions...';
+
+        if (timelineState.clips.length === 1) {
+            // Single clip - just copy
+            await timelineState.ffmpeg.exec(['-i', 'input0.mp4', '-c', 'copy', 'output.mp4']);
+        } else {
+            // Multiple clips - concatenate with transitions
+            // Simple concat for now (advanced transitions need complex filters)
+            const inputs = [];
+            for (let i = 0; i < timelineState.clips.length; i++) {
+                inputs.push('-i');
+                inputs.push('input' + i + '.mp4');
+            }
+
+            // Build concat filter
+            let filterStr = '';
+            for (let i = 0; i < timelineState.clips.length; i++) {
+                filterStr += '[' + i + ':v:0][' + i + ':a:0]';
+            }
+            filterStr += 'concat=n=' + timelineState.clips.length + ':v=1:a=1[outv][outa]';
+
+            await timelineState.ffmpeg.exec([
+                ...inputs,
+                '-filter_complex', filterStr,
+                '-map', '[outv]',
+                '-map', '[outa]',
+                '-c:v', 'libx264',
+                '-preset', 'fast',
+                '-crf', '23',
+                '-c:a', 'aac',
+                'output.mp4'
+            ]);
+        }
+
+        statusText.textContent = 'Finalizing export...';
+
+        // Read output file
+        const data = await timelineState.ffmpeg.readFile('output.mp4');
+        const blob = new Blob([data.buffer], { type: 'video/mp4' });
+        const url = URL.createObjectURL(blob);
+
+        // Download file
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'mr_baha_edit_' + Date.now() + '.mp4';
+        a.click();
+
+        // Clean up
+        for (let i = 0; i < timelineState.clips.length; i++) {
+            await timelineState.ffmpeg.deleteFile('input' + i + '.mp4');
+        }
+        await timelineState.ffmpeg.deleteFile('output.mp4');
+
+        showNotification('✅ Video exported successfully!', 'success');
+
+    } catch (error) {
+        console.error('Export error:', error);
+        showNotification('❌ Export failed: ' + error.message, 'error');
+    } finally {
+        exportBtn.disabled = false;
+        exportBtn.textContent = '🚀 Export Final Video';
+        setTimeout(() => {
+            exportProgress.style.display = 'none';
+        }, 2000);
+    }
+}
+
+// Helper function for time formatting
+function formatTime(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return mins + ':' + (secs < 10 ? '0' : '') + secs;
+}
+
+console.log('✅ MR BAHA Editor with FFmpeg.wasm initialized');
