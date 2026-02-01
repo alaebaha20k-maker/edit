@@ -224,6 +224,7 @@ function capcutLoadVideoPreview(clip) {
     const video = document.getElementById('editorVideoPreview');
     const placeholder = document.getElementById('editorPlaceholder');
     const timeDisplay = document.getElementById('editorTimeDisplay');
+    const playBtn = document.getElementById('editorPlayBtn');
 
     if (!video) return;
 
@@ -233,6 +234,7 @@ function capcutLoadVideoPreview(clip) {
         video.style.display = 'block';
         placeholder.style.display = 'none';
         timeDisplay.style.display = 'block';
+        if (playBtn) playBtn.style.display = 'block';
 
         // Seek to clip's trim start
         video.currentTime = clip.trimStart;
@@ -245,9 +247,23 @@ function capcutLoadVideoPreview(clip) {
         video.addEventListener('timeupdate', () => {
             capcutUpdateTimeDisplay();
         });
+
+        // Update play button icon when video plays/pauses
+        video.addEventListener('play', () => {
+            if (playBtn) playBtn.textContent = '⏸️';
+        });
+
+        video.addEventListener('pause', () => {
+            if (playBtn) playBtn.textContent = '▶️';
+        });
+
+        video.addEventListener('ended', () => {
+            if (playBtn) playBtn.textContent = '▶️';
+        });
     } else {
         // Show image
         video.style.display = 'none';
+        if (playBtn) playBtn.style.display = 'none';
         const canvas = document.getElementById('editorCanvasPreview');
         if (canvas) {
             canvas.style.display = 'block';
@@ -278,6 +294,18 @@ function capcutUpdateTimeDisplay() {
     const totalTime = formatTime(duration);
 
     timeDisplay.textContent = currentTime + ' / ' + totalTime;
+}
+
+// Play/Pause toggle
+function capcutTogglePlay() {
+    const video = document.getElementById('editorVideoPreview');
+    if (!video || !video.src) return;
+
+    if (video.paused) {
+        video.play();
+    } else {
+        video.pause();
+    }
 }
 
 // Split at playhead (instant!)
@@ -555,7 +583,11 @@ async function capcutExport() {
 document.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
-    if (e.ctrlKey || e.metaKey) {
+    if (e.key === ' ' || e.key === 'Spacebar') {
+        // Spacebar to play/pause
+        e.preventDefault();
+        capcutTogglePlay();
+    } else if (e.ctrlKey || e.metaKey) {
         if (e.key === 'z') {
             e.preventDefault();
             if (e.shiftKey) {
