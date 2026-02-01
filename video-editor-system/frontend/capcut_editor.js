@@ -9,6 +9,9 @@ let capcutPlayhead = 0;
 let capcutPixelsPerSecond = 10;
 let capcutHistory = [];
 let capcutHistoryIndex = -1;
+let capcutZoomLevel = 1; // 1x, 2x, 5x, 10x, etc.
+let capcutScrollPosition = 0;
+let capcutIsDraggingPlayhead = false;
 
 // Generate unique ID
 function capcutGenerateId() {
@@ -497,7 +500,7 @@ function capcutUpdateClipVisual(clip) {
     clipEl.style.left = (clip.position * capcutPixelsPerSecond) + 'px';
 }
 
-// Drag to reorder (instant!)
+// Drag to reorder (instant!) - WITH MAGNETIC SNAPPING
 function capcutStartDragClip(clipId, e) {
     const clip = capcutClips.find(c => c.id === clipId);
     if (!clip) return;
@@ -506,12 +509,31 @@ function capcutStartDragClip(clipId, e) {
     const originalPosition = clip.position;
     capcutSaveHistory();
     let hasMoved = false;
+    let lastSnapPosition = null;
 
     document.onmousemove = (moveE) => {
         hasMoved = true;
         const deltaX = moveE.clientX - startX;
         const deltaTime = deltaX / capcutPixelsPerSecond;
-        clip.position = Math.max(0, originalPosition + deltaTime);
+        let newPosition = Math.max(0, originalPosition + deltaTime);
+
+        // Apply magnetic snapping
+        newPosition = capcutMagneticSnap(clipId, newPosition);
+
+        // Visual feedback for snapping
+        if (lastSnapPosition !== null && newPosition !== lastSnapPosition) {
+            // Snapped! Show subtle visual feedback
+            const clipEl = document.querySelector(`[data-clip-id="${clipId}"]`);
+            if (clipEl) {
+                clipEl.style.boxShadow = '0 0 15px rgba(102, 126, 234, 0.8)';
+                setTimeout(() => {
+                    clipEl.style.boxShadow = '';
+                }, 200);
+            }
+        }
+
+        lastSnapPosition = newPosition;
+        clip.position = newPosition;
         capcutUpdateClipVisual(clip);
     };
 
@@ -525,13 +547,61 @@ function capcutStartDragClip(clipId, e) {
     };
 }
 
+// Smart snap - Auto-close gaps and magnetic snapping
 function capcutSnapClips() {
+    if (capcutClips.length === 0) return;
+
+    // Sort by position
     capcutClips.sort((a, b) => a.position - b.position);
+
+    // Auto-close gaps
     let currentPos = 0;
     capcutClips.forEach(clip => {
-        clip.position = currentPos;
-        currentPos += (clip.trimEnd - clip.trimStart);
+        const duration = clip.trimEnd - clip.trimStart;
+
+        // If gap is less than 1 second, auto-close it
+        if (Math.abs(clip.position - currentPos) < 1.0) {
+            clip.position = currentPos;
+        } else {
+            // Keep the gap if it's intentional (> 1 second)
+            currentPos = clip.position;
+        }
+
+        currentPos = clip.position + duration;
     });
+}
+
+// Magnetic snap when dragging - clips attract to each other
+function capcutMagneticSnap(clipId, newPosition) {
+    const clip = capcutClips.find(c => c.id === clipId);
+    if (!clip) return newPosition;
+
+    const clipDuration = clip.trimEnd - clip.trimStart;
+    const SNAP_THRESHOLD = 10 / capcutPixelsPerSecond; // 10 pixels in time
+
+    // Check snap to other clips
+    for (const otherClip of capcutClips) {
+        if (otherClip.id === clipId) continue;
+
+        const otherEnd = otherClip.position + (otherClip.trimEnd - otherClip.trimStart);
+
+        // Snap to start of other clip
+        if (Math.abs(newPosition + clipDuration - otherClip.position) < SNAP_THRESHOLD) {
+            return otherClip.position - clipDuration;
+        }
+
+        // Snap to end of other clip
+        if (Math.abs(newPosition - otherEnd) < SNAP_THRESHOLD) {
+            return otherEnd;
+        }
+    }
+
+    // Snap to timeline start
+    if (Math.abs(newPosition) < SNAP_THRESHOLD) {
+        return 0;
+    }
+
+    return newPosition;
 }
 
 // Delete selected (instant!)
@@ -593,15 +663,61 @@ function capcutRedo() {
     showNotification('↷ Redone', 'info');
 }
 
-// Zoom
+// Advanced Zoom System
+const ZOOM_LEVELS = [0.5, 1, 2, 5, 10, 20, 50, 100, 200];
+const BASE_PIXELS_PER_SECOND = 10;
+
 function capcutZoomIn() {
-    capcutPixelsPerSecond = Math.min(capcutPixelsPerSecond * 1.5, 50);
-    capcutRenderTimeline();
+    const currentIndex = ZOOM_LEVELS.findIndex(z => z >= capcutZoomLevel);
+    if (currentIndex < ZOOM_LEVELS.length - 1) {
+        capcutZoomLevel = ZOOM_LEVELS[currentIndex + 1];
+        capcutPixelsPerSecond = BASE_PIXELS_PER_SECOND * capcutZoomLevel;
+        capcutRenderTimeline();
+        showNotification(`Zoom: ${capcutZoomLevel}x`, 'info');
+    }
 }
 
 function capcutZoomOut() {
-    capcutPixelsPerSecond = Math.max(capcutPixelsPerSecond / 1.5, 2);
+    const currentIndex = ZOOM_LEVELS.findIndex(z => z >= capcutZoomLevel);
+    if (currentIndex > 0) {
+        capcutZoomLevel = ZOOM_LEVELS[currentIndex - 1];
+        capcutPixelsPerSecond = BASE_PIXELS_PER_SECOND * capcutZoomLevel;
+        capcutRenderTimeline();
+        showNotification(`Zoom: ${capcutZoomLevel}x`, 'info');
+    }
+}
+
+function capcutZoomToFit() {
+    // Calculate zoom to fit entire timeline in view
+    const totalDuration = capcutCalculateTotalDuration();
+    if (totalDuration === 0) return;
+
+    const container = document.getElementById('capcutTimelineContainer');
+    if (!container) return;
+
+    const containerWidth = container.clientWidth - 40; // Padding
+    const idealPixelsPerSecond = containerWidth / totalDuration;
+
+    // Find closest zoom level
+    const idealZoom = idealPixelsPerSecond / BASE_PIXELS_PER_SECOND;
+    const closestZoom = ZOOM_LEVELS.reduce((prev, curr) =>
+        Math.abs(curr - idealZoom) < Math.abs(prev - idealZoom) ? curr : prev
+    );
+
+    capcutZoomLevel = closestZoom;
+    capcutPixelsPerSecond = BASE_PIXELS_PER_SECOND * capcutZoomLevel;
     capcutRenderTimeline();
+
+    // Scroll to beginning
+    container.scrollLeft = 0;
+    showNotification(`Fit to timeline (${capcutZoomLevel}x)`, 'info');
+}
+
+function capcutZoomReset() {
+    capcutZoomLevel = 1;
+    capcutPixelsPerSecond = BASE_PIXELS_PER_SECOND;
+    capcutRenderTimeline();
+    showNotification('Zoom: 1x (default)', 'info');
 }
 
 // Export (backend FFmpeg - runs ONCE!)
@@ -678,7 +794,7 @@ async function capcutExport() {
     }
 }
 
-// Keyboard shortcuts
+// Keyboard shortcuts - PROFESSIONAL GRADE
 document.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
@@ -700,12 +816,54 @@ document.addEventListener('keydown', (e) => {
         } else if (e.key === 'b') {
             e.preventDefault();
             capcutSplitAtPlayhead();
+        } else if (e.key === '=' || e.key === '+') {
+            // Ctrl + = or Ctrl + + to zoom in
+            e.preventDefault();
+            capcutZoomIn();
+        } else if (e.key === '-' || e.key === '_') {
+            // Ctrl + - to zoom out
+            e.preventDefault();
+            capcutZoomOut();
+        } else if (e.key === '0') {
+            // Ctrl + 0 to zoom to fit
+            e.preventDefault();
+            capcutZoomToFit();
+        } else if (e.key === '1') {
+            // Ctrl + 1 to reset zoom
+            e.preventDefault();
+            capcutZoomReset();
         }
     } else if (e.key === 'Delete' || e.key === 'Backspace') {
         if (document.activeElement.tagName !== 'INPUT') {
             e.preventDefault();
             capcutDeleteSelected();
         }
+    } else if (e.key === 'Home') {
+        // Jump to beginning
+        e.preventDefault();
+        capcutPlayhead = 0;
+        capcutUpdatePlayheadPosition();
+        capcutSeekPreviewToPlayhead();
+        const container = document.getElementById('capcutTimelineContainer');
+        if (container) container.scrollLeft = 0;
+    } else if (e.key === 'End') {
+        // Jump to end
+        e.preventDefault();
+        capcutPlayhead = capcutCalculateTotalDuration();
+        capcutUpdatePlayheadPosition();
+        capcutSeekPreviewToPlayhead();
+    } else if (e.key === 'ArrowLeft') {
+        // Frame back (1 second)
+        e.preventDefault();
+        capcutPlayhead = Math.max(0, capcutPlayhead - 1);
+        capcutUpdatePlayheadPosition();
+        capcutSeekPreviewToPlayhead();
+    } else if (e.key === 'ArrowRight') {
+        // Frame forward (1 second)
+        e.preventDefault();
+        capcutPlayhead = Math.min(capcutCalculateTotalDuration(), capcutPlayhead + 1);
+        capcutUpdatePlayheadPosition();
+        capcutSeekPreviewToPlayhead();
     }
 });
 
@@ -726,7 +884,7 @@ console.log('✅ CapCut-style timeline editor initialized');
 // PLAYHEAD - DRAGGABLE & SYNCED WITH PREVIEW
 // =============================================================================
 
-// Make playhead draggable and clickable
+// Make playhead draggable and clickable - SMOOTH VERSION
 function capcutInitializePlayhead() {
     const container = document.getElementById('capcutTimelineContainer');
     const playheadEl = document.getElementById('capcutPlayhead');
@@ -735,6 +893,7 @@ function capcutInitializePlayhead() {
 
     // Click timeline to move playhead
     container.addEventListener('click', (e) => {
+        if (capcutIsDraggingPlayhead) return; // Ignore click if just finished dragging
         if (e.target.closest('.capcut-clip') || e.target.closest('.capcut-trim-handle')) {
             return; // Don't move playhead if clicking clip/handle
         }
@@ -743,24 +902,39 @@ function capcutInitializePlayhead() {
         const clickX = e.clientX - rect.left + container.scrollLeft;
         const timeAtClick = clickX / capcutPixelsPerSecond;
 
-        capcutPlayhead = Math.max(0, timeAtClick);
+        capcutPlayhead = Math.max(0, Math.min(timeAtClick, capcutCalculateTotalDuration() + 10));
         capcutUpdatePlayheadPosition();
         capcutSeekPreviewToPlayhead();
     });
 
-    // Drag playhead
+    // Drag playhead - SMOOTH with auto-scroll
     playheadEl.addEventListener('mousedown', (e) => {
         e.preventDefault();
         e.stopPropagation();
 
-        const startX = e.clientX;
-        const startPlayhead = capcutPlayhead;
+        capcutIsDraggingPlayhead = true;
+        playheadEl.style.cursor = 'grabbing';
+
+        const containerRect = container.getBoundingClientRect();
 
         document.onmousemove = (moveE) => {
-            const deltaX = moveE.clientX - startX;
-            const deltaTime = deltaX / capcutPixelsPerSecond;
+            // Calculate time based on mouse position
+            const mouseX = moveE.clientX;
+            const relativeX = mouseX - containerRect.left;
+            const scrollX = container.scrollLeft;
 
-            capcutPlayhead = Math.max(0, startPlayhead + deltaTime);
+            // Calculate time
+            const timeAtMouse = (relativeX + scrollX) / capcutPixelsPerSecond;
+            capcutPlayhead = Math.max(0, timeAtMouse);
+
+            // Auto-scroll if near edges
+            const scrollMargin = 50;
+            if (relativeX < scrollMargin && scrollX > 0) {
+                container.scrollLeft -= 10;
+            } else if (relativeX > containerRect.width - scrollMargin) {
+                container.scrollLeft += 10;
+            }
+
             capcutUpdatePlayheadPosition();
             capcutSeekPreviewToPlayhead();
         };
@@ -768,12 +942,30 @@ function capcutInitializePlayhead() {
         document.onmouseup = () => {
             document.onmousemove = null;
             document.onmouseup = null;
+            playheadEl.style.cursor = 'grab';
+
+            setTimeout(() => {
+                capcutIsDraggingPlayhead = false;
+            }, 100);
         };
     });
 
     // Show playhead initially
     playheadEl.style.display = 'block';
+    playheadEl.style.cursor = 'grab';
     capcutUpdatePlayheadPosition();
+
+    // Mouse wheel zoom on timeline
+    container.addEventListener('wheel', (e) => {
+        if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            if (e.deltaY < 0) {
+                capcutZoomIn();
+            } else {
+                capcutZoomOut();
+            }
+        }
+    }, { passive: false });
 }
 
 // Update playhead visual position

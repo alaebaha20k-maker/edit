@@ -397,8 +397,12 @@
                     </button>
                     <div style="flex: 1;"></div>
                     <span id="capcutStatusText" style="font-size: 13px; color: #aaa;">Ready • 0 clips</span>
-                    <button onclick="capcutZoomIn()" class="btn-secondary" style="padding: 5px 10px;">🔍+</button>
-                    <button onclick="capcutZoomOut()" class="btn-secondary" style="padding: 5px 10px;">🔍-</button>
+                    <div style="width: 1px; height: 30px; background: rgba(255,255,255,0.2);"></div>
+                    <span style="font-size: 12px; color: #aaa;">Zoom:</span>
+                    <button onclick="capcutZoomOut()" class="btn-secondary" style="padding: 5px 10px;" title="Zoom out (Ctrl + -)">🔍-</button>
+                    <button onclick="capcutZoomReset()" class="btn-secondary" style="padding: 5px 12px;" title="Reset zoom (Ctrl + 1)">1x</button>
+                    <button onclick="capcutZoomIn()" class="btn-secondary" style="padding: 5px 10px;" title="Zoom in (Ctrl + +)">🔍+</button>
+                    <button onclick="capcutZoomToFit()" class="btn-secondary" style="padding: 5px 10px;" title="Fit to timeline (Ctrl + 0)">📐 Fit</button>
                 </div>
             </section>
 
