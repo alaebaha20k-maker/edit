@@ -1242,3 +1242,65 @@ button:active {
 .control-btn:active {
     transform: scale(0.95);
 }
+
+/* ===================================================
+   CAPCUT-STYLE TIMELINE EDITOR STYLES
+   =================================================== */
+
+.capcut-clip {
+    transition: box-shadow 0.2s, border 0.2s;
+    user-select: none;
+}
+
+.capcut-clip:hover {
+    box-shadow: 0 4px 20px rgba(102, 126, 234, 0.6) !important;
+}
+
+.capcut-clip.selected {
+    border: 3px solid #ff6b35 !important;
+    box-shadow: 0 0 20px rgba(255, 107, 53, 0.5) !important;
+}
+
+.capcut-trim-handle:hover {
+    background: rgba(255, 255, 255, 0.8) !important;
+}
+
+.btn-tool {
+    background: rgba(102, 126, 234, 0.2);
+    border: 1px solid rgba(102, 126, 234, 0.4);
+    color: white;
+    padding: 8px 15px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.btn-tool:hover {
+    background: rgba(102, 126, 234, 0.4);
+    border-color: #667eea;
+    transform: translateY(-1px);
+}
+
+.btn-tool:active {
+    transform: translateY(0);
+}
+
+.btn-tool.btn-danger {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: rgba(239, 68, 68, 0.4);
+}
+
+.btn-tool.btn-danger:hover {
+    background: rgba(239, 68, 68, 0.4);
+    border-color: #ef4444;
+}
+
+#capcutTimelineContainer {
+    transition: transform 0.1s;
+}
+
+#capcutPlayhead {
+    transition: left 0.05s linear;
+}

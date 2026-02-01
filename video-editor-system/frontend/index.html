@@ -339,194 +339,105 @@
         </div>
 
         <!-- ============================================ -->
-        <!-- MR BAHA EDITOR TAB -->
+        <!-- ============================================ -->
+        <!-- MR BAHA EDITOR TAB - CAPCUT STYLE -->
         <!-- ============================================ -->
         <div id="tab-editor" class="tab-content">
             <h2>✂️ MR BAHA Editor</h2>
-            <p class="subtitle">Professional drag-and-drop timeline editor with trim, merge, and smooth transitions • Server-side FFmpeg Processing</p>
+            <p class="subtitle">CapCut-style timeline • Drag edges to trim • Click Split • Instant editing • Export creates final video</p>
 
-            <!-- Quick Start Guide -->
-            <div style="background: linear-gradient(135deg, rgba(102, 126, 234, 0.2), rgba(118, 75, 162, 0.2)); padding: 15px; border-radius: 10px; margin-bottom: 20px;">
-                <h3 style="margin: 0 0 10px 0; font-size: 16px;">🎬 Quick Start:</h3>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; font-size: 13px;">
-                    <div>1️⃣ Drop videos/images on timeline</div>
-                    <div>2️⃣ Click clip to trim • Drag to reorder</div>
-                    <div>3️⃣ Select 2 clips → Click Merge</div>
-                    <div>4️⃣ Click Export for final video</div>
-                </div>
-            </div>
-
-            <!-- Video Preview -->
-            <section class="editor-preview">
-                <div style="background: #000; border-radius: 10px; overflow: hidden; position: relative; min-height: 400px; display: flex; align-items: center; justify-content: center;">
-                    <video id="editorVideoPreview" style="width: 100%; max-height: 400px; display: none;"></video>
-                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #888; font-size: 18px; text-align: center;" id="editorPlaceholder">
-                        Drop videos on timeline below ↓
+            <!-- Video Preview Area -->
+            <section style="margin-bottom: 20px;">
+                <div style="background: #000; border-radius: 10px; overflow: hidden; position: relative; height: 400px; display: flex; align-items: center; justify-content: center;">
+                    <video id="editorVideoPreview" style="width: 100%; height: 100%; object-fit: contain; display: none;"></video>
+                    <canvas id="editorCanvasPreview" style="width: 100%; height: 100%; object-fit: contain; display: none;"></canvas>
+                    <div id="editorPlaceholder" style="color: #666; font-size: 18px; text-align: center;">
+                        <div style="font-size: 48px; margin-bottom: 10px;">📹</div>
+                        <div>Upload videos to start editing</div>
                     </div>
-                </div>
-
-                <!-- Playback Controls -->
-                <div class="playback-controls" style="margin-top: 10px; display: flex; align-items: center; gap: 15px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 8px;">
-                    <button class="control-btn" onclick="timelinePlayPause()">▶️</button>
-                    <button class="control-btn" onclick="timelineStop()">⏹️</button>
-                    <span id="timelineTimeDisplay" style="font-family: monospace; font-size: 14px;">0:00 / 0:00</span>
-                    <div style="flex: 1; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; cursor: pointer; position: relative;" id="timelineSeekBar" onclick="timelineSeek(event)">
-                        <div id="timelineSeekFill" style="height: 100%; background: #667eea; border-radius: 3px; width: 0%; transition: width 0.1s;"></div>
-                    </div>
-                    <button class="control-btn" onclick="timelineToggleMute()" id="timelineMuteBtn">🔊</button>
-                </div>
-            </section>
-
-            <!-- Timeline Section -->
-            <section class="editor-timeline" style="margin-top: 30px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <h3 style="margin: 0;">⏱️ Timeline</h3>
-                    <div style="display: flex; gap: 15px; align-items: center;">
-                        <span id="timelineClipCount" style="color: #aaa; font-size: 13px;">0 clips</span>
-                        <span id="timelineTotalDuration" style="color: #aaa; font-size: 13px;">Total: 0:00</span>
-                        <button onclick="timelineZoomIn()" class="btn-secondary" style="padding: 5px 10px;">🔍+</button>
-                        <button onclick="timelineZoomOut()" class="btn-secondary" style="padding: 5px 10px;">🔍-</button>
-                    </div>
-                </div>
-
-                <!-- Drop Zone -->
-                <div id="timelineDropZone" style="border: 2px dashed #667eea; border-radius: 10px; padding: 30px; text-align: center; background: rgba(102, 126, 234, 0.05); margin-bottom: 20px; cursor: pointer;" ondragover="timelineDragOver(event)" ondrop="timelineDropFiles(event)" onclick="document.getElementById('timelineFileInput').click()">
-                    <div style="font-size: 48px; margin-bottom: 10px;">📹🖼️</div>
-                    <div style="font-size: 16px; font-weight: bold; margin-bottom: 5px;">Drop videos or images here</div>
-                    <div style="font-size: 13px; color: #aaa;">Images will be converted to 5-second clips • Click to browse</div>
-                    <input type="file" id="timelineFileInput" accept="video/*,image/*" multiple style="display: none;" onchange="timelineSelectFiles(event)">
-                </div>
-
-                <!-- Timeline Track -->
-                <div style="background: rgba(0,0,0,0.3); border-radius: 10px; padding: 20px; min-height: 150px; position: relative; overflow-x: auto;" id="timelineContainer">
-                    <div id="timelineTrack" style="display: flex; gap: 0; align-items: center; min-height: 100px; position: relative;">
-                        <div id="timelineEmptyMessage" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #666; font-size: 14px;">
-                            Timeline is empty - drop videos above to start
-                        </div>
+                    <div id="editorTimeDisplay" style="position: absolute; top: 15px; right: 15px; background: rgba(0,0,0,0.8); padding: 8px 15px; border-radius: 5px; font-family: monospace; font-size: 14px; display: none;">
+                        00:00:00
                     </div>
                 </div>
             </section>
 
-            <!-- Transition Selector Modal -->
-            <div id="transitionModal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #1a1a2e; padding: 30px; border-radius: 15px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); z-index: 10000; min-width: 400px;">
-                <h3 style="margin: 0 0 20px 0;">🎬 Select Transition</h3>
-                <div id="transitionOptions" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px;">
-                    <button onclick="selectTransition('fade')" class="transition-option">
-                        <div style="font-size: 32px; margin-bottom: 5px;">🌅</div>
-                        <div style="font-weight: bold;">Fade</div>
-                        <div style="font-size: 11px; color: #aaa;">Smooth fade in/out</div>
-                    </button>
-                    <button onclick="selectTransition('dissolve')" class="transition-option">
-                        <div style="font-size: 32px; margin-bottom: 5px;">✨</div>
-                        <div style="font-weight: bold;">Dissolve</div>
-                        <div style="font-size: 11px; color: #aaa;">Gradual blend</div>
-                    </button>
-                    <button onclick="selectTransition('wipe')" class="transition-option">
-                        <div style="font-size: 32px; margin-bottom: 5px;">➡️</div>
-                        <div style="font-weight: bold;">Wipe</div>
-                        <div style="font-size: 11px; color: #aaa;">Slide across</div>
-                    </button>
-                    <button onclick="selectTransition('slide')" class="transition-option">
-                        <div style="font-size: 32px; margin-bottom: 5px;">🔄</div>
-                        <div style="font-weight: bold;">Slide</div>
-                        <div style="font-size: 11px; color: #aaa;">Push transition</div>
-                    </button>
-                    <button onclick="selectTransition('zoom')" class="transition-option">
-                        <div style="font-size: 32px; margin-bottom: 5px;">🔍</div>
-                        <div style="font-weight: bold;">Zoom</div>
-                        <div style="font-size: 11px; color: #aaa;">Scale effect</div>
-                    </button>
-                    <button onclick="selectTransition('none')" class="transition-option">
-                        <div style="font-size: 32px; margin-bottom: 5px;">⚡</div>
-                        <div style="font-weight: bold;">None</div>
-                        <div style="font-size: 11px; color: #aaa;">Instant cut</div>
-                    </button>
+            <!-- Upload Section -->
+            <section style="margin-bottom: 20px;">
+                <div id="timelineDropZone" style="border: 2px dashed #667eea; border-radius: 10px; padding: 20px; text-align: center; background: rgba(102, 126, 234, 0.05); cursor: pointer;" ondragover="capcutDragOver(event)" ondrop="capcutDropFiles(event)" onclick="document.getElementById('capcutFileInput').click()">
+                    <div style="font-size: 16px; font-weight: bold; margin-bottom: 5px;">📁 Upload Videos/Images</div>
+                    <div style="font-size: 13px; color: #aaa;">Drag and drop or click to browse</div>
+                    <input type="file" id="capcutFileInput" accept="video/*,image/*" multiple style="display: none;" onchange="capcutSelectFiles(event)">
                 </div>
-                <button onclick="closeTransitionModal()" class="btn-secondary" style="width: 100%;">Cancel</button>
-            </div>
-            <div id="transitionModalOverlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9999;" onclick="closeTransitionModal()"></div>
+            </section>
 
-            <!-- Clip Editing Controls -->
-            <section style="margin-top: 30px; background: rgba(118, 75, 162, 0.05); padding: 20px; border-radius: 10px;" id="clipEditingSection">
-                <h3 style="margin: 0 0 15px 0;">✂️ Edit Clips</h3>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
-                    <!-- Trim Clip -->
-                    <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px;">
-                        <div style="font-weight: bold; margin-bottom: 10px;">✂️ Trim Selected Clip</div>
-                        <div style="display: grid; gap: 10px;">
-                            <div>
-                                <label style="font-size: 12px; color: #aaa;">Start Time (seconds):</label>
-                                <input type="number" id="trimStart" min="0" step="0.1" value="0" class="input-medium" style="width: 100%;">
-                            </div>
-                            <div>
-                                <label style="font-size: 12px; color: #aaa;">End Time (seconds):</label>
-                                <input type="number" id="trimEnd" min="0" step="0.1" value="10" class="input-medium" style="width: 100%;">
-                            </div>
-                            <button onclick="trimSelectedClip()" class="btn-primary" style="width: 100%;">✂️ Trim Clip</button>
-                        </div>
-                    </div>
-
-                    <!-- Merge Clips -->
-                    <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px;">
-                        <div style="font-weight: bold; margin-bottom: 10px;">🔗 Merge Clips</div>
-                        <div style="font-size: 12px; color: #aaa; margin-bottom: 10px;">
-                            Select 2 clips by clicking them (hold Ctrl/Cmd)
-                        </div>
-                        <div style="margin-bottom: 10px;">
-                            <label style="font-size: 12px; color: #aaa;">Transition:</label>
-                            <select id="mergeTransition" class="input-medium" style="width: 100%;">
-                                <option value="fade">🌅 Fade</option>
-                                <option value="dissolve">✨ Dissolve</option>
-                                <option value="wipe">➡️ Wipe</option>
-                                <option value="slide">🔄 Slide</option>
-                                <option value="none">⚡ None (instant)</option>
-                            </select>
-                        </div>
-                        <button onclick="mergeSelectedClips()" class="btn-success" style="width: 100%;">🔗 Merge Selected</button>
-                    </div>
-
-                    <!-- Image Duration -->
-                    <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px;">
-                        <div style="font-weight: bold; margin-bottom: 10px;">🖼️ Image Duration</div>
-                        <div style="font-size: 12px; color: #aaa; margin-bottom: 10px;">
-                            Set duration for selected image clip
-                        </div>
-                        <div style="margin-bottom: 10px;">
-                            <label style="font-size: 12px; color: #aaa;">Duration (seconds):</label>
-                            <input type="number" id="imageDuration" min="1" max="30" step="0.5" value="5" class="input-medium" style="width: 100%;">
-                        </div>
-                        <button onclick="setImageDuration()" class="btn-primary" style="width: 100%;">⏱️ Set Duration</button>
-                    </div>
+            <!-- Toolbar -->
+            <section style="margin-bottom: 15px;">
+                <div style="display: flex; gap: 10px; align-items: center; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; flex-wrap: wrap;">
+                    <button onclick="capcutSplitAtPlayhead()" class="btn-tool" style="display: flex; align-items: center; gap: 5px;" title="Split clip at playhead (Ctrl+B)">
+                        ✂️ Split
+                    </button>
+                    <button onclick="capcutDeleteSelected()" class="btn-tool btn-danger" style="display: flex; align-items: center; gap: 5px;" title="Delete selected clips (Delete)">
+                        🗑️ Delete
+                    </button>
+                    <div style="width: 1px; height: 30px; background: rgba(255,255,255,0.2);"></div>
+                    <button onclick="capcutUndo()" class="btn-tool" style="display: flex; align-items: center; gap: 5px;" title="Undo (Ctrl+Z)">
+                        ↶ Undo
+                    </button>
+                    <button onclick="capcutRedo()" class="btn-tool" style="display: flex; align-items: center; gap: 5px;" title="Redo (Ctrl+Y)">
+                        ↷ Redo
+                    </button>
+                    <div style="flex: 1;"></div>
+                    <span id="capcutStatusText" style="font-size: 13px; color: #aaa;">Ready • 0 clips</span>
+                    <button onclick="capcutZoomIn()" class="btn-secondary" style="padding: 5px 10px;">🔍+</button>
+                    <button onclick="capcutZoomOut()" class="btn-secondary" style="padding: 5px 10px;">🔍-</button>
                 </div>
-                <div id="editStatus" style="margin-top: 15px; font-size: 13px; color: #aaa; text-align: center;">
-                    Select a clip to edit
+            </section>
+
+            <!-- Timeline Area -->
+            <section style="background: rgba(0,0,0,0.3); border-radius: 10px; padding: 15px; overflow-x: auto; overflow-y: hidden;">
+                <!-- Time Markers -->
+                <div id="capcutTimeMarkers" style="position: relative; height: 25px; margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <!-- Dynamically generated time markers -->
+                </div>
+
+                <!-- Timeline Container -->
+                <div id="capcutTimelineContainer" style="position: relative; min-height: 100px; background: rgba(0,0,0,0.2); border-radius: 5px;">
+                    <!-- Playhead -->
+                    <div id="capcutPlayhead" style="position: absolute; top: -25px; bottom: 0; width: 2px; background: #ff0000; z-index: 100; pointer-events: none; display: none; left: 0px;">
+                        <div style="position: absolute; top: 20px; left: -6px; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 10px solid #ff0000;"></div>
+                    </div>
+
+                    <!-- Clips Track -->
+                    <div id="capcutTrack" style="position: relative; min-height: 100px; padding: 10px 5px;">
+                        <div id="capcutEmptyMessage" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #666; font-size: 14px; pointer-events: none;">
+                            Timeline is empty - upload videos above
+                        </div>
+                    </div>
                 </div>
             </section>
 
             <!-- Export Section -->
-            <section style="margin-top: 30px; background: rgba(102, 126, 234, 0.05); padding: 20px; border-radius: 10px;">
+            <section style="margin-top: 20px; background: rgba(102, 126, 234, 0.05); padding: 20px; border-radius: 10px;">
                 <h3 style="margin: 0 0 15px 0;">🎯 Export Video</h3>
                 <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
                     <div style="flex: 1; min-width: 200px;">
                         <label style="display: block; margin-bottom: 5px; font-size: 13px; color: #aaa;">Quality:</label>
-                        <select id="exportQuality" class="input-medium">
+                        <select id="capcutExportQuality" class="input-medium">
                             <option value="720">720p HD</option>
                             <option value="1080">1080p Full HD</option>
                         </select>
                     </div>
-                    <button onclick="exportTimeline()" class="btn-primary btn-large" id="exportBtn" style="min-width: 200px;">🚀 Export Final Video</button>
+                    <button onclick="capcutExport()" class="btn-primary btn-large" id="capcutExportBtn" style="min-width: 200px;">🚀 Export Final Video</button>
                 </div>
-                <div id="exportProgress" style="display: none; margin-top: 20px; padding: 20px; background: rgba(0,0,0,0.3); border-radius: 10px;">
-                    <div style="margin-bottom: 10px; font-weight: bold;" id="exportStatusText">Initializing export...</div>
+                <div id="capcutExportProgress" style="display: none; margin-top: 20px; padding: 20px; background: rgba(0,0,0,0.3); border-radius: 10px;">
+                    <div style="margin-bottom: 10px; font-weight: bold;" id="capcutExportStatus">Initializing export...</div>
                     <div style="width: 100%; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden;">
-                        <div id="exportProgressBar" style="height: 100%; background: linear-gradient(90deg, #667eea, #764ba2); width: 0%; transition: width 0.3s;"></div>
+                        <div id="capcutExportBar" style="height: 100%; background: linear-gradient(90deg, #667eea, #764ba2); width: 0%; transition: width 0.3s;"></div>
                     </div>
-                    <div style="margin-top: 10px; font-size: 13px; color: #aaa;" id="exportProgressText">0%</div>
+                    <div style="margin-top: 10px; font-size: 13px; color: #aaa;" id="capcutExportPercent">0%</div>
                 </div>
             </section>
         </div>
-
-        <!-- ============================================ -->
         <!-- OUTPUT FILES TAB -->
         <!-- ============================================ -->
         <div id="tab-output" class="tab-content">
@@ -649,5 +560,6 @@
     </div>
 
     <script src="app.js"></script>
+    <script src="capcut_editor.js"></script>
 </body>
 </html>
