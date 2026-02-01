@@ -1697,6 +1697,51 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Setup audio file upload handler
+    const audioUpload = document.getElementById('audioUpload');
+    if (audioUpload) {
+        audioUpload.addEventListener('change', (e) => {
+            const files = Array.from(e.target.files);
+            const audioListEl = document.getElementById('audioList');
+
+            if (!audioListEl) return;
+
+            files.forEach(file => {
+                if (file.type.startsWith('audio/')) {
+                    const audioCard = document.createElement('div');
+                    audioCard.style.cssText = `
+                        background: rgba(102, 126, 234, 0.1);
+                        padding: 15px;
+                        border-radius: 8px;
+                        margin: 10px 0;
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                    `;
+
+                    const url = URL.createObjectURL(file);
+
+                    audioCard.innerHTML = `
+                        <div>
+                            <div style="font-weight: bold; margin-bottom: 5px;">🎵 ${file.name}</div>
+                            <audio controls src="${url}" style="width: 300px; height: 30px;"></audio>
+                        </div>
+                        <button onclick="this.parentElement.remove()" class="btn-secondary">🗑️ Remove</button>
+                    `;
+
+                    audioListEl.appendChild(audioCard);
+
+                    // Store in app state
+                    if (!appState.audioFiles) appState.audioFiles = [];
+                    appState.audioFiles.push({ file, url, name: file.name });
+                }
+            });
+
+            showNotification(`✅ Added ${files.length} audio file(s)`, 'success');
+            e.target.value = ''; // Reset input
+        });
+    }
+
     // Setup media upload checkbox handlers
     const useAiImages = document.getElementById('useAiImages');
     if (useAiImages) {
