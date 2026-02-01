@@ -155,6 +155,16 @@ async function capcutUploadFiles(files, insertAtPlayhead = false) {
     }
 
     capcutRenderTimeline();
+
+    // Auto zoom-to-fit after uploading to see full timeline
+    setTimeout(() => {
+        capcutZoomToFit();
+        // Scroll to beginning to see playhead
+        const container = document.getElementById('capcutTimelineContainer');
+        if (container) {
+            container.scrollLeft = 0;
+        }
+    }, 100);
 }
 
 async function capcutExtractThumbnail(url, isVideo) {
@@ -190,10 +200,16 @@ async function capcutExtractThumbnail(url, isVideo) {
 function capcutRenderTimeline() {
     const track = document.getElementById('capcutTrack');
     const statusText = document.getElementById('capcutStatusText');
+    const totalDuration = capcutCalculateTotalDuration();
+
+    // Set track width to match timeline duration
+    const displayDuration = Math.max(totalDuration + 30, 60);
+    track.style.width = Math.max(displayDuration * capcutPixelsPerSecond, 800) + 'px';
 
     if (capcutClips.length === 0) {
         track.innerHTML = '<div id="capcutEmptyMessage" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #666; font-size: 14px; pointer-events: none;">Timeline is empty - upload videos above</div>';
         statusText.textContent = 'Ready • 0 clips';
+        capcutRenderTimeMarkers(); // Render markers even when empty
         return;
     }
 
@@ -266,12 +282,37 @@ function capcutRenderTimeMarkers() {
     const markersEl = document.getElementById('capcutTimeMarkers');
     const totalDuration = capcutCalculateTotalDuration();
     markersEl.innerHTML = '';
-    markersEl.style.width = Math.max(totalDuration * capcutPixelsPerSecond, 800) + 'px';
 
-    for (let t = 0; t <= totalDuration + 30; t += 30) {
+    // Always show at least 60 seconds
+    const displayDuration = Math.max(totalDuration + 30, 60);
+    markersEl.style.width = Math.max(displayDuration * capcutPixelsPerSecond, 800) + 'px';
+
+    // Time marker interval based on zoom
+    let interval = 30; // Default 30 seconds
+    if (capcutZoomLevel >= 10) {
+        interval = 5; // Every 5 seconds at high zoom
+    } else if (capcutZoomLevel >= 5) {
+        interval = 10; // Every 10 seconds
+    } else if (capcutZoomLevel <= 0.5) {
+        interval = 60; // Every minute at low zoom
+    }
+
+    // Generate markers starting from 0:00
+    for (let t = 0; t <= displayDuration; t += interval) {
         const marker = document.createElement('span');
-        marker.style.cssText = 'position:absolute;left:' + (t * capcutPixelsPerSecond) + 'px;font-size:11px;color:#aaa;';
+        marker.style.cssText = 'position:absolute;left:' + (t * capcutPixelsPerSecond) + 'px;font-size:11px;color:#aaa;cursor:pointer;padding:2px 5px;';
         marker.textContent = formatTime(t);
+        marker.title = 'Click to move playhead here';
+
+        // Make time markers clickable!
+        marker.addEventListener('click', (e) => {
+            e.stopPropagation();
+            capcutPlayhead = t;
+            capcutUpdatePlayheadPosition();
+            capcutSeekPreviewToPlayhead();
+            showNotification(`Playhead: ${formatTime(t)}`, 'info');
+        });
+
         markersEl.appendChild(marker);
     }
 }
@@ -689,17 +730,26 @@ function capcutZoomOut() {
 
 function capcutZoomToFit() {
     // Calculate zoom to fit entire timeline in view
-    const totalDuration = capcutCalculateTotalDuration();
-    if (totalDuration === 0) return;
+    let totalDuration = capcutCalculateTotalDuration();
+
+    // If empty timeline, use default
+    if (totalDuration === 0) {
+        totalDuration = 60;
+    }
 
     const container = document.getElementById('capcutTimelineContainer');
     if (!container) return;
 
-    const containerWidth = container.clientWidth - 40; // Padding
+    const containerWidth = container.clientWidth - 100; // Account for padding and scrollbar
     const idealPixelsPerSecond = containerWidth / totalDuration;
 
+    // Calculate ideal zoom
+    let idealZoom = idealPixelsPerSecond / BASE_PIXELS_PER_SECOND;
+
+    // Clamp to available zoom levels
+    idealZoom = Math.max(ZOOM_LEVELS[0], Math.min(idealZoom, ZOOM_LEVELS[ZOOM_LEVELS.length - 1]));
+
     // Find closest zoom level
-    const idealZoom = idealPixelsPerSecond / BASE_PIXELS_PER_SECOND;
     const closestZoom = ZOOM_LEVELS.reduce((prev, curr) =>
         Math.abs(curr - idealZoom) < Math.abs(prev - idealZoom) ? curr : prev
     );
@@ -708,9 +758,12 @@ function capcutZoomToFit() {
     capcutPixelsPerSecond = BASE_PIXELS_PER_SECOND * capcutZoomLevel;
     capcutRenderTimeline();
 
-    // Scroll to beginning
-    container.scrollLeft = 0;
-    showNotification(`Fit to timeline (${capcutZoomLevel}x)`, 'info');
+    // Scroll to beginning to see playhead
+    setTimeout(() => {
+        container.scrollLeft = 0;
+    }, 50);
+
+    showNotification(`Fit: ${capcutZoomLevel}x (${formatTime(totalDuration)} total)`, 'info');
 }
 
 function capcutZoomReset() {
