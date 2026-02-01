@@ -2081,6 +2081,22 @@ def timeline_process():
                 subprocess.run(cmd, capture_output=True)
                 processed_file = trimmed_file
 
+            # Mute if needed
+            is_muted = clip.get('muted', False)
+            if is_muted and clip_type == 'video':
+                muted_id = str(uuid.uuid4())
+                muted_file = os.path.join(TEMP_FOLDER, f"{muted_id}_muted{idx}.mp4")
+
+                cmd = [
+                    'ffmpeg', '-i', processed_file,
+                    '-an',  # Remove audio
+                    '-c:v', 'copy',
+                    '-y', muted_file
+                ]
+
+                subprocess.run(cmd, capture_output=True)
+                processed_file = muted_file
+
             processed_clips.append({
                 'file': processed_file,
                 'transition': clip.get('transition', 'fade'),

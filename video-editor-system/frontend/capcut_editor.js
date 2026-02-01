@@ -18,7 +18,19 @@ function capcutGenerateId() {
 // File upload handlers
 function capcutSelectFiles(event) {
     const files = Array.from(event.target.files);
-    capcutUploadFiles(files);
+    capcutUploadFiles(files, false); // false = append to end
+}
+
+function capcutInsertFilesAtPlayhead() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'video/*,image/*';
+    input.multiple = true;
+    input.onchange = (e) => {
+        const files = Array.from(e.target.files);
+        capcutUploadFiles(files, true); // true = insert at playhead
+    };
+    input.click();
 }
 
 function capcutDragOver(event) {
@@ -31,12 +43,14 @@ function capcutDropFiles(event) {
     event.preventDefault();
     event.stopPropagation();
     const files = Array.from(event.dataTransfer.files);
-    capcutUploadFiles(files);
+    capcutUploadFiles(files, false); // false = append to end
 }
 
-async function capcutUploadFiles(files) {
+async function capcutUploadFiles(files, insertAtPlayhead = false) {
     if (!files || files.length === 0) return;
     showNotification('⏳ Uploading ' + files.length + ' file(s)...', 'info');
+
+    const newClips = [];
 
     for (const file of files) {
         const isVideo = file.type.startsWith('video/');
@@ -57,7 +71,7 @@ async function capcutUploadFiles(files) {
             if (!data.success) continue;
 
             const url = URL.createObjectURL(file);
-            let duration = isImage ? 5.0 : 0;
+            let duration = isImage ? 10.0 : 0; // Default 10 seconds for images (can be extended)
 
             if (isVideo) {
                 const video = document.createElement('video');
@@ -71,8 +85,6 @@ async function capcutUploadFiles(files) {
             }
 
             const thumbnail = await capcutExtractThumbnail(url, isVideo);
-            const lastClip = capcutClips[capcutClips.length - 1];
-            const position = lastClip ? (lastClip.position + (lastClip.trimEnd - lastClip.trimStart)) : 0;
 
             const clip = {
                 id: capcutGenerateId(),
@@ -83,21 +95,63 @@ async function capcutUploadFiles(files) {
                 originalDuration: duration,
                 trimStart: 0,
                 trimEnd: duration,
-                position: position,
+                position: 0, // Will be set later
                 thumbnail: thumbnail,
                 url: url,
-                selected: false
+                selected: false,
+                muted: false // Add muted property
             };
 
-            capcutClips.push(clip);
+            newClips.push(clip);
         } catch (error) {
             console.error('Upload error:', error);
         }
     }
 
+    if (newClips.length === 0) return;
+
     capcutSaveHistory();
+
+    if (insertAtPlayhead) {
+        // Insert at playhead position
+        // Find the clip at playhead and insert after it
+        let insertIndex = 0;
+        for (let i = 0; i < capcutClips.length; i++) {
+            const clip = capcutClips[i];
+            const clipEnd = clip.position + (clip.trimEnd - clip.trimStart);
+            if (capcutPlayhead >= clip.position && capcutPlayhead <= clipEnd) {
+                insertIndex = i + 1;
+                break;
+            } else if (capcutPlayhead > clipEnd) {
+                insertIndex = i + 1;
+            }
+        }
+
+        // Insert new clips at position
+        capcutClips.splice(insertIndex, 0, ...newClips);
+
+        // Reposition all clips
+        capcutSnapClips();
+
+        showNotification('✅ Inserted ' + newClips.length + ' clip(s) at playhead', 'success');
+    } else {
+        // Append to end
+        const lastClip = capcutClips[capcutClips.length - 1];
+        const startPosition = lastClip ? (lastClip.position + (lastClip.trimEnd - lastClip.trimStart)) : 0;
+
+        newClips.forEach((clip, i) => {
+            let pos = startPosition;
+            for (let j = 0; j < i; j++) {
+                pos += (newClips[j].trimEnd - newClips[j].trimStart);
+            }
+            clip.position = pos;
+        });
+
+        capcutClips.push(...newClips);
+        showNotification('✅ Added ' + newClips.length + ' file(s)', 'success');
+    }
+
     capcutRenderTimeline();
-    showNotification('✅ Added ' + files.length + ' file(s)', 'success');
 }
 
 async function capcutExtractThumbnail(url, isVideo) {
@@ -162,11 +216,32 @@ function capcutRenderTimeline() {
 
         const content = document.createElement('div');
         content.style.cssText = 'flex:1;display:flex;align-items:center;padding:0 10px;gap:10px;';
-        content.innerHTML = '<img src="' + clip.thumbnail + '" style="width:50px;height:30px;border-radius:3px;object-fit:cover;"><div style="flex:1;overflow:hidden;"><div style="font-size:12px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (clip.type === 'image' ? '🖼️' : '📹') + ' ' + clip.filename + '</div><div style="font-size:10px;color:rgba(255,255,255,0.7);">' + formatTime(duration) + '</div></div>';
 
-        content.addEventListener('mousedown', (e) => capcutStartDragClip(clip.id, e));
+        const muteIcon = clip.type === 'video' ? (clip.muted ? '🔇' : '🔊') : '';
+        const muteIndicator = clip.muted ? '<span style="background:#ff4444;padding:2px 6px;border-radius:3px;font-size:9px;font-weight:bold;">MUTED</span>' : '';
+
+        content.innerHTML = '<img src="' + clip.thumbnail + '" style="width:50px;height:30px;border-radius:3px;object-fit:cover;"><div style="flex:1;overflow:hidden;"><div style="font-size:12px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (clip.type === 'image' ? '🖼️' : '📹') + ' ' + clip.filename + ' ' + muteIndicator + '</div><div style="font-size:10px;color:rgba(255,255,255,0.7);">' + formatTime(duration) + '</div></div>';
+
+        // Add mute button for videos
+        if (clip.type === 'video') {
+            const muteBtn = document.createElement('button');
+            muteBtn.textContent = muteIcon;
+            muteBtn.style.cssText = 'background:rgba(0,0,0,0.5);border:none;color:white;padding:5px 8px;border-radius:4px;cursor:pointer;font-size:16px;z-index:20;';
+            muteBtn.title = clip.muted ? 'Unmute' : 'Mute';
+            muteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                capcutToggleMute(clip.id);
+            });
+            content.appendChild(muteBtn);
+        }
+
+        content.addEventListener('mousedown', (e) => {
+            if (e.target.tagName !== 'BUTTON') {
+                capcutStartDragClip(clip.id, e);
+            }
+        });
         clipEl.addEventListener('click', (e) => {
-            if (e.target.closest('.capcut-clip') === clipEl) {
+            if (e.target.closest('.capcut-clip') === clipEl && e.target.tagName !== 'BUTTON') {
                 capcutSelectClip(clip.id, e.ctrlKey || e.metaKey);
             }
         });
@@ -390,8 +465,20 @@ function capcutStartTrimRight(clipId, e) {
     document.onmousemove = (moveE) => {
         const deltaX = moveE.clientX - startX;
         const deltaTime = deltaX / capcutPixelsPerSecond;
-        const newTrimEnd = Math.min(clip.originalDuration, Math.max(clip.trimStart + 0.1, originalTrimEnd + deltaTime));
-        clip.trimEnd = newTrimEnd;
+
+        if (clip.type === 'image') {
+            // Images can be extended to any duration
+            const newTrimEnd = Math.max(clip.trimStart + 0.1, originalTrimEnd + deltaTime);
+            clip.trimEnd = newTrimEnd;
+            // Update original duration if extended
+            if (newTrimEnd > clip.originalDuration) {
+                clip.originalDuration = newTrimEnd;
+            }
+        } else {
+            // Videos limited to original duration
+            const newTrimEnd = Math.min(clip.originalDuration, Math.max(clip.trimStart + 0.1, originalTrimEnd + deltaTime));
+            clip.trimEnd = newTrimEnd;
+        }
         capcutUpdateClipVisual(clip);
     };
 
@@ -460,6 +547,17 @@ function capcutDeleteSelected() {
     capcutSnapClips();
     capcutRenderTimeline();
     showNotification('✅ Deleted ' + selectedClips.length + ' clip(s)', 'success');
+}
+
+// Toggle mute for clip
+function capcutToggleMute(clipId) {
+    const clip = capcutClips.find(c => c.id === clipId);
+    if (!clip || clip.type !== 'video') return;
+
+    capcutSaveHistory();
+    clip.muted = !clip.muted;
+    capcutRenderTimeline();
+    showNotification(clip.muted ? '🔇 Clip muted' : '🔊 Clip unmuted', 'info');
 }
 
 // Undo/Redo (instant!)
@@ -534,7 +632,8 @@ async function capcutExport() {
             trim_start: clip.trimStart,
             trim_end: clip.trimEnd,
             duration: clip.type === 'image' ? (clip.trimEnd - clip.trimStart) : null,
-            position: clip.position
+            position: clip.position,
+            muted: clip.muted || false
         }));
 
         exportStatus.textContent = 'Processing with FFmpeg...';
