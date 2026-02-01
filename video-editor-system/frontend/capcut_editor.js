@@ -212,8 +212,72 @@ function capcutSelectClip(clipId, multi = false) {
     } else {
         capcutClips.forEach(c => c.selected = false);
         clip.selected = true;
+
+        // Load video into preview when selected
+        capcutLoadVideoPreview(clip);
     }
     capcutRenderTimeline();
+}
+
+// Load video into preview
+function capcutLoadVideoPreview(clip) {
+    const video = document.getElementById('editorVideoPreview');
+    const placeholder = document.getElementById('editorPlaceholder');
+    const timeDisplay = document.getElementById('editorTimeDisplay');
+
+    if (!video) return;
+
+    if (clip.type === 'video') {
+        // Show video
+        video.src = clip.url;
+        video.style.display = 'block';
+        placeholder.style.display = 'none';
+        timeDisplay.style.display = 'block';
+
+        // Seek to clip's trim start
+        video.currentTime = clip.trimStart;
+
+        // Update time display
+        video.addEventListener('loadedmetadata', () => {
+            capcutUpdateTimeDisplay();
+        });
+
+        video.addEventListener('timeupdate', () => {
+            capcutUpdateTimeDisplay();
+        });
+    } else {
+        // Show image
+        video.style.display = 'none';
+        const canvas = document.getElementById('editorCanvasPreview');
+        if (canvas) {
+            canvas.style.display = 'block';
+            placeholder.style.display = 'none';
+            const ctx = canvas.getContext('2d');
+            const img = new Image();
+            img.onload = () => {
+                canvas.width = img.width;
+                canvas.height = img.height;
+                ctx.drawImage(img, 0, 0);
+            };
+            img.src = clip.url;
+        }
+    }
+}
+
+// Update time display
+function capcutUpdateTimeDisplay() {
+    const video = document.getElementById('editorVideoPreview');
+    const timeDisplay = document.getElementById('editorTimeDisplay');
+
+    if (!video || !timeDisplay) return;
+
+    const current = video.currentTime;
+    const duration = video.duration || 0;
+
+    const currentTime = formatTime(current);
+    const totalTime = formatTime(duration);
+
+    timeDisplay.textContent = currentTime + ' / ' + totalTime;
 }
 
 // Split at playhead (instant!)
@@ -526,3 +590,111 @@ function formatTime(seconds) {
 }
 
 console.log('✅ CapCut-style timeline editor initialized');
+
+// =============================================================================
+// PLAYHEAD - DRAGGABLE & SYNCED WITH PREVIEW
+// =============================================================================
+
+// Make playhead draggable and clickable
+function capcutInitializePlayhead() {
+    const container = document.getElementById('capcutTimelineContainer');
+    const playheadEl = document.getElementById('capcutPlayhead');
+
+    if (!container || !playheadEl) return;
+
+    // Click timeline to move playhead
+    container.addEventListener('click', (e) => {
+        if (e.target.closest('.capcut-clip') || e.target.closest('.capcut-trim-handle')) {
+            return; // Don't move playhead if clicking clip/handle
+        }
+
+        const rect = container.getBoundingClientRect();
+        const clickX = e.clientX - rect.left + container.scrollLeft;
+        const timeAtClick = clickX / capcutPixelsPerSecond;
+
+        capcutPlayhead = Math.max(0, timeAtClick);
+        capcutUpdatePlayheadPosition();
+        capcutSeekPreviewToPlayhead();
+    });
+
+    // Drag playhead
+    playheadEl.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const startX = e.clientX;
+        const startPlayhead = capcutPlayhead;
+
+        document.onmousemove = (moveE) => {
+            const deltaX = moveE.clientX - startX;
+            const deltaTime = deltaX / capcutPixelsPerSecond;
+
+            capcutPlayhead = Math.max(0, startPlayhead + deltaTime);
+            capcutUpdatePlayheadPosition();
+            capcutSeekPreviewToPlayhead();
+        };
+
+        document.onmouseup = () => {
+            document.onmousemove = null;
+            document.onmouseup = null;
+        };
+    });
+
+    // Show playhead initially
+    playheadEl.style.display = 'block';
+    capcutUpdatePlayheadPosition();
+}
+
+// Update playhead visual position
+function capcutUpdatePlayheadPosition() {
+    const playheadEl = document.getElementById('capcutPlayhead');
+    if (!playheadEl) return;
+
+    const leftPos = capcutPlayhead * capcutPixelsPerSecond;
+    playheadEl.style.left = leftPos + 'px';
+}
+
+// Seek video preview to playhead position
+function capcutSeekPreviewToPlayhead() {
+    const video = document.getElementById('editorVideoPreview');
+    if (!video || !video.src) return;
+
+    // Find which clip the playhead is on
+    const clip = capcutClips.find(c => {
+        const clipStart = c.position;
+        const clipEnd = c.position + (c.trimEnd - c.trimStart);
+        return capcutPlayhead >= clipStart && capcutPlayhead < clipEnd;
+    });
+
+    if (clip && clip.type === 'video') {
+        // Load this clip if not already loaded
+        if (video.src !== clip.url) {
+            video.src = clip.url;
+        }
+
+        // Calculate time within clip
+        const timeInClip = capcutPlayhead - clip.position;
+        const actualTime = clip.trimStart + timeInClip;
+
+        video.currentTime = actualTime;
+
+        // Update time display
+        capcutUpdateTimeDisplay();
+    }
+}
+
+// Initialize when page loads
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', capcutInitializePlayhead);
+} else {
+    capcutInitializePlayhead();
+}
+
+// Update playhead position when rendering timeline
+const originalRenderTimeline = capcutRenderTimeline;
+capcutRenderTimeline = function() {
+    originalRenderTimeline();
+    capcutUpdatePlayheadPosition();
+};
+
+console.log('✅ CapCut playhead initialized - Click timeline or drag playhead to scrub video');

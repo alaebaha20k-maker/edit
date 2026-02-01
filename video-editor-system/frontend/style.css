@@ -1304,3 +1304,31 @@ button:active {
 #capcutPlayhead {
     transition: left 0.05s linear;
 }
+
+/* Playhead draggable area */
+#capcutPlayhead {
+    cursor: grab;
+    pointer-events: auto !important;
+}
+
+#capcutPlayhead:active {
+    cursor: grabbing;
+}
+
+#capcutPlayhead > div {
+    cursor: grab;
+    pointer-events: auto;
+}
+
+#capcutPlayhead > div:active {
+    cursor: grabbing;
+}
+
+/* Make timeline container cursor indicate clickable */
+#capcutTimelineContainer {
+    cursor: crosshair;
+}
+
+#capcutTimelineContainer:hover {
+    background: rgba(0,0,0,0.25);
+}
