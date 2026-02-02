@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Timeline Test - No Backend Required</title>
+    <style>
+        body {
+            background: #1a1a2e;
+            color: white;
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        #testTrack {
+            position: relative;
+            min-height: 100px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 5px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            padding: 10px;
+            margin: 20px 0;
+            border: 2px solid yellow;
+        }
+        .test-clip {
+            position: absolute;
+            height: 80px;
+            background: linear-gradient(135deg,#667eea,#764ba2);
+            border-radius: 8px;
+            border: 3px solid red;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Timeline Rendering Test (No Backend)</h1>
+    <p>This page tests if clips can render on the timeline WITHOUT the backend.</p>
+
+    <button onclick="addTestClip()" style="padding: 10px 20px; font-size: 16px; cursor: pointer; background: #667eea; color: white; border: none; border-radius: 5px;">
+        ➕ Add Test Clip
+    </button>
+
+    <button onclick="clearClips()" style="padding: 10px 20px; font-size: 16px; cursor: pointer; background: #ff4444; color: white; border: none; border-radius: 5px; margin-left: 10px;">
+        🗑️ Clear All
+    </button>
+
+    <div id="info" style="margin: 20px 0; padding: 15px; background: rgba(102,126,234,0.2); border-radius: 5px;">
+        <strong>Status:</strong> <span id="status">Ready</span><br>
+        <strong>Clips:</strong> <span id="clipCount">0</span>
+    </div>
+
+    <div id="testTrack">
+        <div style="color: #666; text-align: center; padding: 30px;">
+            Timeline is empty - click "Add Test Clip" button above
+        </div>
+    </div>
+
+    <div id="console" style="margin-top: 20px; padding: 15px; background: #000; border-radius: 5px; font-family: monospace; font-size: 12px; max-height: 300px; overflow-y: auto;">
+        <strong style="color: #0f0;">Console Output:</strong><br>
+    </div>
+
+    <script>
+        let clipCount = 0;
+        let nextPosition = 0;
+
+        function log(msg) {
+            const console = document.getElementById('console');
+            const time = new Date().toLocaleTimeString();
+            console.innerHTML += `<div style="color: #0f0;">[${time}] ${msg}</div>`;
+            console.scrollTop = console.scrollHeight;
+            console.log(msg);
+        }
+
+        function addTestClip() {
+            log('➕ Adding test clip #' + (clipCount + 1));
+
+            const track = document.getElementById('testTrack');
+            if (!track) {
+                log('❌ ERROR: Track element not found!');
+                alert('ERROR: Track element not found!');
+                return;
+            }
+
+            // Clear empty message on first clip
+            if (clipCount === 0) {
+                track.innerHTML = '';
+            }
+
+            const duration = 10; // 10 seconds
+            const pixelsPerSecond = 10;
+            const width = duration * pixelsPerSecond;
+            const left = nextPosition * pixelsPerSecond;
+
+            log(`📐 Creating clip at position ${nextPosition}s, width ${width}px`);
+
+            const clipEl = document.createElement('div');
+            clipEl.className = 'test-clip';
+            clipEl.style.left = left + 'px';
+            clipEl.style.width = width + 'px';
+            clipEl.textContent = `Clip #${clipCount + 1}`;
+
+            track.appendChild(clipEl);
+            clipCount++;
+            nextPosition += duration;
+
+            // Update track width
+            const trackWidth = Math.max(nextPosition * pixelsPerSecond + 100, 800);
+            track.style.width = trackWidth + 'px';
+
+            log(`✅ Clip added! Track now has ${track.children.length} children`);
+            log(`📏 Track width: ${trackWidth}px, Track innerHTML length: ${track.innerHTML.length}`);
+
+            document.getElementById('status').textContent = 'Clip added successfully!';
+            document.getElementById('clipCount').textContent = clipCount;
+        }
+
+        function clearClips() {
+            log('🗑️ Clearing all clips');
+            const track = document.getElementById('testTrack');
+            track.innerHTML = '<div style="color: #666; text-align: center; padding: 30px;">Timeline is empty - click "Add Test Clip" button above</div>';
+            clipCount = 0;
+            nextPosition = 0;
+            document.getElementById('status').textContent = 'Cleared';
+            document.getElementById('clipCount').textContent = '0';
+            log('✅ All clips cleared');
+        }
+
+        log('✅ Test page loaded successfully');
+        log('📝 Click "Add Test Clip" to test timeline rendering');
+    </script>
+</body>
+</html>
