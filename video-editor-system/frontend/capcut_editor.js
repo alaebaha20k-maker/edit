@@ -71,15 +71,22 @@ async function capcutUploadFiles(files, insertAtPlayhead = false) {
             formData.append('file', file);
             formData.append('type', isVideo ? 'video' : 'image');
 
+            console.log('🌐 Sending upload request to /api/upload...');
             const response = await fetch('/api/upload', {
                 method: 'POST',
                 body: formData
             });
 
+            console.log('📡 Response status:', response.status, response.statusText);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status} - Is backend running?`);
+            }
+
             const data = await response.json();
             console.log('📥 API response for ' + file.name + ':', data);
             if (!data.success) {
                 console.warn('⚠️ Upload failed for ' + file.name);
+                showNotification('⚠️ Upload failed for ' + file.name, 'error');
                 continue;
             }
 
@@ -119,7 +126,9 @@ async function capcutUploadFiles(files, insertAtPlayhead = false) {
             console.log('✅ Clip created successfully:', clip);
         } catch (error) {
             console.error('❌ Upload error for ' + file.name + ':', error);
-            showNotification('❌ Upload failed: ' + error.message, 'error');
+            const errorMsg = '❌ Upload failed: ' + error.message;
+            showNotification(errorMsg, 'error');
+            alert(errorMsg + '\n\nMake sure backend is running:\npython api.py');
         }
     }
 
@@ -224,13 +233,23 @@ function capcutRenderTimeline() {
     console.log('🎬 Rendering timeline with ' + capcutClips.length + ' clips');
     const track = document.getElementById('capcutTrack');
     const statusText = document.getElementById('capcutStatusText');
+
+    if (!track) {
+        console.error('❌ capcutTrack element not found!');
+        alert('ERROR: Timeline track element not found! Check HTML.');
+        return;
+    }
+
     const totalDuration = capcutCalculateTotalDuration();
 
     // Set track width to match timeline duration
     const displayDuration = Math.max(totalDuration + 30, 60);
     const trackWidth = Math.max(displayDuration * capcutPixelsPerSecond, 800);
     track.style.width = trackWidth + 'px';
+    console.log('📏 Track element found:', track);
     console.log('📏 Track width set to: ' + trackWidth + 'px, displayDuration: ' + displayDuration + 's, zoom: ' + capcutZoomLevel);
+    console.log('📏 Track offsetWidth:', track.offsetWidth, 'offsetHeight:', track.offsetHeight);
+    console.log('📏 Track computed style:', window.getComputedStyle(track).display, 'visibility:', window.getComputedStyle(track).visibility);
 
     if (capcutClips.length === 0) {
         track.innerHTML = '<div id="capcutEmptyMessage" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #666; font-size: 14px; pointer-events: none;">Timeline is empty - upload videos above</div>';
@@ -249,10 +268,18 @@ function capcutRenderTimeline() {
 
         console.log(`📦 Rendering clip ${index}: "${clip.filename}" - pos: ${clip.position}s, duration: ${duration}s, left: ${left}px, width: ${width}px`);
 
+        if (width <= 0) {
+            console.error(`❌ Clip ${index} has ZERO or negative width! Duration: ${duration}, trim: ${clip.trimStart} to ${clip.trimEnd}`);
+        }
+        if (duration <= 0) {
+            console.error(`❌ Clip ${index} has ZERO or negative duration! Original: ${clip.originalDuration}`);
+        }
+
         const clipEl = document.createElement('div');
         clipEl.className = 'capcut-clip' + (clip.selected ? ' selected' : '');
         clipEl.dataset.clipId = clip.id;
-        clipEl.style.cssText = 'position:absolute;left:' + left + 'px;width:' + width + 'px;height:80px;background:linear-gradient(135deg,#667eea,#764ba2);border-radius:8px;display:flex;align-items:center;cursor:move;overflow:hidden;' + (clip.selected ? 'border:3px solid #ff6b35;box-shadow:0 0 20px rgba(255,107,53,0.5);' : 'box-shadow:0 2px 10px rgba(0,0,0,0.3);');
+        clipEl.style.cssText = 'position:absolute;left:' + left + 'px;width:' + width + 'px;height:80px;background:linear-gradient(135deg,#667eea,#764ba2);border-radius:8px;display:flex;align-items:center;cursor:move;overflow:hidden;border:3px solid red;' + (clip.selected ? 'box-shadow:0 0 20px rgba(255,107,53,0.5);' : 'box-shadow:0 2px 10px rgba(0,0,0,0.3);');
+        console.log('🎨 Clip element created with style:', clipEl.style.cssText);
 
         const leftHandle = document.createElement('div');
         leftHandle.style.cssText = 'position:absolute;left:0;top:0;width:8px;height:100%;background:rgba(255,255,255,0.3);cursor:ew-resize;z-index:10;';
