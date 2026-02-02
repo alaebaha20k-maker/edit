@@ -2074,6 +2074,10 @@ def timeline_process():
         audio_file_id = data.get('audio_file_id')
         quality = data.get('output_quality', '1080')
 
+        print(f"\n🎬 ========== TIMELINE EXPORT STARTED ==========")
+        print(f"📊 Received {len(clips_data)} clips to process")
+        print(f"📊 Clips data: {clips_data}")
+
         if not clips_data:
             return jsonify({'success': False, 'error': 'No clips provided'}), 400
 
@@ -2083,6 +2087,8 @@ def timeline_process():
         for idx, clip in enumerate(clips_data):
             file_id = clip['file_id']
             clip_type = clip['type']
+
+            print(f"\n📦 Processing clip {idx+1}/{len(clips_data)}: {clip.get('filename', file_id)}")
 
             # Find input file
             input_file = None
@@ -2099,7 +2105,10 @@ def timeline_process():
                         break
 
             if not input_file:
+                print(f"⚠️ File not found for clip {idx+1}: {file_id}")
                 continue
+
+            print(f"✅ Found input file: {input_file}")
 
             processed_file = input_file
 
@@ -2109,6 +2118,7 @@ def timeline_process():
                 temp_id = str(uuid.uuid4())
                 video_file = os.path.join(TEMP_FOLDER, f"{temp_id}_clip{idx}.mp4")
 
+                print(f"🖼️ Converting image to video ({duration}s)...")
                 cmd = [
                     'ffmpeg',
                     '-loop', '1',
@@ -2121,7 +2131,11 @@ def timeline_process():
                     '-y', video_file
                 ]
 
-                subprocess.run(cmd, capture_output=True)
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                if result.returncode != 0:
+                    print(f"❌ Image conversion failed: {result.stderr}")
+                else:
+                    print(f"✅ Image converted to video")
                 processed_file = video_file
 
             # Trim if needed
@@ -2133,6 +2147,7 @@ def timeline_process():
                 trimmed_file = os.path.join(TEMP_FOLDER, f"{trimmed_id}_trimmed{idx}.mp4")
                 duration = trim_end - trim_start
 
+                print(f"✂️ Trimming: {trim_start}s to {trim_end}s (duration: {duration}s)")
                 cmd = [
                     'ffmpeg', '-i', processed_file,
                     '-ss', str(trim_start),
@@ -2141,7 +2156,11 @@ def timeline_process():
                     '-y', trimmed_file
                 ]
 
-                subprocess.run(cmd, capture_output=True)
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                if result.returncode != 0:
+                    print(f"❌ Trim failed: {result.stderr}")
+                else:
+                    print(f"✅ Trimmed successfully")
                 processed_file = trimmed_file
 
             # Mute if needed
@@ -2169,11 +2188,15 @@ def timeline_process():
         if not processed_clips:
             return jsonify({'success': False, 'error': 'No valid clips to process'}), 400
 
+        print(f"\n🔗 Merging {len(processed_clips)} clips...")
+
         # Create concat file for FFmpeg
         concat_file = os.path.join(TEMP_FOLDER, f"concat_{uuid.uuid4()}.txt")
         with open(concat_file, 'w') as f:
             for clip in processed_clips:
                 f.write(f"file '{os.path.abspath(clip['file'])}'\n")
+
+        print(f"📝 Concat file created: {concat_file}")
 
         # Generate output file
         output_id = str(uuid.uuid4())
@@ -2188,18 +2211,14 @@ def timeline_process():
                 '-y', output_file
             ]
         else:
-            # Multiple clips - concat with smooth transitions
-            # Using concat demuxer for smooth merging
+            # Multiple clips - FAST concat using stream copy (no re-encoding!)
+            # This is INSTANT for cuts and merges (no transcoding)
             cmd = [
                 'ffmpeg',
                 '-f', 'concat',
                 '-safe', '0',
                 '-i', concat_file,
-                '-c:v', 'libx264',
-                '-preset', 'fast',
-                '-crf', '23',
-                '-c:a', 'aac',
-                '-b:a', '192k',
+                '-c', 'copy',  # STREAM COPY = INSTANT! No re-encoding
                 '-y', output_file
             ]
 
@@ -2231,9 +2250,12 @@ def timeline_process():
                 subprocess.run(cmd, capture_output=True)
                 os.remove(temp_output)
 
+        print(f"🎬 Running FFmpeg command: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True)
+        print(f"✅ FFmpeg finished with return code: {result.returncode}")
 
         if result.returncode != 0:
+            print(f"❌ FFmpeg error: {result.stderr}")
             return jsonify({
                 'success': False,
                 'error': 'Timeline processing failed',
