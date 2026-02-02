@@ -403,6 +403,14 @@
                     <button onclick="capcutZoomReset()" class="btn-secondary" style="padding: 5px 12px;" title="Reset zoom (Ctrl + 1)">1x</button>
                     <button onclick="capcutZoomIn()" class="btn-secondary" style="padding: 5px 10px;" title="Zoom in (Ctrl + +)">🔍+</button>
                     <button onclick="capcutZoomToFit()" class="btn-secondary" style="padding: 5px 10px;" title="Fit to timeline (Ctrl + 0)">📐 Fit</button>
+                    <div style="width: 1px; height: 30px; background: rgba(255,255,255,0.2);"></div>
+                    <span id="capcutRippleIndicator" style="font-size: 11px; padding: 4px 8px; background: rgba(102, 126, 234, 0.3); border-radius: 3px; cursor: pointer;" onclick="capcutRippleMode = !capcutRippleMode; showNotification(capcutRippleMode ? 'RIPPLE ON' : 'RIPPLE OFF', 'info'); this.textContent = capcutRippleMode ? '✅ RIPPLE' : '❌ RIPPLE'; this.style.background = capcutRippleMode ? 'rgba(102, 126, 234, 0.3)' : 'rgba(100,100,100,0.3)';" title="Toggle Ripple Mode (R key)">✅ RIPPLE</span>
+                    <span id="capcutSnapIndicator" style="font-size: 11px; padding: 4px 8px; background: rgba(102, 126, 234, 0.3); border-radius: 3px; cursor: pointer;" onclick="capcutSnapEnabled = !capcutSnapEnabled; showNotification(capcutSnapEnabled ? 'SNAP ON' : 'SNAP OFF', 'info'); this.textContent = capcutSnapEnabled ? '🧲 SNAP' : '❌ SNAP'; this.style.background = capcutSnapEnabled ? 'rgba(102, 126, 234, 0.3)' : 'rgba(100,100,100,0.3)';" title="Toggle Snapping (S key)">🧲 SNAP</span>
+                </div>
+                <div style="margin-top: 10px; padding: 10px; background: rgba(102, 126, 234, 0.1); border-radius: 5px; font-size: 11px; color: #aaa;">
+                    <strong>💡 PRO TIPS:</strong>
+                    Ctrl+Wheel=Zoom • Shift+Arrow=Frame • R=Ripple • S=Snap • I=Insert • Drag-drop inserts at playhead (Shift=append) •
+                    <strong>ZOOM:</strong> 0.01x (hours) to 500x (frames)
                 </div>
             </section>
 
