@@ -50,8 +50,12 @@ function capcutDropFiles(event) {
 }
 
 async function capcutUploadFiles(files, insertAtPlayhead = false) {
-    if (!files || files.length === 0) return;
+    if (!files || files.length === 0) {
+        console.log('⚠️ No files provided to upload');
+        return;
+    }
     console.log('📤 Upload started with ' + files.length + ' files');
+    console.log('📤 Files:', files);
     showNotification('⏳ Uploading ' + files.length + ' file(s)...', 'info');
 
     const newClips = [];
@@ -112,13 +116,17 @@ async function capcutUploadFiles(files, insertAtPlayhead = false) {
             };
 
             newClips.push(clip);
+            console.log('✅ Clip created successfully:', clip);
         } catch (error) {
-            console.error('Upload error:', error);
+            console.error('❌ Upload error for ' + file.name + ':', error);
+            showNotification('❌ Upload failed: ' + error.message, 'error');
         }
     }
 
+    console.log('📊 Total new clips created: ' + newClips.length);
     if (newClips.length === 0) {
-        console.log('⚠️ No new clips created');
+        console.log('⚠️ No new clips created - check errors above');
+        showNotification('⚠️ No valid files uploaded', 'warning');
         return;
     }
 
@@ -165,6 +173,10 @@ async function capcutUploadFiles(files, insertAtPlayhead = false) {
         showNotification('✅ Added ' + newClips.length + ' file(s)', 'success');
     }
 
+    console.log('📊 Total clips in timeline: ' + capcutClips.length);
+    console.log('📊 All clips:', capcutClips);
+
+    console.log('🎬 Calling capcutRenderTimeline()...');
     capcutRenderTimeline();
 
     // Auto zoom-to-fit after uploading to see full timeline
@@ -228,6 +240,7 @@ function capcutRenderTimeline() {
     }
 
     track.innerHTML = '';
+    console.log('🗑️ Track cleared, innerHTML set to empty');
 
     capcutClips.forEach((clip, index) => {
         const duration = clip.trimEnd - clip.trimStart;
@@ -285,15 +298,20 @@ function capcutRenderTimeline() {
         clipEl.appendChild(content);
         clipEl.appendChild(rightHandle);
         track.appendChild(clipEl);
+        console.log('➕ Clip appended to DOM. Track now has ' + track.children.length + ' children');
     });
 
     console.log('✅ All ' + capcutClips.length + ' clips appended to track. Track children: ' + track.children.length);
+    console.log('✅ Track element:', track);
+    console.log('✅ Track innerHTML length:', track.innerHTML.length);
 
     const totalDuration = capcutCalculateTotalDuration();
     const selectedCount = capcutClips.filter(c => c.selected).length;
     statusText.textContent = 'Ready • ' + capcutClips.length + ' clip' + (capcutClips.length !== 1 ? 's' : '') + (selectedCount > 0 ? ' • ' + selectedCount + ' selected' : '') + ' • Total: ' + formatTime(totalDuration);
 
     capcutRenderTimeMarkers();
+
+    console.log('🏁 Rendering complete!');
 }
 
 function capcutRenderTimeMarkers() {
