@@ -118,33 +118,95 @@ class TitleGenerator:
             raise
 
     def _build_prompt(self, topic, niche_name, language, title_formula, count):
-        """Build the Gemini prompt using the title formula"""
+        """Build the ULTRA-CREATIVE title generation prompt"""
 
         # Replace placeholders in formula
-        formula_with_topic = title_formula.replace('{topic}', topic)
-        formula_with_topic = formula_with_topic.replace('{niche}', niche_name)
-        formula_with_topic = formula_with_topic.replace('{language}', language)
+        formula_with_context = title_formula.replace('{topic}', topic)
+        formula_with_context = formula_with_context.replace('{niche}', niche_name)
+        formula_with_context = formula_with_context.replace('{language}', language)
 
-        # Add count instruction if multiple titles needed
-        if count > 1:
-            count_instruction = f"\n\nGenerate {count} different title variations. Output as numbered list:\n1. [first title]\n2. [second title]\netc."
+        # PROFESSIONAL TITLE GENERATION PROMPT
+        if count == 1:
+            prompt = f"""You are an elite creative director and viral content strategist with 15 years of experience crafting titles that stop scrollers mid-swipe.
+
+YOUR MISSION:
+Generate ONE magnetic, unforgettable title using this exact formula:
+
+{formula_with_context}
+
+CONTEXT:
+Niche/Topic: {niche_name}
+Language: {language}
+
+QUALITY STANDARDS (NON-NEGOTIABLE):
+✓ Must trigger immediate curiosity
+✓ Must promise transformation or revelation
+✓ Must feel premium, not clickbait
+✓ Must be memorable after one read
+✓ Must work for both YouTube thumbnail and podcast title
+✓ Balance intrigue with clarity
+✓ Avoid generic words like "amazing," "incredible," "shocking"
+✓ Use power words: Hidden, Forbidden, Ancient, Elite, Silent, Untold
+
+PSYCHOLOGICAL TRIGGERS TO USE:
+- Specificity (numbers, timeframes, names)
+- Exclusivity (what "they" don't tell you)
+- Transformation (before → after state)
+- Urgency (without being desperate)
+- Authority (insider knowledge)
+
+EXAMPLES OF EXCELLENCE:
+❌ BAD: "Amazing Trading Tips You Need"
+✅ GOOD: "The 3AM Trade: What Wall Street Doesn't Want Retail Traders to Know"
+
+❌ BAD: "Zombie Movie Ideas"
+✅ GOOD: "The Last Harvest: When the Dead Learned to Wait"
+
+❌ BAD: "Singapore Technology"
+✅ GOOD: "How Singapore Engineered a Nation with No Natural Resources into a Tech Empire"
+
+OUTPUT FORMAT:
+Return ONLY the title. No explanation. No markdown. No quotes. Just raw title text.
+
+Generate now:"""
         else:
-            count_instruction = "\n\nOutput ONLY the title, nothing else. No quotes, no explanation, just the title text."
+            # Multiple titles variation
+            prompt = f"""You are an elite creative director and viral content strategist with 15 years of experience crafting titles that stop scrollers mid-swipe.
 
-        full_prompt = f"""{formula_with_topic}{count_instruction}
+YOUR MISSION:
+Generate {count} DIFFERENT magnetic, unforgettable title variations using this exact formula:
 
-CRITICAL RULES:
-- Output ONLY the title(s), no additional text
-- No quotes around titles
-- No "Here's a title:" or similar preamble
-- For single title: just output the title directly
-- For multiple titles: numbered list only (1. Title, 2. Title, etc.)
-- Keep titles between 50-80 characters
-- Make them clickable and engaging
-- Language: {language}
-"""
+{formula_with_context}
 
-        return full_prompt
+CONTEXT:
+Niche/Topic: {niche_name}
+Language: {language}
+
+QUALITY STANDARDS (NON-NEGOTIABLE):
+✓ Must trigger immediate curiosity
+✓ Must promise transformation or revelation
+✓ Must feel premium, not clickbait
+✓ Must be memorable after one read
+✓ Each variation must be DISTINCTLY DIFFERENT in angle/approach
+✓ Use power words: Hidden, Forbidden, Ancient, Elite, Silent, Untold
+
+PSYCHOLOGICAL TRIGGERS TO USE:
+- Specificity (numbers, timeframes, names)
+- Exclusivity (what "they" don't tell you)
+- Transformation (before → after state)
+- Authority (insider knowledge)
+
+OUTPUT FORMAT:
+Return ONLY the numbered list of titles. No explanation. No markdown. No quotes.
+
+Example format:
+1. The First Title Goes Here
+2. The Second Title Goes Here
+3. The Third Title Goes Here
+
+Generate now:"""
+
+        return prompt
 
     def _parse_titles(self, response_text, expected_count):
         """

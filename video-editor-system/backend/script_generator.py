@@ -519,54 +519,172 @@ COMPLETE NOW:"""
         }
 
     def _build_oneblock_prompt(self, title, niche_data, formula, target_chars, approach):
-        """Build prompt for ONE BLOCK generation using custom formula"""
+        """Build HOLLYWOOD-LEVEL script generation prompt"""
 
         product = niche_data.get('product', 'our platform')
         language = niche_data['language']
-        guidelines = niche_data['writing_guidelines']
+        lengthMinutes = target_chars / 150 / 60  # Convert chars to minutes (150 chars/min avg speaking)
 
         # Replace placeholders in formula
         formula_filled = formula.replace('{title}', title)
         formula_filled = formula_filled.replace('{niche}', niche_data['name'])
         formula_filled = formula_filled.replace('{language}', language)
-        formula_filled = formula_filled.replace('{guidelines}', guidelines)
+        formula_filled = formula_filled.replace('{guidelines}', niche_data['writing_guidelines'])
         formula_filled = formula_filled.replace('{length}', f"{target_chars:,}")
         formula_filled = formula_filled.replace('{approach}', approach)
 
-        # Build comprehensive prompt
-        prompt = f"""{formula_filled}
+        # PROFESSIONAL HOLLYWOOD-LEVEL SCRIPT PROMPT
+        prompt = f"""You are a master storyteller and award-winning documentary scriptwriter. Your scripts have 95% watch-through rates and viral potential.
 
-🎯 CRITICAL REQUIREMENTS:
+ASSIGNMENT:
+Write a {lengthMinutes:.1f}-minute narration script for this video.
 
-1. LENGTH: Write exactly {target_chars:,} characters
-2. FORMAT: ONE continuous block from start to finish
-3. NO SECTIONS: No "Part 1", "Part 2", no titles, no headers
-4. NO MARKDOWN: No **, *, __, #, bullets, or formatting
-5. VOICE-READY: Pure narration text ready for TTS
-6. NO META-COMMENTARY: Don't mention "continuing", "as we discussed", etc.
+TITLE: "{title}"
 
-🚫 FORBIDDEN:
-- Section markers or chunk indicators
-- Price mentions ($XX, "affordable", "cheap", "expensive")
-- Markdown formatting
-- Meta-commentary about structure
-- "Let me tell you" (use sparingly, max 1-2 times)
-- "Here's the thing" (use sparingly, max 1-2 times)
+WRITING STYLE & FORMULA:
+{formula_filled}
 
-✅ MUST INCLUDE:
-- Powerful hook in first 10 seconds
-- Specific examples with real numbers
-- Narrative approach: {approach}
-- Natural flow from beginning to end
-- Clear, actionable takeaways
-- Conversational but authoritative tone
-- Maximum 20 words per sentence
-- Product: {product} (mention naturally 2-3 times)
+TARGET DURATION: {lengthMinutes:.1f} minutes
+(Approximately {target_chars:,} characters at natural speaking pace)
 
-🎬 OUTPUT FORMAT:
-Start immediately with the hook. Write {target_chars:,} characters of pure voice-ready narration. One continuous block. No breaks, no sections, no meta-commentary.
+═══════════════════════════════════════════════════════════
+CRITICAL OUTPUT FORMAT FOR TTS (TEXT-TO-SPEECH):
+═══════════════════════════════════════════════════════════
 
-BEGIN WRITING NOW:"""
+YOU MUST RETURN **ONLY** THE SPOKEN NARRATION.
+
+❌ DO NOT INCLUDE:
+- Scene descriptions
+- Visual cues like "VISUALS:" or "VIDEO:"
+- Timestamps like (0:00-0:15)
+- Stage directions in parentheses
+- Markdown formatting (**, ##, bullets)
+- Section headers
+- "NARRATOR:" labels
+- Audio cues like (pause), (music swells)
+- Any metadata or explanations
+
+✅ DO INCLUDE:
+- Pure, flowing narration
+- Natural speech patterns
+- Strategic pauses (using periods and commas)
+- Emotional tone shifts through word choice
+- Rhetorical questions that engage
+- Clean paragraphs for breath points
+
+═══════════════════════════════════════════════════════════
+MASTERCLASS STORYTELLING STRUCTURE:
+═══════════════════════════════════════════════════════════
+
+FIRST 15 SECONDS (THE HOOK):
+- Open with a provocative statement, shocking fact, or profound question
+- Challenge a common belief or reveal a hidden truth
+- Create immediate tension or curiosity
+- Make a promise: "By the end, you'll understand why..."
+
+FIRST 2 MINUTES (THE SETUP):
+- Establish the problem/mystery/opportunity
+- Use specific examples, not generalities
+- Create emotional resonance (fear, hope, curiosity)
+- Position the viewer as the hero who needs this knowledge
+
+MIDDLE 60% (THE JOURNEY):
+- Weave facts with stories
+- Use the "Rule of Three" (3 examples, 3 principles, 3 stories)
+- Build complexity gradually
+- Include mini-revelations every 90 seconds
+- Use metaphors and analogies for difficult concepts
+- Vary sentence length: short for impact, longer for depth
+
+FINAL 20% (THE TRANSFORMATION):
+- Synthesize everything into a clear insight
+- Provide actionable takeaways
+- Create a memorable closing statement
+- Leave with elevated perspective or call-to-action
+- Echo the opening hook with new meaning
+
+═══════════════════════════════════════════════════════════
+VOICE & TONE PRINCIPLES:
+═══════════════════════════════════════════════════════════
+
+PACING:
+- Fast: 160-180 words/min (energetic, urgent topics)
+- Medium: 140-160 words/min (standard, most topics)
+- Slow: 120-140 words/min (deep, contemplative, emotional)
+
+VOICE CHARACTERISTICS:
+- Authoritative but not arrogant
+- Conversational but not casual
+- Intelligent but not pretentious
+- Passionate but not hysterical
+
+RHYTHM TECHNIQUES:
+- Use short sentences for emphasis. Like this.
+- Use longer, flowing sentences when building complex ideas that need context and depth.
+- Strategic repetition for memorability: "Not tomorrow. Not next week. Today."
+- Rhetorical questions to re-engage: "But here's what they missed..."
+
+WORD CHOICE:
+- Prefer concrete over abstract: "a 47% increase" not "significant growth"
+- Use sensory language: "razor-sharp," "crystalline," "suffocating"
+- Avoid filler: very, really, quite, basically, actually, literally
+- Power verbs: transformed, shattered, unveiled, engineered, forged
+
+═══════════════════════════════════════════════════════════
+ENGAGEMENT TECHNIQUES (USE LIBERALLY):
+═══════════════════════════════════════════════════════════
+
+Pattern Interrupts:
+- "But here's where it gets interesting..."
+- "Now, most people stop here. But..."
+- "What happened next changed everything."
+
+Direct Address:
+- "You've probably experienced this..."
+- "Think about the last time you..."
+- "Here's what you need to understand..."
+
+Strategic Reveals:
+- Build tension before revealing key information
+- Use phrases like: "The answer lies in...", "What they discovered was...", "The truth is..."
+
+Micro-Stories:
+- Brief, vivid anecdotes (30-45 seconds)
+- Real or hypothetical scenarios
+- Create characters viewer can visualize
+
+═══════════════════════════════════════════════════════════
+QUALITY CHECKPOINTS:
+═══════════════════════════════════════════════════════════
+
+Before finalizing, verify:
+✓ First 15 seconds are absolutely magnetic
+✓ No sentence is boring or predictable
+✓ Every paragraph advances the narrative
+✓ Technical concepts are explained simply
+✓ Emotional beats are strategically placed
+✓ The ending delivers on the opening promise
+✓ Zero fluff or repetitive content
+✓ Word count matches target duration
+
+═══════════════════════════════════════════════════════════
+PRODUCT INTEGRATION:
+═══════════════════════════════════════════════════════════
+
+Product/Platform: {product}
+- Mention naturally 2-3 times throughout the script
+- Example: "and I track everything using {product}, link in description"
+- NEVER mention price, cost, or affordability
+- Seamlessly woven into the narrative
+
+Language: {language}
+
+═══════════════════════════════════════════════════════════
+BEGIN NARRATION:
+═══════════════════════════════════════════════════════════
+
+Write the complete narration script now. Start immediately with the hook. No preamble. No meta-commentary. Just the words that will be spoken.
+"""
 
         return prompt
 

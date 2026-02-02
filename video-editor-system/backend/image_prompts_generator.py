@@ -44,43 +44,104 @@ def generate_image_prompts(script_text, image_formula, count, gemini_api_key, st
     else:
         image_formula = image_formula.replace('{style}', 'professional, high-quality')
 
-    # Build prompt for Gemini using FULL SCRIPT (not just 10K)
-    prompt = f"""You are an expert at creating image prompts for AI image generation.
+    # PROFESSIONAL CINEMATIC VISUALS PROMPT
+    prompt = f"""You are a world-class cinematographer and art director. Your job is to create visual concepts that elevate storytelling.
 
-TASK:
-Analyze the provided script and generate EXACTLY {count} distinct image prompts that visually represent different parts of the script.
+ASSIGNMENT:
+Analyze this script and generate EXACTLY {count} highly specific image search queries that will find perfect visual matches for different narration moments.
 
-IMAGE STYLE FORMULA (FOLLOW THIS EXACTLY):
+IMAGE STYLE FORMULA:
 {image_formula}
 
-SCRIPT TO ANALYZE (COMPLETE):
+COMPLETE SCRIPT TO ANALYZE:
 {script_text}
+
+═══════════════════════════════════════════════════════════
+VISUAL STORYTELLING PRINCIPLES:
+═══════════════════════════════════════════════════════════
+
+MOOD MATCHING:
+- Identify the emotional tone: urgent, contemplative, triumphant, tense, hopeful
+- Match visual mood to narration emotion
+- Consider lighting: golden hour = hope, blue hour = mystery, harsh shadows = tension
+
+COMPOSITION PRIORITIES:
+- For abstract concepts → Use metaphorical visuals (e.g., "roots" for foundations)
+- For action → Dynamic angles, movement, energy
+- For data/facts → Clean, organized, professional
+- For transformation → Before/after contrast, progression
+
+CINEMATIC QUALITIES:
+- Depth of field (shallow for focus, deep for context)
+- Color grading direction (warm, cool, desaturated, vibrant)
+- Camera angle suggestion (low = powerful, high = vulnerable, eye-level = relatable)
+
+═══════════════════════════════════════════════════════════
+SEARCH QUERY CONSTRUCTION:
+═══════════════════════════════════════════════════════════
+
+FORMULA:
+[Main Subject] + [Action/State] + [Environment] + [Mood/Lighting] + [Quality Modifier]
+
+EXAMPLES:
+
+Script: "Most traders fail because they fight their emotions..."
+❌ Weak: "trader stressed"
+✅ Strong: "business person contemplating at desk, moody dramatic lighting, cinematic depth of field, professional"
+
+Script: "Singapore engineered a smart nation from nothing..."
+❌ Weak: "Singapore city"
+✅ Strong: "Singapore Marina Bay skyline at blue hour, futuristic architecture, aerial view, glowing lights, technological feel"
+
+Script: "The lotus grows through mud to bloom..."
+❌ Weak: "lotus flower"
+✅ Strong: "white lotus emerging from dark muddy water, macro photography, shallow depth of field, golden morning light"
+
+═══════════════════════════════════════════════════════════
+QUALITY MODIFIERS (ALWAYS INCLUDE):
+═══════════════════════════════════════════════════════════
+
+Choose appropriate modifiers:
+- "cinematic" (for dramatic moments)
+- "professional" (for business/tech)
+- "atmospheric" (for mood-heavy scenes)
+- "high detail" (for important visuals)
+- "natural lighting" (for authentic feel)
+- "golden hour" or "blue hour" (for specific moods)
+- "shallow depth of field" (for focus)
+- "aerial view" or "wide angle" (for scope)
+
+═══════════════════════════════════════════════════════════
+DISTRIBUTION ACROSS SCRIPT:
+═══════════════════════════════════════════════════════════
+
+Ensure {count} prompts are evenly distributed:
+- Beginning (hook) → 20%
+- Early middle (setup) → 20%
+- Middle (journey) → 30%
+- Late middle (transformation) → 20%
+- End (conclusion) → 10%
 
 CRITICAL REQUIREMENTS:
 1. Generate EXACTLY {count} prompts (no more, no less)
-2. Each prompt must follow the Image Style Formula provided above
-3. NO TEXT in any images (absolutely forbidden)
-4. Always include: 16:9 aspect ratio, 1080p resolution, NO TEXT
-5. Distribute prompts across different parts of the script:
-   - Beginning (intro/hook)
-   - Early middle (problem/setup)
-   - Middle (explanation/examples)
-   - Late middle (solution/framework)
-   - End (implementation/close)
-6. Extract emotional states, key concepts, and visual metaphors from script
-7. Maintain visual consistency across all prompts (same style, colors, composition)
+2. NO TEXT in any images (absolutely forbidden)
+3. Each prompt maximum 12-15 words
+4. Include "NO TEXT" in each prompt
+5. Maintain visual consistency (same style/mood)
+6. Extract emotional states and visual metaphors from script
 
+═══════════════════════════════════════════════════════════
 OUTPUT FORMAT:
-Return ONLY the prompts, one per line, numbered.
-No explanations, no commentary, just the prompts.
+═══════════════════════════════════════════════════════════
 
-Example format:
-1. [First complete prompt here]
-2. [Second complete prompt here]
-...
-{count}. [Last complete prompt here]
+Return ONLY numbered search queries. No explanation. Maximum 12-15 words per line.
 
-Generate {count} prompts now:"""
+Example outputs:
+1. entrepreneur working late at desk, single desk lamp, determined expression, NO TEXT
+2. abstract network connections glowing, dark background, technological visualization, NO TEXT
+3. mountain peak sunrise, lone figure silhouette, aspirational, epic landscape, NO TEXT
+
+Generate {count} search queries now:"""
 
     try:
         # Call Gemini
