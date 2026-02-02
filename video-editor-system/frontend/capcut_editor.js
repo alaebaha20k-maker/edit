@@ -805,6 +805,31 @@ function capcutSnapClips() {
     });
 }
 
+// AUTO-MERGE ALL CLIPS - Remove ALL gaps (one-click merge)
+function capcutMergeAllClips() {
+    if (capcutClips.length === 0) {
+        showNotification('⚠️ Timeline is empty', 'warning');
+        return;
+    }
+
+    capcutSaveHistory();
+
+    // Sort by position
+    capcutClips.sort((a, b) => a.position - b.position);
+
+    // Close ALL gaps - no matter how big
+    let currentPos = 0;
+    capcutClips.forEach(clip => {
+        clip.position = currentPos;
+        const duration = clip.trimEnd - clip.trimStart;
+        currentPos += duration;
+    });
+
+    capcutRenderTimeline();
+    showNotification('✅ All clips merged! No gaps.', 'success');
+    console.log('🔗 Auto-merged all clips, removed all gaps');
+}
+
 // PROFESSIONAL MAGNETIC SNAP - clips attract to each other (respects snap toggle)
 function capcutMagneticSnap(clipId, newPosition) {
     const clip = capcutClips.find(c => c.id === clipId);
@@ -1016,6 +1041,7 @@ async function capcutExport() {
     const exportPercent = document.getElementById('capcutExportPercent');
 
     try {
+        console.log('🚀 Starting export with ' + capcutClips.length + ' clips');
         exportBtn.disabled = true;
         exportBtn.textContent = '⏳ Exporting...';
         exportProgress.style.display = 'block';
@@ -1034,42 +1060,62 @@ async function capcutExport() {
             muted: clip.muted || false
         }));
 
-        exportStatus.textContent = 'Processing with FFmpeg...';
-        exportBar.style.width = '30%';
-        exportPercent.textContent = '30%';
+        console.log('📦 Export clips data:', clipsData);
+
+        exportStatus.textContent = 'Sending to backend...';
+        exportBar.style.width = '20%';
+        exportPercent.textContent = '20%';
+
+        const requestData = {
+            clips: clipsData,
+            output_quality: document.getElementById('capcutExportQuality').value
+        };
+        console.log('📤 Sending request to /api/timeline/process:', requestData);
 
         const response = await fetch('/api/timeline/process', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                clips: clipsData,
-                output_quality: document.getElementById('capcutExportQuality').value
-            })
+            body: JSON.stringify(requestData)
         });
 
-        exportBar.style.width = '60%';
-        exportPercent.textContent = '60%';
+        console.log('📡 Response status:', response.status, response.statusText);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ HTTP error:', response.status, errorText);
+            throw new Error(`Server error: ${response.status} - ${errorText}`);
+        }
+
+        exportStatus.textContent = 'Processing with FFmpeg...';
+        exportBar.style.width = '40%';
+        exportPercent.textContent = '40%';
 
         const data = await response.json();
+        console.log('📥 Response data:', data);
+
+        exportBar.style.width = '80%';
+        exportPercent.textContent = '80%';
 
         if (data.success) {
             exportBar.style.width = '100%';
             exportPercent.textContent = '100%';
             exportStatus.textContent = '✅ Export complete!';
 
+            console.log('✅ Export successful! Download URL:', data.download_url);
             window.open(data.download_url, '_blank');
-            showNotification('✅ Video exported!', 'success');
+            showNotification('✅ Video exported successfully!', 'success');
 
             setTimeout(() => {
                 exportProgress.style.display = 'none';
             }, 3000);
         } else {
-            throw new Error(data.error);
+            throw new Error(data.error || 'Export failed (no error message)');
         }
     } catch (error) {
-        console.error('Export error:', error);
+        console.error('❌ Export error:', error);
         showNotification('❌ Export failed: ' + error.message, 'error');
-        exportStatus.textContent = '❌ Export failed';
+        exportStatus.textContent = '❌ Export failed: ' + error.message;
+        alert('Export Error:\n\n' + error.message + '\n\nCheck console (F12) for details.');
     } finally {
         exportBtn.disabled = false;
         exportBtn.textContent = '🚀 Export Final Video';
