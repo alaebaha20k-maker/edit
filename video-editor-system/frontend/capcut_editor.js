@@ -332,7 +332,6 @@ function capcutRenderTimeline() {
     console.log('✅ Track element:', track);
     console.log('✅ Track innerHTML length:', track.innerHTML.length);
 
-    const totalDuration = capcutCalculateTotalDuration();
     const selectedCount = capcutClips.filter(c => c.selected).length;
     statusText.textContent = 'Ready • ' + capcutClips.length + ' clip' + (capcutClips.length !== 1 ? 's' : '') + (selectedCount > 0 ? ' • ' + selectedCount + ' selected' : '') + ' • Total: ' + formatTime(totalDuration);
 
