@@ -12,6 +12,9 @@ let capcutHistoryIndex = -1;
 let capcutZoomLevel = 1; // 1x, 2x, 5x, 10x, etc.
 let capcutScrollPosition = 0;
 let capcutIsDraggingPlayhead = false;
+let capcutRippleMode = true; // Ripple insert mode by default (professional behavior)
+let capcutSnapEnabled = true; // Snapping enabled by default
+const capcutFrameRate = 30; // 30 FPS for frame-level precision
 
 // Generate unique ID
 function capcutGenerateId() {
@@ -46,7 +49,18 @@ function capcutDropFiles(event) {
     event.preventDefault();
     event.stopPropagation();
     const files = Array.from(event.dataTransfer.files);
-    capcutUploadFiles(files, false); // false = append to end
+
+    // PROFESSIONAL BEHAVIOR: Insert at playhead by default (like Premiere Pro / DaVinci)
+    // Hold Shift while dropping to append to end instead
+    const insertAtPlayhead = !event.shiftKey;
+
+    if (insertAtPlayhead && capcutClips.length > 0) {
+        console.log('📍 Drag-drop: Inserting at playhead position');
+        capcutUploadFiles(files, true); // Insert at playhead
+    } else {
+        console.log('📍 Drag-drop: Appending to end (Shift held or timeline empty)');
+        capcutUploadFiles(files, false); // Append to end
+    }
 }
 
 async function capcutUploadFiles(files, insertAtPlayhead = false) {
@@ -144,27 +158,91 @@ async function capcutUploadFiles(files, insertAtPlayhead = false) {
     capcutSaveHistory();
 
     if (insertAtPlayhead) {
-        // Insert at playhead position
-        // Find the clip at playhead and insert after it
+        // PROFESSIONAL RIPPLE INSERT MODE
+        // Inserts asset at playhead with perfect alignment:
+        // 1. If playhead is inside a clip, split it automatically
+        // 2. Insert new asset(s) at exact playhead position
+        // 3. Push later clips forward (ripple) or use snapping
+
+        console.log('🎯 RIPPLE INSERT at playhead:', capcutPlayhead);
+
+        // Check if playhead is inside an existing clip
+        let clipToSplit = null;
+        for (let i = 0; i < capcutClips.length; i++) {
+            const clip = capcutClips[i];
+            const clipStart = clip.position;
+            const clipEnd = clip.position + (clip.trimEnd - clip.trimStart);
+
+            if (capcutPlayhead > clipStart && capcutPlayhead < clipEnd) {
+                clipToSplit = clip;
+                break;
+            }
+        }
+
+        // If playhead is inside a clip, split it first (automatic smart split)
+        if (clipToSplit) {
+            console.log('🔪 Auto-splitting clip at playhead for perfect insertion');
+            const splitPoint = capcutPlayhead - clipToSplit.position;
+            const absoluteSplitPoint = clipToSplit.trimStart + splitPoint;
+
+            const leftClip = {
+                ...clipToSplit,
+                id: capcutGenerateId(),
+                trimEnd: absoluteSplitPoint,
+                selected: false
+            };
+
+            const rightClip = {
+                ...clipToSplit,
+                id: capcutGenerateId(),
+                trimStart: absoluteSplitPoint,
+                position: capcutPlayhead, // Will be adjusted after insert
+                selected: false
+            };
+
+            // Replace original clip with split parts
+            const index = capcutClips.findIndex(c => c.id === clipToSplit.id);
+            capcutClips.splice(index, 1, leftClip, rightClip);
+        }
+
+        // Calculate total duration of new clips to insert
+        let insertDuration = 0;
+        newClips.forEach(clip => {
+            insertDuration += (clip.trimEnd - clip.trimStart);
+        });
+
+        // Find insertion point
         let insertIndex = 0;
         for (let i = 0; i < capcutClips.length; i++) {
             const clip = capcutClips[i];
             const clipEnd = clip.position + (clip.trimEnd - clip.trimStart);
-            if (capcutPlayhead >= clip.position && capcutPlayhead <= clipEnd) {
-                insertIndex = i + 1;
-                break;
-            } else if (capcutPlayhead > clipEnd) {
+            if (capcutPlayhead >= clipEnd) {
                 insertIndex = i + 1;
             }
         }
 
-        // Insert new clips at position
+        // Set positions for new clips starting at playhead
+        let currentPos = capcutPlayhead;
+        newClips.forEach(clip => {
+            clip.position = currentPos;
+            currentPos += (clip.trimEnd - clip.trimStart);
+        });
+
+        // Insert new clips
         capcutClips.splice(insertIndex, 0, ...newClips);
 
-        // Reposition all clips
-        capcutSnapClips();
+        // RIPPLE MODE: Push all clips after the insert forward
+        if (capcutRippleMode) {
+            for (let i = insertIndex + newClips.length; i < capcutClips.length; i++) {
+                capcutClips[i].position += insertDuration;
+            }
+            console.log('✅ Rippled ' + (capcutClips.length - insertIndex - newClips.length) + ' clips forward');
+        } else {
+            // Non-ripple: Just snap clips together
+            capcutSnapClips();
+        }
 
-        showNotification('✅ Inserted ' + newClips.length + ' clip(s) at playhead', 'success');
+        showNotification('✅ Inserted ' + newClips.length + ' clip(s) at playhead (RIPPLE)', 'success');
     } else {
         // Append to end
         const lastClip = capcutClips[capcutClips.length - 1];
@@ -340,6 +418,8 @@ function capcutRenderTimeline() {
     console.log('🏁 Rendering complete!');
 }
 
+// PROFESSIONAL ADAPTIVE TIME MARKERS
+// Adapts from hours (0.01x zoom) to frames (500x zoom)
 function capcutRenderTimeMarkers() {
     const markersEl = document.getElementById('capcutTimeMarkers');
     const totalDuration = capcutCalculateTotalDuration();
@@ -349,24 +429,64 @@ function capcutRenderTimeMarkers() {
     const displayDuration = Math.max(totalDuration + 30, 60);
     markersEl.style.width = Math.max(displayDuration * capcutPixelsPerSecond, 800) + 'px';
 
-    // Time marker interval based on zoom
-    let interval = 30; // Default 30 seconds
-    if (capcutZoomLevel >= 10) {
-        interval = 5; // Every 5 seconds at high zoom
-    } else if (capcutZoomLevel >= 5) {
-        interval = 10; // Every 10 seconds
-    } else if (capcutZoomLevel <= 0.5) {
-        interval = 60; // Every minute at low zoom
+    // ADAPTIVE INTERVAL based on zoom level
+    // Goal: 50-100 pixels between major markers for readability
+    let interval, minorInterval, showFrames = false;
+
+    if (capcutZoomLevel >= 200) {
+        // FRAME LEVEL: Show every 0.1 second (3 frames at 30fps)
+        interval = 0.1;
+        minorInterval = 1 / capcutFrameRate; // Individual frames
+        showFrames = true;
+    } else if (capcutZoomLevel >= 100) {
+        // FRAME LEVEL: Show every 0.5 second
+        interval = 0.5;
+        minorInterval = 0.1;
+        showFrames = true;
+    } else if (capcutZoomLevel >= 50) {
+        // Sub-second: Every 1 second
+        interval = 1;
+        minorInterval = 0.5;
+    } else if (capcutZoomLevel >= 10) {
+        // Second level: Every 5 seconds
+        interval = 5;
+        minorInterval = 1;
+    } else if (capcutZoomLevel >= 2) {
+        // Every 10 seconds
+        interval = 10;
+        minorInterval = 5;
+    } else if (capcutZoomLevel >= 0.5) {
+        // Every 30 seconds
+        interval = 30;
+        minorInterval = 10;
+    } else if (capcutZoomLevel >= 0.1) {
+        // Every 1 minute
+        interval = 60;
+        minorInterval = 30;
+    } else if (capcutZoomLevel >= 0.05) {
+        // Every 5 minutes
+        interval = 300;
+        minorInterval = 60;
+    } else {
+        // LONG-FORM: Every 10 minutes
+        interval = 600;
+        minorInterval = 300;
     }
 
-    // Generate markers starting from 0:00
+    // Generate major markers
     for (let t = 0; t <= displayDuration; t += interval) {
         const marker = document.createElement('span');
-        marker.style.cssText = 'position:absolute;left:' + (t * capcutPixelsPerSecond) + 'px;font-size:11px;color:#aaa;cursor:pointer;padding:2px 5px;';
-        marker.textContent = formatTime(t);
+        marker.style.cssText = 'position:absolute;left:' + (t * capcutPixelsPerSecond) + 'px;font-size:11px;color:#fff;cursor:pointer;padding:2px 5px;font-weight:bold;';
+
+        if (showFrames) {
+            const frame = Math.round(t * capcutFrameRate);
+            marker.textContent = formatTime(t) + ` [${frame}]`;
+        } else {
+            marker.textContent = formatTime(t);
+        }
+
         marker.title = 'Click to move playhead here';
 
-        // Make time markers clickable!
         marker.addEventListener('click', (e) => {
             e.stopPropagation();
             capcutPlayhead = t;
@@ -376,6 +496,17 @@ function capcutRenderTimeMarkers() {
         });
 
         markersEl.appendChild(marker);
+    }
+
+    // Generate minor tick marks (visual grid lines only, no labels to avoid clutter)
+    if (minorInterval && capcutZoomLevel >= 1) {
+        for (let t = minorInterval; t <= displayDuration; t += minorInterval) {
+            if (t % interval !== 0) { // Skip major markers
+                const tick = document.createElement('span');
+                tick.style.cssText = 'position:absolute;left:' + (t * capcutPixelsPerSecond) + 'px;width:1px;height:10px;background:#555;bottom:0;';
+                markersEl.appendChild(tick);
+            }
+        }
     }
 }
 
@@ -674,13 +805,25 @@ function capcutSnapClips() {
     });
 }
 
-// Magnetic snap when dragging - clips attract to each other
+// PROFESSIONAL MAGNETIC SNAP - clips attract to each other (respects snap toggle)
 function capcutMagneticSnap(clipId, newPosition) {
     const clip = capcutClips.find(c => c.id === clipId);
     if (!clip) return newPosition;
 
+    // If snapping disabled, return position as-is
+    if (!capcutSnapEnabled) return newPosition;
+
     const clipDuration = clip.trimEnd - clip.trimStart;
-    const SNAP_THRESHOLD = 10 / capcutPixelsPerSecond; // 10 pixels in time
+    // Adaptive snap threshold: tighter when zoomed in, looser when zoomed out
+    const SNAP_THRESHOLD = Math.max(5, 15 / capcutZoomLevel) / capcutPixelsPerSecond;
+
+    // Snap to playhead first (highest priority)
+    if (Math.abs(newPosition - capcutPlayhead) < SNAP_THRESHOLD) {
+        return capcutPlayhead;
+    }
+    if (Math.abs((newPosition + clipDuration) - capcutPlayhead) < SNAP_THRESHOLD) {
+        return capcutPlayhead - clipDuration;
+    }
 
     // Check snap to other clips
     for (const otherClip of capcutClips) {
@@ -767,26 +910,50 @@ function capcutRedo() {
 }
 
 // Advanced Zoom System
-const ZOOM_LEVELS = [0.5, 1, 2, 5, 10, 20, 50, 100, 200];
+// Professional zoom levels - from hours-long view to frame-level precision
+// 0.01x = ~3 pixels per minute (for 6-hour videos)
+// 0.05x = ~30 seconds visible in 15px
+// 0.1x = 1 pixel per second (for 1-2 hour timelines)
+// 1x = 10 pixels per second (default, ~6 seconds visible)
+// 10x = 100 pixels per second (precise second-level editing)
+// 100x = 1000 pixels per second (~33 pixels per frame at 30fps - FRAME LEVEL!)
+// 500x = 5000 pixels per second (~166 pixels per frame - maximum precision)
+const ZOOM_LEVELS = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500];
 const BASE_PIXELS_PER_SECOND = 10;
 
 function capcutZoomIn() {
     const currentIndex = ZOOM_LEVELS.findIndex(z => z >= capcutZoomLevel);
     if (currentIndex < ZOOM_LEVELS.length - 1) {
+        const container = document.getElementById('capcutTimelineContainer');
+        const oldScrollCenter = (container.scrollLeft + container.clientWidth / 2) / capcutPixelsPerSecond;
+
         capcutZoomLevel = ZOOM_LEVELS[currentIndex + 1];
         capcutPixelsPerSecond = BASE_PIXELS_PER_SECOND * capcutZoomLevel;
         capcutRenderTimeline();
-        showNotification(`Zoom: ${capcutZoomLevel}x`, 'info');
+
+        // Keep centered on same time position
+        container.scrollLeft = oldScrollCenter * capcutPixelsPerSecond - container.clientWidth / 2;
+
+        const zoomLabel = capcutZoomLevel >= 100 ? `${capcutZoomLevel}x (FRAME LEVEL)` : `${capcutZoomLevel}x`;
+        showNotification(`Zoom: ${zoomLabel}`, 'info');
     }
 }
 
 function capcutZoomOut() {
     const currentIndex = ZOOM_LEVELS.findIndex(z => z >= capcutZoomLevel);
     if (currentIndex > 0) {
+        const container = document.getElementById('capcutTimelineContainer');
+        const oldScrollCenter = (container.scrollLeft + container.clientWidth / 2) / capcutPixelsPerSecond;
+
         capcutZoomLevel = ZOOM_LEVELS[currentIndex - 1];
         capcutPixelsPerSecond = BASE_PIXELS_PER_SECOND * capcutZoomLevel;
         capcutRenderTimeline();
-        showNotification(`Zoom: ${capcutZoomLevel}x`, 'info');
+
+        // Keep centered on same time position
+        container.scrollLeft = oldScrollCenter * capcutPixelsPerSecond - container.clientWidth / 2;
+
+        const zoomLabel = capcutZoomLevel <= 0.1 ? `${capcutZoomLevel}x (LONG-FORM)` : `${capcutZoomLevel}x`;
+        showNotification(`Zoom: ${zoomLabel}`, 'info');
     }
 }
 
@@ -968,17 +1135,57 @@ document.addEventListener('keydown', (e) => {
         capcutUpdatePlayheadPosition();
         capcutSeekPreviewToPlayhead();
     } else if (e.key === 'ArrowLeft') {
-        // Frame back (1 second)
+        // PROFESSIONAL FRAME-LEVEL NAVIGATION
         e.preventDefault();
-        capcutPlayhead = Math.max(0, capcutPlayhead - 1);
+        let step;
+        if (e.shiftKey) {
+            step = 1 / capcutFrameRate; // Shift+Arrow = 1 FRAME (at 30fps = 0.033s)
+        } else if (e.ctrlKey || e.metaKey) {
+            step = 0.1; // Ctrl+Arrow = 0.1 second
+        } else {
+            step = 1; // Arrow = 1 second
+        }
+        capcutPlayhead = Math.max(0, capcutPlayhead - step);
         capcutUpdatePlayheadPosition();
         capcutSeekPreviewToPlayhead();
+
+        if (e.shiftKey) {
+            showNotification(`⬅️ Frame ${Math.round(capcutPlayhead * capcutFrameRate)}`, 'info');
+        }
     } else if (e.key === 'ArrowRight') {
-        // Frame forward (1 second)
+        // PROFESSIONAL FRAME-LEVEL NAVIGATION
         e.preventDefault();
-        capcutPlayhead = Math.min(capcutCalculateTotalDuration(), capcutPlayhead + 1);
+        let step;
+        if (e.shiftKey) {
+            step = 1 / capcutFrameRate; // Shift+Arrow = 1 FRAME (at 30fps = 0.033s)
+        } else if (e.ctrlKey || e.metaKey) {
+            step = 0.1; // Ctrl+Arrow = 0.1 second
+        } else {
+            step = 1; // Arrow = 1 second
+        }
+        capcutPlayhead = Math.min(capcutCalculateTotalDuration(), capcutPlayhead + step);
         capcutUpdatePlayheadPosition();
         capcutSeekPreviewToPlayhead();
+
+        if (e.shiftKey) {
+            showNotification(`➡️ Frame ${Math.round(capcutPlayhead * capcutFrameRate)}`, 'info');
+        }
+    } else if (e.key === 'r' || e.key === 'R') {
+        // Toggle RIPPLE mode (Premiere Pro style)
+        e.preventDefault();
+        capcutRippleMode = !capcutRippleMode;
+        showNotification(capcutRippleMode ? '✅ RIPPLE MODE ON (clips push forward)' : '❌ RIPPLE MODE OFF (insert mode)', 'info');
+    } else if (e.key === 's' || e.key === 'S') {
+        // Toggle SNAPPING (unless it's Ctrl+S for save)
+        if (!e.ctrlKey && !e.metaKey) {
+            e.preventDefault();
+            capcutSnapEnabled = !capcutSnapEnabled;
+            showNotification(capcutSnapEnabled ? '🧲 SNAPPING ON' : '🧲 SNAPPING OFF', 'info');
+        }
+    } else if (e.key === 'i' || e.key === 'I') {
+        // I = INSERT at playhead (like professional editors)
+        e.preventDefault();
+        capcutInsertFilesAtPlayhead();
     }
 });
 
@@ -1136,3 +1343,62 @@ capcutRenderTimeline = function() {
 };
 
 console.log('✅ CapCut playhead initialized - Click timeline or drag playhead to scrub video');
+
+// =============================================================================
+// PROFESSIONAL MOUSE WHEEL ZOOM (Ctrl/⌘ + Wheel)
+// =============================================================================
+function capcutInitializeMouseWheelZoom() {
+    const container = document.getElementById('capcutTimelineContainer');
+    if (!container) return;
+
+    container.addEventListener('wheel', (e) => {
+        // Only zoom if Ctrl/⌘ is held (standard in professional editors)
+        if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            // Get mouse position relative to timeline for zoom centering
+            const rect = container.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const scrollX = container.scrollLeft;
+            const timeAtMouse = (mouseX + scrollX) / capcutPixelsPerSecond;
+
+            // Zoom in/out based on wheel direction
+            if (e.deltaY < 0) {
+                // Scroll up = Zoom IN
+                const currentIndex = ZOOM_LEVELS.findIndex(z => z >= capcutZoomLevel);
+                if (currentIndex < ZOOM_LEVELS.length - 1) {
+                    capcutZoomLevel = ZOOM_LEVELS[currentIndex + 1];
+                    capcutPixelsPerSecond = BASE_PIXELS_PER_SECOND * capcutZoomLevel;
+                }
+            } else {
+                // Scroll down = Zoom OUT
+                const currentIndex = ZOOM_LEVELS.findIndex(z => z >= capcutZoomLevel);
+                if (currentIndex > 0) {
+                    capcutZoomLevel = ZOOM_LEVELS[currentIndex - 1];
+                    capcutPixelsPerSecond = BASE_PIXELS_PER_SECOND * capcutZoomLevel;
+                }
+            }
+
+            capcutRenderTimeline();
+
+            // Keep the timeline centered on the same time position where mouse was
+            const newScrollX = timeAtMouse * capcutPixelsPerSecond - mouseX;
+            container.scrollLeft = newScrollX;
+
+            const zoomLabel = capcutZoomLevel >= 100 ? `${capcutZoomLevel}x FRAME` :
+                             capcutZoomLevel <= 0.1 ? `${capcutZoomLevel}x LONG` :
+                             `${capcutZoomLevel}x`;
+            showNotification(`🔍 ${zoomLabel}`, 'info');
+        }
+    }, { passive: false });
+
+    console.log('✅ Mouse wheel zoom initialized (Ctrl/⌘ + Wheel)');
+}
+
+// Initialize mouse wheel zoom
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', capcutInitializeMouseWheelZoom);
+} else {
+    capcutInitializeMouseWheelZoom();
+}
