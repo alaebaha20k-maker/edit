@@ -51,11 +51,13 @@ function capcutDropFiles(event) {
 
 async function capcutUploadFiles(files, insertAtPlayhead = false) {
     if (!files || files.length === 0) return;
+    console.log('📤 Upload started with ' + files.length + ' files');
     showNotification('⏳ Uploading ' + files.length + ' file(s)...', 'info');
 
     const newClips = [];
 
     for (const file of files) {
+        console.log('📂 Processing file: ' + file.name + ' (' + file.type + ')');
         const isVideo = file.type.startsWith('video/');
         const isImage = file.type.startsWith('image/');
         if (!isVideo && !isImage) continue;
@@ -71,7 +73,11 @@ async function capcutUploadFiles(files, insertAtPlayhead = false) {
             });
 
             const data = await response.json();
-            if (!data.success) continue;
+            console.log('📥 API response for ' + file.name + ':', data);
+            if (!data.success) {
+                console.warn('⚠️ Upload failed for ' + file.name);
+                continue;
+            }
 
             const url = URL.createObjectURL(file);
             let duration = isImage ? 10.0 : 0; // Default 10 seconds for images (can be extended)
@@ -111,7 +117,12 @@ async function capcutUploadFiles(files, insertAtPlayhead = false) {
         }
     }
 
-    if (newClips.length === 0) return;
+    if (newClips.length === 0) {
+        console.log('⚠️ No new clips created');
+        return;
+    }
+
+    console.log('✅ Created ' + newClips.length + ' new clips:', newClips);
 
     capcutSaveHistory();
 
@@ -198,13 +209,16 @@ async function capcutExtractThumbnail(url, isVideo) {
 
 // Render timeline (visual only - instant!)
 function capcutRenderTimeline() {
+    console.log('🎬 Rendering timeline with ' + capcutClips.length + ' clips');
     const track = document.getElementById('capcutTrack');
     const statusText = document.getElementById('capcutStatusText');
     const totalDuration = capcutCalculateTotalDuration();
 
     // Set track width to match timeline duration
     const displayDuration = Math.max(totalDuration + 30, 60);
-    track.style.width = Math.max(displayDuration * capcutPixelsPerSecond, 800) + 'px';
+    const trackWidth = Math.max(displayDuration * capcutPixelsPerSecond, 800);
+    track.style.width = trackWidth + 'px';
+    console.log('📏 Track width set to: ' + trackWidth + 'px, displayDuration: ' + displayDuration + 's, zoom: ' + capcutZoomLevel);
 
     if (capcutClips.length === 0) {
         track.innerHTML = '<div id="capcutEmptyMessage" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #666; font-size: 14px; pointer-events: none;">Timeline is empty - upload videos above</div>';
@@ -219,6 +233,8 @@ function capcutRenderTimeline() {
         const duration = clip.trimEnd - clip.trimStart;
         const width = duration * capcutPixelsPerSecond;
         const left = clip.position * capcutPixelsPerSecond;
+
+        console.log(`📦 Rendering clip ${index}: "${clip.filename}" - pos: ${clip.position}s, duration: ${duration}s, left: ${left}px, width: ${width}px`);
 
         const clipEl = document.createElement('div');
         clipEl.className = 'capcut-clip' + (clip.selected ? ' selected' : '');
@@ -270,6 +286,8 @@ function capcutRenderTimeline() {
         clipEl.appendChild(rightHandle);
         track.appendChild(clipEl);
     });
+
+    console.log('✅ All ' + capcutClips.length + ' clips appended to track. Track children: ' + track.children.length);
 
     const totalDuration = capcutCalculateTotalDuration();
     const selectedCount = capcutClips.filter(c => c.selected).length;
