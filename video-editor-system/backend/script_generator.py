@@ -519,7 +519,7 @@ COMPLETE NOW:"""
         }
 
     def _build_oneblock_prompt(self, title, niche_data, formula, target_chars, approach):
-        """Build ULTRA-REFINED ELITE script generation prompt with all quality checks"""
+        """Build FINAL PRODUCTION SCRIPT PROMPT with HARD OVERRIDES + TITLE-LOCK + LENGTH EXECUTION"""
 
         product = niche_data.get('product', 'our platform')
         language = niche_data['language']
@@ -536,11 +536,60 @@ COMPLETE NOW:"""
         formula_filled = formula_filled.replace('{target_length}', f"{target_chars:,}")
         formula_filled = formula_filled.replace('{word_count}', f"{target_chars // 5:,}")
 
-        # ULTRA-REFINED ELITE PROFESSIONAL SCRIPT PROMPT
+        # FINAL PRODUCTION SCRIPT PROMPT
         prompt = f"""You are an elite, world-class human scriptwriter.
 
 You write high-retention YouTube scripts that sound natural, emotional, intelligent, and deeply human.
 Your scripts are written to be converted directly into voice audio without any modification.
+
+════════════════════════════════════════════════════════════
+🔒 HARD OVERRIDES (ABSOLUTE — MUST WIN OVER EVERYTHING)
+════════════════════════════════════════════════════════════
+
+THESE RULES OVERRIDE ALL OTHER INSTRUCTIONS:
+
+1. The output MUST be ONE single continuous paragraph block.
+2. DO NOT use scene descriptions, narrator labels, dialogue labels, or screenplay formatting.
+3. DO NOT use parentheses for stage directions.
+4. DO NOT use brackets, dashes as separators, or section dividers.
+5. DO NOT split into parts (NO "Part 1", "Part 2", "To be continued").
+6. DO NOT imply continuation beyond the single block.
+7. DO NOT include visual instructions (NO "VISUALS:", "VIDEO:", "SHOW:", "CUT TO:").
+8. DO NOT use ANY formatting symbols: **, __, ~~, ##, ---, ***, ===, ───
+9. DO NOT label sections with titles like "Introduction:", "Hook:", "Conclusion:"
+10. DO NOT include character counts, timestamps, or meta-commentary.
+
+IF ANY OF THE ABOVE APPEAR IN YOUR OUTPUT, THE OUTPUT IS INVALID AND MUST BE REGENERATED INTERNALLY.
+
+════════════════════════════════════════════════════════════
+🔐 TITLE-LOCK SYSTEM (STOPS DRIFT)
+════════════════════════════════════════════════════════════
+
+TITLE LOCK RULES:
+- Every sentence must DIRECTLY serve the title.
+- Do NOT generalize beyond the title's subject.
+- Do NOT turn the script into a metaphor, life lesson, or motivational speech UNLESS the title explicitly implies it.
+- Do NOT drift into tangential topics.
+- If a paragraph cannot be traced back to the title, remove or rewrite it.
+- The title is: "{title}"
+- STAY FOCUSED on this exact topic from start to finish.
+
+════════════════════════════════════════════════════════════
+📏 LENGTH EXECUTION SYSTEM (1k → 80k SAFE)
+════════════════════════════════════════════════════════════
+
+Target length: {target_chars:,} characters (STRICT)
+
+LENGTH EXECUTION PROCESS:
+
+Step 1: Internally plan the script into logical sections based on the formula.
+Step 2: Assign each section a character budget (distribute {target_chars:,} total).
+Step 3: Generate the script in internal chunks that respect those budgets.
+Step 4: Merge all chunks into ONE single clean block (no separators, no labels).
+Step 5: Perform a final trim or expansion pass to stay within ±3% of {target_chars:,} characters.
+Step 6: Output ONLY the final merged block.
+
+DO NOT SKIP STEP 5. The final character count MUST be within {int(target_chars * 0.97):,} - {int(target_chars * 1.03):,} characters.
 
 ────────────────────────────────────────
 ABSOLUTE OUTPUT RULES (NO EXCEPTIONS)
@@ -559,10 +608,10 @@ CORE OBJECTIVE
 Write a high-quality YouTube video script that maximizes retention and emotional engagement.
 
 The script must:
-- Be written ONLY for the provided title.
+- Be written ONLY for the provided title: "{title}"
 - Match the selected niche and audience.
 - Respect the custom formula provided by the user.
-- Match the required character length as closely as possible.
+- Match the required character length EXACTLY (±3%).
 - Flow clearly and logically from the first sentence to the last.
 
 ────────────────────────────────────────
@@ -581,17 +630,6 @@ The first 2 to 3 sentences must:
 - Make the listener feel compelled to continue.
 
 If the hook is weak, the script is considered a failure.
-
-────────────────────────────────────────
-LENGTH CONTROL SYSTEM
-────────────────────────────────────────
-Target length: {target_chars:,} characters.
-
-Rules:
-- Stay within ±5% of the target length.
-- Expand or compress naturally if needed.
-- Never pad with filler.
-- Never rush the ending.
 
 ────────────────────────────────────────
 FORMULA NORMALIZATION SYSTEM
@@ -682,27 +720,39 @@ Product/Platform: {product}
 
 Language: {language}
 
-────────────────────────────────────────
-AUTO-RETRY QUALITY VALIDATOR (INTERNAL)
-────────────────────────────────────────
+════════════════════════════════════════════════════════════
+🔄 AUTO-RETRY QUALITY VALIDATOR (ENHANCED)
+════════════════════════════════════════════════════════════
+
 Before outputting the final script, verify:
 
-✓ Clean formatting (no symbols, no meta text)
+✓ Clean formatting (no symbols, no meta text, no screenplay formatting)
 ✓ Strong hook (first 2-3 sentences create tension/curiosity)
 ✓ Formula compliance (follows user's structure)
 ✓ Niche rules followed (story consistency, education clarity, etc.)
-✓ Length within tolerance (±5% of target)
+✓ Length within ±3% tolerance ({int(target_chars * 0.97):,} - {int(target_chars * 1.03):,} chars)
+✓ Title-lock verified (no topic drift)
 ✓ Logical consistency (no contradictions)
 ✓ Creative freshness (not repetitive)
+✓ No scene labels, narrator labels, dialogue formatting, or visual cues
+✓ No "Part 1", "Part 2", "To be continued", or continuation markers
+✓ ONE single continuous block only
+
+FAIL AND REGENERATE IF:
+- Output contains labels, scenes, dialogue formatting, or visual cues
+- Output implies multiple parts or continuation
+- Output exceeds ±3% of target length
+- Topic drifts from the title
+- Output is not a single continuous block
 
 If ANY check fails:
 - Internally revise and regenerate.
 - Retry up to 3 times.
-- Only output the script when all checks pass.
+- Only output the script when ALL checks pass.
 
-────────────────────────────────────────
+════════════════════════════════════════════════════════════
 INPUTS
-────────────────────────────────────────
+════════════════════════════════════════════════════════════
 TITLE:
 {title}
 
@@ -710,15 +760,18 @@ NICHE:
 {niche_name}
 
 TARGET CHARACTERS:
-{target_chars:,}
+{target_chars:,} (STRICT: must be within {int(target_chars * 0.97):,} - {int(target_chars * 1.03):,})
 
 SCRIPT FORMULA:
 {formula_filled}
 
-────────────────────────────────────────
+════════════════════════════════════════════════════════════
 NOW WRITE THE FINAL SCRIPT
-────────────────────────────────────────
+════════════════════════════════════════════════════════════
 
+Execute the LENGTH EXECUTION SYSTEM (Steps 1-6).
+Apply TITLE-LOCK to stay focused on: "{title}"
+Apply HARD OVERRIDES to ensure ONE clean block output.
 Output ONLY the spoken narration. No preamble. No meta-commentary. Start immediately with a magnetic hook.
 """
 
