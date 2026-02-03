@@ -498,14 +498,17 @@ async function generateScript() {
     }
 
     const lengthSelect = document.getElementById('scriptLength');
-    const selectedLength = lengthSelect ? parseInt(lengthSelect.value) : 60000;
+    const selectedLength = lengthSelect ? parseInt(lengthSelect.value) : 10000;
+
+    // Get chunk mode (oneblock or 3chunks)
+    const chunkModeSelect = document.getElementById('chunkMode');
+    const chunkMode = chunkModeSelect ? chunkModeSelect.value : 'oneblock';
 
     const resultBox = document.getElementById('scriptResult');
     const statsBox = document.getElementById('scriptStats');
 
     if (resultBox) {
         resultBox.style.display = 'block';
-        resultBox.innerHTML = '<p>🤖 Generating script with 3-chunk system... This may take 1-2 minutes...</p>';
     }
 
     if (statsBox) {
@@ -514,10 +517,90 @@ async function generateScript() {
 
     try {
         const settings = JSON.parse(localStorage.getItem('videoToolSettings') || '{}');
-        const apiKey = settings.api_keys?.gemini;
+        const selectedNicheId = settings.selectedNiche || settings.default_niche;
 
+        if (!selectedNicheId) {
+            throw new Error('No niche selected. Please create and select a niche first.');
+        }
+
+        // ONE-BLOCK MODE (Recommended - uses backend validation)
+        if (chunkMode === 'oneblock') {
+            if (resultBox) {
+                resultBox.innerHTML = `<p>🤖 Generating script (One-Block Mode)...</p>
+                    <p style="color: #888; font-size: 0.9em;">Using single API call with hard validation. Please wait...</p>`;
+            }
+
+            const response = await fetch('/api/generate-script', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: title,
+                    niche_id: selectedNicheId,
+                    length: selectedLength
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Script generation failed');
+            }
+
+            // Store script
+            window.videoData.script = data.script;
+
+            // Display script
+            if (resultBox) {
+                resultBox.innerHTML = `<pre style="white-space: pre-wrap; font-family: 'Georgia', serif; line-height: 1.6;">${escapeHtml(data.script)}</pre>`;
+            }
+
+            // Display stats
+            if (statsBox) {
+                statsBox.style.display = 'block';
+                statsBox.innerHTML = `
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
+                        <div>
+                            <strong>Length:</strong><br>${data.length.toLocaleString()} chars
+                        </div>
+                        <div>
+                            <strong>Words:</strong><br>${data.words.toLocaleString()}
+                        </div>
+                        <div>
+                            <strong>Quality:</strong><br>${data.quality}
+                        </div>
+                        <div>
+                            <strong>Attempts:</strong><br>${data.attempts || 1}
+                        </div>
+                        <div>
+                            <strong>Time:</strong><br>${data.time.toFixed(1)}s
+                        </div>
+                        <div>
+                            <strong>Mode:</strong><br>One-Block ✅
+                        </div>
+                    </div>
+                `;
+            }
+
+            showNotification(`✅ Script generated! ${data.length.toLocaleString()} characters`, 'success');
+
+            // Show download button
+            const downloadSection = document.getElementById('scriptDownloadSection');
+            if (downloadSection) {
+                downloadSection.style.display = 'block';
+            }
+
+            return;
+        }
+
+        // 3-CHUNK MODE (Legacy - for very long scripts)
+        const apiKey = settings.api_keys?.gemini;
         if (!apiKey) {
             throw new Error('Gemini API key not found. Please configure in Settings.');
+        }
+
+        if (resultBox) {
+            resultBox.innerHTML = `<p>🤖 Generating script (3-Chunk Mode)...</p>
+                <p style="color: #888; font-size: 0.9em;">Uses 3 API calls. May hit rate limits. Please wait 1-2 minutes...</p>`;
         }
 
         // Get selected formula
