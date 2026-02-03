@@ -5,6 +5,7 @@ Handles API keys, generation formulas, and voice configurations
 """
 
 import json
+import re
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -23,15 +24,42 @@ class SettingsManager:
     IMAGE_FORMULA_FILE = FORMULAS_DIR / 'image_formula.txt'
 
     # Default formulas
-    DEFAULT_TITLE_FORMULA = """Create an engaging video title about: {topic}
+    DEFAULT_TITLE_FORMULA = """═══════════════════════════════════════════════════════
+TITLE GENERATION FORMULA
+═══════════════════════════════════════════════════════
 
-Requirements:
-- Attention-grabbing and clickable
-- 50-70 characters max
-- Include numbers or power words when relevant
-- Match the tone of the content
+TITLE STRUCTURE:
+[Power Hook] + [Core Topic] + [Value Promise]
 
-Output ONLY the title, no quotes or extra text."""
+COMPONENTS TO USE:
+• Power Hooks: The Hidden, What, How, Why, The Secret, The Truth About, Inside, Behind
+• Value Promises: That Changed Everything, Nobody Tells You, You Need to Know, Elite Traders Use, Wall Street Hides, Actually Works
+
+HIGH-QUALITY EXAMPLES:
+1. The Hidden Pattern That Made Jesse Livermore $100M
+2. What Elite Traders Know About Market Psychology
+3. Inside the Strategy Wall Street Doesn't Want You to See
+4. The Truth About Trading Psychology Nobody Tells You
+5. How One Mistake Cost Livermore His Fortune
+
+QUALITY REQUIREMENTS:
+✓ Follow the structure/pattern exactly
+✓ Use ONLY components from the lists provided
+✓ 45-70 characters preferred (max 100)
+✓ NO clickbait words: amazing, shocking, incredible
+✓ NO emojis in the title
+✓ Trigger curiosity and promise value
+✓ Use power words: Hidden, Forbidden, Ancient, Elite, Silent, Untold, Final, Last
+✓ Be specific: use numbers, names, timeframes when possible
+
+CONTEXT (will be filled by system):
+Topic: {topic}
+Niche: {niche}
+Language: {language}
+
+INSTRUCTIONS FOR AI:
+Generate titles that STRICTLY follow the structure above using ONLY the provided components.
+Each title must be distinctive, high-quality, and optimized for CTR."""
 
     DEFAULT_SCRIPT_FORMULA = """Write a comprehensive video script about: {topic}
 
@@ -215,13 +243,123 @@ Output ONLY the JSON array, no extra text."""
         return settings.get('api_keys', {}).get(key_name, '')
 
     @classmethod
+    def _transform_title_formula(cls, raw_formula: str) -> str:
+        """
+        AUTO-TRANSFORM any formula into a proven high-quality structure
+
+        This ensures Gemini ALWAYS receives a well-structured prompt
+        that produces high-quality titles, no matter what the user enters.
+
+        Args:
+            raw_formula: User's raw formula input (any format)
+
+        Returns:
+            Transformed formula in proven structure
+        """
+        # Extract key information from raw formula
+        lines = raw_formula.strip().split('\n')
+
+        # Try to identify structure/pattern
+        structure_pattern = None
+        components = {}
+        examples = []
+
+        for line in lines:
+            line_lower = line.lower().strip()
+
+            # Look for structure/pattern lines
+            if any(keyword in line_lower for keyword in ['structure:', 'pattern:', 'format:', 'basic structure']):
+                # Extract the pattern (text after the keyword)
+                structure_pattern = line.split(':', 1)[-1].strip()
+                # Clean up markdown
+                structure_pattern = re.sub(r'[`*#]', '', structure_pattern)
+
+            # Look for component lists
+            elif ':' in line and not line_lower.startswith(('http', 'example')):
+                parts = line.split(':', 1)
+                if len(parts) == 2:
+                    key = parts[0].strip().strip('*#-').lower()
+                    value = parts[1].strip()
+                    # Store component lists
+                    if key and value:
+                        components[key] = value
+
+            # Look for examples
+            elif any(keyword in line_lower for keyword in ['example:', '✅', '❌ bad', '✓ good']):
+                cleaned = re.sub(r'^[✅❌✓✗\-\*#•]+\s*(good|bad|example)?:?\s*', '', line, flags=re.IGNORECASE).strip()
+                cleaned = re.sub(r'[`*"]', '', cleaned)
+                if cleaned and len(cleaned) > 10:
+                    examples.append(cleaned)
+
+        # Build the PROVEN STRUCTURE that always works
+        transformed = f"""═══════════════════════════════════════════════════════
+TITLE GENERATION FORMULA
+═══════════════════════════════════════════════════════
+
+"""
+
+        # Add structure pattern if found
+        if structure_pattern:
+            transformed += f"""TITLE STRUCTURE:
+{structure_pattern}
+
+"""
+
+        # Add components if found
+        if components:
+            transformed += """COMPONENTS TO USE:
+"""
+            for key, value in components.items():
+                # Format key nicely
+                key_formatted = key.replace('_', ' ').title()
+                transformed += f"• {key_formatted}: {value}\n"
+            transformed += "\n"
+
+        # Add examples if found
+        if examples:
+            transformed += """HIGH-QUALITY EXAMPLES:
+"""
+            for i, example in enumerate(examples[:5], 1):  # Max 5 examples
+                transformed += f"{i}. {example}\n"
+            transformed += "\n"
+
+        # Add quality requirements (ALWAYS)
+        transformed += """QUALITY REQUIREMENTS:
+✓ Follow the structure/pattern exactly
+✓ Use ONLY components from the lists provided
+✓ 45-70 characters preferred (max 100)
+✓ NO clickbait words: amazing, shocking, incredible
+✓ NO emojis in the title
+✓ Trigger curiosity and promise value
+✓ Use power words: Hidden, Forbidden, Ancient, Elite, Silent, Untold, Final, Last
+✓ Be specific: use numbers, names, timeframes when possible
+
+"""
+
+        # Add placeholders for backend integration
+        transformed += """CONTEXT (will be filled by system):
+Topic: {topic}
+Niche: {niche}
+Language: {language}
+
+INSTRUCTIONS FOR AI:
+Generate titles that STRICTLY follow the structure above using ONLY the provided components.
+Each title must be distinctive, high-quality, and optimized for CTR.
+"""
+
+        return transformed
+
+    @classmethod
     def save_formulas(cls, title_formula: str = None, script_formula: str = None,
                      image_formula: str = None) -> bool:
         """
         Save generation formulas to text files
 
+        AUTO-TRANSFORMS title formulas into proven high-quality structure
+        before saving, ensuring Gemini always produces excellent results.
+
         Args:
-            title_formula: Template for title generation
+            title_formula: Template for title generation (any format - will be auto-transformed)
             script_formula: Template for script generation
             image_formula: Template for image prompt generation
 
@@ -232,8 +370,11 @@ Output ONLY the JSON array, no extra text."""
 
         try:
             if title_formula is not None:
+                # AUTO-TRANSFORM title formula into proven structure
+                transformed = cls._transform_title_formula(title_formula)
                 with open(cls.TITLE_FORMULA_FILE, 'w') as f:
-                    f.write(title_formula)
+                    f.write(transformed)
+                print("✅ Title formula auto-transformed into high-quality structure")
 
             if script_formula is not None:
                 with open(cls.SCRIPT_FORMULA_FILE, 'w') as f:
