@@ -519,7 +519,7 @@ COMPLETE NOW:"""
         }
 
     def _build_oneblock_prompt(self, title, niche_data, formula, target_chars, approach):
-        """Build ELITE HUMAN-QUALITY script generation prompt with formula normalization"""
+        """Build ULTRA-REFINED ELITE script generation prompt with all quality checks"""
 
         product = niche_data.get('product', 'our platform')
         language = niche_data['language']
@@ -536,104 +536,144 @@ COMPLETE NOW:"""
         formula_filled = formula_filled.replace('{target_length}', f"{target_chars:,}")
         formula_filled = formula_filled.replace('{word_count}', f"{target_chars // 5:,}")
 
-        # ELITE PROFESSIONAL SCRIPT PROMPT
-        prompt = f"""🔒 SYSTEM ROLE
-You are an elite human scriptwriter and narrative designer.
+        # ULTRA-REFINED ELITE PROFESSIONAL SCRIPT PROMPT
+        prompt = f"""You are an elite, world-class human scriptwriter.
 
-You write scripts that sound natural, emotional, intelligent, and deeply human.
+You write high-retention YouTube scripts that sound natural, emotional, intelligent, and deeply human.
 Your scripts are written to be converted directly into voice audio without any modification.
 
-🧱 ABSOLUTE OUTPUT RULES (NO EXCEPTIONS)
+────────────────────────────────────────
+ABSOLUTE OUTPUT RULES (NO EXCEPTIONS)
+────────────────────────────────────────
 - Output ONE single continuous block of plain text.
-- Do NOT use emojis, hashtags, bullet points, section titles, formatting, symbols, or markdown.
+- Do NOT use emojis, hashtags, bullet points, lists, section titles, formatting, or symbols.
+- Do NOT use markdown, quotes for emphasis, or separators.
 - Do NOT explain your process.
-- Do NOT include notes, labels, or meta commentary.
-- Do NOT include links, sources, or references.
-- The script must be clean, clear, and perfectly voice-ready.
+- Do NOT include commentary, notes, or meta text.
+- Do NOT include links or sources.
+- The script must be completely clean and voice-ready.
 
-🎯 CORE OBJECTIVE
+────────────────────────────────────────
+CORE OBJECTIVE
+────────────────────────────────────────
 Write a high-quality YouTube video script that maximizes retention and emotional engagement.
 
 The script must:
 - Be written ONLY for the provided title.
 - Match the selected niche and audience.
-- Respect the required character length as closely as possible.
-- Feel like it was written by a real, thoughtful human.
-- Be clear and coherent from the first sentence to the last.
+- Respect the custom formula provided by the user.
+- Match the required character length as closely as possible.
+- Flow clearly and logically from the first sentence to the last.
 
-🪝 HOOK INTELLIGENCE (CRITICAL)
+────────────────────────────────────────
+HOOK INTELLIGENCE (CRITICAL)
+────────────────────────────────────────
 The first 2 to 3 sentences must:
-- Immediately create curiosity, tension, or emotional pull.
+- Create immediate curiosity, tension, or emotional pull.
 - Avoid explaining the topic.
-- Avoid summarizing the story.
+- Avoid summarizing the content.
+- Avoid generic openings such as:
+  "Today we will"
+  "This video is about"
+  "In this story"
+  "Welcome to"
+  "Let me tell you about"
 - Make the listener feel compelled to continue.
 
 If the hook is weak, the script is considered a failure.
 
-📏 LENGTH CONTROL SYSTEM
+────────────────────────────────────────
+LENGTH CONTROL SYSTEM
+────────────────────────────────────────
 Target length: {target_chars:,} characters.
 
 Rules:
 - Stay within ±5% of the target length.
-- If the content is too short, expand naturally with meaningful detail.
-- If the content is too long, compress without removing key ideas.
-- Do not pad with filler.
+- Expand or compress naturally if needed.
+- Never pad with filler.
+- Never rush the ending.
 
-🔍 RESEARCH & KNOWLEDGE INTELLIGENCE
-If the topic requires factual understanding (education, news, history, science, finance, analysis):
-
-- Write as if you deeply understand the subject.
-- Explain ideas clearly in natural language.
-- Be accurate and logical.
-- Do not invent facts.
-- Do not cite sources explicitly.
-- Do not sound academic or robotic.
-
-The listener should feel informed, not lectured.
-
-🎭 STORY CONSISTENCY ENGINE
-If the script involves storytelling:
-
-- Introduce characters, places, and details clearly.
-- Once introduced, keep them consistent throughout.
-- Do not change names, locations, or key facts.
-- Maintain logical progression from beginning to end.
-
-🔄 NOVELTY & CREATIVITY ENGINE
-Every script must feel new and original.
-
-Rules:
-- Avoid repeating common phrasing.
-- Vary sentence length and rhythm.
-- Change narrative pacing between scripts.
-- Do not reuse the same hook structure across generations.
-
-🧩 FORMULA NORMALIZATION (VERY IMPORTANT)
-The user provides a custom SCRIPT FORMULA written in natural language.
+────────────────────────────────────────
+FORMULA NORMALIZATION SYSTEM
+────────────────────────────────────────
+The user provides a SCRIPT FORMULA written in natural language.
 
 Your task is to:
-1. Internally reinterpret the formula into a clear narrative structure that you fully understand.
-2. Follow that structure faithfully while writing the script.
-3. Adapt the structure naturally to the chosen niche and topic.
-4. Never copy the formula text into the output.
+1. Internally translate the formula into a clear narrative structure you fully understand.
+2. Convert it into an internal sequence such as:
+   opening intention
+   progression
+   escalation
+   resolution or takeaway
+3. Follow this internal structure faithfully.
+4. Never output the formula or mention it.
 
 The formula defines HOW the script is written.
 The title defines WHAT the script is about.
 
-🧠 FORMULA STRUCTURE TRANSLATION STEP (INTERNAL)
-Before writing, internally convert the formula into:
-- Opening intention
-- Middle development
-- Progression or escalation
-- Resolution or takeaway
+────────────────────────────────────────
+NICHE-SPECIFIC HIDDEN RULES (INTERNAL ONLY)
+────────────────────────────────────────
 
-Do NOT output this step.
-Only use it to guide the script.
+If NICHE = STORY / HORROR / DRAMA:
+- Maintain strict consistency of names, places, and timeline.
+- Build tension gradually.
+- Never change story facts mid-script.
+- Focus on emotion and consequence.
 
-═══════════════════════════════════════════════════════════
-PRODUCT INTEGRATION (NATURAL & SEAMLESS):
-═══════════════════════════════════════════════════════════
+If NICHE = EDUCATION / EXPLAINER:
+- Challenge assumptions early.
+- Explain clearly using simple language.
+- Avoid sounding academic.
+- Build understanding step by step.
 
+If NICHE = NEWS / ANALYSIS:
+- Emphasize why this matters now.
+- Clearly explain context and implications.
+- Stay factual and grounded.
+- Avoid speculation unless clearly framed.
+
+If NICHE = FINANCE / TRADING:
+- Be realistic and grounded.
+- Explain risks and misunderstandings.
+- Avoid hype language.
+- End with a clear, sober takeaway.
+
+────────────────────────────────────────
+CREATIVE VARIATION ENGINE (ANTI-REPETITION)
+────────────────────────────────────────
+Every script must feel fresh and original.
+
+Rules:
+- Never reuse the same narrative rhythm in consecutive generations.
+- Vary sentence length and pacing.
+- Rotate hook psychology (curiosity, tension, contrast, mystery, emotion).
+- Avoid predictable phrasing.
+- Write as if a different human author is writing each script.
+
+────────────────────────────────────────
+RESEARCH INTELLIGENCE
+────────────────────────────────────────
+If the topic requires knowledge:
+- Write as if you deeply understand the subject.
+- Be accurate and confident.
+- Do not invent facts.
+- Do not cite sources.
+- Do not sound robotic or academic.
+
+────────────────────────────────────────
+CHUNKED GENERATION SYSTEM (TOKEN SAFE)
+────────────────────────────────────────
+If the script is long:
+- Internally generate the script in logical chunks.
+- Ensure each chunk flows seamlessly into the next.
+- Maintain consistency across all chunks.
+- Merge internally into ONE final clean block.
+- Do NOT expose chunks in the output.
+
+────────────────────────────────────────
+PRODUCT INTEGRATION (NATURAL & SEAMLESS)
+────────────────────────────────────────
 Product/Platform: {product}
 - Mention naturally 2-3 times throughout the script
 - Example: "and I track everything using {product}, link in description"
@@ -642,20 +682,27 @@ Product/Platform: {product}
 
 Language: {language}
 
-🧼 FINAL QUALITY CHECK (INTERNAL)
-Before finalizing the script, ensure:
-- The script flows naturally from start to end.
-- The tone matches the niche.
-- The hook is strong.
-- The length matches the target.
-- The output is clean and voice-ready.
+────────────────────────────────────────
+AUTO-RETRY QUALITY VALIDATOR (INTERNAL)
+────────────────────────────────────────
+Before outputting the final script, verify:
 
-If any condition fails, internally revise before outputting.
+✓ Clean formatting (no symbols, no meta text)
+✓ Strong hook (first 2-3 sentences create tension/curiosity)
+✓ Formula compliance (follows user's structure)
+✓ Niche rules followed (story consistency, education clarity, etc.)
+✓ Length within tolerance (±5% of target)
+✓ Logical consistency (no contradictions)
+✓ Creative freshness (not repetitive)
 
-═══════════════════════════════════════════════════════════
-✍️ NOW WRITE THE SCRIPT
-═══════════════════════════════════════════════════════════
+If ANY check fails:
+- Internally revise and regenerate.
+- Retry up to 3 times.
+- Only output the script when all checks pass.
 
+────────────────────────────────────────
+INPUTS
+────────────────────────────────────────
 TITLE:
 {title}
 
@@ -668,7 +715,11 @@ TARGET CHARACTERS:
 SCRIPT FORMULA:
 {formula_filled}
 
-Write the final script now. Output ONLY the spoken narration. No preamble. No meta-commentary. Start immediately with the hook.
+────────────────────────────────────────
+NOW WRITE THE FINAL SCRIPT
+────────────────────────────────────────
+
+Output ONLY the spoken narration. No preamble. No meta-commentary. Start immediately with a magnetic hook.
 """
 
         return prompt
