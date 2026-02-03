@@ -156,9 +156,13 @@
                     <div class="input-group">
                         <label>Script Length</label>
                         <select id="scriptLength" class="input-large">
-                            <option value="60000">Short (~6-8 min video)</option>
-                            <option value="90000" selected>Medium (~10-12 min video)</option>
-                            <option value="120000">Long (~15-20 min video)</option>
+                            <option value="1000">YouTube Shorts (1k chars / ~1 min)</option>
+                            <option value="2500">Quick Video (2.5k chars / ~3-4 min)</option>
+                            <option value="5000">Short Video (5k chars / ~7-8 min)</option>
+                            <option value="10000" selected>Standard Video (10k chars / ~10-12 min)</option>
+                            <option value="20000">Long Video (20k chars / ~15-20 min)</option>
+                            <option value="40000">Deep Dive (40k chars / ~30-40 min)</option>
+                            <option value="80000">Full Documentary (80k chars / ~60+ min)</option>
                         </select>
                     </div>
                     <button onclick="generateScript()" class="btn-secondary">🤖 Generate Script</button>
