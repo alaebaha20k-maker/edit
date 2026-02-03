@@ -805,8 +805,14 @@ def generate_title_route():
 
 @app.route('/api/generate-script', methods=['POST'])
 def generate_script():
-    """Generate AI script using Gemini - EXACT HTML system"""
-    from script_generator import ScriptGenerator
+    """
+    Generate AI script using 3-CHUNK ARCHITECTURE
+
+    API CALLS PER REQUEST:
+    - 3 chunks (one API call each) = 3 total calls
+    - Rate limit safe: 20 calls/min ÷ 3 = 6-7 videos/min max
+    """
+    from script_generator_3chunk import ScriptGenerator3Chunk
     from config import Config
     from niche_manager import NicheManager
     from datetime import datetime
@@ -837,14 +843,16 @@ def generate_script():
         if any('GEMINI' in e for e in errors):
             return jsonify({'error': 'Gemini API key not configured'}), 500
 
-        # Get niche info for header
+        # Get niche info
         niche = NicheManager.get_niche(niche_id)
         if not niche:
             return jsonify({'error': 'Niche not found'}), 404
 
-        # Generate script as ONE CONTINUOUS BLOCK (no sections)
-        generator = ScriptGenerator()
-        result = generator.generate_script_oneblock(title, niche_id, length=length, verbose=True)
+        # Generate script using 3-CHUNK architecture
+        print(f"\n🎬 Starting 3-chunk script generation...")
+        print(f"   API calls: 3 (one per chunk)")
+        generator = ScriptGenerator3Chunk()
+        result = generator.generate_script(title, niche_id, length=length, verbose=True)
 
         # SAVE SCRIPT TO FILE - Use OUTPUT_FOLDER directly (same as videos)
         timestamp = int(time.time())
@@ -869,13 +877,9 @@ def generate_script():
             'script_filename': script_filename,
             'length': result['stats']['chars'],
             'words': result['stats']['words'],
-            'quality': result['quality'],
-            'approach': result['approach'],
+            'chunks_used': result['chunks_used'],
             'time': result['stats']['time'],
-            'attempts': result.get('attempts', 1),
-            'validation': result.get('validation', {}),
-            'issues': result.get('issues', []),
-            'suggestions': result.get('suggestions', [])
+            'validation': result['validation']
         })
 
     except Exception as e:

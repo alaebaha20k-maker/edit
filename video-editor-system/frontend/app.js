@@ -500,10 +500,6 @@ async function generateScript() {
     const lengthSelect = document.getElementById('scriptLength');
     const selectedLength = lengthSelect ? parseInt(lengthSelect.value) : 10000;
 
-    // Get chunk mode (oneblock or 3chunks)
-    const chunkModeSelect = document.getElementById('chunkMode');
-    const chunkMode = chunkModeSelect ? chunkModeSelect.value : 'oneblock';
-
     const resultBox = document.getElementById('scriptResult');
     const statsBox = document.getElementById('scriptStats');
 
@@ -523,12 +519,11 @@ async function generateScript() {
             throw new Error('No niche selected. Please create and select a niche first.');
         }
 
-        // ONE-BLOCK MODE (Recommended - uses backend validation)
-        if (chunkMode === 'oneblock') {
-            if (resultBox) {
-                resultBox.innerHTML = `<p>🤖 Generating script (One-Block Mode)...</p>
-                    <p style="color: #888; font-size: 0.9em;">Using single API call with hard validation. Please wait...</p>`;
-            }
+        // 3-CHUNK MODE (Backend handles chunking with user formulas)
+        if (resultBox) {
+            resultBox.innerHTML = `<p>🤖 Generating script (3-Chunk Mode)...</p>
+                <p style="color: #888; font-size: 0.9em;">Using 3 API calls with user formula. Please wait...</p>`;
+        }
 
             const response = await fetch('/api/generate-script', {
                 method: 'POST',
@@ -566,16 +561,13 @@ async function generateScript() {
                             <strong>Words:</strong><br>${data.words.toLocaleString()}
                         </div>
                         <div>
-                            <strong>Quality:</strong><br>${data.quality}
-                        </div>
-                        <div>
-                            <strong>Attempts:</strong><br>${data.attempts || 1}
+                            <strong>Chunks Used:</strong><br>${data.chunks_used} (30/40/30)
                         </div>
                         <div>
                             <strong>Time:</strong><br>${data.time.toFixed(1)}s
                         </div>
                         <div>
-                            <strong>Mode:</strong><br>One-Block ✅
+                            <strong>Valid:</strong><br>${data.validation?.valid ? '✅ Yes' : '⚠️ No'}
                         </div>
                     </div>
                 `;
@@ -588,141 +580,6 @@ async function generateScript() {
             if (downloadSection) {
                 downloadSection.style.display = 'block';
             }
-
-            return;
-        }
-
-        // 3-CHUNK MODE (Legacy - for very long scripts)
-        const apiKey = settings.api_keys?.gemini;
-        if (!apiKey) {
-            throw new Error('Gemini API key not found. Please configure in Settings.');
-        }
-
-        if (resultBox) {
-            resultBox.innerHTML = `<p>🤖 Generating script (3-Chunk Mode)...</p>
-                <p style="color: #888; font-size: 0.9em;">Uses 3 API calls. May hit rate limits. Please wait 1-2 minutes...</p>`;
-        }
-
-        // Get selected formula
-        const formulaSelect = document.getElementById('scriptFormulaSelect');
-        const selectedFormulaId = formulaSelect?.value;
-
-        let customFormula = null;
-        let useCustomFormula = false;
-
-        if (selectedFormulaId && selectedFormulaId !== 'default') {
-            const formula = (settings.script_formulas || []).find(f => f.id == selectedFormulaId);
-            if (formula) {
-                customFormula = formula.content;
-                useCustomFormula = true;
-            }
-        }
-
-        const chunkSize = Math.floor(selectedLength / 3);
-        let fullScript = '';
-        let lastSentences = '';
-
-        // CHUNK 1: Hook + Intro
-        if (resultBox) resultBox.innerHTML = '<p>⏳ Chunk 1/3: Generating hook and intro...</p>';
-
-        const chunk1Prompt = useCustomFormula
-            ? customFormula.replace('{title}', title).replace('{chunk}', '1').replace('{focus}', 'Hook + Intro')
-            : `Create an engaging video script about: "${title}"
-
-Target length: ${chunkSize} characters
-This is PART 1 of 3. Focus on:
-- Powerful hook (first 10 seconds)
-- Introduce main idea
-- Build curiosity
-
-Write engaging, conversational narration script.`;
-
-        const chunk1 = await callGemini(apiKey, chunk1Prompt);
-        fullScript += chunk1;
-        lastSentences = getLastSentences(chunk1, 4);
-
-        if (resultBox) resultBox.innerHTML = '<p>✅ Chunk 1/3 complete</p>';
-        await sleep(1000);
-
-        // CHUNK 2: Examples + Depth
-        if (resultBox) resultBox.innerHTML = '<p>⏳ Chunk 2/3: Adding examples and depth...</p>';
-
-        const chunk2Prompt = useCustomFormula
-            ? customFormula.replace('{title}', title).replace('{chunk}', '2').replace('{focus}', 'Examples + Depth').replace('{previous}', lastSentences)
-            : `Continue this script seamlessly:
-
-Previous ending: "${lastSentences}"
-
-Target length: ${chunkSize} characters
-This is PART 2 of 3. Focus on:
-- Real examples and stories
-- Deep dive into details
-- Keep engagement high
-
-Continue naturally from previous part.`;
-
-        const chunk2 = await callGemini(apiKey, chunk2Prompt);
-        fullScript += ' ' + chunk2;
-        lastSentences = getLastSentences(chunk2, 4);
-
-        if (resultBox) resultBox.innerHTML = '<p>✅ Chunk 2/3 complete</p>';
-        await sleep(1000);
-
-        // CHUNK 3: Steps + CTA
-        if (resultBox) resultBox.innerHTML = '<p>⏳ Chunk 3/3: Adding conclusion and CTA...</p>';
-
-        const chunk3Prompt = useCustomFormula
-            ? customFormula.replace('{title}', title).replace('{chunk}', '3').replace('{focus}', 'Steps + CTA').replace('{previous}', lastSentences)
-            : `Continue and conclude this script:
-
-Previous ending: "${lastSentences}"
-
-Target length: ${chunkSize} characters
-This is PART 3 of 3 (FINAL). Focus on:
-- Actionable steps/tips
-- Strong conclusion
-- Clear call-to-action
-
-End powerfully and naturally.`;
-
-        const chunk3 = await callGemini(apiKey, chunk3Prompt);
-        fullScript += ' ' + chunk3;
-
-        // Clean script
-        fullScript = cleanScript(fullScript);
-
-        // Save script
-        window.videoData.script = fullScript;
-        appState.generatedScript = fullScript;
-
-        const scriptInput = document.getElementById('scriptInput');
-        if (scriptInput) {
-            scriptInput.value = fullScript;
-        }
-
-        const wordCount = fullScript.split(/\s+/).length;
-        const charCount = fullScript.length;
-
-        if (resultBox) {
-            resultBox.innerHTML = '<p>✅ Script generated successfully!</p>';
-        }
-
-        if (statsBox) {
-            statsBox.style.display = 'block';
-            statsBox.innerHTML = `
-                <p><strong>Characters:</strong> ${charCount.toLocaleString()}</p>
-                <p><strong>Words:</strong> ${wordCount.toLocaleString()}</p>
-                <p><strong>Est. Duration:</strong> ~${Math.round(wordCount / 150)} minutes</p>
-            `;
-        }
-
-        // Show download button
-        const downloadSection = document.getElementById('scriptDownloadSection');
-        if (downloadSection) {
-            downloadSection.style.display = 'block';
-        }
-
-        showNotification('✅ Script generated with 3-chunk system!', 'success');
 
     } catch (error) {
         console.error('Script generation failed:', error);

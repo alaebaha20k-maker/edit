@@ -165,17 +165,6 @@
                             <option value="80000">Full Documentary (80k chars / ~60+ min)</option>
                         </select>
                     </div>
-                    <div class="input-group">
-                        <label>Generation Mode (Chunk Settings)</label>
-                        <select id="chunkMode" class="input-large">
-                            <option value="oneblock" selected>One-Block (Recommended - Fast, single API call)</option>
-                            <option value="3chunks">3-Chunk System (Slower, splits generation into 3 parts)</option>
-                        </select>
-                        <small style="color: #888; display: block; margin-top: 5px;">
-                            ⚡ One-Block: Better quality, uses 1 API call<br>
-                            📦 3-Chunk: For very long scripts, uses 3 API calls (rate limits may apply)
-                        </small>
-                    </div>
                     <button onclick="generateScript()" class="btn-secondary">🤖 Generate Script</button>
                 </div>
 
