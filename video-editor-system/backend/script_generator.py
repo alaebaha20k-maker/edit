@@ -14,7 +14,23 @@ from niche_manager import NicheManager
 
 
 class ScriptGenerator:
-    """Generate long-form scripts using Gemini 2.5 Flash - EXACT HTML system"""
+    """Generate long-form scripts using Gemini 2.5 Flash - WITH HARD VALIDATION"""
+
+    # HARD VALIDATION PATTERNS - These patterns INVALIDATE the script
+    INVALID_PATTERNS = [
+        (r'(?i)\bvisual\s*:', 'VISUAL: label detected'),
+        (r'(?i)\bnarrator\s*:', 'NARRATOR: label detected'),
+        (r'\(\s*\d+\s*-\s*\d+\s*(seconds?|sec|min|minutes?)\s*\)', 'Timestamp detected'),
+        (r'(?i)to\s+be\s+continued', 'TO BE CONTINUED detected'),
+        (r'(?i)part\s+\d+', 'Part X detected'),
+        (r'(?i)section\s+\d+', 'Section X detected'),
+        (r'(?i)scene\s+\d+', 'Scene X detected'),
+        (r'(?i)\bshow\s*:', 'SHOW: label detected'),
+        (r'(?i)\bcut\s+to\s*:', 'CUT TO: label detected'),
+        (r'(?i)\bvideo\s*:', 'VIDEO: label detected'),
+        (r'^\s*[A-Z\s]+:\s', 'Label formatting detected (e.g., NARRATOR:)'),
+        (r'\[\s*\w+\s*\]', 'Bracketed directions detected'),
+    ]
 
     def __init__(self):
         """Initialize Gemini API with EXACT settings from HTML"""
@@ -113,6 +129,123 @@ class ScriptGenerator:
         text = re.sub(r'  +', ' ', text)
 
         return text.strip()
+
+    @staticmethod
+    def hard_validate_output(script: str, title: str, target_length: int) -> Dict:
+        """
+        HARD VALIDATION - Checks if script meets strict quality requirements
+        Returns validation result with pass/fail and reasons
+
+        This is an ENGINEERING FIX - not a prompt change.
+        If validation fails, the script MUST be regenerated.
+
+        Args:
+            script: Generated script text
+            title: Original title (for title-lock validation)
+            target_length: Target character length
+
+        Returns:
+            Dict with 'valid' (bool), 'errors' (list), 'warnings' (list)
+        """
+        errors = []
+        warnings = []
+
+        # 1. CHECK FOR INVALID PATTERNS (screenplay formatting, visual cues, etc.)
+        for pattern, error_msg in ScriptGenerator.INVALID_PATTERNS:
+            matches = re.findall(pattern, script, re.MULTILINE | re.IGNORECASE)
+            if matches:
+                errors.append(f"{error_msg} - Found {len(matches)} occurrence(s)")
+
+        # 2. CHECK LENGTH TOLERANCE (±3%)
+        actual_length = len(script)
+        min_length = int(target_length * (1 - Config.SCRIPT_LENGTH_TOLERANCE))
+        max_length = int(target_length * (1 + Config.SCRIPT_LENGTH_TOLERANCE))
+
+        if actual_length < min_length:
+            errors.append(f"Script too short: {actual_length} chars (min {min_length})")
+        elif actual_length > max_length:
+            errors.append(f"Script too long: {actual_length} chars (max {max_length})")
+
+        # 3. TITLE-LOCK VALIDATION (prevent topic drift)
+        title_lock_result = ScriptGenerator.validate_title_lock(script, title)
+        if not title_lock_result['valid']:
+            errors.append(f"Title-lock failed: {title_lock_result['reason']}")
+
+        # 4. CHECK FOR EMPTY OUTPUT
+        if len(script.strip()) < 100:
+            errors.append("Script is nearly empty (< 100 chars)")
+
+        # 5. WARNINGS (don't invalidate but should be noted)
+        if len(script.split('\n\n')) > 50:
+            warnings.append(f"Many paragraph breaks ({len(script.split(chr(10)*2))})")
+
+        return {
+            'valid': len(errors) == 0,
+            'errors': errors,
+            'warnings': warnings,
+            'actual_length': actual_length,
+            'target_length': target_length
+        }
+
+    @staticmethod
+    def validate_title_lock(script: str, title: str) -> Dict:
+        """
+        TITLE-LOCK VALIDATOR
+        Ensures script stays focused on the title topic (prevents drift)
+
+        Extracts key nouns from title and checks if script references them.
+
+        Args:
+            script: Generated script text
+            title: Original video title
+
+        Returns:
+            Dict with 'valid' (bool) and 'reason' (str)
+        """
+        # Extract key nouns from title (simple heuristic)
+        # Remove common words and extract meaningful keywords
+        stop_words = {'the', 'a', 'an', 'of', 'to', 'in', 'for', 'on', 'at', 'by', 'with', 'from',
+                      'this', 'that', 'these', 'those', 'is', 'are', 'was', 'were', 'be', 'been',
+                      'how', 'what', 'why', 'when', 'where', 'who', 'which', 'i', 'you', 'we', 'they'}
+
+        title_words = [w.strip('.,!?:;').lower() for w in title.split()]
+        key_words = [w for w in title_words if len(w) > 3 and w not in stop_words]
+
+        if not key_words:
+            # Title has no significant keywords - can't validate, assume valid
+            return {'valid': True, 'reason': 'No keywords to validate'}
+
+        # Count how many key words appear in script
+        script_lower = script.lower()
+        matches = sum(1 for word in key_words if word in script_lower)
+        match_ratio = matches / len(key_words)
+
+        # At least 50% of title keywords must appear in script
+        if match_ratio < 0.5:
+            return {
+                'valid': False,
+                'reason': f"Only {matches}/{len(key_words)} title keywords found in script (need 50%+)"
+            }
+
+        # Split script into paragraphs and check distribution
+        paragraphs = [p.strip() for p in script.split('\n\n') if p.strip()]
+        if len(paragraphs) >= 3:
+            # Check first, middle, and last paragraphs
+            first_para = paragraphs[0].lower()
+            middle_para = paragraphs[len(paragraphs)//2].lower()
+            last_para = paragraphs[-1].lower()
+
+            # At least one key word should appear in first and last paragraphs
+            first_has_key = any(word in first_para for word in key_words)
+            last_has_key = any(word in last_para for word in key_words)
+
+            if not (first_has_key and last_has_key):
+                return {
+                    'valid': False,
+                    'reason': 'Title keywords missing from start or end (topic drift detected)'
+                }
+
+        return {'valid': True, 'reason': 'Title-lock validated'}
 
     @staticmethod
     def validate_quality(script: str, expected_length: int = None) -> Dict:
@@ -410,29 +543,41 @@ COMPLETE NOW:"""
         self,
         title: str,
         niche_id: str,
-        length: int = 60000,
+        length: int = 10000,
         verbose: bool = True
     ) -> Dict:
         """
-        Generate script as ONE CONTINUOUS BLOCK (no parts, no sections)
+        Generate script as ONE CONTINUOUS BLOCK with HARD VALIDATION + RETRY
         Uses custom script formula from settings
+
+        ENGINEERING FIX:
+        - Validates output with hard checks (no VISUAL:, no NARRATOR:, no timestamps)
+        - Enforces length tolerance (±3%)
+        - Validates title-lock (prevents drift)
+        - Auto-retries up to 3 times if validation fails
+        - Returns error if all retries fail
 
         Args:
             title: Video title
             niche_id: Niche ID with writing guidelines
-            length: 30000, 60000, or 100000 ONLY
+            length: Any integer from 1,000 to 80,000 characters
             verbose: Print progress
 
         Returns:
             Dict with script, stats, quality info
+
+        Raises:
+            ValueError: If validation fails after max retries
         """
         from settings_manager import SettingsManager
 
         start_time = time.time()
 
-        # Validate length
-        if length not in Config.VALID_SCRIPT_LENGTHS:
-            raise ValueError(f'Length must be one of {Config.VALID_SCRIPT_LENGTHS}')
+        # Validate length range
+        if not Config.validate_script_length(length):
+            raise ValueError(
+                f'Length must be between {Config.MIN_SCRIPT_LENGTH} and {Config.MAX_SCRIPT_LENGTH} characters'
+            )
 
         # Get niche
         niche = NicheManager.get_niche(niche_id)
@@ -444,12 +589,13 @@ COMPLETE NOW:"""
 
         if verbose:
             print(f"\n{'='*70}")
-            print(f"🎬 GENERATING ONE-BLOCK SCRIPT")
+            print(f"🎬 GENERATING ONE-BLOCK SCRIPT WITH HARD VALIDATION")
             print(f"{'='*70}")
             print(f"Title: {title}")
-            print(f"Target: {length:,} characters")
+            print(f"Target: {length:,} characters (±3% tolerance)")
             print(f"Niche: {niche['name']}")
             print(f"Language: {niche['language']}")
+            print(f"Max Retries: {Config.MAX_SCRIPT_RETRIES}")
             print(f"{'='*70}\n")
 
         # Detect narrative approach
@@ -466,51 +612,91 @@ COMPLETE NOW:"""
             approach=approach
         )
 
-        if verbose:
-            print(f"\n📡 Calling Gemini (ONE continuous generation)...")
-
-        # Generate with higher temperature for creativity
+        # RETRY LOOP - Generate with validation
+        script = None
+        validation_result = None
+        attempt = 0
         model = genai.GenerativeModel('gemini-2.0-flash-exp')
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.88,  # Single optimal temperature
-                max_output_tokens=Config.GEMINI_MAX_TOKENS,
-                top_p=0.95,
-                top_k=40
+
+        while attempt < Config.MAX_SCRIPT_RETRIES:
+            attempt += 1
+
+            if verbose:
+                print(f"\n📡 Attempt {attempt}/{Config.MAX_SCRIPT_RETRIES}: Calling Gemini...")
+
+            # Generate
+            response = model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.88,  # Single optimal temperature
+                    max_output_tokens=Config.GEMINI_MAX_TOKENS,
+                    top_p=0.95,
+                    top_k=40
+                )
             )
-        )
 
-        if verbose:
-            print(f"✅ Response received!")
+            # Get and clean script
+            script = response.text.strip()
+            script = self.clean_script_oneblock(script)
 
-        # Get script text
-        script = response.text.strip()
+            if verbose:
+                print(f"✅ Response received ({len(script):,} chars)")
 
-        # Clean aggressively (remove ALL artifacts)
-        script = self.clean_script_oneblock(script)
+            # HARD VALIDATION
+            validation_result = self.hard_validate_output(script, title, length)
 
-        if verbose:
-            print(f"\n📝 Script length: {len(script):,} characters")
+            if validation_result['valid']:
+                if verbose:
+                    print(f"✅ VALIDATION PASSED on attempt {attempt}")
+                    if validation_result['warnings']:
+                        print(f"⚠️  Warnings: {', '.join(validation_result['warnings'])}")
+                break
+            else:
+                if verbose:
+                    print(f"❌ VALIDATION FAILED on attempt {attempt}:")
+                    for error in validation_result['errors']:
+                        print(f"   - {error}")
+
+                if attempt < Config.MAX_SCRIPT_RETRIES:
+                    if verbose:
+                        print(f"🔄 Retrying generation...")
+                    script = None  # Clear failed script
+
+        # Check if validation succeeded
+        if not validation_result or not validation_result['valid']:
+            error_details = '\n'.join(validation_result['errors']) if validation_result else 'Unknown error'
+            raise ValueError(
+                f"Script generation failed after {Config.MAX_SCRIPT_RETRIES} attempts.\n"
+                f"Validation errors:\n{error_details}\n\n"
+                f"The output contained invalid patterns (VISUAL:, NARRATOR:, timestamps, etc.) "
+                f"or failed length/title-lock requirements."
+            )
 
         # Stats
         char_count = len(script)
         word_count = len(script.split())
         generation_time = time.time() - start_time
 
-        # Simple quality check
-        quality = "HIGH" if char_count >= length * 0.9 else "MEDIUM"
+        # Quality assessment
+        length_accuracy = abs(char_count - length) / length * 100
+        quality = "HIGH" if length_accuracy <= 5 else "MEDIUM"
 
         if verbose:
-            print(f"📊 Words: {word_count:,}")
-            print(f"⏱️  Time: {generation_time:.1f}s")
-            print(f"✨ Quality: {quality}")
+            print(f"\n📊 FINAL STATS:")
+            print(f"   Characters: {char_count:,} (target: {length:,})")
+            print(f"   Words: {word_count:,}")
+            print(f"   Length Accuracy: {100 - length_accuracy:.1f}%")
+            print(f"   Attempts: {attempt}")
+            print(f"   Time: {generation_time:.1f}s")
+            print(f"   Quality: {quality}")
             print(f"{'='*70}\n")
 
         return {
             'script': script,
             'approach': approach,
             'quality': quality,
+            'validation': validation_result,
+            'attempts': attempt,
             'stats': {
                 'chars': char_count,
                 'words': word_count,

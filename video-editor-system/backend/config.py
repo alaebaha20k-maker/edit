@@ -124,13 +124,17 @@ class Config:
     IMAGES_PER_VIDEO = 6
     IMAGE_DURATION_SECONDS = 5.0  # Duration for each image in video
 
-    # Script generation settings - EXACT from HTML reference
-    # Script length options: 30K, 60K, 100K (ONLY these values allowed)
-    SCRIPT_LENGTH_MEDIUM = 30000  # ~6,500 words, 20 min video
-    SCRIPT_LENGTH_FULL = 60000  # ~13,000 words, 45 min video [DEFAULT]
-    SCRIPT_LENGTH_EPIC = 100000  # ~22,000 words, 70 min video
-    TARGET_SCRIPT_LENGTH = SCRIPT_LENGTH_FULL  # Default
-    VALID_SCRIPT_LENGTHS = [30000, 60000, 100000]
+    # Script generation settings - FULL RANGE SUPPORT
+    # Allow any length from 1,000 to 80,000 characters
+    MIN_SCRIPT_LENGTH = 1000      # Minimum: ~1 min video (Shorts)
+    MAX_SCRIPT_LENGTH = 80000     # Maximum: ~60+ min video (Documentary)
+    DEFAULT_SCRIPT_LENGTH = 10000 # Default: ~10-12 min video
+
+    # Length tolerance for validation (±3%)
+    SCRIPT_LENGTH_TOLERANCE = 0.03
+
+    # Maximum regeneration attempts when validation fails
+    MAX_SCRIPT_RETRIES = 3
 
     @classmethod
     def ensure_directories(cls):
@@ -159,13 +163,27 @@ class Config:
         return errors
 
     @classmethod
+    def validate_script_length(cls, length: int) -> bool:
+        """
+        Validate script length is within allowed range
+
+        Args:
+            length: Requested script length in characters
+
+        Returns:
+            True if valid, False otherwise
+        """
+        return cls.MIN_SCRIPT_LENGTH <= length <= cls.MAX_SCRIPT_LENGTH
+
+    @classmethod
     def get_config_info(cls):
         """Get configuration information for debugging"""
         return {
             'gemini_model': cls.GEMINI_MODEL,
             'replicate_model': cls.REPLICATE_MODEL,
             'images_per_video': cls.IMAGES_PER_VIDEO,
-            'target_script_length': cls.TARGET_SCRIPT_LENGTH,
+            'script_length_range': f"{cls.MIN_SCRIPT_LENGTH}-{cls.MAX_SCRIPT_LENGTH}",
+            'default_script_length': cls.DEFAULT_SCRIPT_LENGTH,
             'data_dir': str(cls.DATA_DIR),
             'api_keys_set': {
                 'gemini': bool(cls.get_gemini_api_key()),

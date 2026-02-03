@@ -821,14 +821,16 @@ def generate_script():
 
         title = data.get('title')
         niche_id = data.get('niche_id')
-        length = data.get('length', 60000)  # Default to 60K if not provided
+        length = data.get('length', Config.DEFAULT_SCRIPT_LENGTH)  # Default to 10K
 
         if not title or not niche_id:
             return jsonify({'error': 'Missing required fields: title, niche_id'}), 400
 
-        # Validate length (must be 30K, 60K, or 100K)
-        if length not in Config.VALID_SCRIPT_LENGTHS:
-            return jsonify({'error': f'Invalid length. Must be one of: {Config.VALID_SCRIPT_LENGTHS}'}), 400
+        # Validate length (must be between MIN and MAX)
+        if not Config.validate_script_length(length):
+            return jsonify({
+                'error': f'Invalid length. Must be between {Config.MIN_SCRIPT_LENGTH} and {Config.MAX_SCRIPT_LENGTH} characters'
+            }), 400
 
         # Validate API key
         errors = Config.validate_api_keys()
@@ -851,23 +853,12 @@ def generate_script():
 
         print(f"\n📝 Saving script to: {script_path}")
 
-        # Write script with header
+        # Write ONLY the raw script text (NO HEADERS)
+        # ENGINEERING FIX: Headers break TTS processing and add noise
         with open(script_path, 'w', encoding='utf-8') as f:
-            f.write(f"{'='*70}\n")
-            f.write(f"  SCRIPT - {title}\n")
-            f.write(f"{'='*70}\n")
-            f.write(f"Title: {title}\n")
-            f.write(f"Niche: {niche['name']}\n")
-            f.write(f"Language: {niche['language']}\n")
-            f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"Characters: {result['stats']['chars']:,}\n")
-            f.write(f"Words: {result['stats']['words']:,}\n")
-            f.write(f"Quality: {result.get('quality', 'N/A')}\n")
-            f.write(f"Narrative Approach: {result.get('approach', 'N/A')}\n")
-            f.write(f"{'='*70}\n\n")
             f.write(result['script'])
 
-        print(f"✅ Script saved successfully!")
+        print(f"✅ Script saved successfully! (raw text only, no headers)")
         print(f"   File: {script_filename}")
         print(f"   Size: {os.path.getsize(script_path):,} bytes")
 
@@ -881,6 +872,8 @@ def generate_script():
             'quality': result['quality'],
             'approach': result['approach'],
             'time': result['stats']['time'],
+            'attempts': result.get('attempts', 1),
+            'validation': result.get('validation', {}),
             'issues': result.get('issues', []),
             'suggestions': result.get('suggestions', [])
         })
