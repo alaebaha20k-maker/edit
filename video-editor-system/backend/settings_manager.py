@@ -61,29 +61,69 @@ INSTRUCTIONS FOR AI:
 Generate titles that STRICTLY follow the structure above using ONLY the provided components.
 Each title must be distinctive, high-quality, and optimized for CTR."""
 
-    DEFAULT_SCRIPT_FORMULA = """Write a comprehensive video script about: {topic}
+    DEFAULT_SCRIPT_FORMULA = """═══════════════════════════════════════════════════════
+SCRIPT GENERATION FORMULA
+═══════════════════════════════════════════════════════
 
-Target length: {target_length} characters (~{word_count} words)
+NARRATIVE STRUCTURE:
+1. HOOK (First 10-15 seconds)
+   - Open with a provocative question, shocking fact, or tension
+   - Create immediate curiosity
+   - Avoid explaining or summarizing
+   - Make the listener need to know more
 
-Structure:
-1. Hook (first 30 seconds - grab attention)
-2. Introduction (set context and promise value)
-3. Main content (detailed exploration with examples)
-4. Conclusion (summarize and call-to-action)
+2. SETUP & PROMISE (Next 1-2 minutes)
+   - Establish the problem, mystery, or opportunity
+   - Position the viewer as the hero who needs this knowledge
+   - Make a clear promise: "By the end, you'll understand..."
+   - Use specific examples, not generalities
 
-Style:
-- Conversational and engaging tone
-- Use storytelling and examples
-- Transition smoothly between sections
-- End sentences with natural pauses for voice-over
+3. JOURNEY (Middle 60% of script)
+   - Weave facts with stories and examples
+   - Build complexity gradually
+   - Include mini-revelations every 90 seconds
+   - Use metaphors and analogies for clarity
+   - Vary sentence length: short for impact, longer for depth
+   - Use pattern interrupts: "But here's where it gets interesting..."
 
-Format:
-- Plain text only (no markdown, asterisks, or special formatting)
-- No timestamps or speaker labels
-- Natural spoken language
-- Ready for text-to-speech
+4. TRANSFORMATION (Final 20%)
+   - Synthesize everything into clear insights
+   - Provide actionable takeaways
+   - Create a memorable closing statement
+   - Echo the opening hook with new meaning
 
-Output ONLY the script content."""
+VOICE & TONE:
+- Natural, conversational, intelligent
+- Authoritative but not arrogant
+- Passionate but not hysterical
+- Use direct address: "You've probably experienced this..."
+- Rhetorical questions to re-engage
+
+RHYTHM TECHNIQUES:
+- Short sentences for emphasis. Like this.
+- Longer flowing sentences for complex ideas that need context.
+- Strategic repetition: "Not tomorrow. Not next week. Today."
+- Power verbs: transformed, shattered, unveiled, engineered
+
+WORD CHOICE:
+- Concrete over abstract: "47% increase" not "significant growth"
+- Sensory language: "razor-sharp," "crystalline"
+- Avoid filler: very, really, quite, basically, actually
+- Create tension and release
+
+CRITICAL OUTPUT RULES:
+✓ Plain text ONLY - no markdown, bullets, formatting, emojis
+✓ No timestamps, section headers, or stage directions
+✓ No visual cues like "VISUALS:" or "VIDEO:"
+✓ No meta-commentary or explanations
+✓ Pure spoken narration ready for TTS
+✓ Natural speech patterns with strategic pauses
+
+TARGET LENGTH: {target_length} characters (~{word_count} words)
+LANGUAGE: {language}
+NICHE: {niche}
+
+Write a script that sounds deeply human, emotionally engaging, and perfectly voice-ready."""
 
     DEFAULT_IMAGE_FORMULA = """Generate {count} detailed image prompts for a video about: {topic}
 

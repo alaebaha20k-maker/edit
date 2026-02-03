@@ -519,156 +519,119 @@ COMPLETE NOW:"""
         }
 
     def _build_oneblock_prompt(self, title, niche_data, formula, target_chars, approach):
-        """Build HOLLYWOOD-LEVEL script generation prompt"""
+        """Build ELITE HUMAN-QUALITY script generation prompt with formula normalization"""
 
         product = niche_data.get('product', 'our platform')
         language = niche_data['language']
-        lengthMinutes = target_chars / 150 / 60  # Convert chars to minutes (150 chars/min avg speaking)
+        niche_name = niche_data['name']
 
-        # Replace placeholders in formula
+        # Replace placeholders in formula (auto-normalize)
         formula_filled = formula.replace('{title}', title)
-        formula_filled = formula_filled.replace('{niche}', niche_data['name'])
+        formula_filled = formula_filled.replace('{niche}', niche_name)
         formula_filled = formula_filled.replace('{language}', language)
-        formula_filled = formula_filled.replace('{guidelines}', niche_data['writing_guidelines'])
+        formula_filled = formula_filled.replace('{guidelines}', niche_data.get('writing_guidelines', ''))
         formula_filled = formula_filled.replace('{length}', f"{target_chars:,}")
         formula_filled = formula_filled.replace('{approach}', approach)
+        formula_filled = formula_filled.replace('{topic}', title)
+        formula_filled = formula_filled.replace('{target_length}', f"{target_chars:,}")
+        formula_filled = formula_filled.replace('{word_count}', f"{target_chars // 5:,}")
 
-        # PROFESSIONAL HOLLYWOOD-LEVEL SCRIPT PROMPT
-        prompt = f"""You are a master storyteller and award-winning documentary scriptwriter. Your scripts have 95% watch-through rates and viral potential.
+        # ELITE PROFESSIONAL SCRIPT PROMPT
+        prompt = f"""🔒 SYSTEM ROLE
+You are an elite human scriptwriter and narrative designer.
 
-ASSIGNMENT:
-Write a {lengthMinutes:.1f}-minute narration script for this video.
+You write scripts that sound natural, emotional, intelligent, and deeply human.
+Your scripts are written to be converted directly into voice audio without any modification.
 
-TITLE: "{title}"
+🧱 ABSOLUTE OUTPUT RULES (NO EXCEPTIONS)
+- Output ONE single continuous block of plain text.
+- Do NOT use emojis, hashtags, bullet points, section titles, formatting, symbols, or markdown.
+- Do NOT explain your process.
+- Do NOT include notes, labels, or meta commentary.
+- Do NOT include links, sources, or references.
+- The script must be clean, clear, and perfectly voice-ready.
 
-WRITING STYLE & FORMULA:
-{formula_filled}
+🎯 CORE OBJECTIVE
+Write a high-quality YouTube video script that maximizes retention and emotional engagement.
 
-TARGET DURATION: {lengthMinutes:.1f} minutes
-(Approximately {target_chars:,} characters at natural speaking pace)
+The script must:
+- Be written ONLY for the provided title.
+- Match the selected niche and audience.
+- Respect the required character length as closely as possible.
+- Feel like it was written by a real, thoughtful human.
+- Be clear and coherent from the first sentence to the last.
 
-═══════════════════════════════════════════════════════════
-CRITICAL OUTPUT FORMAT FOR TTS (TEXT-TO-SPEECH):
-═══════════════════════════════════════════════════════════
+🪝 HOOK INTELLIGENCE (CRITICAL)
+The first 2 to 3 sentences must:
+- Immediately create curiosity, tension, or emotional pull.
+- Avoid explaining the topic.
+- Avoid summarizing the story.
+- Make the listener feel compelled to continue.
 
-YOU MUST RETURN **ONLY** THE SPOKEN NARRATION.
+If the hook is weak, the script is considered a failure.
 
-❌ DO NOT INCLUDE:
-- Scene descriptions
-- Visual cues like "VISUALS:" or "VIDEO:"
-- Timestamps like (0:00-0:15)
-- Stage directions in parentheses
-- Markdown formatting (**, ##, bullets)
-- Section headers
-- "NARRATOR:" labels
-- Audio cues like (pause), (music swells)
-- Any metadata or explanations
+📏 LENGTH CONTROL SYSTEM
+Target length: {target_chars:,} characters.
 
-✅ DO INCLUDE:
-- Pure, flowing narration
-- Natural speech patterns
-- Strategic pauses (using periods and commas)
-- Emotional tone shifts through word choice
-- Rhetorical questions that engage
-- Clean paragraphs for breath points
+Rules:
+- Stay within ±5% of the target length.
+- If the content is too short, expand naturally with meaningful detail.
+- If the content is too long, compress without removing key ideas.
+- Do not pad with filler.
 
-═══════════════════════════════════════════════════════════
-MASTERCLASS STORYTELLING STRUCTURE:
-═══════════════════════════════════════════════════════════
+🔍 RESEARCH & KNOWLEDGE INTELLIGENCE
+If the topic requires factual understanding (education, news, history, science, finance, analysis):
 
-FIRST 15 SECONDS (THE HOOK):
-- Open with a provocative statement, shocking fact, or profound question
-- Challenge a common belief or reveal a hidden truth
-- Create immediate tension or curiosity
-- Make a promise: "By the end, you'll understand why..."
+- Write as if you deeply understand the subject.
+- Explain ideas clearly in natural language.
+- Be accurate and logical.
+- Do not invent facts.
+- Do not cite sources explicitly.
+- Do not sound academic or robotic.
 
-FIRST 2 MINUTES (THE SETUP):
-- Establish the problem/mystery/opportunity
-- Use specific examples, not generalities
-- Create emotional resonance (fear, hope, curiosity)
-- Position the viewer as the hero who needs this knowledge
+The listener should feel informed, not lectured.
 
-MIDDLE 60% (THE JOURNEY):
-- Weave facts with stories
-- Use the "Rule of Three" (3 examples, 3 principles, 3 stories)
-- Build complexity gradually
-- Include mini-revelations every 90 seconds
-- Use metaphors and analogies for difficult concepts
-- Vary sentence length: short for impact, longer for depth
+🎭 STORY CONSISTENCY ENGINE
+If the script involves storytelling:
 
-FINAL 20% (THE TRANSFORMATION):
-- Synthesize everything into a clear insight
-- Provide actionable takeaways
-- Create a memorable closing statement
-- Leave with elevated perspective or call-to-action
-- Echo the opening hook with new meaning
+- Introduce characters, places, and details clearly.
+- Once introduced, keep them consistent throughout.
+- Do not change names, locations, or key facts.
+- Maintain logical progression from beginning to end.
 
-═══════════════════════════════════════════════════════════
-VOICE & TONE PRINCIPLES:
-═══════════════════════════════════════════════════════════
+🔄 NOVELTY & CREATIVITY ENGINE
+Every script must feel new and original.
 
-PACING:
-- Fast: 160-180 words/min (energetic, urgent topics)
-- Medium: 140-160 words/min (standard, most topics)
-- Slow: 120-140 words/min (deep, contemplative, emotional)
+Rules:
+- Avoid repeating common phrasing.
+- Vary sentence length and rhythm.
+- Change narrative pacing between scripts.
+- Do not reuse the same hook structure across generations.
 
-VOICE CHARACTERISTICS:
-- Authoritative but not arrogant
-- Conversational but not casual
-- Intelligent but not pretentious
-- Passionate but not hysterical
+🧩 FORMULA NORMALIZATION (VERY IMPORTANT)
+The user provides a custom SCRIPT FORMULA written in natural language.
 
-RHYTHM TECHNIQUES:
-- Use short sentences for emphasis. Like this.
-- Use longer, flowing sentences when building complex ideas that need context and depth.
-- Strategic repetition for memorability: "Not tomorrow. Not next week. Today."
-- Rhetorical questions to re-engage: "But here's what they missed..."
+Your task is to:
+1. Internally reinterpret the formula into a clear narrative structure that you fully understand.
+2. Follow that structure faithfully while writing the script.
+3. Adapt the structure naturally to the chosen niche and topic.
+4. Never copy the formula text into the output.
 
-WORD CHOICE:
-- Prefer concrete over abstract: "a 47% increase" not "significant growth"
-- Use sensory language: "razor-sharp," "crystalline," "suffocating"
-- Avoid filler: very, really, quite, basically, actually, literally
-- Power verbs: transformed, shattered, unveiled, engineered, forged
+The formula defines HOW the script is written.
+The title defines WHAT the script is about.
 
-═══════════════════════════════════════════════════════════
-ENGAGEMENT TECHNIQUES (USE LIBERALLY):
-═══════════════════════════════════════════════════════════
+🧠 FORMULA STRUCTURE TRANSLATION STEP (INTERNAL)
+Before writing, internally convert the formula into:
+- Opening intention
+- Middle development
+- Progression or escalation
+- Resolution or takeaway
 
-Pattern Interrupts:
-- "But here's where it gets interesting..."
-- "Now, most people stop here. But..."
-- "What happened next changed everything."
-
-Direct Address:
-- "You've probably experienced this..."
-- "Think about the last time you..."
-- "Here's what you need to understand..."
-
-Strategic Reveals:
-- Build tension before revealing key information
-- Use phrases like: "The answer lies in...", "What they discovered was...", "The truth is..."
-
-Micro-Stories:
-- Brief, vivid anecdotes (30-45 seconds)
-- Real or hypothetical scenarios
-- Create characters viewer can visualize
+Do NOT output this step.
+Only use it to guide the script.
 
 ═══════════════════════════════════════════════════════════
-QUALITY CHECKPOINTS:
-═══════════════════════════════════════════════════════════
-
-Before finalizing, verify:
-✓ First 15 seconds are absolutely magnetic
-✓ No sentence is boring or predictable
-✓ Every paragraph advances the narrative
-✓ Technical concepts are explained simply
-✓ Emotional beats are strategically placed
-✓ The ending delivers on the opening promise
-✓ Zero fluff or repetitive content
-✓ Word count matches target duration
-
-═══════════════════════════════════════════════════════════
-PRODUCT INTEGRATION:
+PRODUCT INTEGRATION (NATURAL & SEAMLESS):
 ═══════════════════════════════════════════════════════════
 
 Product/Platform: {product}
@@ -679,11 +642,33 @@ Product/Platform: {product}
 
 Language: {language}
 
+🧼 FINAL QUALITY CHECK (INTERNAL)
+Before finalizing the script, ensure:
+- The script flows naturally from start to end.
+- The tone matches the niche.
+- The hook is strong.
+- The length matches the target.
+- The output is clean and voice-ready.
+
+If any condition fails, internally revise before outputting.
+
 ═══════════════════════════════════════════════════════════
-BEGIN NARRATION:
+✍️ NOW WRITE THE SCRIPT
 ═══════════════════════════════════════════════════════════
 
-Write the complete narration script now. Start immediately with the hook. No preamble. No meta-commentary. Just the words that will be spoken.
+TITLE:
+{title}
+
+NICHE:
+{niche_name}
+
+TARGET CHARACTERS:
+{target_chars:,}
+
+SCRIPT FORMULA:
+{formula_filled}
+
+Write the final script now. Output ONLY the spoken narration. No preamble. No meta-commentary. Start immediately with the hook.
 """
 
         return prompt
