@@ -819,12 +819,123 @@ async function generateScript() {
                 downloadSection.style.display = 'block';
             }
 
+            // Show voice generation section
+            const voiceSection = document.getElementById('voiceGenerationSection');
+            if (voiceSection) {
+                voiceSection.style.display = 'block';
+            }
+
     } catch (error) {
         console.error('Script generation failed:', error);
         if (resultBox) {
             resultBox.innerHTML = `<p>❌ Error: ${error.message}</p>`;
         }
         showNotification('❌ Script generation failed: ' + error.message, 'error');
+    }
+}
+
+// =============================================================================
+// VOICE GENERATION
+// =============================================================================
+async function generateVoice() {
+    const script = window.videoData.script || appState.generatedScript;
+
+    if (!script) {
+        showNotification('⚠️ Please generate a script first', 'warning');
+        return;
+    }
+
+    const voiceModel = document.getElementById('voiceModel')?.value || 'inworld-tts-1.5-max';
+    const voiceId = document.getElementById('voiceId')?.value || 'inworld-voice-1';
+
+    const progressBox = document.getElementById('voiceProgress');
+    const resultBox = document.getElementById('voiceResult');
+    const statsBox = document.getElementById('voiceStats');
+    const voiceSection = document.getElementById('voiceGenerationSection');
+
+    // Show voice section if hidden
+    if (voiceSection) {
+        voiceSection.style.display = 'block';
+    }
+
+    // Show progress
+    if (progressBox) {
+        progressBox.style.display = 'block';
+        progressBox.innerHTML = `<p>🎙️ Generating voice...</p>
+            <p style="color: #888; font-size: 0.9em;">This may take a minute for long scripts. Please wait...</p>`;
+    }
+
+    if (resultBox) {
+        resultBox.style.display = 'none';
+    }
+
+    try {
+        const response = await fetch('/api/generate-voice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                script: script,
+                voice_id: voiceId,
+                model_id: voiceModel
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Voice generation failed');
+        }
+
+        // Store audio data
+        window.videoData.audioUrl = data.audio_url;
+        window.videoData.audioFilename = data.audio_filename;
+
+        // Hide progress
+        if (progressBox) {
+            progressBox.style.display = 'none';
+        }
+
+        // Show audio player and stats
+        if (resultBox) {
+            resultBox.style.display = 'block';
+
+            const audioPlayer = document.getElementById('voicePlayer');
+            if (audioPlayer) {
+                audioPlayer.src = data.audio_url;
+            }
+
+            if (statsBox) {
+                const minutes = Math.floor(data.duration_seconds / 60);
+                const seconds = Math.floor(data.duration_seconds % 60);
+                const durationStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+                statsBox.innerHTML = `
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
+                        <div>
+                            <strong>⏱️ Duration:</strong><br>${durationStr}
+                        </div>
+                        <div>
+                            <strong>📦 Chunks:</strong><br>${data.chunks_count}
+                        </div>
+                        <div>
+                            <strong>⚡ Time:</strong><br>${data.generation_time.toFixed(1)}s
+                        </div>
+                        <div>
+                            <strong>📄 File:</strong><br>${data.audio_filename}
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        showNotification(`✅ Voice generated! Duration: ${Math.floor(data.duration_seconds / 60)}m ${Math.floor(data.duration_seconds % 60)}s`, 'success');
+
+    } catch (error) {
+        console.error('Voice generation failed:', error);
+        if (progressBox) {
+            progressBox.innerHTML = `<p>❌ Error: ${error.message}</p>`;
+        }
+        showNotification('❌ Voice generation failed: ' + error.message, 'error');
     }
 }
 

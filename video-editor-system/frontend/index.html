@@ -178,6 +178,29 @@
                 <div id="scriptDownloadSection" style="display: none; margin-top: 15px;">
                     <button onclick="downloadScript()" class="btn-success">📥 Download Script (.txt)</button>
                 </div>
+
+                <!-- Voice Generation Section -->
+                <div id="voiceGenerationSection" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 2px solid #e0e0e0;">
+                    <h4 style="margin-bottom: 15px;">🎙️ Generate Voice (Optional)</h4>
+                    <div class="input-group">
+                        <label>Voice Model:</label>
+                        <select id="voiceModel" class="input-medium">
+                            <option value="inworld-tts-1.5-max" selected>Max Quality (Best)</option>
+                            <option value="inworld-tts-1.5-mini">Mini (Faster)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label>Voice ID:</label>
+                        <input type="text" id="voiceId" value="inworld-voice-1" placeholder="Enter Inworld voice ID" class="input-medium">
+                        <span class="hint">Get voice IDs from: https://studio.inworld.ai/</span>
+                    </div>
+                    <button onclick="generateVoice()" class="btn-secondary">🎙️ Generate Voice</button>
+                    <div id="voiceProgress" class="progress-box" style="display: none;"></div>
+                    <div id="voiceResult" style="display: none; margin-top: 15px;">
+                        <audio id="voicePlayer" controls style="width: 100%; margin-bottom: 10px;"></audio>
+                        <div id="voiceStats" class="stats-box"></div>
+                    </div>
+                </div>
             </section>
 
             <!-- Step 3: Media (Images/Videos) -->
