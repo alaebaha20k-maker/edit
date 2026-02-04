@@ -1045,6 +1045,15 @@ def generate_images():
         if not title or not script or not style_id:
             return jsonify({'error': 'Missing required fields: title, script, style_id'}), 400
 
+        # Handle "default" style_id - use first available style
+        if style_id == 'default':
+            from image_style_manager import ImageStyleManager
+            styles = ImageStyleManager.get_all_styles()
+            if not styles or len(styles) == 0:
+                return jsonify({'error': 'No image styles available. Server initialization may have failed.'}), 500
+            style_id = styles[0]['id']
+            print(f"   Using default style: {styles[0]['name']} ({style_id})")
+
         # Validate API key
         errors = Config.validate_api_keys()
         if any('REPLICATE' in e for e in errors):
@@ -2409,6 +2418,28 @@ if __name__ == '__main__':
     print("\n📦 Initializing database...")
     from database import initialize_database
     initialize_database()
+
+    # Create default image style if none exist
+    print("\n🎨 Checking image styles...")
+    from image_style_manager import ImageStyleManager
+    styles = ImageStyleManager.get_all_styles()
+    if not styles or len(styles) == 0:
+        print("   Creating default image style...")
+        default_prompts = [
+            "Professional trading chart visualization with candlesticks, showing {MARKET_CONDITION}, clean financial aesthetic, 4K quality",
+            "Abstract representation of {EMOTIONAL_STATE} in trading psychology, modern minimal design, dark professional theme",
+            "Conceptual image of {MINDSET_CONCEPT}, trader at desk with multiple monitors, realistic photography style",
+            "Financial market data visualization showing {CHART_PATTERN}, professional trading interface, blue and green accents",
+            "Symbolic representation of {TRADING_ACTION}, clean infographic style, professional business aesthetic",
+            "Abstract concept of {PSYCHOLOGICAL_TERM} in finance, minimal modern design, muted professional colors"
+        ]
+        try:
+            default_style = ImageStyleManager.create_style("Default Trading Style", default_prompts)
+            print(f"   ✅ Created default image style: {default_style['id']}")
+        except Exception as e:
+            print(f"   ⚠️ Could not create default style: {e}")
+    else:
+        print(f"   ✅ Found {len(styles)} image style(s)")
 
     # Create directories
     print("\n📁 Ensuring directories exist...")
