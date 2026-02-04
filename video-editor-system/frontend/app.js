@@ -356,16 +356,28 @@ function renderNichesList(niches) {
 }
 
 function updateNicheDropdown(niches) {
+    // Update settings dropdown
     const dropdown = document.getElementById('nicheSelect');
-    if (!dropdown) return;
+    if (dropdown) {
+        dropdown.innerHTML = '<option value="">-- Select a niche --</option>';
+        if (niches && niches.length > 0) {
+            niches.forEach(n => {
+                const selected = appState.selectedNiche === n.id ? 'selected' : '';
+                dropdown.innerHTML += `<option value="${n.id}" ${selected}>${n.name} (${n.language})</option>`;
+            });
+        }
+    }
 
-    dropdown.innerHTML = '<option value="">-- Select a niche --</option>';
-
-    if (niches && niches.length > 0) {
-        niches.forEach(n => {
-            const selected = appState.selectedNiche === n.id ? 'selected' : '';
-            dropdown.innerHTML += `<option value="${n.id}" ${selected}>${n.name} (${n.language})</option>`;
-        });
+    // ALSO update generator dropdown (for script generation page)
+    const generatorDropdown = document.getElementById('generatorNicheSelect');
+    if (generatorDropdown) {
+        generatorDropdown.innerHTML = '<option value="">-- Select a niche --</option>';
+        if (niches && niches.length > 0) {
+            niches.forEach(n => {
+                const selected = appState.selectedNiche === n.id ? 'selected' : '';
+                generatorDropdown.innerHTML += `<option value="${n.id}" ${selected}>${n.name} (${n.language})</option>`;
+            });
+        }
     }
 }
 
@@ -704,17 +716,18 @@ async function generateScript() {
     }
 
     try {
-        const settings = JSON.parse(localStorage.getItem('videoToolSettings') || '{}');
-        const selectedNicheId = settings.selectedNiche || settings.default_niche;
+        // Get niche from generator dropdown
+        const nicheDropdown = document.getElementById('generatorNicheSelect');
+        const selectedNicheId = nicheDropdown ? nicheDropdown.value : '';
 
         if (!selectedNicheId) {
-            throw new Error('No niche selected. Please create and select a niche first.');
+            throw new Error('Please select a content niche first. Create niches in Settings.');
         }
 
-        // 3-CHUNK MODE (Backend handles chunking with user formulas)
+        // 3-CHUNK MODE (Backend handles chunking with niche guidelines)
         if (resultBox) {
             resultBox.innerHTML = `<p>🤖 Generating script (3-Chunk Mode)...</p>
-                <p style="color: #888; font-size: 0.9em;">Using 3 API calls with user formula. Please wait...</p>`;
+                <p style="color: #888; font-size: 0.9em;">Using niche writing guidelines. Please wait...</p>`;
         }
 
         // Update last generation time BEFORE making the call
