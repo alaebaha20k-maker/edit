@@ -1857,8 +1857,10 @@ def generate_voice_route():
             return jsonify({'error': 'No data provided'}), 400
 
         script = data.get('script', '').strip()
-        voice_id = data.get('voice_id', 'inworld-voice-1')
+        voice_id = data.get('voice_id', 'Hana')  # Default to Hana voice
         model_id = data.get('model_id', 'inworld-tts-1.5-max')
+        language = data.get('language', 'en-US')  # Default to English
+        speaking_rate = float(data.get('speaking_rate', 1.0))  # Default to normal speed
 
         if not script:
             return jsonify({'error': 'Script text is required'}), 400
@@ -1879,8 +1881,10 @@ def generate_voice_route():
 
         print(f"\n🎙️ Starting voice generation...")
         print(f"   Script length: {len(script):,} characters")
-        print(f"   Voice ID: {voice_id}")
+        print(f"   Voice: {voice_id}")
         print(f"   Model: {model_id}")
+        print(f"   Language: {language}")
+        print(f"   Speaking rate: {speaking_rate}x")
         print(f"   Output: {audio_filename}")
 
         # Generate voice using Inworld AI TTS
@@ -1890,6 +1894,8 @@ def generate_voice_route():
             output_path=audio_path,
             voice_id=voice_id,
             model_id=model_id,
+            language=language,
+            speaking_rate=speaking_rate,
             verbose=True
         )
 

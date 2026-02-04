@@ -846,7 +846,9 @@ async function generateVoice() {
     }
 
     const voiceModel = document.getElementById('voiceModel')?.value || 'inworld-tts-1.5-max';
-    const voiceId = document.getElementById('voiceId')?.value || 'inworld-voice-1';
+    const voiceId = document.getElementById('voiceId')?.value || 'Hana';
+    const voiceLanguage = document.getElementById('voiceLanguage')?.value || 'en-US';
+    const speakingRate = parseFloat(document.getElementById('speakingRate')?.value || '1.0');
 
     const progressBox = document.getElementById('voiceProgress');
     const resultBox = document.getElementById('voiceResult');
@@ -862,6 +864,7 @@ async function generateVoice() {
     if (progressBox) {
         progressBox.style.display = 'block';
         progressBox.innerHTML = `<p>🎙️ Generating voice...</p>
+            <p style="color: #888; font-size: 0.9em;">Voice: ${voiceId} | Language: ${voiceLanguage} | Speed: ${speakingRate}x</p>
             <p style="color: #888; font-size: 0.9em;">This may take a minute for long scripts. Please wait...</p>`;
     }
 
@@ -876,7 +879,9 @@ async function generateVoice() {
             body: JSON.stringify({
                 script: script,
                 voice_id: voiceId,
-                model_id: voiceModel
+                model_id: voiceModel,
+                language: voiceLanguage,
+                speaking_rate: speakingRate
             })
         });
 
@@ -889,6 +894,7 @@ async function generateVoice() {
         // Store audio data
         window.videoData.audioUrl = data.audio_url;
         window.videoData.audioFilename = data.audio_filename;
+        window.videoData.audioPath = data.audio_path;
 
         // Hide progress
         if (progressBox) {
@@ -2144,7 +2150,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Setup speaking rate slider
     const rateSlider = document.getElementById('speakingRate');
-    const rateDisplay = document.getElementById('speakingRateValue');
+    const rateDisplay = document.getElementById('speakingRateDisplay');
     if (rateSlider && rateDisplay) {
         rateSlider.addEventListener('input', (e) => {
             rateDisplay.textContent = e.target.value + 'x';

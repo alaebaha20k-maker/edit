@@ -182,18 +182,55 @@
                 <!-- Voice Generation Section -->
                 <div id="voiceGenerationSection" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 2px solid #e0e0e0;">
                     <h4 style="margin-bottom: 15px;">🎙️ Generate Voice (Optional)</h4>
+
                     <div class="input-group">
-                        <label>Voice Model:</label>
+                        <label>Quality Model:</label>
                         <select id="voiceModel" class="input-medium">
-                            <option value="inworld-tts-1.5-max" selected>Max Quality (Best)</option>
-                            <option value="inworld-tts-1.5-mini">Mini (Faster)</option>
+                            <option value="inworld-tts-1.5-max" selected>🎯 1.5 Max (Best Quality)</option>
+                            <option value="inworld-tts-1.5-mini">⚡ 1.5 Mini (Faster)</option>
                         </select>
                     </div>
+
                     <div class="input-group">
-                        <label>Voice ID:</label>
-                        <input type="text" id="voiceId" value="inworld-voice-1" placeholder="Enter Inworld voice ID" class="input-medium">
-                        <span class="hint">Get voice IDs from: https://studio.inworld.ai/</span>
+                        <label>Voice:</label>
+                        <select id="voiceId" class="input-medium">
+                            <option value="Hana" selected>Hana (Female, Warm)</option>
+                            <option value="Jack">Jack (Male, Professional)</option>
+                            <option value="Emma">Emma (Female, Friendly)</option>
+                            <option value="James">James (Male, Deep)</option>
+                            <option value="Sophia">Sophia (Female, Clear)</option>
+                            <option value="Oliver">Oliver (Male, British)</option>
+                        </select>
                     </div>
+
+                    <div class="input-group">
+                        <label>Language:</label>
+                        <select id="voiceLanguage" class="input-medium">
+                            <option value="en-US" selected>🇺🇸 English (US)</option>
+                            <option value="en-GB">🇬🇧 English (UK)</option>
+                            <option value="es-ES">🇪🇸 Spanish (Spain)</option>
+                            <option value="es-MX">🇲🇽 Spanish (Mexico)</option>
+                            <option value="fr-FR">🇫🇷 French</option>
+                            <option value="de-DE">🇩🇪 German</option>
+                            <option value="it-IT">🇮🇹 Italian</option>
+                            <option value="pt-BR">🇧🇷 Portuguese (Brazil)</option>
+                            <option value="ja-JP">🇯🇵 Japanese</option>
+                            <option value="ko-KR">🇰🇷 Korean</option>
+                            <option value="zh-CN">🇨🇳 Chinese (Simplified)</option>
+                            <option value="ar-SA">🇸🇦 Arabic</option>
+                        </select>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Speaking Speed: <span id="speakingRateDisplay">1.0x</span></label>
+                        <input type="range" id="speakingRate" min="0.5" max="2.0" step="0.1" value="1.0" class="slider" style="width: 100%;">
+                        <div style="display: flex; justify-content: space-between; font-size: 0.85em; color: #888;">
+                            <span>0.5x (Slow)</span>
+                            <span>1.0x (Normal)</span>
+                            <span>2.0x (Fast)</span>
+                        </div>
+                    </div>
+
                     <button onclick="generateVoice()" class="btn-secondary">🎙️ Generate Voice</button>
                     <div id="voiceProgress" class="progress-box" style="display: none;"></div>
                     <div id="voiceResult" style="display: none; margin-top: 15px;">

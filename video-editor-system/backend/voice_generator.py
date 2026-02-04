@@ -20,8 +20,8 @@ from config import Config
 class VoiceGenerator:
     """Generate voice using Inworld AI TTS with chunking and merging"""
 
-    # Inworld TTS endpoint
-    TTS_ENDPOINT = "https://studio.inworld.ai/v1/text-to-speech/synthesize"
+    # CORRECT Inworld TTS endpoint
+    TTS_ENDPOINT = "https://api.inworld.ai/tts/v1/voice"
 
     # Max characters per TTS request (Inworld limit: 2000)
     MAX_CHUNK_SIZE = 1900  # Use 1900 for safety buffer
@@ -44,8 +44,10 @@ class VoiceGenerator:
         self,
         script: str,
         output_path: str,
-        voice_id: str = "inworld-voice-1",
+        voice_id: str = "Hana",
         model_id: str = "inworld-tts-1.5-max",
+        language: str = "en-US",
+        speaking_rate: float = 1.0,
         verbose: bool = True
     ) -> Dict:
         """
@@ -54,8 +56,10 @@ class VoiceGenerator:
         Args:
             script: Full script text (any length)
             output_path: Where to save final merged audio
-            voice_id: Inworld voice ID (from portal)
+            voice_id: Inworld voice name (Hana, Jack, etc)
             model_id: TTS model (inworld-tts-1.5-max or inworld-tts-1.5-mini)
+            language: Language code (en-US, es-ES, fr-FR, etc)
+            speaking_rate: Speed (0.5-2.0, default 1.0)
             verbose: Print progress
 
         Returns:
@@ -70,6 +74,7 @@ class VoiceGenerator:
             print(f"Script length: {len(script):,} characters")
             print(f"Voice: {voice_id}")
             print(f"Model: {model_id}")
+            print(f"Language: {language}")
             print(f"{'='*70}\n")
 
         # Step 1: Chunk script
@@ -87,6 +92,8 @@ class VoiceGenerator:
                 text=chunk,
                 voice_id=voice_id,
                 model_id=model_id,
+                language=language,
+                speaking_rate=speaking_rate,
                 chunk_index=i+1,
                 verbose=verbose
             )
@@ -198,6 +205,8 @@ class VoiceGenerator:
         text: str,
         voice_id: str,
         model_id: str,
+        language: str,
+        speaking_rate: float,
         chunk_index: int,
         verbose: bool = True
     ) -> str:
@@ -206,8 +215,10 @@ class VoiceGenerator:
 
         Args:
             text: Text to synthesize (max 2000 chars)
-            voice_id: Inworld voice ID
+            voice_id: Inworld voice name
             model_id: TTS model ID
+            language: Language code
+            speaking_rate: Speaking rate (0.5-2.0)
             chunk_index: Chunk number (for temp filename)
             verbose: Print progress
 
@@ -219,7 +230,7 @@ class VoiceGenerator:
         auth_bytes = auth_string.encode('ascii')
         base64_auth = base64.b64encode(auth_bytes).decode('ascii')
 
-        # Prepare request
+        # Prepare request (CORRECT FORMAT)
         headers = {
             'Authorization': f'Basic {base64_auth}',
             'Content-Type': 'application/json'
@@ -227,12 +238,13 @@ class VoiceGenerator:
 
         payload = {
             'text': text,
-            'voiceId': voice_id,
-            'modelId': model_id,
-            'audioConfig': {
-                'format': 'mp3',
-                'sampleRate': 22050
-            }
+            'voice_id': voice_id,  # Use voice_id not voiceId
+            'audio_config': {  # Use audio_config not audioConfig
+                'audio_encoding': 'MP3',  # Use audio_encoding not format
+                'speaking_rate': speaking_rate
+            },
+            'temperature': 1.1,
+            'model_id': model_id  # Use model_id not modelId
         }
 
         # Call Inworld TTS API
@@ -250,14 +262,24 @@ class VoiceGenerator:
                     print(f"   ❌ {error_msg}")
                 raise Exception(error_msg)
 
+            # Parse response (audioContent is base64 encoded)
+            response_data = response.json()
+            audio_content_base64 = response_data.get('audioContent')
+
+            if not audio_content_base64:
+                raise Exception("No audioContent in response")
+
+            # Decode base64 audio
+            audio_bytes = base64.b64decode(audio_content_base64)
+
             # Save audio to temp file
-            temp_dir = Config.TEMP_DIR if hasattr(Config, 'TEMP_DIR') else Path('backend/temp')
+            temp_dir = Config.TEMP_DIR if hasattr(Config, 'TEMP_DIR') else Path('temp')
             temp_dir.mkdir(parents=True, exist_ok=True)
 
             temp_file = temp_dir / f"voice_chunk_{chunk_index}_{int(time.time())}.mp3"
 
             with open(temp_file, 'wb') as f:
-                f.write(response.content)
+                f.write(audio_bytes)
 
             return str(temp_file)
 
@@ -316,8 +338,10 @@ class VoiceGenerator:
 def generate_voice(
     script: str,
     output_path: str,
-    voice_id: str = "inworld-voice-1",
+    voice_id: str = "Hana",
     model_id: str = "inworld-tts-1.5-max",
+    language: str = "en-US",
+    speaking_rate: float = 1.0,
     api_key: str = None,
     api_secret: str = None,
     verbose: bool = True
@@ -328,8 +352,10 @@ def generate_voice(
     Args:
         script: Full script text
         output_path: Where to save audio
-        voice_id: Inworld voice ID
+        voice_id: Inworld voice name (Hana, Jack, etc)
         model_id: TTS model (inworld-tts-1.5-max or inworld-tts-1.5-mini)
+        language: Language code (en-US, es-ES, etc)
+        speaking_rate: Speed (0.5-2.0)
         api_key: Inworld API Key (optional, loads from config)
         api_secret: Inworld API Secret (optional, loads from config)
         verbose: Print progress
@@ -343,5 +369,7 @@ def generate_voice(
         output_path=output_path,
         voice_id=voice_id,
         model_id=model_id,
+        language=language,
+        speaking_rate=speaking_rate,
         verbose=verbose
     )
