@@ -552,6 +552,38 @@
                     </div>
                 </div>
 
+                <!-- Niche Management Section -->
+                <div class="settings-section">
+                    <h3>🎯 Content Niche (Required)</h3>
+                    <p style="color: #666; margin-bottom: 15px;">Select your content category and writing style. This is required for AI generation.</p>
+
+                    <div class="input-group">
+                        <label>Select Active Niche</label>
+                        <select id="nicheSelect" class="input-large" onchange="selectNiche()">
+                            <option value="">-- Select a niche --</option>
+                        </select>
+                    </div>
+
+                    <div class="input-group" style="margin-top: 20px;">
+                        <label>Or Create New Niche</label>
+                        <input type="text" id="newNicheName" placeholder="Niche name (e.g., 'Trading Psychology', 'Tech Reviews')" class="input-large">
+                        <select id="newNicheLanguage" class="input-large" style="margin-top: 10px;">
+                            <option value="English">English</option>
+                            <option value="French">French</option>
+                            <option value="Spanish">Spanish</option>
+                            <option value="Arabic">Arabic</option>
+                            <option value="German">German</option>
+                            <option value="Portuguese">Portuguese</option>
+                        </select>
+                        <textarea id="newNicheGuidelines" rows="4" placeholder="Writing guidelines (min 100 characters)&#10;&#10;Example: Create engaging trading psychology content focused on mindset and discipline. Use simple language with real examples. Target audience: beginner traders. Tone: motivational but realistic." class="textarea-large" style="margin-top: 10px;"></textarea>
+                        <button onclick="createNiche()" class="btn-primary" style="margin-top: 10px;">➕ Create Niche</button>
+                    </div>
+
+                    <div id="nichesList" style="margin-top: 20px;">
+                        <!-- Existing niches will be listed here -->
+                    </div>
+                </div>
+
                 <!-- Formulas Section -->
                 <div class="settings-section">
                     <h3>📝 Title Formulas</h3>

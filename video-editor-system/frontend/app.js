@@ -20,7 +20,9 @@ const appState = {
     mediaFiles: [],
     titleFormulas: [],
     scriptFormulas: [],
-    mediaLibrary: []
+    mediaLibrary: [],
+    niches: [],
+    selectedNiche: ''
 };
 
 // Global video data
@@ -153,6 +155,14 @@ const loadSettings = () => {
                 updateScriptFormulaDropdown(settings.script_formulas);
             }
 
+            // Load selected niche
+            if (settings.selectedNiche) {
+                appState.selectedNiche = settings.selectedNiche;
+            }
+
+            // Load niches from backend
+            loadNiches();
+
             console.log('✅ Settings loaded from localStorage');
         }
     } catch (error) {
@@ -173,7 +183,8 @@ const saveSettings = () => {
                 unsplash: document.getElementById('unsplashKey')?.value || ''
             },
             title_formulas: appState.titleFormulas || [],
-            script_formulas: appState.scriptFormulas || []
+            script_formulas: appState.scriptFormulas || [],
+            selectedNiche: appState.selectedNiche || ''
         };
 
         localStorage.setItem('videoToolSettings', JSON.stringify(settings));
@@ -187,6 +198,165 @@ const saveSettings = () => {
         showNotification('❌ Failed to save: ' + error.message, 'error');
     }
 };
+
+// =============================================================================
+// NICHE MANAGEMENT SYSTEM
+// =============================================================================
+async function loadNiches() {
+    try {
+        const response = await fetch('/api/niches');
+        const data = await response.json();
+
+        if (data.niches) {
+            appState.niches = data.niches;
+            renderNichesList(data.niches);
+            updateNicheDropdown(data.niches);
+        }
+    } catch (error) {
+        console.error('Failed to load niches:', error);
+    }
+}
+
+async function createNiche() {
+    const name = document.getElementById('newNicheName')?.value.trim();
+    const language = document.getElementById('newNicheLanguage')?.value;
+    const guidelines = document.getElementById('newNicheGuidelines')?.value.trim();
+
+    if (!name || !language || !guidelines) {
+        showNotification('⚠️ Please fill all niche fields', 'warning');
+        return;
+    }
+
+    if (guidelines.length < 100) {
+        showNotification('⚠️ Writing guidelines must be at least 100 characters', 'warning');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/niches', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                name: name,
+                language: language,
+                writing_guidelines: guidelines
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to create niche');
+        }
+
+        showNotification('✅ Niche created successfully!', 'success');
+
+        // Clear inputs
+        document.getElementById('newNicheName').value = '';
+        document.getElementById('newNicheGuidelines').value = '';
+
+        // Reload niches
+        await loadNiches();
+
+        // Auto-select the new niche
+        appState.selectedNiche = data.niche.id;
+        const settings = JSON.parse(localStorage.getItem('videoToolSettings') || '{}');
+        settings.selectedNiche = data.niche.id;
+        localStorage.setItem('videoToolSettings', JSON.stringify(settings));
+
+        updateNicheDropdown(appState.niches);
+
+    } catch (error) {
+        console.error('Create niche failed:', error);
+        showNotification('❌ Failed to create niche: ' + error.message, 'error');
+    }
+}
+
+function selectNiche() {
+    const select = document.getElementById('nicheSelect');
+    const nicheId = select?.value;
+
+    if (nicheId) {
+        appState.selectedNiche = nicheId;
+        const settings = JSON.parse(localStorage.getItem('videoToolSettings') || '{}');
+        settings.selectedNiche = nicheId;
+        localStorage.setItem('videoToolSettings', JSON.stringify(settings));
+
+        showNotification('✅ Niche selected!', 'success');
+    }
+}
+
+async function deleteNiche(nicheId) {
+    if (!confirm('Delete this niche? This cannot be undone.')) return;
+
+    try {
+        const response = await fetch(`/api/niches/${nicheId}`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to delete niche');
+        }
+
+        showNotification('✅ Niche deleted', 'success');
+
+        // If this was the selected niche, clear selection
+        if (appState.selectedNiche === nicheId) {
+            appState.selectedNiche = '';
+            const settings = JSON.parse(localStorage.getItem('videoToolSettings') || '{}');
+            settings.selectedNiche = '';
+            localStorage.setItem('videoToolSettings', JSON.stringify(settings));
+        }
+
+        // Reload niches
+        await loadNiches();
+
+    } catch (error) {
+        console.error('Delete niche failed:', error);
+        showNotification('❌ Failed to delete niche: ' + error.message, 'error');
+    }
+}
+
+function renderNichesList(niches) {
+    const container = document.getElementById('nichesList');
+    if (!container) return;
+
+    if (!niches || niches.length === 0) {
+        container.innerHTML = '<p style="color: #888;">No niches created yet. Create one above to get started!</p>';
+        return;
+    }
+
+    container.innerHTML = `
+        <h4 style="margin-bottom: 10px;">Existing Niches:</h4>
+        ${niches.map(n => `
+            <div class="formula-item" style="background: rgba(102, 126, 234, 0.1); padding: 15px; margin: 10px 0; border-radius: 8px; border-left: 4px solid ${appState.selectedNiche === n.id ? '#667eea' : '#ccc'};">
+                <div style="display: flex; justify-content: space-between; align-items: start;">
+                    <div style="flex: 1;">
+                        <strong style="color: #667eea;">${n.name}</strong>
+                        ${appState.selectedNiche === n.id ? ' <span style="background: #667eea; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">ACTIVE</span>' : ''}
+                        <p style="color: #aaa; margin: 5px 0; font-size: 13px;">Language: ${n.language}</p>
+                        <p style="color: #999; font-size: 12px; margin-top: 8px;">${n.writing_guidelines.substring(0, 150)}${n.writing_guidelines.length > 150 ? '...' : ''}</p>
+                    </div>
+                    <button onclick="deleteNiche('${n.id}')" class="btn-secondary" style="margin-left: 10px;">🗑️</button>
+                </div>
+            </div>
+        `).join('')}
+    `;
+}
+
+function updateNicheDropdown(niches) {
+    const dropdown = document.getElementById('nicheSelect');
+    if (!dropdown) return;
+
+    dropdown.innerHTML = '<option value="">-- Select a niche --</option>';
+
+    if (niches && niches.length > 0) {
+        niches.forEach(n => {
+            const selected = appState.selectedNiche === n.id ? 'selected' : '';
+            dropdown.innerHTML += `<option value="${n.id}" ${selected}>${n.name} (${n.language})</option>`;
+        });
+    }
+}
 
 // =============================================================================
 // FORMULA MANAGEMENT SYSTEM
