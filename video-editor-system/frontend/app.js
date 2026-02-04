@@ -22,7 +22,9 @@ const appState = {
     scriptFormulas: [],
     mediaLibrary: [],
     niches: [],
-    selectedNiche: ''
+    selectedNiche: '',
+    lastGenerationTime: 0,  // Track last API call for rate limiting
+    generationCooldown: 15000  // 15 seconds cooldown between generations
 };
 
 // Global video data
@@ -667,6 +669,17 @@ async function generateScript() {
         return;
     }
 
+    // CHECK RATE LIMIT COOLDOWN
+    const now = Date.now();
+    const timeSinceLastGeneration = now - appState.lastGenerationTime;
+    const remainingCooldown = appState.generationCooldown - timeSinceLastGeneration;
+
+    if (appState.lastGenerationTime > 0 && remainingCooldown > 0) {
+        const secondsLeft = Math.ceil(remainingCooldown / 1000);
+        showNotification(`⏳ Please wait ${secondsLeft} seconds to avoid rate limits (Free tier: 5 videos/min max)`, 'warning');
+        return;
+    }
+
     const lengthSelect = document.getElementById('scriptLength');
     const selectedLength = lengthSelect ? parseInt(lengthSelect.value) : 10000;
 
@@ -694,6 +707,9 @@ async function generateScript() {
             resultBox.innerHTML = `<p>🤖 Generating script (3-Chunk Mode)...</p>
                 <p style="color: #888; font-size: 0.9em;">Using 3 API calls with user formula. Please wait...</p>`;
         }
+
+        // Update last generation time BEFORE making the call
+        appState.lastGenerationTime = Date.now();
 
             const response = await fetch('/api/generate-script', {
                 method: 'POST',
