@@ -616,7 +616,7 @@ COMPLETE NOW:"""
         script = None
         validation_result = None
         attempt = 0
-        model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        model = genai.GenerativeModel('gemini-2.5-flash')
 
         while attempt < Config.MAX_SCRIPT_RETRIES:
             attempt += 1

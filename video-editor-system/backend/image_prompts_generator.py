@@ -36,7 +36,7 @@ def generate_image_prompts(script_text, image_formula, count, gemini_api_key, st
 
     # Configure Gemini
     genai.configure(api_key=gemini_api_key)
-    model = genai.GenerativeModel('gemini-2.0-flash-exp')
+    model = genai.GenerativeModel('gemini-2.5-flash')
 
     # Replace {style} placeholder in formula
     if style:

@@ -26,7 +26,7 @@ class TitleGenerator:
             raise ValueError("Gemini API key not configured. Please set it in Settings.")
 
         genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        self.model = genai.GenerativeModel('gemini-2.5-flash')
 
     def generate_title(self, topic, niche_id, count=1, verbose=False):
         """
