@@ -54,12 +54,24 @@ class Config:
         saved = cls._load_saved_config()
         return saved.get('replicate_api_token') or os.getenv('REPLICATE_API_TOKEN', '')
 
+    @classmethod
+    def get_inworld_api_key(cls):
+        """Get Inworld API Key from saved config or environment"""
+        saved = cls._load_saved_config()
+        return saved.get('inworld_api_key') or os.getenv('INWORLD_API_KEY', '')
+
+    @classmethod
+    def get_inworld_api_secret(cls):
+        """Get Inworld API Secret from saved config or environment"""
+        saved = cls._load_saved_config()
+        return saved.get('inworld_api_secret') or os.getenv('INWORLD_API_SECRET', '')
+
     # For backward compatibility, make them accessible as class attributes
     GEMINI_API_KEY = property(lambda self: self.get_gemini_api_key())
     REPLICATE_API_TOKEN = property(lambda self: self.get_replicate_api_token())
 
     @classmethod
-    def save_api_config(cls, gemini_key=None, replicate_token=None):
+    def save_api_config(cls, gemini_key=None, replicate_token=None, inworld_key=None, inworld_secret=None):
         """Save API keys to config file"""
         cls.DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -77,6 +89,10 @@ class Config:
             config['gemini_api_key'] = gemini_key
         if replicate_token:
             config['replicate_api_token'] = replicate_token
+        if inworld_key:
+            config['inworld_api_key'] = inworld_key
+        if inworld_secret:
+            config['inworld_api_secret'] = inworld_secret
 
         # Save to file
         with open(cls.API_CONFIG_FILE, 'w') as f:
@@ -98,6 +114,7 @@ class Config:
         return {
             'gemini_configured': bool(cls.get_gemini_api_key()),
             'replicate_configured': bool(cls.get_replicate_api_token()),
+            'inworld_configured': bool(cls.get_inworld_api_key() and cls.get_inworld_api_secret()),
             'config_file_exists': cls.API_CONFIG_FILE.exists()
         }
 

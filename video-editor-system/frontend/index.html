@@ -519,12 +519,21 @@
                     </div>
 
                     <div class="input-group">
-                        <label>Inworld AI API Key (Optional - for AI voices)</label>
+                        <label>Inworld AI API Key (Required for AI voices)</label>
                         <div class="password-input">
                             <input type="password" id="inworldKey" placeholder="Enter Inworld API key..." class="input-large">
                             <button onclick="togglePassword('inworldKey')" class="btn-toggle">👁️</button>
                         </div>
-                        <span class="hint">Get from: https://studio.inworld.ai/</span>
+                        <span class="hint">Get from: https://studio.inworld.ai/ (Workspace Settings → API Keys)</span>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Inworld AI API Secret (Required for AI voices)</label>
+                        <div class="password-input">
+                            <input type="password" id="inworldSecret" placeholder="Enter Inworld API secret..." class="input-large">
+                            <button onclick="togglePassword('inworldSecret')" class="btn-toggle">👁️</button>
+                        </div>
+                        <span class="hint">Get from: https://studio.inworld.ai/ (Workspace Settings → API Keys)</span>
                     </div>
 
                     <div class="input-group">

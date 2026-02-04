@@ -1308,14 +1308,18 @@ def save_api_config():
 
         gemini_key = data.get('gemini_api_key')
         replicate_token = data.get('replicate_api_token')
+        inworld_key = data.get('inworld_api_key')
+        inworld_secret = data.get('inworld_api_secret')
 
-        if not gemini_key and not replicate_token:
+        if not gemini_key and not replicate_token and not inworld_key and not inworld_secret:
             return jsonify({'error': 'At least one API key must be provided'}), 400
 
         # Save configuration
         Config.save_api_config(
             gemini_key=gemini_key,
-            replicate_token=replicate_token
+            replicate_token=replicate_token,
+            inworld_key=inworld_key,
+            inworld_secret=inworld_secret
         )
 
         return jsonify({
@@ -1820,24 +1824,32 @@ def editor_process_route():
 
 
 @app.route('/api/generate-voice', methods=['POST'])
-def generate_voice():
+def generate_voice_route():
     """
-    Generate AI voice using text-to-speech
+    Generate AI voice using Inworld AI TTS
 
     Request JSON:
         {
             'script': 'Text to convert to speech',
-            'voice': 'voice_name',  # optional
-            'rate': 1.0  # optional, speaking rate
+            'voice_id': 'inworld-voice-1',  # optional, Inworld voice ID
+            'model_id': 'inworld-tts-1.5-max'  # optional, TTS model (max or mini)
         }
 
     Response:
         {
             'success': True,
             'audio_url': '/api/download/voice_xxx.mp3',
-            'duration': 123.45
+            'audio_filename': 'voice_xxx.mp3',
+            'duration_seconds': 123.45,
+            'chunks_count': 5,
+            'generation_time': 67.8
         }
     """
+    from voice_generator import VoiceGenerator
+    from config import Config
+    import time
+    import os
+
     try:
         data = request.get_json()
 
@@ -1845,29 +1857,62 @@ def generate_voice():
             return jsonify({'error': 'No data provided'}), 400
 
         script = data.get('script', '').strip()
-        voice = data.get('voice', 'en-US-Neural2-C')
-        rate = float(data.get('rate', 1.0))
+        voice_id = data.get('voice_id', 'inworld-voice-1')
+        model_id = data.get('model_id', 'inworld-tts-1.5-max')
 
         if not script:
             return jsonify({'error': 'Script text is required'}), 400
 
-        # For now, return a placeholder response
-        # TODO: Integrate with actual TTS service (Google Cloud TTS, ElevenLabs, etc.)
-        # Inworld AI doesn't have a direct TTS API - it's for game characters
-        # Better alternatives: Google Cloud TTS, Amazon Polly, ElevenLabs
+        # Validate Inworld API credentials
+        api_key = Config.get_inworld_api_key()
+        api_secret = Config.get_inworld_api_secret()
+
+        if not api_key or not api_secret:
+            return jsonify({
+                'error': 'Inworld API credentials not configured. Please add your Inworld API Key and Secret in Settings.'
+            }), 500
+
+        # Generate output filename
+        timestamp = int(time.time())
+        audio_filename = f"voice_{timestamp}.mp3"
+        audio_path = os.path.join(OUTPUT_FOLDER, audio_filename)
+
+        print(f"\n🎙️ Starting voice generation...")
+        print(f"   Script length: {len(script):,} characters")
+        print(f"   Voice ID: {voice_id}")
+        print(f"   Model: {model_id}")
+        print(f"   Output: {audio_filename}")
+
+        # Generate voice using Inworld AI TTS
+        generator = VoiceGenerator(api_key=api_key, api_secret=api_secret)
+        result = generator.generate_voice(
+            script=script,
+            output_path=audio_path,
+            voice_id=voice_id,
+            model_id=model_id,
+            verbose=True
+        )
 
         return jsonify({
-            'success': False,
-            'error': 'Voice generation requires TTS service integration (Google Cloud TTS, ElevenLabs, or Azure TTS). Inworld AI is for game characters, not TTS. Please integrate one of these services in the backend.',
-            'suggested_services': [
-                'Google Cloud Text-to-Speech (https://cloud.google.com/text-to-speech)',
-                'ElevenLabs (https://elevenlabs.io)',
-                'Amazon Polly (https://aws.amazon.com/polly/)',
-                'Azure Cognitive Services Speech (https://azure.microsoft.com/en-us/services/cognitive-services/text-to-speech/)'
-            ]
-        }), 501  # 501 Not Implemented
+            'success': True,
+            'audio_url': f'/api/download/{audio_filename}',
+            'audio_filename': audio_filename,
+            'audio_path': audio_path,
+            'duration_seconds': result['duration_seconds'],
+            'chunks_count': result['chunks_count'],
+            'generation_time': result['generation_time']
+        })
 
+    except ValueError as e:
+        # Configuration or validation error
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
     except Exception as e:
+        # Other errors (API errors, network errors, etc.)
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'success': False,
             'error': str(e)

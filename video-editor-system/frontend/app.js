@@ -142,6 +142,7 @@ const loadSettings = () => {
                 const geminiKey = document.getElementById('geminiKey');
                 const replicateKey = document.getElementById('replicateKey');
                 const inworldKey = document.getElementById('inworldKey');
+                const inworldSecret = document.getElementById('inworldSecret');
                 const pexelsKey = document.getElementById('pexelsKey');
                 const pixabayKey = document.getElementById('pixabayKey');
                 const unsplashKey = document.getElementById('unsplashKey');
@@ -149,6 +150,7 @@ const loadSettings = () => {
                 if (geminiKey) geminiKey.value = settings.api_keys.gemini || '';
                 if (replicateKey) replicateKey.value = settings.api_keys.replicate || '';
                 if (inworldKey) inworldKey.value = settings.api_keys.inworld || '';
+                if (inworldSecret) inworldSecret.value = settings.api_keys.inworld_secret || '';
                 if (pexelsKey) pexelsKey.value = settings.api_keys.pexels || '';
                 if (pixabayKey) pixabayKey.value = settings.api_keys.pixabay || '';
                 if (unsplashKey) unsplashKey.value = settings.api_keys.unsplash || '';
@@ -182,13 +184,14 @@ const loadSettings = () => {
     }
 };
 
-const saveSettings = () => {
+const saveSettings = async () => {
     try {
         const settings = {
             api_keys: {
                 gemini: document.getElementById('geminiKey')?.value || '',
                 replicate: document.getElementById('replicateKey')?.value || '',
                 inworld: document.getElementById('inworldKey')?.value || '',
+                inworld_secret: document.getElementById('inworldSecret')?.value || '',
                 pexels: document.getElementById('pexelsKey')?.value || '',
                 pixabay: document.getElementById('pixabayKey')?.value || '',
                 unsplash: document.getElementById('unsplashKey')?.value || ''
@@ -198,8 +201,29 @@ const saveSettings = () => {
             selectedNiche: appState.selectedNiche || ''
         };
 
+        // Save to localStorage
         localStorage.setItem('videoToolSettings', JSON.stringify(settings));
         appState.settings = settings;
+
+        // Also save to backend API config
+        try {
+            const response = await fetch('/api/config', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    gemini_api_key: settings.api_keys.gemini,
+                    replicate_api_token: settings.api_keys.replicate,
+                    inworld_api_key: settings.api_keys.inworld,
+                    inworld_api_secret: settings.api_keys.inworld_secret
+                })
+            });
+
+            if (!response.ok) {
+                console.warn('Failed to save to backend:', await response.text());
+            }
+        } catch (error) {
+            console.warn('Failed to save to backend:', error);
+        }
 
         showNotification('✅ Settings saved successfully!', 'success');
         closeSettings();
