@@ -739,9 +739,15 @@ async function generateScript() {
             // Store script
             window.videoData.script = data.script;
 
-            // Display script
+            // DON'T display full script (can be very long - just show success message)
             if (resultBox) {
-                resultBox.innerHTML = `<pre style="white-space: pre-wrap; font-family: 'Georgia', serif; line-height: 1.6;">${escapeHtml(data.script)}</pre>`;
+                resultBox.innerHTML = `
+                    <div style="text-align: center; padding: 30px; background: linear-gradient(135deg, rgba(76, 175, 80, 0.1), rgba(33, 150, 243, 0.1)); border-radius: 12px; margin: 20px 0;">
+                        <div style="font-size: 48px; margin-bottom: 10px;">✅</div>
+                        <h3 style="color: #4CAF50; margin-bottom: 10px;">Script Generated Successfully!</h3>
+                        <p style="color: #888; margin-bottom: 20px;">Your script is ready for download below.</p>
+                    </div>
+                `;
             }
 
             // Display stats
@@ -750,19 +756,19 @@ async function generateScript() {
                 statsBox.innerHTML = `
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
                         <div>
-                            <strong>Length:</strong><br>${data.length.toLocaleString()} chars
+                            <strong>📏 Length:</strong><br>${data.length.toLocaleString()} chars
                         </div>
                         <div>
-                            <strong>Words:</strong><br>${data.words.toLocaleString()}
+                            <strong>📝 Words:</strong><br>${data.words.toLocaleString()}
                         </div>
                         <div>
-                            <strong>Chunks Used:</strong><br>${data.chunks_used} (30/40/30)
+                            <strong>📦 Chunks:</strong><br>${data.chunks_used} chunks (30/40/30)
                         </div>
                         <div>
-                            <strong>Time:</strong><br>${data.time.toFixed(1)}s
+                            <strong>⏱️ Time:</strong><br>${data.time.toFixed(1)}s
                         </div>
                         <div>
-                            <strong>Valid:</strong><br>${data.validation?.valid ? '✅ Yes' : '⚠️ No'}
+                            <strong>📄 File:</strong><br>${data.script_filename || 'script.txt'}
                         </div>
                     </div>
                 `;

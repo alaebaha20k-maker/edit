@@ -2,7 +2,7 @@
 """
 Script Generator - 3-CHUNK ARCHITECTURE (PRODUCTION)
 - ALWAYS uses 3 chunks (30/40/30 split)
-- Loads user's formula from settings
+- Uses niche writing guidelines for high-quality output
 - Total API calls: 3 (one per chunk)
 - Rate limit safe: 20 calls/min ÷ 3 = 6-7 videos/min max
 """
@@ -13,7 +13,6 @@ import google.generativeai as genai
 from typing import Dict, List
 from config import Config
 from niche_manager import NicheManager
-from settings_manager import SettingsManager
 from chunk_planner import ChunkPlanner
 
 
@@ -60,8 +59,6 @@ class ScriptGenerator3Chunk:
         Returns:
             Dict with script, stats, validation info
         """
-        from settings_manager import SettingsManager
-
         start_time = time.time()
 
         # Validate length
@@ -75,8 +72,8 @@ class ScriptGenerator3Chunk:
         if not niche:
             raise ValueError(f"Niche not found: {niche_id}")
 
-        # Load user's script formula from settings
-        script_formula = SettingsManager.load_formula('script')
+        # Use niche writing guidelines (formulas removed - guidelines define the writing style)
+        writing_guidelines = niche['writing_guidelines']
 
         if verbose:
             print(f"\n{'='*70}")
@@ -110,7 +107,7 @@ class ScriptGenerator3Chunk:
             prompt = self._build_chunk_prompt(
                 title=title,
                 niche=niche,
-                formula=script_formula,
+                writing_guidelines=writing_guidelines,
                 chunk=chunk,
                 previous_context=previous_context
             )
@@ -189,7 +186,7 @@ class ScriptGenerator3Chunk:
         self,
         title: str,
         niche: Dict,
-        formula: str,
+        writing_guidelines: str,
         chunk: 'ChunkConfig',
         previous_context: str
     ) -> str:
@@ -202,12 +199,6 @@ class ScriptGenerator3Chunk:
         product = niche.get('product', 'our platform')
         language = niche['language']
         niche_name = niche['name']
-
-        # Fill formula placeholders
-        formula_filled = formula.replace('{title}', title)
-        formula_filled = formula_filled.replace('{niche}', niche_name)
-        formula_filled = formula_filled.replace('{language}', language)
-        formula_filled = formula_filled.replace('{target_length}', str(chunk.target_chars))
 
         # Role-specific instructions
         if chunk.role == "HOOK_AND_FRAMEWORK":
@@ -259,8 +250,8 @@ LANGUAGE: {language}
 
 {role_instruction}
 
-USER'S SCRIPT FORMULA (follow this structure):
-{formula_filled}
+WRITING GUIDELINES (follow this style and approach):
+{writing_guidelines}
 
 ════════════════════════════════════════════════════════════
 CRITICAL OUTPUT RULES (MANDATORY)
