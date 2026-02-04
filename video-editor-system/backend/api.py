@@ -1041,6 +1041,7 @@ def generate_images():
         title = data.get('title')
         script = data.get('script')
         style_id = data.get('style_id')
+        count = data.get('count', 6)  # Default to 6 if not specified
 
         if not title or not script or not style_id:
             return jsonify({'error': 'Missing required fields: title, script, style_id'}), 400
@@ -1059,9 +1060,9 @@ def generate_images():
         if any('REPLICATE' in e for e in errors):
             return jsonify({'error': 'Replicate API token not configured'}), 500
 
-        # Generate images
+        # Generate images with user-specified count
         generator = ImageGenerator()
-        image_urls = generator.generate_images(title, script, style_id)
+        image_urls = generator.generate_images(title, script, style_id, count=count)
 
         return jsonify({
             'success': True,

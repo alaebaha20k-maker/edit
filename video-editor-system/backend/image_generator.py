@@ -24,18 +24,19 @@ class ImageGenerator:
         import os
         os.environ['REPLICATE_API_TOKEN'] = api_token
 
-    def generate_images(self, title: str, script: str, style_id: str) -> List[str]:
+    def generate_images(self, title: str, script: str, style_id: str, count: int = None) -> List[str]:
         """
-        Generate 6 images for video with rate limit handling
+        Generate images for video with rate limit handling
         For Replicate accounts with < $5 credit: 6 requests per minute max
 
         Args:
             title: Video title
             script: Generated script text
-            style_id: Image style ID with 6 prompt templates
+            style_id: Image style ID with prompt templates
+            count: Number of images to generate (default: use all prompts from style)
 
         Returns:
-            List of image URLs (may be less than 6 if some fail)
+            List of image URLs (may be less than requested if some fail)
         """
         import time
 
@@ -44,7 +45,14 @@ class ImageGenerator:
         if not style:
             raise ValueError(f"Image style not found: {style_id}")
 
-        print(f"\n🎨 Generating {Config.IMAGES_PER_VIDEO} images")
+        # Determine how many images to generate
+        max_images = len(style['prompts'])
+        if count is None:
+            count = max_images
+        else:
+            count = min(count, max_images)  # Can't generate more than available prompts
+
+        print(f"\n🎨 Generating {count} images")
         print(f"   Style: {style['name']}")
 
         # CRITICAL: For < $5 accounts, limit is 6 req/min
@@ -52,19 +60,19 @@ class ImageGenerator:
         DELAY_BETWEEN_REQUESTS = 11  # 11 seconds = safe margin
 
         print(f"⏱️  Rate limit mode: {DELAY_BETWEEN_REQUESTS}s delay between images")
-        print(f"⏱️  Estimated time: ~{DELAY_BETWEEN_REQUESTS * (Config.IMAGES_PER_VIDEO - 1)}s total\n")
+        print(f"⏱️  Estimated time: ~{DELAY_BETWEEN_REQUESTS * (count - 1)}s total\n")
 
         # Extract variables from title and script
         variables = self._extract_variables(title, script)
         print(f"   Variables extracted: {len(variables)} items\n")
 
-        # Generate each image with rate limiting
+        # Generate each image with rate limiting (only generate 'count' images)
         image_urls = []
-        for i, prompt_template in enumerate(style['prompts']):
+        for i, prompt_template in enumerate(style['prompts'][:count]):  # Only use first 'count' prompts
             # Replace variables in prompt
             final_prompt = self._replace_variables(prompt_template, variables)
 
-            print(f"🎨 Generating image {i+1}/{Config.IMAGES_PER_VIDEO}...")
+            print(f"🎨 Generating image {i+1}/{count}...")
             print(f"   Prompt: {final_prompt[:80]}...")
 
             # Generate image with retry logic
@@ -77,11 +85,11 @@ class ImageGenerator:
                 print(f"   ⚠️  Continuing with remaining images...")
 
             # Wait between requests to respect rate limit (except after last image)
-            if i < len(style['prompts']) - 1:
+            if i < count - 1:
                 print(f"   ⏳ Waiting {DELAY_BETWEEN_REQUESTS}s before next image...\n")
                 time.sleep(DELAY_BETWEEN_REQUESTS)
 
-        print(f"\n✅ Generated {len(image_urls)}/{Config.IMAGES_PER_VIDEO} images successfully!")
+        print(f"\n✅ Generated {len(image_urls)}/{count} images successfully!")
 
         if len(image_urls) == 0:
             raise Exception("Failed to generate any images. Please check your Replicate API token and rate limits.")
