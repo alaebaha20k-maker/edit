@@ -326,9 +326,31 @@
                 </div>
             </section>
 
-            <!-- Step 5: Quality & Processing -->
+            <!-- Step 5: Final Video Assembly -->
             <section class="step">
-                <h3><span class="step-number">5</span> Video Quality & Processing</h3>
+                <h3><span class="step-number">5</span> Final Video Assembly</h3>
+
+                <div class="assembly-info" style="background: linear-gradient(135deg, rgba(76, 175, 80, 0.1), rgba(33, 150, 243, 0.1)); padding: 20px; border-radius: 12px; margin-bottom: 20px;">
+                    <h4 style="margin-bottom: 10px;">🎬 Smart Video Duration Matching</h4>
+                    <p style="color: #666; margin-bottom: 10px;">Your final video will automatically match your voice duration exactly.</p>
+                    <div id="assemblyStats" style="display: none;">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-top: 15px;">
+                            <div>
+                                <strong>🎙️ Voice Duration:</strong><br>
+                                <span id="voiceDurationDisplay">Not generated yet</span>
+                            </div>
+                            <div>
+                                <strong>🎨 Media Items:</strong><br>
+                                <span id="mediaCountDisplay">0</span>
+                            </div>
+                            <div>
+                                <strong>⏱️ Per Media:</strong><br>
+                                <span id="perMediaDuration">-</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="quality-selector">
                     <label class="quality-option">
                         <input type="radio" name="quality" value="720" checked>
@@ -348,20 +370,20 @@
                     </label>
                 </div>
 
-                <button onclick="processVideo()" class="btn-primary btn-large">🚀 GENERATE VIDEO</button>
+                <button onclick="assembleVideo()" class="btn-primary btn-large">🚀 ASSEMBLE FINAL VIDEO</button>
 
                 <div id="videoProgress" class="progress-container" style="display: none;">
                     <div class="progress-header">
-                        <h4>⏳ Processing Video...</h4>
+                        <h4>⏳ Assembling Video...</h4>
                     </div>
                     <div class="progress-bar">
                         <div id="progressFill" class="progress-fill"></div>
                     </div>
-                    <div id="progressText" class="progress-text">Initializing...</div>
+                    <div id="progressText" class="progress-text">Preparing media clips...</div>
                 </div>
 
                 <div id="videoResult" class="result-container" style="display: none;">
-                    <h3>✅ Video Generated Successfully!</h3>
+                    <h3>✅ Video Assembled Successfully!</h3>
                     <div id="videoInfo" class="video-info"></div>
                     <button id="downloadBtn" class="btn-success btn-large">📥 Download Video</button>
                 </div>

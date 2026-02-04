@@ -1919,6 +1919,129 @@ def generate_voice_route():
         }), 500
 
 
+@app.route('/api/assemble-video', methods=['POST'])
+def assemble_video_route():
+    """
+    Assemble final video from voice + media
+    Video duration will match voice duration exactly
+
+    Request JSON:
+        {
+            'voice_path': 'output/voice_123.mp3',  # Path to voice audio
+            'media_paths': [                        # Media files in order
+                'output/images/img1.jpg',
+                'output/images/img2.jpg',
+                'uploads/video1.mp4'
+            ],
+            'title': 'My Video',                   # Optional title for filename
+            'resolution': '1920x1080'              # Optional resolution
+        }
+
+    Response:
+        {
+            'success': True,
+            'output_path': 'output/final_video_123.mp4',
+            'output_filename': 'final_video_123.mp4',
+            'duration_seconds': 780.5,
+            'duration_formatted': '13m 0s',
+            'file_size_mb': 125.4,
+            'processing_time': 45.2,
+            'media_count': 12,
+            'voice_duration': 780.5
+        }
+    """
+    from video_assembler import VideoAssembler
+    import time
+
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        voice_path = data.get('voice_path')
+        media_paths = data.get('media_paths', [])
+        title = data.get('title', 'video')
+        resolution = data.get('resolution', '1920x1080')
+
+        if not voice_path:
+            return jsonify({'error': 'voice_path is required'}), 400
+
+        if not os.path.exists(voice_path):
+            return jsonify({'error': f'Voice file not found: {voice_path}'}), 404
+
+        if not media_paths or len(media_paths) == 0:
+            return jsonify({'error': 'At least one media file is required'}), 400
+
+        # Verify all media files exist
+        missing_files = []
+        for media_path in media_paths:
+            if not os.path.exists(media_path):
+                missing_files.append(media_path)
+
+        if missing_files:
+            return jsonify({
+                'error': f'Media files not found: {", ".join(missing_files)}'
+            }), 404
+
+        # Generate output filename
+        import re
+        safe_title = re.sub(r'[^a-z0-9]', '_', title.lower())[:50]
+        timestamp = int(time.time())
+        output_filename = f"final_{safe_title}_{timestamp}.mp4"
+        output_path = os.path.join(OUTPUT_FOLDER, output_filename)
+
+        print(f"\n🎬 Starting video assembly...")
+        print(f"   Voice: {voice_path}")
+        print(f"   Media files: {len(media_paths)}")
+        print(f"   Output: {output_filename}")
+
+        # Assemble video
+        assembler = VideoAssembler(
+            output_dir=OUTPUT_FOLDER,
+            temp_dir=TEMP_FOLDER
+        )
+
+        result = assembler.assemble_final_video(
+            voice_path=voice_path,
+            media_paths=media_paths,
+            output_path=output_path,
+            resolution=resolution,
+            verbose=True
+        )
+
+        # Format duration for response
+        duration_minutes = int(result['duration_seconds'] // 60)
+        duration_seconds = int(result['duration_seconds'] % 60)
+        duration_formatted = f"{duration_minutes}m {duration_seconds}s"
+
+        return jsonify({
+            'success': True,
+            'output_path': output_path,
+            'output_filename': output_filename,
+            'download_url': f'/api/download/{output_filename}',
+            'duration_seconds': result['duration_seconds'],
+            'duration_formatted': duration_formatted,
+            'file_size_mb': result['file_size_mb'],
+            'processing_time': result['processing_time'],
+            'media_count': result['media_count'],
+            'voice_duration': result['voice_duration']
+        })
+
+    except ValueError as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 # =============================================================================
 # ERROR HANDLERS
 # =============================================================================

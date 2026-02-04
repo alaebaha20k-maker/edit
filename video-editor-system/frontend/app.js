@@ -930,12 +930,51 @@ async function generateVoice() {
 
         showNotification(`✅ Voice generated! Duration: ${Math.floor(data.duration_seconds / 60)}m ${Math.floor(data.duration_seconds % 60)}s`, 'success');
 
+        // Update assembly stats
+        updateAssemblyStats(data.duration_seconds);
+
     } catch (error) {
         console.error('Voice generation failed:', error);
         if (progressBox) {
             progressBox.innerHTML = `<p>❌ Error: ${error.message}</p>`;
         }
         showNotification('❌ Voice generation failed: ' + error.message, 'error');
+    }
+}
+
+// Update assembly stats display
+function updateAssemblyStats(voiceDuration) {
+    const statsSection = document.getElementById('assemblyStats');
+    const voiceDurationDisplay = document.getElementById('voiceDurationDisplay');
+    const mediaCountDisplay = document.getElementById('mediaCountDisplay');
+    const perMediaDuration = document.getElementById('perMediaDuration');
+
+    if (statsSection) {
+        statsSection.style.display = 'block';
+    }
+
+    // Format voice duration
+    const minutes = Math.floor(voiceDuration / 60);
+    const seconds = Math.floor(voiceDuration % 60);
+    if (voiceDurationDisplay) {
+        voiceDurationDisplay.textContent = `${minutes}m ${seconds}s`;
+    }
+
+    // Count media items from library
+    const mediaLibrary = window.videoData.mediaLibrary || [];
+    const mediaCount = mediaLibrary.length;
+
+    if (mediaCountDisplay) {
+        mediaCountDisplay.textContent = mediaCount;
+    }
+
+    if (perMediaDuration && mediaCount > 0) {
+        const durationPerMedia = voiceDuration / mediaCount;
+        const perMin = Math.floor(durationPerMedia / 60);
+        const perSec = Math.floor(durationPerMedia % 60);
+        perMediaDuration.textContent = `${perMin}m ${perSec}s`;
+    } else if (perMediaDuration) {
+        perMediaDuration.textContent = 'Add media first';
     }
 }
 
@@ -1841,14 +1880,29 @@ async function editorExport() {
 // =============================================================================
 // PROBLEM 7: PROCESS VIDEO (FIXED)
 // =============================================================================
-async function processVideo() {
+// =============================================================================
+// VIDEO ASSEMBLY - Match voice duration exactly
+// =============================================================================
+async function assembleVideo() {
     const title = document.getElementById('titleInput')?.value || window.videoData.title;
-    const script = document.getElementById('scriptInput')?.value || window.videoData.script;
+    const voicePath = window.videoData.audioPath;
+    const mediaLibrary = window.videoData.mediaLibrary || [];
     const qualityRadio = document.querySelector('input[name="quality"]:checked');
     const quality = qualityRadio ? qualityRadio.value : '720';
 
-    if (!title || !script) {
-        showNotification('⚠️ Please provide at least a title and script', 'warning');
+    // Validation
+    if (!title) {
+        showNotification('⚠️ Please generate a title first', 'warning');
+        return;
+    }
+
+    if (!voicePath) {
+        showNotification('⚠️ Please generate voice first (Step 2)', 'warning');
+        return;
+    }
+
+    if (mediaLibrary.length === 0) {
+        showNotification('⚠️ Please add media (images/videos) first (Step 3)', 'warning');
         return;
     }
 
@@ -1856,7 +1910,10 @@ async function processVideo() {
     const progressFill = document.getElementById('progressFill');
     const progressText = document.getElementById('progressText');
     const resultContainer = document.getElementById('videoResult');
+    const videoInfo = document.getElementById('videoInfo');
+    const downloadBtn = document.getElementById('downloadBtn');
 
+    // Show progress
     if (progressContainer) {
         progressContainer.style.display = 'block';
     }
@@ -1867,14 +1924,122 @@ async function processVideo() {
         progressFill.style.width = '10%';
     }
     if (progressText) {
-        progressText.textContent = 'Initializing video processing...';
+        progressText.textContent = 'Preparing media clips...';
     }
 
-    showNotification('🎬 Processing video requires backend API integration', 'info');
+    try {
+        // Extract media paths from library
+        const mediaPaths = mediaLibrary.map(item => item.path);
 
-    if (progressText) {
-        progressText.textContent = 'Backend API required for video processing';
+        console.log('🎬 Assembling video...');
+        console.log('   Voice:', voicePath);
+        console.log('   Media:', mediaPaths.length, 'files');
+
+        if (progressText) {
+            progressText.textContent = `Assembling ${mediaPaths.length} media clips...`;
+        }
+        if (progressFill) {
+            progressFill.style.width = '30%';
+        }
+
+        // Call assembly API
+        const response = await fetch('/api/assemble-video', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                voice_path: voicePath,
+                media_paths: mediaPaths,
+                title: title,
+                resolution: quality === '1080' ? '1920x1080' : '1280x720'
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Video assembly failed');
+        }
+
+        if (progressText) {
+            progressText.textContent = 'Finalizing video...';
+        }
+        if (progressFill) {
+            progressFill.style.width = '90%';
+        }
+
+        // Success!
+        if (progressFill) {
+            progressFill.style.width = '100%';
+        }
+
+        setTimeout(() => {
+            if (progressContainer) {
+                progressContainer.style.display = 'none';
+            }
+
+            // Show result
+            if (resultContainer) {
+                resultContainer.style.display = 'block';
+            }
+
+            if (videoInfo) {
+                videoInfo.innerHTML = `
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 20px 0;">
+                        <div style="text-align: center; padding: 15px; background: rgba(76, 175, 80, 0.1); border-radius: 8px;">
+                            <div style="font-size: 24px; margin-bottom: 5px;">⏱️</div>
+                            <strong>Duration</strong><br>
+                            <span style="font-size: 1.2em;">${data.duration_formatted}</span>
+                        </div>
+                        <div style="text-align: center; padding: 15px; background: rgba(33, 150, 243, 0.1); border-radius: 8px;">
+                            <div style="font-size: 24px; margin-bottom: 5px;">🎨</div>
+                            <strong>Media Items</strong><br>
+                            <span style="font-size: 1.2em;">${data.media_count}</span>
+                        </div>
+                        <div style="text-align: center; padding: 15px; background: rgba(156, 39, 176, 0.1); border-radius: 8px;">
+                            <div style="font-size: 24px; margin-bottom: 5px;">💾</div>
+                            <strong>File Size</strong><br>
+                            <span style="font-size: 1.2em;">${data.file_size_mb.toFixed(1)} MB</span>
+                        </div>
+                        <div style="text-align: center; padding: 15px; background: rgba(255, 152, 0, 0.1); border-radius: 8px;">
+                            <div style="font-size: 24px; margin-bottom: 5px;">⚡</div>
+                            <strong>Processing Time</strong><br>
+                            <span style="font-size: 1.2em;">${data.processing_time.toFixed(1)}s</span>
+                        </div>
+                    </div>
+                    <p style="text-align: center; color: #888; margin-top: 10px;">
+                        📁 ${data.output_filename}
+                    </p>
+                `;
+            }
+
+            if (downloadBtn) {
+                downloadBtn.onclick = () => {
+                    window.location.href = data.download_url;
+                };
+            }
+
+            showNotification(`✅ Video assembled! Duration: ${data.duration_formatted}`, 'success');
+
+        }, 500);
+
+    } catch (error) {
+        console.error('Video assembly failed:', error);
+
+        if (progressContainer) {
+            progressContainer.style.display = 'none';
+        }
+
+        if (progressText) {
+            progressText.textContent = 'Assembly failed';
+        }
+
+        showNotification('❌ Video assembly failed: ' + error.message, 'error');
     }
+}
+
+// Legacy function for compatibility
+async function processVideo() {
+    return assembleVideo();
 }
 
 // =============================================================================
