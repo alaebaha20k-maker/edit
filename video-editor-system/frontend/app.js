@@ -43,6 +43,15 @@ window.editorData = {
 };
 
 // =============================================================================
+// UTILITY FUNCTIONS
+// =============================================================================
+const escapeHtml = (text) => {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+};
+
+// =============================================================================
 // NOTIFICATION SYSTEM
 // =============================================================================
 const showNotification = (message, type = 'info') => {
