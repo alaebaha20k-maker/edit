@@ -1996,16 +1996,31 @@ def assemble_video_route():
         if not data:
             return jsonify({'error': 'No data provided'}), 400
 
-        voice_path = data.get('voice_path')
+        # Support both single voice and multiple voices (ranked)
+        voice_paths = data.get('voice_paths', [])
+        if not voice_paths:
+            # Fallback to old single voice format
+            single_voice = data.get('voice_path')
+            if single_voice:
+                voice_paths = [single_voice]
+
         media_paths = data.get('media_paths', [])
         title = data.get('title', 'video')
         resolution = data.get('resolution', '1920x1080')
 
-        if not voice_path:
-            return jsonify({'error': 'voice_path is required'}), 400
+        if not voice_paths or len(voice_paths) == 0:
+            return jsonify({'error': 'At least one voice is required (voice_paths array)'}), 400
 
-        if not os.path.exists(voice_path):
-            return jsonify({'error': f'Voice file not found: {voice_path}'}), 404
+        # Verify all voice files exist
+        missing_voices = []
+        for voice_path in voice_paths:
+            if not os.path.exists(voice_path):
+                missing_voices.append(voice_path)
+
+        if missing_voices:
+            return jsonify({
+                'error': f'Voice files not found: {", ".join(missing_voices)}'
+            }), 404
 
         if not media_paths or len(media_paths) == 0:
             return jsonify({'error': 'At least one media file is required'}), 400
@@ -2029,18 +2044,48 @@ def assemble_video_route():
         output_path = os.path.join(OUTPUT_FOLDER, output_filename)
 
         print(f"\n🎬 Starting video assembly...")
-        print(f"   Voice: {voice_path}")
+        print(f"   Voices: {len(voice_paths)} ranked voice(s)")
         print(f"   Media files: {len(media_paths)}")
         print(f"   Output: {output_filename}")
 
-        # Assemble video
+        # Step 1: Merge voices if multiple (in ranked order)
+        if len(voice_paths) > 1:
+            print(f"\n🎵 Merging {len(voice_paths)} voices in ranked order...")
+            merged_voice_path = os.path.join(TEMP_FOLDER, f"merged_voice_{timestamp}.mp3")
+
+            # Create concat file for FFmpeg
+            concat_file = os.path.join(TEMP_FOLDER, f"voice_concat_{timestamp}.txt")
+            with open(concat_file, 'w') as f:
+                for vp in voice_paths:
+                    f.write(f"file '{os.path.abspath(vp)}'\n")
+
+            # Merge voices using FFmpeg concat
+            merge_cmd = [
+                'ffmpeg', '-y',
+                '-f', 'concat',
+                '-safe', '0',
+                '-i', concat_file,
+                '-c', 'copy',
+                merged_voice_path
+            ]
+
+            result_merge = subprocess.run(merge_cmd, capture_output=True, text=True)
+            if result_merge.returncode != 0:
+                raise Exception(f"Failed to merge voices: {result_merge.stderr}")
+
+            print(f"   ✅ Voices merged successfully")
+            final_voice_path = merged_voice_path
+        else:
+            final_voice_path = voice_paths[0]
+
+        # Step 2: Assemble video with merged voice
         assembler = VideoAssembler(
             output_dir=OUTPUT_FOLDER,
             temp_dir=TEMP_FOLDER
         )
 
         result = assembler.assemble_final_video(
-            voice_path=voice_path,
+            voice_path=final_voice_path,
             media_paths=media_paths,
             output_path=output_path,
             resolution=resolution,

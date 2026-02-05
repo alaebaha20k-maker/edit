@@ -964,24 +964,30 @@ function addVoiceToLibrary(voiceData) {
     renderVoiceLibrary();
 }
 
-// Render voice library
+// Render voice library with ranking
 function renderVoiceLibrary() {
-    // Get both voice library containers
-    const container1 = document.getElementById('voiceLibraryList');
-    const container2 = document.getElementById('voiceLibraryList2');
+    const container = document.getElementById('voiceLibraryList');
+    if (!container) return;
 
     const voices = window.videoData.voiceLibrary || [];
 
-    // Generate HTML content
-    let htmlContent;
     if (voices.length === 0) {
-        htmlContent = '<p style="color: #888; text-align: center;">No voice generated yet. Generate AI voice or upload your own.</p>';
-    } else {
-        htmlContent = voices.map((voice, index) => {
-            const isSelected = window.videoData.selectedVoiceIndex === index;
-            const isPlaying = currentPlayingIndex === index;
+        container.innerHTML = '<p style="color: #888; text-align: center; padding: 40px 0;">No voices yet. Generate voice in Step 2 or upload from your computer.</p>';
+        return;
+    }
 
-            // NaN protection: Check if duration is valid
+    // Calculate total duration of all voices
+    const totalDuration = voices.reduce((sum, v) => sum + (parseFloat(v.duration) || 0), 0);
+    const totalMinutes = Math.floor(totalDuration / 60);
+    const totalSeconds = Math.floor(totalDuration % 60);
+
+    container.innerHTML = `
+        <div style="background: rgba(76, 175, 80, 0.1); padding: 12px; border-radius: 8px; margin-bottom: 15px; text-align: center;">
+            <strong style="color: #4caf50;">📊 Total Voice Duration: ${totalMinutes}m ${totalSeconds}s</strong>
+            <span style="color: #888; margin-left: 10px;">(${voices.length} voice${voices.length > 1 ? 's' : ''})</span>
+        </div>
+        ${voices.map((voice, index) => {
+            const isPlaying = currentPlayingIndex === index;
             const duration = parseFloat(voice.duration);
             const isValidDuration = !isNaN(duration) && duration > 0;
             const minutes = isValidDuration ? Math.floor(duration / 60) : 0;
@@ -992,17 +998,30 @@ function renderVoiceLibrary() {
             const modelLabel = voice.model ? (voice.model.includes('max') ? 'Max Quality' : 'Mini Quality') : '';
 
             return `
-                <div class="voice-item" style="
-                    background: ${isSelected ? 'linear-gradient(135deg, rgba(102, 126, 234, 0.2), rgba(118, 75, 162, 0.2))' : 'white'};
-                    border: 2px solid ${isSelected ? '#667eea' : '#e0e0e0'};
+                <div class="voice-item-draggable" draggable="true" data-index="${index}" style="
+                    background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+                    border: 2px solid #667eea;
                     padding: 15px;
                     border-radius: 8px;
                     display: flex;
                     align-items: center;
                     gap: 15px;
-                    cursor: pointer;
+                    cursor: grab;
                     transition: all 0.3s;
-                " onclick="selectVoice(${index})">
+                ">
+                    <div style="
+                        background: #667eea;
+                        color: white;
+                        width: 40px;
+                        height: 40px;
+                        border-radius: 50%;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-weight: bold;
+                        font-size: 16px;
+                        flex-shrink: 0;
+                    ">#${index + 1}</div>
                     <button onclick="event.stopPropagation(); playVoicePreview(${index})" style="
                         background: ${isPlaying ? '#ff4757' : '#667eea'};
                         color: white;
@@ -1013,9 +1032,10 @@ function renderVoiceLibrary() {
                         font-size: 20px;
                         cursor: pointer;
                         transition: all 0.3s;
+                        flex-shrink: 0;
                     ">${isPlaying ? '⏹️' : '▶️'}</button>
-                    <div style="flex: 1;">
-                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
+                    <div style="flex: 1; min-width: 0;">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px; flex-wrap: wrap;">
                             <strong>${typeLabel}</strong>
                             ${voice.voice ? `<span style="color: #667eea;">• ${voice.voice}</span>` : ''}
                             ${voice.language ? `<span style="color: #888;">• ${voice.language}</span>` : ''}
@@ -1024,11 +1044,10 @@ function renderVoiceLibrary() {
                         <div style="color: #666; font-size: 0.9em;">
                             ⏱️ ${durationStr} ${voice.speed ? `• ${voice.speed}x speed` : ''} ${voice.chunks ? `• ${voice.chunks} chunks` : ''}
                         </div>
-                        <div style="color: #888; font-size: 0.85em; margin-top: 3px;">
+                        <div style="color: #888; font-size: 0.85em; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                             📄 ${voice.filename}
                         </div>
                     </div>
-                    ${isSelected ? '<div style="background: #667eea; color: white; padding: 5px 12px; border-radius: 20px; font-size: 0.85em; font-weight: bold;">✓ Selected</div>' : ''}
                     <button onclick="event.stopPropagation(); removeVoiceFromLibrary(${index})" style="
                         background: #ff4757;
                         color: white;
@@ -1036,40 +1055,26 @@ function renderVoiceLibrary() {
                         border-radius: 5px;
                         padding: 8px 12px;
                         cursor: pointer;
+                        flex-shrink: 0;
                     ">🗑️</button>
                 </div>
             `;
-        }).join('');
+        }).join('')}
+    `;
+
+    // Add drag and drop event listeners
+    setupVoiceDragAndDrop();
+
+    // Update assembly stats with total duration
+    if (totalDuration > 0) {
+        updateAssemblyStats(totalDuration);
     }
-
-    // Update both containers if they exist
-    if (container1) container1.innerHTML = htmlContent;
-    if (container2) container2.innerHTML = htmlContent;
-}
-
-// Select voice from library
-function selectVoice(index) {
-    window.videoData.selectedVoiceIndex = index;
-    const voice = window.videoData.voiceLibrary[index];
-    window.videoData.audioUrl = voice.url;
-    window.videoData.audioPath = voice.path;
-    window.videoData.audioFilename = voice.filename;
-    renderVoiceLibrary();
-    if (voice.duration) updateAssemblyStats(voice.duration);
-    showNotification(`✅ Voice selected: ${voice.filename}`, 'success');
 }
 
 // Remove voice from library
 function removeVoiceFromLibrary(index) {
     if (confirm('Delete this voice from library?')) {
         window.videoData.voiceLibrary.splice(index, 1);
-        if (window.videoData.selectedVoiceIndex === index) {
-            window.videoData.selectedVoiceIndex = null;
-            window.videoData.audioUrl = null;
-            window.videoData.audioPath = null;
-        } else if (window.videoData.selectedVoiceIndex > index) {
-            window.videoData.selectedVoiceIndex--;
-        }
         renderVoiceLibrary();
         showNotification('✅ Voice deleted', 'success');
     }
@@ -1131,6 +1136,65 @@ function playVoicePreview(index) {
         currentPlayingIndex = null;
         renderVoiceLibrary(); // Re-render to update button states
         showNotification('⏹️ Playback finished', 'info');
+    });
+}
+
+// Setup drag and drop for voice ranking
+let draggedVoiceElement = null;
+
+function setupVoiceDragAndDrop() {
+    const voiceItems = document.querySelectorAll('.voice-item-draggable');
+
+    voiceItems.forEach(item => {
+        item.addEventListener('dragstart', (e) => {
+            draggedVoiceElement = e.target;
+            e.target.style.opacity = '0.5';
+            e.target.style.cursor = 'grabbing';
+        });
+
+        item.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            if (e.target.classList.contains('voice-item-draggable') && e.target !== draggedVoiceElement) {
+                e.target.style.borderColor = '#4caf50';
+                e.target.style.borderWidth = '3px';
+            }
+        });
+
+        item.addEventListener('dragleave', (e) => {
+            if (e.target.classList.contains('voice-item-draggable')) {
+                e.target.style.borderColor = '#667eea';
+                e.target.style.borderWidth = '2px';
+            }
+        });
+
+        item.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const target = e.target.closest('.voice-item-draggable');
+
+            if (target && target !== draggedVoiceElement) {
+                const draggedIndex = parseInt(draggedVoiceElement.dataset.index);
+                const targetIndex = parseInt(target.dataset.index);
+
+                // Reorder voices array
+                const voice = window.videoData.voiceLibrary.splice(draggedIndex, 1)[0];
+                window.videoData.voiceLibrary.splice(targetIndex, 0, voice);
+
+                renderVoiceLibrary();
+                showNotification(`✅ Voice reordered: now rank #${targetIndex + 1}`, 'success');
+            }
+
+            target.style.borderColor = '#667eea';
+            target.style.borderWidth = '2px';
+        });
+
+        item.addEventListener('dragend', (e) => {
+            e.target.style.opacity = '1';
+            e.target.style.cursor = 'grab';
+            voiceItems.forEach(item => {
+                item.style.borderColor = '#667eea';
+                item.style.borderWidth = '2px';
+            });
+        });
     });
 }
 
@@ -2052,19 +2116,19 @@ async function editorExport() {
 // =============================================================================
 async function assembleVideo() {
     const title = document.getElementById('titleInput')?.value || window.videoData.title;
-    const voicePath = window.videoData.audioPath;
-    const mediaLibrary = window.videoData.mediaLibrary || [];
+    const voiceLibrary = window.videoData.voiceLibrary || [];
+    const mediaLibrary = appState.mediaLibrary || [];
     const qualityRadio = document.querySelector('input[name="quality"]:checked');
     const quality = qualityRadio ? qualityRadio.value : '720';
 
     // Validation
     if (!title) {
-        showNotification('⚠️ Please generate a title first', 'warning');
+        showNotification('⚠️ Please generate a title first (Step 1)', 'warning');
         return;
     }
 
-    if (!voicePath) {
-        showNotification('⚠️ Please generate voice first (Step 2)', 'warning');
+    if (voiceLibrary.length === 0) {
+        showNotification('⚠️ Please add voices first (Step 2 - generate or upload)', 'warning');
         return;
     }
 
@@ -2095,26 +2159,29 @@ async function assembleVideo() {
     }
 
     try {
-        // Extract media paths from library
-        const mediaPaths = mediaLibrary.map(item => item.path);
+        // Extract media paths from library (in ranked order)
+        const mediaPaths = mediaLibrary.map(item => item.url || item.path);
+
+        // Extract voice paths from voice library (in ranked order)
+        const voicePaths = voiceLibrary.map(voice => voice.path).filter(p => p);
 
         console.log('🎬 Assembling video...');
-        console.log('   Voice:', voicePath);
+        console.log('   Voices:', voiceLibrary.length, 'ranked voices');
         console.log('   Media:', mediaPaths.length, 'files');
 
         if (progressText) {
-            progressText.textContent = `Assembling ${mediaPaths.length} media clips...`;
+            progressText.textContent = `Merging ${voiceLibrary.length} voice(s) and ${mediaPaths.length} media clips...`;
         }
         if (progressFill) {
             progressFill.style.width = '30%';
         }
 
-        // Call assembly API
+        // Call assembly API with multiple voices
         const response = await fetch('/api/assemble-video', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                voice_path: voicePath,
+                voice_paths: voicePaths,  // Array of voice paths in ranked order
                 media_paths: mediaPaths,
                 title: title,
                 resolution: quality === '1080' ? '1920x1080' : '1280x720'
