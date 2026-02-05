@@ -986,7 +986,7 @@ function renderVoiceLibrary() {
                 cursor: pointer;
                 transition: all 0.3s;
             " onclick="selectVoice(${index})">
-                <button onclick="event.stopPropagation(); playVoicePreview('${voice.url}')" style="
+                <button onclick="event.stopPropagation(); playVoicePreview(${index})" style="
                     background: #667eea;
                     color: white;
                     border: none;
@@ -1053,9 +1053,38 @@ function removeVoiceFromLibrary(index) {
 }
 
 // Play voice preview
-function playVoicePreview(url) {
-    const audio = new Audio(url);
-    audio.play();
+let currentAudio = null;
+function playVoicePreview(index) {
+    const voice = window.videoData.voiceLibrary[index];
+    if (!voice || !voice.url) {
+        showNotification('❌ Voice file not found', 'error');
+        return;
+    }
+
+    // Stop any currently playing audio
+    if (currentAudio) {
+        currentAudio.pause();
+        currentAudio.currentTime = 0;
+    }
+
+    // Create and play new audio
+    currentAudio = new Audio(voice.url);
+
+    currentAudio.play()
+        .then(() => {
+            console.log('Playing voice preview:', voice.filename);
+            showNotification(`▶️ Playing: ${voice.filename}`, 'info');
+        })
+        .catch(error => {
+            console.error('Error playing audio:', error);
+            showNotification('❌ Could not play audio. Try downloading it instead.', 'error');
+        });
+
+    // Auto-cleanup when finished
+    currentAudio.addEventListener('ended', () => {
+        currentAudio = null;
+        showNotification('⏹️ Playback finished', 'info');
+    });
 }
 
 // Update assembly stats display
