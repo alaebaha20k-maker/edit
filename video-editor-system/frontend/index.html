@@ -276,11 +276,20 @@
                         </div>
                     </div>
 
-                    <!-- Voice Library -->
+                    <!-- Voice Library with Ranking -->
                     <div id="voiceLibrarySection" style="margin-top: 30px; background: rgba(102, 126, 234, 0.1); padding: 20px; border-radius: 10px;">
-                        <h3 style="margin-bottom: 15px;">🎵 Voice Library <span style="font-size: 14px; color: #888;">(Select one for final video)</span></h3>
+                        <h3 style="margin-bottom: 15px;">🎵 Voice Library <span style="font-size: 14px; color: #888;">(Drag to rank - All voices merge in order!)</span></h3>
+
+                        <div style="background: rgba(76, 175, 80, 0.1); padding: 12px; border-radius: 8px; margin-bottom: 15px;">
+                            <p style="font-size: 13px; color: #666; margin: 0;">
+                                💡 <strong>Multi-Voice Ranking:</strong> Generate or upload multiple voices. Drag to reorder them. Final video will merge ALL voices in sequence!
+                                <br>
+                                <strong>Example:</strong> Voice #1 (10min) + Voice #2 (10min) = 20min video
+                            </p>
+                        </div>
+
                         <div id="voiceLibraryList" style="display: flex; flex-direction: column; gap: 10px; min-height: 60px;">
-                            <p style="color: #888; text-align: center;">No voice generated yet. Generate AI voice or upload your own.</p>
+                            <p style="color: #888; text-align: center; padding: 20px 0;">No voices yet. Generate AI voice or upload your own above.</p>
                         </div>
                     </div>
                 </div>
@@ -365,32 +374,31 @@
                 </div>
             </section>
 
-            <!-- Step 4: Audio/Voice -->
+            <!-- Step 4: Voice Library (Final Review Before Assembly) -->
             <section class="step">
-                <h3><span class="step-number">4</span> Voice Library</h3>
-                <p style="color: #888; margin-bottom: 20px;">Manage all your generated and uploaded voices. Drag to reorder - voices will merge in ranked order!</p>
+                <h3><span class="step-number">4</span> Voice Library - Final Review</h3>
+                <p style="color: #888; margin-bottom: 20px;">📋 Review and rank all your voices. Drag to reorder - voices will merge in ranked order!</p>
 
-                <!-- Voice Library with Ranking -->
+                <!-- Voice Library Display (Same as Step 2) -->
                 <div style="background: rgba(102, 126, 234, 0.1); padding: 20px; border-radius: 10px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                        <h3 style="margin: 0;">🎵 Voice Library <span style="font-size: 14px; color: #888;">(Drag to reorder)</span></h3>
-                        <button onclick="document.getElementById('voiceUpload').click()" class="btn-secondary" style="font-size: 13px;">
-                            📤 Upload Voice
+                        <h3 style="margin: 0;">🎵 All Voices <span style="font-size: 14px; color: #888;">(Drag to reorder ranking)</span></h3>
+                        <button onclick="showTab('generator')" class="btn-secondary" style="font-size: 13px;">
+                            ➕ Add More Voices (Go to Step 2)
                         </button>
-                        <input type="file" id="voiceUpload" accept="audio/*" style="display: none;">
                     </div>
 
-                    <div style="background: rgba(255, 255, 255, 0.05); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
-                        <p style="font-size: 13px; color: #aaa; margin: 0;">
-                            💡 <strong>Multi-Voice Ranking:</strong> Drag voices to reorder them. Final video will merge ALL ranked voices in sequence.
+                    <div style="background: rgba(76, 175, 80, 0.1); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                        <p style="font-size: 13px; color: #666; margin: 0;">
+                            💡 <strong>Multi-Voice Merging:</strong> All voices will merge in sequence based on rank order.
                             <br>
-                            Example: Voice #1 (10min) + Voice #2 (10min) = 20min video
+                            <strong>Example:</strong> Voice #1 (10min) + Voice #2 (5min) + Voice #3 (5min) = 20min final video
                         </p>
                     </div>
 
-                    <div id="voiceLibraryList" style="display: flex; flex-direction: column; gap: 10px; min-height: 100px;">
+                    <div id="voiceLibraryList2" style="display: flex; flex-direction: column; gap: 10px; min-height: 100px;">
                         <p style="color: #888; text-align: center; padding: 40px 0;">
-                            No voices yet. Generate voice in Step 2 or upload from your computer.
+                            No voices yet. Go to Step 2 to generate or upload voices.
                         </p>
                     </div>
                 </div>
