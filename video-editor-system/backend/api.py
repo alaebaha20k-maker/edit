@@ -74,11 +74,42 @@ def index():
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
+    """Health check endpoint with FFmpeg verification"""
+    # Check FFmpeg availability
+    ffmpeg_available = False
+    ffmpeg_version = 'not installed'
+    ffprobe_available = False
+
+    try:
+        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            ffmpeg_available = True
+            # Extract version from first line
+            first_line = result.stdout.split('\n')[0]
+            ffmpeg_version = first_line.split(' ')[2] if len(first_line.split(' ')) > 2 else 'unknown'
+    except:
+        pass
+
+    try:
+        result = subprocess.run(['ffprobe', '-version'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            ffprobe_available = True
+    except:
+        pass
+
+    status = 'healthy' if (ffmpeg_available and ffprobe_available) else 'degraded'
+
     return jsonify({
-        'status': 'healthy',
+        'status': status,
         'service': 'Video Editor API',
-        'version': '1.0.0'
+        'version': '1.0.0',
+        'ffmpeg': {
+            'available': ffmpeg_available,
+            'version': ffmpeg_version
+        },
+        'ffprobe': {
+            'available': ffprobe_available
+        }
     })
 
 

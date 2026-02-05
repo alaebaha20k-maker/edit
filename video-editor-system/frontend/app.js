@@ -32,6 +32,7 @@ window.videoData = {
     title: '',
     script: '',
     mediaFiles: [],
+    mediaLibrary: [], // Media library reference
     audioFile: null
 };
 
@@ -978,6 +979,7 @@ function renderVoiceLibrary() {
     } else {
         htmlContent = voices.map((voice, index) => {
             const isSelected = window.videoData.selectedVoiceIndex === index;
+            const isPlaying = currentPlayingIndex === index;
 
             // NaN protection: Check if duration is valid
             const duration = parseFloat(voice.duration);
@@ -1002,7 +1004,7 @@ function renderVoiceLibrary() {
                     transition: all 0.3s;
                 " onclick="selectVoice(${index})">
                     <button onclick="event.stopPropagation(); playVoicePreview(${index})" style="
-                        background: #667eea;
+                        background: ${isPlaying ? '#ff4757' : '#667eea'};
                         color: white;
                         border: none;
                         border-radius: 50%;
@@ -1010,7 +1012,8 @@ function renderVoiceLibrary() {
                         height: 50px;
                         font-size: 20px;
                         cursor: pointer;
-                    ">▶️</button>
+                        transition: all 0.3s;
+                    ">${isPlaying ? '⏹️' : '▶️'}</button>
                     <div style="flex: 1;">
                         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
                             <strong>${typeLabel}</strong>
@@ -1074,10 +1077,29 @@ function removeVoiceFromLibrary(index) {
 
 // Play voice preview
 let currentAudio = null;
+let currentPlayingIndex = null;
+
+function stopVoicePreview() {
+    if (currentAudio) {
+        currentAudio.pause();
+        currentAudio.currentTime = 0;
+        currentAudio = null;
+        currentPlayingIndex = null;
+        renderVoiceLibrary(); // Re-render to update button states
+        showNotification('⏹️ Playback stopped', 'info');
+    }
+}
+
 function playVoicePreview(index) {
     const voice = window.videoData.voiceLibrary[index];
     if (!voice || !voice.url) {
         showNotification('❌ Voice file not found', 'error');
+        return;
+    }
+
+    // If clicking on currently playing voice, stop it
+    if (currentPlayingIndex === index && currentAudio) {
+        stopVoicePreview();
         return;
     }
 
@@ -1089,20 +1111,25 @@ function playVoicePreview(index) {
 
     // Create and play new audio
     currentAudio = new Audio(voice.url);
+    currentPlayingIndex = index;
 
     currentAudio.play()
         .then(() => {
             console.log('Playing voice preview:', voice.filename);
             showNotification(`▶️ Playing: ${voice.filename}`, 'info');
+            renderVoiceLibrary(); // Update UI to show stop button
         })
         .catch(error => {
             console.error('Error playing audio:', error);
             showNotification('❌ Could not play audio. Try downloading it instead.', 'error');
+            currentPlayingIndex = null;
         });
 
     // Auto-cleanup when finished
     currentAudio.addEventListener('ended', () => {
         currentAudio = null;
+        currentPlayingIndex = null;
+        renderVoiceLibrary(); // Re-render to update button states
         showNotification('⏹️ Playback finished', 'info');
     });
 }
@@ -1119,27 +1146,44 @@ function updateAssemblyStats(voiceDuration) {
     }
 
     // Format voice duration
-    const minutes = Math.floor(voiceDuration / 60);
-    const seconds = Math.floor(voiceDuration % 60);
-    if (voiceDurationDisplay) {
-        voiceDurationDisplay.textContent = `${minutes}m ${seconds}s`;
+    if (voiceDuration) {
+        const minutes = Math.floor(voiceDuration / 60);
+        const seconds = Math.floor(voiceDuration % 60);
+        if (voiceDurationDisplay) {
+            voiceDurationDisplay.textContent = `${minutes}m ${seconds}s`;
+        }
     }
 
-    // Count media items from library
-    const mediaLibrary = window.videoData.mediaLibrary || [];
-    const mediaCount = mediaLibrary.length;
+    // Count media items from library (use appState.mediaLibrary which is the actual data)
+    const mediaCount = appState.mediaLibrary?.length || 0;
 
     if (mediaCountDisplay) {
         mediaCountDisplay.textContent = mediaCount;
     }
 
-    if (perMediaDuration && mediaCount > 0) {
+    if (voiceDuration && perMediaDuration && mediaCount > 0) {
         const durationPerMedia = voiceDuration / mediaCount;
         const perMin = Math.floor(durationPerMedia / 60);
         const perSec = Math.floor(durationPerMedia % 60);
         perMediaDuration.textContent = `${perMin}m ${perSec}s`;
     } else if (perMediaDuration) {
-        perMediaDuration.textContent = 'Add media first';
+        perMediaDuration.textContent = mediaCount === 0 ? 'Add media first' : 'Generate voice first';
+    }
+}
+
+// Update media count display without voice duration
+function updateMediaCount() {
+    const mediaCountDisplay = document.getElementById('mediaCountDisplay');
+    const mediaCount = appState.mediaLibrary?.length || 0;
+
+    if (mediaCountDisplay) {
+        mediaCountDisplay.textContent = mediaCount;
+    }
+
+    // If we have voice duration, recalculate per-media duration
+    const selectedVoice = window.videoData.voiceLibrary?.[window.videoData.selectedVoiceIndex];
+    if (selectedVoice && selectedVoice.duration) {
+        updateAssemblyStats(selectedVoice.duration);
     }
 }
 
@@ -1202,7 +1246,12 @@ function addToMediaLibrary(file, url, type, source = 'upload', muted = false) {
     };
 
     appState.mediaLibrary.push(mediaItem);
+
+    // Sync to window.videoData for assembly
+    window.videoData.mediaLibrary = appState.mediaLibrary;
+
     renderMediaLibrary();
+    updateMediaCount(); // Update the media count display
     showNotification(`✅ Added to media library`, 'success');
 }
 
@@ -1295,11 +1344,14 @@ function handleDrop(e) {
         const item = appState.mediaLibrary.splice(draggedIndex, 1)[0];
         appState.mediaLibrary.splice(targetIndex, 0, item);
 
+        // Sync to window.videoData
+        window.videoData.mediaLibrary = appState.mediaLibrary;
+
         renderMediaLibrary();
         showNotification('✅ Media reordered', 'success');
     }
 
-    target.style.borderColor = 'transparent';
+    if (target) target.style.borderColor = 'transparent';
 }
 
 function handleDragEnd(e) {
@@ -1322,7 +1374,12 @@ function deleteFromMediaLibrary(id) {
     if (!confirm('Remove this media from library?')) return;
 
     appState.mediaLibrary = appState.mediaLibrary.filter(m => m.id !== id);
+
+    // Sync to window.videoData
+    window.videoData.mediaLibrary = appState.mediaLibrary;
+
     renderMediaLibrary();
+    updateMediaCount(); // Update the media count display
     showNotification('✅ Media removed', 'success');
 }
 

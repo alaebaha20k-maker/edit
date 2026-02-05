@@ -114,19 +114,38 @@ class VideoAssembler:
                     output_path
                 ]
             else:
-                # Process video clip
-                # TODO: Handle video trimming/looping to match duration
-                cmd = [
-                    'ffmpeg', '-y',
-                    '-i', media_path,
-                    '-t', str(duration),
-                    '-vf', f'scale={resolution}:force_original_aspect_ratio=decrease,pad={resolution}:(ow-iw)/2:(oh-ih)/2,setsar=1',
-                    '-c:v', 'libx264',
-                    '-preset', 'medium',
-                    '-crf', '23',
-                    '-an',  # Remove audio from video clips
-                    output_path
-                ]
+                # Process video clip - Smart duration handling
+                # Get video duration first
+                video_duration = self._get_duration_ffprobe(media_path)
+
+                if video_duration >= duration:
+                    # Video is longer than needed - trim to exact duration
+                    cmd = [
+                        'ffmpeg', '-y',
+                        '-i', media_path,
+                        '-t', str(duration),  # Cut to exact duration
+                        '-vf', f'scale={resolution}:force_original_aspect_ratio=decrease,pad={resolution}:(ow-iw)/2:(oh-ih)/2,setsar=1',
+                        '-c:v', 'libx264',
+                        '-preset', 'medium',
+                        '-crf', '23',
+                        '-an',  # Remove audio from video clips
+                        output_path
+                    ]
+                else:
+                    # Video is shorter than needed - loop it to fill duration
+                    loops_needed = int(duration / video_duration) + 1
+                    cmd = [
+                        'ffmpeg', '-y',
+                        '-stream_loop', str(loops_needed),  # Loop video
+                        '-i', media_path,
+                        '-t', str(duration),  # Cut to exact duration
+                        '-vf', f'scale={resolution}:force_original_aspect_ratio=decrease,pad={resolution}:(ow-iw)/2:(oh-ih)/2,setsar=1',
+                        '-c:v', 'libx264',
+                        '-preset', 'medium',
+                        '-crf', '23',
+                        '-an',  # Remove audio from video clips
+                        output_path
+                    ]
 
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             return True
