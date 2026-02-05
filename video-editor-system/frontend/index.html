@@ -181,61 +181,103 @@
 
                 <!-- Voice Generation Section -->
                 <div id="voiceGenerationSection" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 2px solid #e0e0e0;">
-                    <h4 style="margin-bottom: 15px;">🎙️ Generate Voice (Optional)</h4>
+                    <h4 style="margin-bottom: 15px;">🎙️ Voice Generation</h4>
 
-                    <div class="input-group">
-                        <label>Quality Model:</label>
-                        <select id="voiceModel" class="input-medium">
-                            <option value="inworld-tts-1.5-max" selected>🎯 1.5 Max (Best Quality)</option>
-                            <option value="inworld-tts-1.5-mini">⚡ 1.5 Mini (Faster)</option>
-                        </select>
+                    <!-- Voice Options Tabs -->
+                    <div class="media-options" style="margin-bottom: 20px;">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="useAiVoice" onchange="toggleVoiceSection('ai')" checked>
+                            <span>🤖 AI Voice (Inworld TTS)</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="useUploadVoice" onchange="toggleVoiceSection('upload')">
+                            <span>📤 Upload Voice File</span>
+                        </label>
                     </div>
 
-                    <div class="input-group">
-                        <label>Voice:</label>
-                        <select id="voiceId" class="input-medium">
-                            <option value="Hana" selected>Hana (Female, Warm)</option>
-                            <option value="Jack">Jack (Male, Professional)</option>
-                            <option value="Emma">Emma (Female, Friendly)</option>
-                            <option value="James">James (Male, Deep)</option>
-                            <option value="Sophia">Sophia (Female, Clear)</option>
-                            <option value="Oliver">Oliver (Male, British)</option>
-                        </select>
+                    <!-- AI Voice Generation -->
+                    <div id="aiVoiceSection" style="display: block;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                            <!-- Model Selection -->
+                            <div class="input-group">
+                                <label>🎯 Quality Model:</label>
+                                <select id="voiceModel" class="input-medium" style="width: 100%;">
+                                    <option value="inworld-tts-1.5-max" selected>Max Quality (Best, Slower)</option>
+                                    <option value="inworld-tts-1.5-mini">Mini Quality (Fast, Good)</option>
+                                </select>
+                                <small style="color: #888; display: block; margin-top: 5px;">
+                                    <span id="modelDescription">Max: Best quality, takes more time</span>
+                                </small>
+                            </div>
+
+                            <!-- Voice Selection -->
+                            <div class="input-group">
+                                <label>🎤 Voice Character:</label>
+                                <select id="voiceId" class="input-medium" style="width: 100%;">
+                                    <option value="Hana" selected>Hana - Female (Warm, Friendly)</option>
+                                    <option value="Jack">Jack - Male (Professional, Clear)</option>
+                                    <option value="Emma">Emma - Female (Energetic, Bright)</option>
+                                    <option value="James">James - Male (Deep, Authoritative)</option>
+                                    <option value="Sophia">Sophia - Female (Elegant, Smooth)</option>
+                                    <option value="Oliver">Oliver - Male (British, Refined)</option>
+                                </select>
+                            </div>
+
+                            <!-- Language Selection -->
+                            <div class="input-group">
+                                <label>🌍 Language:</label>
+                                <select id="voiceLanguage" class="input-medium" style="width: 100%;">
+                                    <option value="en-US" selected>🇺🇸 English (United States)</option>
+                                    <option value="en-GB">🇬🇧 English (United Kingdom)</option>
+                                    <option value="es-ES">🇪🇸 Spanish (Spain)</option>
+                                    <option value="es-MX">🇲🇽 Spanish (Mexico)</option>
+                                    <option value="fr-FR">🇫🇷 French (France)</option>
+                                    <option value="de-DE">🇩🇪 German (Germany)</option>
+                                    <option value="it-IT">🇮🇹 Italian (Italy)</option>
+                                    <option value="pt-BR">🇧🇷 Portuguese (Brazil)</option>
+                                    <option value="ja-JP">🇯🇵 Japanese (Japan)</option>
+                                    <option value="ko-KR">🇰🇷 Korean (South Korea)</option>
+                                    <option value="zh-CN">🇨🇳 Chinese (Simplified)</option>
+                                    <option value="ar-SA">🇸🇦 Arabic (Saudi Arabia)</option>
+                                </select>
+                            </div>
+
+                            <!-- Speaking Speed -->
+                            <div class="input-group">
+                                <label>⚡ Speed: <span id="speakingRateDisplay" style="font-weight: bold; color: #667eea;">1.0x</span></label>
+                                <input type="range" id="speakingRate" min="0.5" max="2.0" step="0.1" value="1.0" class="slider" style="width: 100%;">
+                                <div style="display: flex; justify-content: space-between; font-size: 0.85em; color: #888;">
+                                    <span>0.5x Slow</span>
+                                    <span>1.0x Normal</span>
+                                    <span>2.0x Fast</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button onclick="generateVoice()" class="btn-secondary" style="margin-top: 15px;">
+                            🎙️ Generate AI Voice
+                        </button>
+                        <div id="voiceProgress" class="progress-box" style="display: none;"></div>
                     </div>
 
-                    <div class="input-group">
-                        <label>Language:</label>
-                        <select id="voiceLanguage" class="input-medium">
-                            <option value="en-US" selected>🇺🇸 English (US)</option>
-                            <option value="en-GB">🇬🇧 English (UK)</option>
-                            <option value="es-ES">🇪🇸 Spanish (Spain)</option>
-                            <option value="es-MX">🇲🇽 Spanish (Mexico)</option>
-                            <option value="fr-FR">🇫🇷 French</option>
-                            <option value="de-DE">🇩🇪 German</option>
-                            <option value="it-IT">🇮🇹 Italian</option>
-                            <option value="pt-BR">🇧🇷 Portuguese (Brazil)</option>
-                            <option value="ja-JP">🇯🇵 Japanese</option>
-                            <option value="ko-KR">🇰🇷 Korean</option>
-                            <option value="zh-CN">🇨🇳 Chinese (Simplified)</option>
-                            <option value="ar-SA">🇸🇦 Arabic</option>
-                        </select>
-                    </div>
-
-                    <div class="input-group">
-                        <label>Speaking Speed: <span id="speakingRateDisplay">1.0x</span></label>
-                        <input type="range" id="speakingRate" min="0.5" max="2.0" step="0.1" value="1.0" class="slider" style="width: 100%;">
-                        <div style="display: flex; justify-content: space-between; font-size: 0.85em; color: #888;">
-                            <span>0.5x (Slow)</span>
-                            <span>1.0x (Normal)</span>
-                            <span>2.0x (Fast)</span>
+                    <!-- Upload Voice Section -->
+                    <div id="uploadVoiceSection" style="display: none;">
+                        <div class="upload-zone" id="voiceDropzone" style="margin-top: 15px;">
+                            <div class="upload-icon">🎵</div>
+                            <p><strong>Drag & drop voice files here</strong></p>
+                            <p>or</p>
+                            <input type="file" id="voiceUpload" accept="audio/*" style="display: none;">
+                            <button onclick="document.getElementById('voiceUpload').click()" class="btn-secondary">Browse Voice Files</button>
+                            <p style="color: #888; font-size: 0.9em; margin-top: 10px;">Supported: MP3, WAV, M4A, OGG</p>
                         </div>
                     </div>
 
-                    <button onclick="generateVoice()" class="btn-secondary">🎙️ Generate Voice</button>
-                    <div id="voiceProgress" class="progress-box" style="display: none;"></div>
-                    <div id="voiceResult" style="display: none; margin-top: 15px;">
-                        <audio id="voicePlayer" controls style="width: 100%; margin-bottom: 10px;"></audio>
-                        <div id="voiceStats" class="stats-box"></div>
+                    <!-- Voice Library -->
+                    <div id="voiceLibrarySection" style="margin-top: 30px; background: rgba(102, 126, 234, 0.1); padding: 20px; border-radius: 10px;">
+                        <h3 style="margin-bottom: 15px;">🎵 Voice Library <span style="font-size: 14px; color: #888;">(Select one for final video)</span></h3>
+                        <div id="voiceLibraryList" style="display: flex; flex-direction: column; gap: 10px; min-height: 60px;">
+                            <p style="color: #888; text-align: center;">No voice generated yet. Generate AI voice or upload your own.</p>
+                        </div>
                     </div>
                 </div>
             </section>

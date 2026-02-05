@@ -891,48 +891,24 @@ async function generateVoice() {
             throw new Error(data.error || 'Voice generation failed');
         }
 
-        // Store audio data
-        window.videoData.audioUrl = data.audio_url;
-        window.videoData.audioFilename = data.audio_filename;
-        window.videoData.audioPath = data.audio_path;
-
         // Hide progress
         if (progressBox) {
             progressBox.style.display = 'none';
         }
 
-        // Show audio player and stats
-        if (resultBox) {
-            resultBox.style.display = 'block';
-
-            const audioPlayer = document.getElementById('voicePlayer');
-            if (audioPlayer) {
-                audioPlayer.src = data.audio_url;
-            }
-
-            if (statsBox) {
-                const minutes = Math.floor(data.duration_seconds / 60);
-                const seconds = Math.floor(data.duration_seconds % 60);
-                const durationStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-
-                statsBox.innerHTML = `
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
-                        <div>
-                            <strong>⏱️ Duration:</strong><br>${durationStr}
-                        </div>
-                        <div>
-                            <strong>📦 Chunks:</strong><br>${data.chunks_count}
-                        </div>
-                        <div>
-                            <strong>⚡ Time:</strong><br>${data.generation_time.toFixed(1)}s
-                        </div>
-                        <div>
-                            <strong>📄 File:</strong><br>${data.audio_filename}
-                        </div>
-                    </div>
-                `;
-            }
-        }
+        // Add to voice library
+        addVoiceToLibrary({
+            url: data.audio_url,
+            path: data.audio_path,
+            filename: data.audio_filename,
+            duration: data.duration_seconds,
+            chunks: data.chunks_count,
+            voice: voiceId,
+            language: voiceLanguage,
+            model: voiceModel,
+            speed: speakingRate,
+            type: 'ai'
+        });
 
         showNotification(`✅ Voice generated! Duration: ${Math.floor(data.duration_seconds / 60)}m ${Math.floor(data.duration_seconds % 60)}s`, 'success');
 
@@ -946,6 +922,140 @@ async function generateVoice() {
         }
         showNotification('❌ Voice generation failed: ' + error.message, 'error');
     }
+}
+
+// =============================================================================
+// VOICE LIBRARY MANAGEMENT
+// =============================================================================
+
+// Initialize voice library
+if (!window.videoData.voiceLibrary) {
+    window.videoData.voiceLibrary = [];
+}
+
+// Toggle voice sections
+function toggleVoiceSection(type) {
+    if (type === 'ai') {
+        const checked = document.getElementById('useAiVoice')?.checked;
+        const section = document.getElementById('aiVoiceSection');
+        if (section) section.style.display = checked ? 'block' : 'none';
+    } else if (type === 'upload') {
+        const checked = document.getElementById('useUploadVoice')?.checked;
+        const section = document.getElementById('uploadVoiceSection');
+        if (section) section.style.display = checked ? 'block' : 'none';
+    }
+}
+
+// Add voice to library
+function addVoiceToLibrary(voiceData) {
+    window.videoData.voiceLibrary.push(voiceData);
+    window.videoData.selectedVoiceIndex = window.videoData.voiceLibrary.length - 1; // Auto-select new voice
+    renderVoiceLibrary();
+}
+
+// Render voice library
+function renderVoiceLibrary() {
+    const container = document.getElementById('voiceLibraryList');
+    if (!container) return;
+
+    const voices = window.videoData.voiceLibrary || [];
+
+    if (voices.length === 0) {
+        container.innerHTML = '<p style="color: #888; text-align: center;">No voice generated yet. Generate AI voice or upload your own.</p>';
+        return;
+    }
+
+    container.innerHTML = voices.map((voice, index) => {
+        const isSelected = window.videoData.selectedVoiceIndex === index;
+        const minutes = Math.floor(voice.duration / 60);
+        const seconds = Math.floor(voice.duration % 60);
+        const durationStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+        const typeLabel = voice.type === 'ai' ? '🤖 AI Generated' : '📤 Uploaded';
+        const modelLabel = voice.model ? (voice.model.includes('max') ? 'Max Quality' : 'Mini Quality') : '';
+
+        return `
+            <div class="voice-item" style="
+                background: ${isSelected ? 'linear-gradient(135deg, rgba(102, 126, 234, 0.2), rgba(118, 75, 162, 0.2))' : 'white'};
+                border: 2px solid ${isSelected ? '#667eea' : '#e0e0e0'};
+                padding: 15px;
+                border-radius: 8px;
+                display: flex;
+                align-items: center;
+                gap: 15px;
+                cursor: pointer;
+                transition: all 0.3s;
+            " onclick="selectVoice(${index})">
+                <button onclick="event.stopPropagation(); playVoicePreview('${voice.url}')" style="
+                    background: #667eea;
+                    color: white;
+                    border: none;
+                    border-radius: 50%;
+                    width: 50px;
+                    height: 50px;
+                    font-size: 20px;
+                    cursor: pointer;
+                ">▶️</button>
+                <div style="flex: 1;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
+                        <strong>${typeLabel}</strong>
+                        ${voice.voice ? `<span style="color: #667eea;">• ${voice.voice}</span>` : ''}
+                        ${voice.language ? `<span style="color: #888;">• ${voice.language}</span>` : ''}
+                        ${modelLabel ? `<span style="color: #888;">• ${modelLabel}</span>` : ''}
+                    </div>
+                    <div style="color: #666; font-size: 0.9em;">
+                        ⏱️ ${durationStr} ${voice.speed ? `• ${voice.speed}x speed` : ''} ${voice.chunks ? `• ${voice.chunks} chunks` : ''}
+                    </div>
+                    <div style="color: #888; font-size: 0.85em; margin-top: 3px;">
+                        📄 ${voice.filename}
+                    </div>
+                </div>
+                ${isSelected ? '<div style="background: #667eea; color: white; padding: 5px 12px; border-radius: 20px; font-size: 0.85em; font-weight: bold;">✓ Selected</div>' : ''}
+                <button onclick="event.stopPropagation(); removeVoiceFromLibrary(${index})" style="
+                    background: #ff4757;
+                    color: white;
+                    border: none;
+                    border-radius: 5px;
+                    padding: 8px 12px;
+                    cursor: pointer;
+                ">🗑️</button>
+            </div>
+        `;
+    }).join('');
+}
+
+// Select voice from library
+function selectVoice(index) {
+    window.videoData.selectedVoiceIndex = index;
+    const voice = window.videoData.voiceLibrary[index];
+    window.videoData.audioUrl = voice.url;
+    window.videoData.audioPath = voice.path;
+    window.videoData.audioFilename = voice.filename;
+    renderVoiceLibrary();
+    if (voice.duration) updateAssemblyStats(voice.duration);
+    showNotification(`✅ Voice selected: ${voice.filename}`, 'success');
+}
+
+// Remove voice from library
+function removeVoiceFromLibrary(index) {
+    if (confirm('Delete this voice from library?')) {
+        window.videoData.voiceLibrary.splice(index, 1);
+        if (window.videoData.selectedVoiceIndex === index) {
+            window.videoData.selectedVoiceIndex = null;
+            window.videoData.audioUrl = null;
+            window.videoData.audioPath = null;
+        } else if (window.videoData.selectedVoiceIndex > index) {
+            window.videoData.selectedVoiceIndex--;
+        }
+        renderVoiceLibrary();
+        showNotification('✅ Voice deleted', 'success');
+    }
+}
+
+// Play voice preview
+function playVoicePreview(url) {
+    const audio = new Audio(url);
+    audio.play();
 }
 
 // Update assembly stats display
@@ -2199,6 +2309,83 @@ document.addEventListener('DOMContentLoaded', () => {
 
             showNotification(`✅ Added ${files.length} audio file(s)`, 'success');
             e.target.value = ''; // Reset input
+        });
+    }
+
+    // Setup voice upload and drag & drop
+    const voiceUpload = document.getElementById('voiceUpload');
+    if (voiceUpload) {
+        voiceUpload.addEventListener('change', (e) => {
+            const files = Array.from(e.target.files);
+            files.forEach(file => {
+                if (file.type.startsWith('audio/')) {
+                    const url = URL.createObjectURL(file);
+                    const audio = new Audio(url);
+                    audio.addEventListener('loadedmetadata', () => {
+                        addVoiceToLibrary({
+                            url: url,
+                            path: url,
+                            filename: file.name,
+                            duration: audio.duration,
+                            type: 'upload'
+                        });
+                        showNotification(`✅ Voice uploaded: ${file.name}`, 'success');
+                    });
+                }
+            });
+            voiceUpload.value = '';
+        });
+    }
+
+    // Setup voice dropzone
+    const voiceDropzone = document.getElementById('voiceDropzone');
+    if (voiceDropzone) {
+        voiceDropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            voiceDropzone.style.borderColor = '#667eea';
+            voiceDropzone.style.background = 'rgba(102, 126, 234, 0.1)';
+        });
+        voiceDropzone.addEventListener('dragleave', () => {
+            voiceDropzone.style.borderColor = '#ddd';
+            voiceDropzone.style.background = '';
+        });
+        voiceDropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            voiceDropzone.style.borderColor = '#ddd';
+            voiceDropzone.style.background = '';
+            const files = Array.from(e.dataTransfer.files);
+            files.forEach(file => {
+                if (file.type.startsWith('audio/')) {
+                    const url = URL.createObjectURL(file);
+                    const audio = new Audio(url);
+                    audio.addEventListener('loadedmetadata', () => {
+                        addVoiceToLibrary({
+                            url: url,
+                            path: url,
+                            filename: file.name,
+                            duration: audio.duration,
+                            type: 'upload'
+                        });
+                        showNotification(`✅ Voice uploaded: ${file.name}`, 'success');
+                    });
+                }
+            });
+        });
+    }
+
+    // Setup voice model description update
+    const voiceModel = document.getElementById('voiceModel');
+    if (voiceModel) {
+        voiceModel.addEventListener('change', () => {
+            const descElement = document.getElementById('modelDescription');
+            if (descElement) {
+                const model = voiceModel.value;
+                if (model.includes('max')) {
+                    descElement.textContent = 'Max: Best quality, more realistic, takes more time';
+                } else {
+                    descElement.textContent = 'Mini: Good quality, faster generation, lower cost';
+                }
+            }
         });
     }
 
