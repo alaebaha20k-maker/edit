@@ -1857,7 +1857,7 @@ def generate_voice_route():
             return jsonify({'error': 'No data provided'}), 400
 
         script = data.get('script', '').strip()
-        voice_id = data.get('voice_id', 'Hana')  # Default to Hana voice
+        voice_id = data.get('voice_id', 'Olivia')  # Default to Olivia voice
         model_id = data.get('model_id', 'inworld-tts-1.5-max')
         language = data.get('language', 'en-US')  # Default to English
         speaking_rate = float(data.get('speaking_rate', 1.0))  # Default to normal speed

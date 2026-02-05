@@ -142,9 +142,45 @@ Output format (JSON array):
 
 Output ONLY the JSON array, no extra text."""
 
-    # Inworld AI voice configurations
+    # Inworld AI voice configurations (Official Inworld TTS-1.5 Voices)
     INWORLD_VOICES = {
-        # English voices
+        # Female voices
+        'olivia': {
+            'name': 'Olivia',
+            'language': 'en-US',
+            'gender': 'Female',
+            'description': 'Elegant, smooth voice - perfect for professional content',
+            'preview_url': 'https://storage.googleapis.com/inworld-ai-samples/olivia_preview.mp3'
+        },
+        'sarah': {
+            'name': 'Sarah',
+            'language': 'en-US',
+            'gender': 'Female',
+            'description': 'Warm, engaging voice - great for storytelling',
+            'preview_url': 'https://storage.googleapis.com/inworld-ai-samples/sarah_preview.mp3'
+        },
+        'ashley': {
+            'name': 'Ashley',
+            'language': 'en-US',
+            'gender': 'Female',
+            'description': 'Energetic, bright voice - ideal for entertainment',
+            'preview_url': 'https://storage.googleapis.com/inworld-ai-samples/ashley_preview.mp3'
+        },
+        'elizabeth': {
+            'name': 'Elizabeth',
+            'language': 'en-US',
+            'gender': 'Female',
+            'description': 'Professional, clear voice - excellent for educational content',
+            'preview_url': 'https://storage.googleapis.com/inworld-ai-samples/elizabeth_preview.mp3'
+        },
+        'wendy': {
+            'name': 'Wendy',
+            'language': 'en-US',
+            'gender': 'Female',
+            'description': 'Soft, gentle voice - perfect for calm narration',
+            'preview_url': 'https://storage.googleapis.com/inworld-ai-samples/wendy_preview.mp3'
+        },
+        # Male voices
         'dennis': {
             'name': 'Dennis',
             'language': 'en-US',
@@ -152,48 +188,33 @@ Output ONLY the JSON array, no extra text."""
             'description': 'Deep, authoritative voice - great for documentaries',
             'preview_url': 'https://storage.googleapis.com/inworld-ai-samples/dennis_preview.mp3'
         },
-        'marcus': {
-            'name': 'Marcus',
+        'mark': {
+            'name': 'Mark',
             'language': 'en-US',
             'gender': 'Male',
-            'description': 'Friendly, conversational - perfect for tutorials',
-            'preview_url': 'https://storage.googleapis.com/inworld-ai-samples/marcus_preview.mp3'
+            'description': 'Professional, clear voice - perfect for business content',
+            'preview_url': 'https://storage.googleapis.com/inworld-ai-samples/mark_preview.mp3'
         },
-        'brandon': {
-            'name': 'Brandon',
+        'theodore': {
+            'name': 'Theodore',
             'language': 'en-US',
             'gender': 'Male',
-            'description': 'Energetic, young voice - ideal for entertainment',
-            'preview_url': 'https://storage.googleapis.com/inworld-ai-samples/brandon_preview.mp3'
+            'description': 'Warm, friendly voice - ideal for tutorials',
+            'preview_url': 'https://storage.googleapis.com/inworld-ai-samples/theodore_preview.mp3'
         },
-        'ava': {
-            'name': 'Ava',
-            'language': 'en-US',
-            'gender': 'Female',
-            'description': 'Professional, clear - great for educational content',
-            'preview_url': 'https://storage.googleapis.com/inworld-ai-samples/ava_preview.mp3'
-        },
-        'emma': {
-            'name': 'Emma',
-            'language': 'en-US',
-            'gender': 'Female',
-            'description': 'Warm, engaging - perfect for storytelling',
-            'preview_url': 'https://storage.googleapis.com/inworld-ai-samples/emma_preview.mp3'
-        },
-        # French voices
-        'jean-fr': {
-            'name': 'Jean',
-            'language': 'fr-FR',
+        'edward': {
+            'name': 'Edward',
+            'language': 'en-GB',
             'gender': 'Male',
-            'description': 'Voix masculine professionnelle française',
-            'preview_url': 'https://storage.googleapis.com/inworld-ai-samples/jean_preview.mp3'
+            'description': 'British, refined voice - excellent for sophisticated content',
+            'preview_url': 'https://storage.googleapis.com/inworld-ai-samples/edward_preview.mp3'
         },
-        'marie-fr': {
-            'name': 'Marie',
-            'language': 'fr-FR',
-            'gender': 'Female',
-            'description': 'Voix féminine chaleureuse française',
-            'preview_url': 'https://storage.googleapis.com/inworld-ai-samples/marie_preview.mp3'
+        'craig': {
+            'name': 'Craig',
+            'language': 'en-US',
+            'gender': 'Male',
+            'description': 'Strong, confident voice - great for motivational content',
+            'preview_url': 'https://storage.googleapis.com/inworld-ai-samples/craig_preview.mp3'
         }
     }
 
@@ -229,7 +250,7 @@ Output ONLY the JSON array, no extra text."""
                 'pexels': ''
             },
             'voice_settings': {
-                'default_voice': 'marcus',
+                'default_voice': 'olivia',
                 'speaking_rate': 1.0
             }
         }
@@ -472,7 +493,7 @@ Each title must be distinctive, high-quality, and optimized for CTR.
         Save voice settings
 
         Args:
-            default_voice: Voice ID (e.g., 'marcus', 'ava')
+            default_voice: Voice ID (e.g., 'olivia', 'dennis', 'sarah')
             speaking_rate: Speed multiplier (0.8 - 1.5)
 
         Returns:
@@ -504,7 +525,7 @@ Each title must be distinctive, high-quality, and optimized for CTR.
         """Get current voice settings"""
         settings = cls.load_settings()
         return settings.get('voice_settings', {
-            'default_voice': 'marcus',
+            'default_voice': 'olivia',
             'speaking_rate': 1.0
         })
 

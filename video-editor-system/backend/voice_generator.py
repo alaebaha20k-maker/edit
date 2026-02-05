@@ -44,7 +44,7 @@ class VoiceGenerator:
         self,
         script: str,
         output_path: str,
-        voice_id: str = "Hana",
+        voice_id: str = "Olivia",
         model_id: str = "inworld-tts-1.5-max",
         language: str = "en-US",
         speaking_rate: float = 1.0,
@@ -56,7 +56,7 @@ class VoiceGenerator:
         Args:
             script: Full script text (any length)
             output_path: Where to save final merged audio
-            voice_id: Inworld voice name (Hana, Jack, etc)
+            voice_id: Inworld voice name (Olivia, Dennis, Sarah, Mark, etc)
             model_id: TTS model (inworld-tts-1.5-max or inworld-tts-1.5-mini)
             language: Language code (en-US, es-ES, fr-FR, etc)
             speaking_rate: Speed (0.5-2.0, default 1.0)
@@ -338,7 +338,7 @@ class VoiceGenerator:
 def generate_voice(
     script: str,
     output_path: str,
-    voice_id: str = "Hana",
+    voice_id: str = "Olivia",
     model_id: str = "inworld-tts-1.5-max",
     language: str = "en-US",
     speaking_rate: float = 1.0,
@@ -352,7 +352,7 @@ def generate_voice(
     Args:
         script: Full script text
         output_path: Where to save audio
-        voice_id: Inworld voice name (Hana, Jack, etc)
+        voice_id: Inworld voice name (Olivia, Dennis, Sarah, Mark, etc)
         model_id: TTS model (inworld-tts-1.5-max or inworld-tts-1.5-mini)
         language: Language code (en-US, es-ES, etc)
         speaking_rate: Speed (0.5-2.0)
