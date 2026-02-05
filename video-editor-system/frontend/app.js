@@ -845,9 +845,19 @@ async function generateVoice() {
         return;
     }
 
-    const voiceModel = document.getElementById('voiceModel')?.value || 'inworld-tts-1.5-max';
-    const voiceId = document.getElementById('voiceId')?.value || 'Hana';
-    const voiceLanguage = document.getElementById('voiceLanguage')?.value || 'en-US';
+    // Try to get values from BOTH voice sections (Voice Generation Section OR Audio & Voice Section)
+    const voiceModel = document.getElementById('voiceModel')?.value ||
+                      document.getElementById('voiceSelectModel')?.value ||
+                      'inworld-tts-1.5-max';
+
+    const voiceId = document.getElementById('voiceId')?.value ||
+                   document.getElementById('voiceSelect')?.value ||
+                   'Hana';
+
+    const voiceLanguage = document.getElementById('voiceLanguage')?.value ||
+                         document.getElementById('voiceSelectLanguage')?.value ||
+                         'en-US';
+
     const speakingRate = parseFloat(document.getElementById('speakingRate')?.value || '1.0');
 
     const progressBox = document.getElementById('voiceProgress');
@@ -955,73 +965,83 @@ function addVoiceToLibrary(voiceData) {
 
 // Render voice library
 function renderVoiceLibrary() {
-    const container = document.getElementById('voiceLibraryList');
-    if (!container) return;
+    // Get both voice library containers
+    const container1 = document.getElementById('voiceLibraryList');
+    const container2 = document.getElementById('voiceLibraryList2');
 
     const voices = window.videoData.voiceLibrary || [];
 
+    // Generate HTML content
+    let htmlContent;
     if (voices.length === 0) {
-        container.innerHTML = '<p style="color: #888; text-align: center;">No voice generated yet. Generate AI voice or upload your own.</p>';
-        return;
+        htmlContent = '<p style="color: #888; text-align: center;">No voice generated yet. Generate AI voice or upload your own.</p>';
+    } else {
+        htmlContent = voices.map((voice, index) => {
+            const isSelected = window.videoData.selectedVoiceIndex === index;
+
+            // NaN protection: Check if duration is valid
+            const duration = parseFloat(voice.duration);
+            const isValidDuration = !isNaN(duration) && duration > 0;
+            const minutes = isValidDuration ? Math.floor(duration / 60) : 0;
+            const seconds = isValidDuration ? Math.floor(duration % 60) : 0;
+            const durationStr = isValidDuration ? `${minutes}:${seconds.toString().padStart(2, '0')}` : '0:00';
+
+            const typeLabel = voice.type === 'ai' ? '🤖 AI Generated' : '📤 Uploaded';
+            const modelLabel = voice.model ? (voice.model.includes('max') ? 'Max Quality' : 'Mini Quality') : '';
+
+            return `
+                <div class="voice-item" style="
+                    background: ${isSelected ? 'linear-gradient(135deg, rgba(102, 126, 234, 0.2), rgba(118, 75, 162, 0.2))' : 'white'};
+                    border: 2px solid ${isSelected ? '#667eea' : '#e0e0e0'};
+                    padding: 15px;
+                    border-radius: 8px;
+                    display: flex;
+                    align-items: center;
+                    gap: 15px;
+                    cursor: pointer;
+                    transition: all 0.3s;
+                " onclick="selectVoice(${index})">
+                    <button onclick="event.stopPropagation(); playVoicePreview(${index})" style="
+                        background: #667eea;
+                        color: white;
+                        border: none;
+                        border-radius: 50%;
+                        width: 50px;
+                        height: 50px;
+                        font-size: 20px;
+                        cursor: pointer;
+                    ">▶️</button>
+                    <div style="flex: 1;">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
+                            <strong>${typeLabel}</strong>
+                            ${voice.voice ? `<span style="color: #667eea;">• ${voice.voice}</span>` : ''}
+                            ${voice.language ? `<span style="color: #888;">• ${voice.language}</span>` : ''}
+                            ${modelLabel ? `<span style="color: #888;">• ${modelLabel}</span>` : ''}
+                        </div>
+                        <div style="color: #666; font-size: 0.9em;">
+                            ⏱️ ${durationStr} ${voice.speed ? `• ${voice.speed}x speed` : ''} ${voice.chunks ? `• ${voice.chunks} chunks` : ''}
+                        </div>
+                        <div style="color: #888; font-size: 0.85em; margin-top: 3px;">
+                            📄 ${voice.filename}
+                        </div>
+                    </div>
+                    ${isSelected ? '<div style="background: #667eea; color: white; padding: 5px 12px; border-radius: 20px; font-size: 0.85em; font-weight: bold;">✓ Selected</div>' : ''}
+                    <button onclick="event.stopPropagation(); removeVoiceFromLibrary(${index})" style="
+                        background: #ff4757;
+                        color: white;
+                        border: none;
+                        border-radius: 5px;
+                        padding: 8px 12px;
+                        cursor: pointer;
+                    ">🗑️</button>
+                </div>
+            `;
+        }).join('');
     }
 
-    container.innerHTML = voices.map((voice, index) => {
-        const isSelected = window.videoData.selectedVoiceIndex === index;
-        const minutes = Math.floor(voice.duration / 60);
-        const seconds = Math.floor(voice.duration % 60);
-        const durationStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-
-        const typeLabel = voice.type === 'ai' ? '🤖 AI Generated' : '📤 Uploaded';
-        const modelLabel = voice.model ? (voice.model.includes('max') ? 'Max Quality' : 'Mini Quality') : '';
-
-        return `
-            <div class="voice-item" style="
-                background: ${isSelected ? 'linear-gradient(135deg, rgba(102, 126, 234, 0.2), rgba(118, 75, 162, 0.2))' : 'white'};
-                border: 2px solid ${isSelected ? '#667eea' : '#e0e0e0'};
-                padding: 15px;
-                border-radius: 8px;
-                display: flex;
-                align-items: center;
-                gap: 15px;
-                cursor: pointer;
-                transition: all 0.3s;
-            " onclick="selectVoice(${index})">
-                <button onclick="event.stopPropagation(); playVoicePreview(${index})" style="
-                    background: #667eea;
-                    color: white;
-                    border: none;
-                    border-radius: 50%;
-                    width: 50px;
-                    height: 50px;
-                    font-size: 20px;
-                    cursor: pointer;
-                ">▶️</button>
-                <div style="flex: 1;">
-                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px;">
-                        <strong>${typeLabel}</strong>
-                        ${voice.voice ? `<span style="color: #667eea;">• ${voice.voice}</span>` : ''}
-                        ${voice.language ? `<span style="color: #888;">• ${voice.language}</span>` : ''}
-                        ${modelLabel ? `<span style="color: #888;">• ${modelLabel}</span>` : ''}
-                    </div>
-                    <div style="color: #666; font-size: 0.9em;">
-                        ⏱️ ${durationStr} ${voice.speed ? `• ${voice.speed}x speed` : ''} ${voice.chunks ? `• ${voice.chunks} chunks` : ''}
-                    </div>
-                    <div style="color: #888; font-size: 0.85em; margin-top: 3px;">
-                        📄 ${voice.filename}
-                    </div>
-                </div>
-                ${isSelected ? '<div style="background: #667eea; color: white; padding: 5px 12px; border-radius: 20px; font-size: 0.85em; font-weight: bold;">✓ Selected</div>' : ''}
-                <button onclick="event.stopPropagation(); removeVoiceFromLibrary(${index})" style="
-                    background: #ff4757;
-                    color: white;
-                    border: none;
-                    border-radius: 5px;
-                    padding: 8px 12px;
-                    cursor: pointer;
-                ">🗑️</button>
-            </div>
-        `;
-    }).join('');
+    // Update both containers if they exist
+    if (container1) container1.innerHTML = htmlContent;
+    if (container2) container2.innerHTML = htmlContent;
 }
 
 // Select voice from library
@@ -1645,61 +1665,6 @@ function toggleVoiceMode() {
     if (manualSection && autoSection) {
         manualSection.style.display = mode === 'manual' ? 'block' : 'none';
         autoSection.style.display = mode === 'auto' ? 'block' : 'none';
-    }
-}
-
-async function generateVoice() {
-    const script = document.getElementById('scriptInput')?.value || window.videoData.script;
-    if (!script) {
-        showNotification('⚠️ Please generate or enter a script first', 'warning');
-        return;
-    }
-
-    const voiceSelect = document.getElementById('voiceSelect');
-    const rateSlider = document.getElementById('speakingRate');
-
-    const voice = voiceSelect ? voiceSelect.value : 'en-US-Neural2-C';
-    const rate = rateSlider ? parseFloat(rateSlider.value) : 1.0;
-
-    const progressBox = document.getElementById('voiceProgress');
-    if (progressBox) {
-        progressBox.style.display = 'block';
-        progressBox.innerHTML = '<p>🎙️ Generating voice... This may take 1-2 minutes...</p>';
-    }
-
-    try {
-        showNotification('🎙️ Generating AI voice...', 'info');
-
-        const response = await fetch('/api/generate-voice', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                script: script,
-                voice: voice,
-                rate: rate
-            })
-        });
-
-        const data = await response.json();
-
-        if (!response.ok || !data.success) {
-            throw new Error(data.error || `Server error: ${response.status}`);
-        }
-
-        if (progressBox) {
-            progressBox.innerHTML = `<p>✅ Voice generated! Duration: ${Math.round(data.duration)}s</p>`;
-        }
-
-        showNotification('✅ Voice generated successfully!', 'success');
-
-        // TODO: Add audio player to preview the generated voice
-
-    } catch (error) {
-        console.error('Voice generation failed:', error);
-        if (progressBox) {
-            progressBox.innerHTML = `<p>❌ Error: ${error.message}</p>`;
-        }
-        showNotification('❌ Voice generation failed: ' + error.message, 'error');
     }
 }
 

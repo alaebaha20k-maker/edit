@@ -446,6 +446,17 @@
 
                     <button onclick="generateVoice()" class="btn-secondary">🎙️ Generate Voice</button>
                     <div id="voiceProgress" class="progress-box" style="display: none;"></div>
+
+                    <!-- Voice Library (same as in Voice Generation Section) -->
+                    <div style="margin-top: 30px; background: rgba(102, 126, 234, 0.1); padding: 20px; border-radius: 10px;">
+                        <h3 style="margin-bottom: 15px;">🎵 Voice Library <span style="font-size: 14px; color: #888;">(All generated voices)</span></h3>
+                        <div id="voiceLibraryList2" style="display: flex; flex-direction: column; gap: 10px; min-height: 60px;">
+                            <!-- Will be populated by JavaScript -->
+                        </div>
+                        <p style="color: #888; font-size: 0.9em; margin-top: 10px; text-align: center;">
+                            💡 Voice library is shared across all sections
+                        </p>
+                    </div>
                 </div>
             </section>
 
