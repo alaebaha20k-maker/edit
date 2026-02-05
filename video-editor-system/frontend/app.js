@@ -964,7 +964,7 @@ function addVoiceToLibrary(voiceData) {
     renderVoiceLibrary();
 }
 
-// Render voice library with ranking
+// Render voice library with ranking (Step 2 only - All-in-one)
 function renderVoiceLibrary() {
     const container = document.getElementById('voiceLibraryList');
     if (!container) return;
@@ -972,7 +972,7 @@ function renderVoiceLibrary() {
     const voices = window.videoData.voiceLibrary || [];
 
     if (voices.length === 0) {
-        container.innerHTML = '<p style="color: #888; text-align: center; padding: 40px 0;">No voices yet. Generate voice in Step 2 or upload from your computer.</p>';
+        container.innerHTML = '<p style="color: #888; text-align: center; padding: 20px 0;">No voices yet. Generate AI voice or upload your own above.</p>';
         return;
     }
 
