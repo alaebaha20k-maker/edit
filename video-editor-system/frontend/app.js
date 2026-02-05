@@ -978,6 +978,25 @@ async function uploadVoiceToServer(file) {
     return await response.json();
 }
 
+// Helper function to upload media file (image/video) to server
+async function uploadMediaToServer(file, type) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('type', type); // 'image' or 'video'
+
+    const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData
+    });
+
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Media upload failed');
+    }
+
+    return await response.json();
+}
+
 // Toggle voice sections
 function toggleVoiceSection(type) {
     if (type === 'ai') {
@@ -1332,11 +1351,12 @@ function toggleMediaSection(type) {
 // =============================================================================
 // MEDIA LIBRARY WITH RANKING
 // =============================================================================
-function addToMediaLibrary(file, url, type, source = 'upload', muted = false) {
+function addToMediaLibrary(file, url, type, source = 'upload', muted = false, serverPath = null) {
     const mediaItem = {
         id: Date.now() + Math.random(),
         file: file,
-        url: url,
+        url: url,  // Blob URL for preview
+        path: serverPath || url,  // Server path for assembly (fallback to url for stock/AI)
         type: type, // 'image' or 'video'
         source: source, // 'upload', 'stock', 'ai'
         muted: muted,
@@ -2194,7 +2214,8 @@ async function assembleVideo() {
 
     try {
         // Extract media paths from library (in ranked order)
-        const mediaPaths = mediaLibrary.map(item => item.url || item.path);
+        // Prioritize server path over blob URL
+        const mediaPaths = mediaLibrary.map(item => item.path || item.url);
 
         // Extract voice paths from voice library (in ranked order)
         const voicePaths = voiceLibrary.map(voice => voice.path).filter(p => p);
@@ -2667,18 +2688,31 @@ document.addEventListener('DOMContentLoaded', () => {
     // Setup media file upload handler
     const mediaUpload = document.getElementById('mediaUpload');
     if (mediaUpload) {
-        mediaUpload.addEventListener('change', (e) => {
+        mediaUpload.addEventListener('change', async (e) => {
             const files = Array.from(e.target.files);
-            files.forEach(file => {
+
+            for (const file of files) {
                 const isVideo = file.type.startsWith('video/');
                 const isImage = file.type.startsWith('image/');
 
                 if (isVideo || isImage) {
-                    const url = URL.createObjectURL(file);
-                    const type = isVideo ? 'video' : 'image';
-                    addToMediaLibrary(file, url, type, 'upload');
+                    try {
+                        const type = isVideo ? 'video' : 'image';
+                        const blobUrl = URL.createObjectURL(file);
+
+                        // Upload to server
+                        showNotification(`⏳ Uploading ${file.name}...`, 'info');
+                        const uploadResult = await uploadMediaToServer(file, type);
+
+                        // Add to library with blob URL for preview and server path for assembly
+                        addToMediaLibrary(file, blobUrl, type, 'upload', false, uploadResult.path);
+                        showNotification(`✅ ${type} uploaded: ${file.name}`, 'success');
+                    } catch (error) {
+                        console.error('Media upload failed:', error);
+                        showNotification(`❌ Upload failed: ${error.message}`, 'error');
+                    }
                 }
-            });
+            }
 
             // Reset input
             e.target.value = '';
@@ -2700,24 +2734,37 @@ document.addEventListener('DOMContentLoaded', () => {
             mediaDropzone.style.background = 'rgba(255, 255, 255, 0.02)';
         });
 
-        mediaDropzone.addEventListener('drop', (e) => {
+        mediaDropzone.addEventListener('drop', async (e) => {
             e.preventDefault();
             mediaDropzone.style.borderColor = '#444';
             mediaDropzone.style.background = 'rgba(255, 255, 255, 0.02)';
 
             const files = Array.from(e.dataTransfer.files);
-            files.forEach(file => {
+
+            for (const file of files) {
                 const isVideo = file.type.startsWith('video/');
                 const isImage = file.type.startsWith('image/');
 
                 if (isVideo || isImage) {
-                    const url = URL.createObjectURL(file);
-                    const type = isVideo ? 'video' : 'image';
-                    addToMediaLibrary(file, url, type, 'upload');
+                    try {
+                        const type = isVideo ? 'video' : 'image';
+                        const blobUrl = URL.createObjectURL(file);
+
+                        // Upload to server
+                        showNotification(`⏳ Uploading ${file.name}...`, 'info');
+                        const uploadResult = await uploadMediaToServer(file, type);
+
+                        // Add to library with blob URL for preview and server path for assembly
+                        addToMediaLibrary(file, blobUrl, type, 'upload', false, uploadResult.path);
+                        showNotification(`✅ ${type} uploaded: ${file.name}`, 'success');
+                    } catch (error) {
+                        console.error('Media upload failed:', error);
+                        showNotification(`❌ Upload failed: ${error.message}`, 'error');
+                    }
                 } else {
                     showNotification('⚠️ Only images and videos supported', 'warning');
                 }
-            });
+            }
         });
     }
 
