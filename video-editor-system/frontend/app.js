@@ -2418,6 +2418,22 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Setup voice model description update for Audio & Voice section
+    const voiceSelectModel = document.getElementById('voiceSelectModel');
+    if (voiceSelectModel) {
+        voiceSelectModel.addEventListener('change', () => {
+            const descElement = document.getElementById('voiceSelectModelDesc');
+            if (descElement) {
+                const model = voiceSelectModel.value;
+                if (model.includes('max')) {
+                    descElement.textContent = 'Max: Best quality, more realistic, takes more time';
+                } else {
+                    descElement.textContent = 'Mini: Good quality, faster generation, lower cost';
+                }
+            }
+        });
+    }
+
     // Setup media upload checkbox handlers
     const useAiImages = document.getElementById('useAiImages');
     if (useAiImages) {
