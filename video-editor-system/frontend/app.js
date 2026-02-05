@@ -959,6 +959,25 @@ if (!window.videoData.voiceLibrary) {
     window.videoData.voiceLibrary = [];
 }
 
+// Helper function to upload voice file to server
+async function uploadVoiceToServer(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('type', 'audio');
+
+    const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData
+    });
+
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Voice upload failed');
+    }
+
+    return await response.json();
+}
+
 // Toggle voice sections
 function toggleVoiceSection(type) {
     if (type === 'ai') {
@@ -2182,7 +2201,9 @@ async function assembleVideo() {
 
         console.log('🎬 Assembling video...');
         console.log('   Voices:', voiceLibrary.length, 'ranked voices');
+        console.log('   Voice paths:', voicePaths);
         console.log('   Media:', mediaPaths.length, 'files');
+        console.log('   Media paths:', mediaPaths);
 
         if (progressText) {
             progressText.textContent = `Merging ${voiceLibrary.length} voice(s) and ${mediaPaths.length} media clips...`;
@@ -2471,24 +2492,42 @@ document.addEventListener('DOMContentLoaded', () => {
     // Setup voice upload and drag & drop
     const voiceUpload = document.getElementById('voiceUpload');
     if (voiceUpload) {
-        voiceUpload.addEventListener('change', (e) => {
+        voiceUpload.addEventListener('change', async (e) => {
             const files = Array.from(e.target.files);
-            files.forEach(file => {
+
+            for (const file of files) {
                 if (file.type.startsWith('audio/')) {
-                    const url = URL.createObjectURL(file);
-                    const audio = new Audio(url);
-                    audio.addEventListener('loadedmetadata', () => {
+                    try {
+                        // Create blob URL for preview
+                        const blobUrl = URL.createObjectURL(file);
+                        const audio = new Audio(blobUrl);
+
+                        // Wait for metadata to get duration
+                        await new Promise((resolve) => {
+                            audio.addEventListener('loadedmetadata', resolve);
+                        });
+
+                        // Upload to server to get server path
+                        showNotification(`⏳ Uploading ${file.name}...`, 'info');
+                        const uploadResult = await uploadVoiceToServer(file);
+
+                        // Add to library with server path for assembly and blob URL for preview
                         addVoiceToLibrary({
-                            url: url,
-                            path: url,
+                            url: blobUrl,  // Blob URL for preview playback
+                            path: uploadResult.path,  // Server path for video assembly
                             filename: file.name,
                             duration: audio.duration,
                             type: 'upload'
                         });
+
                         showNotification(`✅ Voice uploaded: ${file.name}`, 'success');
-                    });
+                    } catch (error) {
+                        console.error('Voice upload failed:', error);
+                        showNotification(`❌ Upload failed: ${error.message}`, 'error');
+                    }
                 }
-            });
+            }
+
             voiceUpload.value = '';
         });
     }
@@ -2505,27 +2544,45 @@ document.addEventListener('DOMContentLoaded', () => {
             voiceDropzone.style.borderColor = '#ddd';
             voiceDropzone.style.background = '';
         });
-        voiceDropzone.addEventListener('drop', (e) => {
+        voiceDropzone.addEventListener('drop', async (e) => {
             e.preventDefault();
             voiceDropzone.style.borderColor = '#ddd';
             voiceDropzone.style.background = '';
+
             const files = Array.from(e.dataTransfer.files);
-            files.forEach(file => {
+
+            for (const file of files) {
                 if (file.type.startsWith('audio/')) {
-                    const url = URL.createObjectURL(file);
-                    const audio = new Audio(url);
-                    audio.addEventListener('loadedmetadata', () => {
+                    try {
+                        // Create blob URL for preview
+                        const blobUrl = URL.createObjectURL(file);
+                        const audio = new Audio(blobUrl);
+
+                        // Wait for metadata to get duration
+                        await new Promise((resolve) => {
+                            audio.addEventListener('loadedmetadata', resolve);
+                        });
+
+                        // Upload to server to get server path
+                        showNotification(`⏳ Uploading ${file.name}...`, 'info');
+                        const uploadResult = await uploadVoiceToServer(file);
+
+                        // Add to library with server path for assembly and blob URL for preview
                         addVoiceToLibrary({
-                            url: url,
-                            path: url,
+                            url: blobUrl,  // Blob URL for preview playback
+                            path: uploadResult.path,  // Server path for video assembly
                             filename: file.name,
                             duration: audio.duration,
                             type: 'upload'
                         });
+
                         showNotification(`✅ Voice uploaded: ${file.name}`, 'success');
-                    });
+                    } catch (error) {
+                        console.error('Voice upload failed:', error);
+                        showNotification(`❌ Upload failed: ${error.message}`, 'error');
+                    }
                 }
-            });
+            }
         });
     }
 
