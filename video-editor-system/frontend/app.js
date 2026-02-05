@@ -664,7 +664,22 @@ async function loadScriptFile() {
     if (scriptInput) {
         scriptInput.value = text;
         window.videoData.script = text;
+        appState.generatedScript = text;
         showNotification('✅ Script loaded from file', 'success');
+
+        // Show voice section when script is uploaded
+        showVoiceSectionIfScriptAvailable();
+    }
+}
+
+// Helper function to show voice section when script is available
+function showVoiceSectionIfScriptAvailable() {
+    const script = window.videoData.script || appState.generatedScript;
+    const voiceSection = document.getElementById('voiceGenerationSection');
+
+    if (script && script.trim().length > 0 && voiceSection) {
+        voiceSection.style.display = 'block';
+        console.log('✅ Voice section shown - script available');
     }
 }
 
@@ -2382,6 +2397,29 @@ document.addEventListener('DOMContentLoaded', () => {
     if (rateSlider && rateDisplay) {
         rateSlider.addEventListener('input', (e) => {
             rateDisplay.textContent = e.target.value + 'x';
+        });
+    }
+
+    // Setup manual script input listener - show voice section when script is entered
+    const scriptInput = document.getElementById('scriptInput');
+    if (scriptInput) {
+        scriptInput.addEventListener('input', (e) => {
+            const script = e.target.value.trim();
+            if (script.length > 50) { // Only show if script has substantial content
+                window.videoData.script = script;
+                appState.generatedScript = script;
+                showVoiceSectionIfScriptAvailable();
+            }
+        });
+
+        // Also check on blur (when user clicks away)
+        scriptInput.addEventListener('blur', (e) => {
+            const script = e.target.value.trim();
+            if (script.length > 0) {
+                window.videoData.script = script;
+                appState.generatedScript = script;
+                showVoiceSectionIfScriptAvailable();
+            }
         });
     }
 
