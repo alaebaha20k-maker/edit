@@ -657,12 +657,21 @@
                 <div class="settings-section">
                     <h3>🔑 API Keys</h3>
                     <div class="input-group">
-                        <label>Gemini API Key (Required for AI generation)</label>
+                        <label>Gemini API Key (Script Writer - Required for AI generation)</label>
                         <div class="password-input">
                             <input type="password" id="geminiKey" placeholder="Enter Gemini API key..." class="input-large">
                             <button onclick="togglePassword('geminiKey')" class="btn-toggle">👁️</button>
                         </div>
                         <span class="hint">Get from: https://aistudio.google.com/app/apikey</span>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Director Gemini API Key (Auto Images AI - gemini-2.5-flash - SEPARATE key recommended)</label>
+                        <div class="password-input">
+                            <input type="password" id="directorGeminiKey" placeholder="Leave empty to use Script Writer key..." class="input-large">
+                            <button onclick="togglePassword('directorGeminiKey')" class="btn-toggle">👁️</button>
+                        </div>
+                        <span class="hint">💡 Use a DIFFERENT Gemini key to avoid rate limit conflicts between script generation and image prompt generation</span>
                     </div>
 
                     <div class="input-group">
@@ -749,6 +758,70 @@
 
                     <div id="nichesList" style="margin-top: 20px;">
                         <!-- Existing niches will be listed here -->
+                    </div>
+                </div>
+
+                <!-- Image Styles Section -->
+                <div class="settings-section">
+                    <h3>🎨 Auto Images AI - Custom Styles</h3>
+                    <p style="color: #666; margin-bottom: 15px;">Create custom image styles for Auto Images AI. Each style defines visual rules, composition, lighting, and colors that the Director Gemini (gemini-2.5-flash) uses to generate detailed prompts.</p>
+
+                    <div class="input-group">
+                        <label>Built-in Styles (Read-Only)</label>
+                        <p style="color: #666; font-size: 14px; margin: 5px 0;">🎬 Cinematic • 📷 Photorealistic • 🎨 Artistic • 🎬 Animated</p>
+                    </div>
+
+                    <div class="input-group" style="margin-top: 20px;">
+                        <label>Your Custom Styles</label>
+                        <div id="customStylesList" style="margin-top: 10px;">
+                            <!-- Custom styles will be listed here -->
+                            <p style="color: #666; font-size: 14px;">Loading styles...</p>
+                        </div>
+                        <button onclick="openStyleCreator()" class="btn-primary" style="margin-top: 10px;">➕ Create New Style</button>
+                    </div>
+
+                    <div id="styleCreatorSection" style="display: none; margin-top: 20px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
+                        <h4 style="margin: 0 0 15px 0;">Create New Style</h4>
+
+                        <div class="input-group">
+                            <label>Style Name</label>
+                            <input type="text" id="newStyleName" placeholder="e.g., 'Cyberpunk Neon', 'Vintage Film'" class="input-large">
+                        </div>
+
+                        <div class="input-group">
+                            <label>Description</label>
+                            <textarea id="newStyleDescription" rows="2" placeholder="Brief description of this style..." class="textarea-large"></textarea>
+                        </div>
+
+                        <div class="input-group">
+                            <label>Visual Rules (3-10 items, one per line)</label>
+                            <textarea id="newStyleVisualRules" rows="4" placeholder="Example:&#10;Neon lights with high contrast&#10;Futuristic cyberpunk aesthetic&#10;Dark urban backgrounds" class="textarea-large"></textarea>
+                        </div>
+
+                        <div class="input-group">
+                            <label>Negative Rules (2-10 items, one per line)</label>
+                            <textarea id="newStyleNegativeRules" rows="3" placeholder="Example:&#10;No bright daylight scenes&#10;Avoid natural landscapes" class="textarea-large"></textarea>
+                        </div>
+
+                        <div class="input-group">
+                            <label>Composition Style</label>
+                            <input type="text" id="newStyleComposition" placeholder="e.g., 'Dynamic angles with rule of thirds'" class="input-large">
+                        </div>
+
+                        <div class="input-group">
+                            <label>Lighting Style</label>
+                            <input type="text" id="newStyleLighting" placeholder="e.g., 'Neon rim lighting with deep shadows'" class="input-large">
+                        </div>
+
+                        <div class="input-group">
+                            <label>Color Palette (3-10 colors, one per line)</label>
+                            <textarea id="newStyleColors" rows="3" placeholder="Example:&#10;Electric blue&#10;Hot pink&#10;Deep purple" class="textarea-large"></textarea>
+                        </div>
+
+                        <div style="display: flex; gap: 10px; margin-top: 15px;">
+                            <button onclick="saveNewStyle()" class="btn-success">💾 Save Style</button>
+                            <button onclick="closeStyleCreator()" class="btn-secondary">Cancel</button>
+                        </div>
                     </div>
                 </div>
             </div>

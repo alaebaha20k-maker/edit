@@ -142,6 +142,7 @@ const loadSettings = () => {
             // Restore API keys
             if (settings.api_keys) {
                 const geminiKey = document.getElementById('geminiKey');
+                const directorGeminiKey = document.getElementById('directorGeminiKey');
                 const replicateKey = document.getElementById('replicateKey');
                 const inworldKey = document.getElementById('inworldKey');
                 const inworldSecret = document.getElementById('inworldSecret');
@@ -150,6 +151,7 @@ const loadSettings = () => {
                 const unsplashKey = document.getElementById('unsplashKey');
 
                 if (geminiKey) geminiKey.value = settings.api_keys.gemini || '';
+                if (directorGeminiKey) directorGeminiKey.value = settings.api_keys.director_gemini || '';
                 if (replicateKey) replicateKey.value = settings.api_keys.replicate || '';
                 if (inworldKey) inworldKey.value = settings.api_keys.inworld || '';
                 if (inworldSecret) inworldSecret.value = settings.api_keys.inworld_secret || '';
@@ -191,6 +193,7 @@ const saveSettings = async () => {
         const settings = {
             api_keys: {
                 gemini: document.getElementById('geminiKey')?.value || '',
+                director_gemini: document.getElementById('directorGeminiKey')?.value || '',
                 replicate: document.getElementById('replicateKey')?.value || '',
                 inworld: document.getElementById('inworldKey')?.value || '',
                 inworld_secret: document.getElementById('inworldSecret')?.value || '',
@@ -214,6 +217,7 @@ const saveSettings = async () => {
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
                     gemini_api_key: settings.api_keys.gemini,
+                    director_gemini_key: settings.api_keys.director_gemini,
                     replicate_api_token: settings.api_keys.replicate,
                     inworld_api_key: settings.api_keys.inworld,
                     inworld_api_secret: settings.api_keys.inworld_secret
@@ -3751,5 +3755,145 @@ function formatTime(seconds) {
     const secs = Math.floor(seconds % 60);
     return mins + ':' + (secs < 10 ? '0' : '') + secs;
 }
+
+// =============================================================================
+// IMAGE STYLES MANAGEMENT (Auto Images AI)
+// =============================================================================
+
+async function loadCustomStyles() {
+    try {
+        const response = await fetch('/api/auto-images/styles');
+        const data = await response.json();
+
+        if (data.success) {
+            renderCustomStyles(data.styles);
+        }
+    } catch (error) {
+        console.error('Error loading custom styles:', error);
+    }
+}
+
+function renderCustomStyles(styles) {
+    const container = document.getElementById('customStylesList');
+    if (!container) return;
+
+    const customStyles = styles.filter(s => !s.built_in);
+
+    if (customStyles.length === 0) {
+        container.innerHTML = '<p style="color: #666; font-size: 14px;">No custom styles yet. Create your first style!</p>';
+        return;
+    }
+
+    container.innerHTML = customStyles.map(style => `
+        <div style="padding: 10px; margin: 5px 0; background: #fff; border: 1px solid #ddd; border-radius: 5px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <strong>${style.name}</strong>
+                <p style="margin: 5px 0 0 0; color: #666; font-size: 13px;">${style.description}</p>
+            </div>
+            <button onclick="deleteCustomStyle('${style.id}')" class="btn-secondary" style="padding: 5px 10px; font-size: 13px;">🗑️ Delete</button>
+        </div>
+    `).join('');
+}
+
+function openStyleCreator() {
+    const section = document.getElementById('styleCreatorSection');
+    if (section) {
+        section.style.display = 'block';
+        // Clear form
+        document.getElementById('newStyleName').value = '';
+        document.getElementById('newStyleDescription').value = '';
+        document.getElementById('newStyleVisualRules').value = '';
+        document.getElementById('newStyleNegativeRules').value = '';
+        document.getElementById('newStyleComposition').value = '';
+        document.getElementById('newStyleLighting').value = '';
+        document.getElementById('newStyleColors').value = '';
+    }
+}
+
+function closeStyleCreator() {
+    const section = document.getElementById('styleCreatorSection');
+    if (section) {
+        section.style.display = 'none';
+    }
+}
+
+async function saveNewStyle() {
+    const name = document.getElementById('newStyleName').value.trim();
+    const description = document.getElementById('newStyleDescription').value.trim();
+    const visualRulesText = document.getElementById('newStyleVisualRules').value.trim();
+    const negativeRulesText = document.getElementById('newStyleNegativeRules').value.trim();
+    const composition = document.getElementById('newStyleComposition').value.trim();
+    const lighting = document.getElementById('newStyleLighting').value.trim();
+    const colorsText = document.getElementById('newStyleColors').value.trim();
+
+    // Parse textarea inputs (one per line)
+    const visual_rules = visualRulesText.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+    const negative_rules = negativeRulesText.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+    const color_palette = colorsText.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+
+    // Validation
+    if (!name || !description || visual_rules.length < 3 || negative_rules.length < 2 || !composition || !lighting || color_palette.length < 3) {
+        showNotification('❌ Please fill all fields. Min: 3 visual rules, 2 negative rules, 3 colors', 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/auto-images/styles', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name,
+                description,
+                visual_rules,
+                negative_rules,
+                composition,
+                lighting,
+                color_palette
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showNotification('✅ Style created successfully!', 'success');
+            closeStyleCreator();
+            await loadCustomStyles();
+        } else {
+            showNotification('❌ Error: ' + data.error, 'error');
+        }
+    } catch (error) {
+        showNotification('❌ Error creating style: ' + error.message, 'error');
+    }
+}
+
+async function deleteCustomStyle(styleId) {
+    if (!confirm('Delete this custom style?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/auto-images/styles/${styleId}`, {
+            method: 'DELETE'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showNotification('✅ Style deleted successfully!', 'success');
+            await loadCustomStyles();
+        } else {
+            showNotification('❌ Error: ' + data.error, 'error');
+        }
+    } catch (error) {
+        showNotification('❌ Error deleting style: ' + error.message, 'error');
+    }
+}
+
+// Load custom styles when settings modal opens
+const originalOpenSettings = window.openSettings;
+window.openSettings = function() {
+    if (originalOpenSettings) originalOpenSettings();
+    loadCustomStyles();
+};
 
 console.log('✅ MR BAHA Editor with backend FFmpeg initialized');

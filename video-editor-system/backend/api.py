@@ -1344,16 +1344,18 @@ def save_api_config():
             return jsonify({'error': 'No data provided'}), 400
 
         gemini_key = data.get('gemini_api_key')
+        director_gemini_key = data.get('director_gemini_key')
         replicate_token = data.get('replicate_api_token')
         inworld_key = data.get('inworld_api_key')
         inworld_secret = data.get('inworld_api_secret')
 
-        if not gemini_key and not replicate_token and not inworld_key and not inworld_secret:
+        if not gemini_key and not director_gemini_key and not replicate_token and not inworld_key and not inworld_secret:
             return jsonify({'error': 'At least one API key must be provided'}), 400
 
         # Save configuration
         Config.save_api_config(
             gemini_key=gemini_key,
+            director_gemini_key=director_gemini_key,
             replicate_token=replicate_token,
             inworld_key=inworld_key,
             inworld_secret=inworld_secret
