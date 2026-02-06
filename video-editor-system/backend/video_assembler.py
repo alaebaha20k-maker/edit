@@ -80,12 +80,84 @@ class VideoAssembler:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         return float(result.stdout.strip())
 
+    def _prepare_looped_background_music(self, music_path: str, target_duration: float, verbose: bool = False) -> str:
+        """
+        Prepare background music with looping if needed.
+        Cuts first 5 seconds on each loop for smooth transitions.
+        Returns path to prepared music file.
+        """
+        music_duration = self._get_audio_duration_ffprobe(music_path)
+
+        if verbose:
+            print(f"\n🎵 Background music: {music_duration:.1f}s (target: {target_duration:.1f}s)")
+
+        # If music is already longer than target, just trim it
+        if music_duration >= target_duration:
+            output_path = self.temp_dir / f"bgmusic_trimmed_{int(time.time())}.mp3"
+            cmd = [
+                'ffmpeg', '-y',
+                '-i', music_path,
+                '-t', str(target_duration),
+                '-c:a', 'copy',
+                str(output_path)
+            ]
+            subprocess.run(cmd, capture_output=True, check=True, timeout=60)
+            if verbose:
+                print(f"   ✅ Trimmed to {target_duration:.1f}s")
+            return str(output_path)
+
+        # Need to loop the music
+        # Calculate how many loops needed (cut first 5 seconds after first loop)
+        first_loop_duration = music_duration
+        subsequent_loop_duration = music_duration - 5.0  # Cut first 5 seconds
+
+        if verbose:
+            print(f"   Looping required (first: {first_loop_duration:.1f}s, next loops: {subsequent_loop_duration:.1f}s)")
+
+        # Create concat list with trimmed loops
+        concat_file = self.temp_dir / f"bgmusic_concat_{int(time.time())}.txt"
+        current_duration = 0.0
+        loop_count = 0
+
+        with open(concat_file, 'w') as f:
+            while current_duration < target_duration:
+                if loop_count == 0:
+                    # First loop: use full music
+                    f.write(f"file '{os.path.abspath(music_path)}'\n")
+                    current_duration += first_loop_duration
+                else:
+                    # Subsequent loops: skip first 5 seconds
+                    f.write(f"file '{os.path.abspath(music_path)}'\n")
+                    f.write(f"inpoint 5.0\n")  # Start at 5 seconds
+                    current_duration += subsequent_loop_duration
+                loop_count += 1
+
+        # Create looped music file
+        output_path = self.temp_dir / f"bgmusic_looped_{int(time.time())}.mp3"
+        cmd = [
+            'ffmpeg', '-y',
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', str(concat_file),
+            '-t', str(target_duration),  # Trim to exact duration
+            '-c:a', 'copy',
+            str(output_path)
+        ]
+
+        subprocess.run(cmd, capture_output=True, check=True, timeout=120)
+
+        if verbose:
+            print(f"   ✅ Looped {loop_count} times (cutting 5s on loops 2+)")
+
+        return str(output_path)
+
     def assemble_final_video(
         self,
         voice_path: str,
         media_paths: List[str],
         output_path: str,
         resolution: str = '1920x1080',
+        background_music_path: str = None,
         verbose: bool = True
     ) -> Dict:
         """
@@ -180,30 +252,69 @@ class VideoAssembler:
                 if verbose:
                     print(f"   Image cache: {cache_elapsed:.1f}s (hits: {self.cache_hits}, misses: {self.cache_misses})")
 
+                # Prepare background music if provided
+                prepared_music_path = None
+                if background_music_path and os.path.exists(background_music_path):
+                    prepared_music_path = self._prepare_looped_background_music(
+                        background_music_path, voice_duration, verbose
+                    )
+
                 # CRITICAL: -framerate 2 BEFORE -i + OPTIMIZED x264-params
-                cmd = [
-                    'ffmpeg', '-y',
-                    '-thread_queue_size', '512',  # 🔥 5-20% speedup!
-                    '-probesize', '32',
-                    '-analyzeduration', '0',
-                    '-framerate', '2',  # 🔥 BEFORE -i for MASSIVE speedup!
-                    '-loop', '1',
-                    '-i', cached_image,
-                    '-thread_queue_size', '512',
-                    '-i', voice_path,
-                    '-c:v', 'libx264',
-                    '-preset', 'ultrafast',
-                    '-crf', '35',
-                    '-g', '300',  # 🔥 20-40% speedup! (keyframe every 150s at 2fps)
-                    '-tune', 'stillimage',
-                    '-x264-params', 'keyint=300:scenecut=-1:rc-lookahead=1:me_range=4',  # 🔥 40-60% speedup!
-                    '-c:a', 'copy',  # 🔥 ALWAYS copy!
-                    '-shortest',
-                    '-pix_fmt', 'yuv420p',
-                    '-threads', '0',
-                    '-movflags', '+faststart',
-                    output_path
-                ]
+                if prepared_music_path:
+                    # WITH background music: Mix audio at 10% volume
+                    cmd = [
+                        'ffmpeg', '-y',
+                        '-thread_queue_size', '512',
+                        '-probesize', '32',
+                        '-analyzeduration', '0',
+                        '-framerate', '2',
+                        '-loop', '1',
+                        '-i', cached_image,
+                        '-thread_queue_size', '512',
+                        '-i', voice_path,
+                        '-i', prepared_music_path,
+                        '-filter_complex', '[1:a]volume=1.0[voice];[2:a]volume=0.1[music];[voice][music]amix=inputs=2:duration=shortest[aout]',
+                        '-map', '0:v',
+                        '-map', '[aout]',
+                        '-c:v', 'libx264',
+                        '-preset', 'ultrafast',
+                        '-crf', '35',
+                        '-g', '300',
+                        '-tune', 'stillimage',
+                        '-x264-params', 'keyint=300:scenecut=-1:rc-lookahead=1:me_range=4',
+                        '-c:a', 'aac',  # Must encode mixed audio
+                        '-b:a', '128k',
+                        '-shortest',
+                        '-pix_fmt', 'yuv420p',
+                        '-threads', '0',
+                        '-movflags', '+faststart',
+                        output_path
+                    ]
+                else:
+                    # NO background music: Keep ultra-fast copy mode
+                    cmd = [
+                        'ffmpeg', '-y',
+                        '-thread_queue_size', '512',
+                        '-probesize', '32',
+                        '-analyzeduration', '0',
+                        '-framerate', '2',
+                        '-loop', '1',
+                        '-i', cached_image,
+                        '-thread_queue_size', '512',
+                        '-i', voice_path,
+                        '-c:v', 'libx264',
+                        '-preset', 'ultrafast',
+                        '-crf', '35',
+                        '-g', '300',
+                        '-tune', 'stillimage',
+                        '-x264-params', 'keyint=300:scenecut=-1:rc-lookahead=1:me_range=4',
+                        '-c:a', 'copy',  # 🔥 ALWAYS copy!
+                        '-shortest',
+                        '-pix_fmt', 'yuv420p',
+                        '-threads', '0',
+                        '-movflags', '+faststart',
+                        output_path
+                    ]
 
                 if verbose:
                     print(f"\n📝 FFmpeg command:")
@@ -275,29 +386,67 @@ class VideoAssembler:
             # Repeat last image
             f.write(f"file '{os.path.abspath(cached_images[-1])}'\n")
 
+        # Prepare background music if provided
+        prepared_music_path = None
+        if background_music_path and os.path.exists(background_music_path):
+            prepared_music_path = self._prepare_looped_background_music(
+                background_music_path, voice_duration, verbose
+            )
+
         # Final render with concat + -vf fps=2 + OPTIMIZED x264-params
-        cmd = [
-            'ffmpeg', '-y',
-            '-thread_queue_size', '512',  # 🔥 5-20% speedup!
-            '-f', 'concat',
-            '-safe', '0',
-            '-i', str(concat_file),
-            '-thread_queue_size', '512',
-            '-i', voice_path,
-            '-vf', 'fps=2',  # 🔥 Set framerate via filter
-            '-c:v', 'libx264',
-            '-preset', 'ultrafast',
-            '-crf', '35',
-            '-g', '300',  # 🔥 20-40% speedup!
-            '-tune', 'stillimage',
-            '-x264-params', 'keyint=300:scenecut=-1:rc-lookahead=1:me_range=4',  # 🔥 40-60% speedup!
-            '-c:a', 'copy',  # 🔥 ALWAYS copy!
-            '-shortest',
-            '-pix_fmt', 'yuv420p',
-            '-threads', '0',
-            '-movflags', '+faststart',
-            output_path
-        ]
+        if prepared_music_path:
+            # WITH background music: Mix audio at 10% volume
+            cmd = [
+                'ffmpeg', '-y',
+                '-thread_queue_size', '512',
+                '-f', 'concat',
+                '-safe', '0',
+                '-i', str(concat_file),
+                '-thread_queue_size', '512',
+                '-i', voice_path,
+                '-i', prepared_music_path,
+                '-filter_complex', '[1:a]volume=1.0[voice];[2:a]volume=0.1[music];[voice][music]amix=inputs=2:duration=shortest[aout]',
+                '-map', '0:v',
+                '-map', '[aout]',
+                '-vf', 'fps=2',
+                '-c:v', 'libx264',
+                '-preset', 'ultrafast',
+                '-crf', '35',
+                '-g', '300',
+                '-tune', 'stillimage',
+                '-x264-params', 'keyint=300:scenecut=-1:rc-lookahead=1:me_range=4',
+                '-c:a', 'aac',  # Must encode mixed audio
+                '-b:a', '128k',
+                '-shortest',
+                '-pix_fmt', 'yuv420p',
+                '-threads', '0',
+                '-movflags', '+faststart',
+                output_path
+            ]
+        else:
+            # NO background music: Keep ultra-fast copy mode
+            cmd = [
+                'ffmpeg', '-y',
+                '-thread_queue_size', '512',
+                '-f', 'concat',
+                '-safe', '0',
+                '-i', str(concat_file),
+                '-thread_queue_size', '512',
+                '-i', voice_path,
+                '-vf', 'fps=2',
+                '-c:v', 'libx264',
+                '-preset', 'ultrafast',
+                '-crf', '35',
+                '-g', '300',
+                '-tune', 'stillimage',
+                '-x264-params', 'keyint=300:scenecut=-1:rc-lookahead=1:me_range=4',
+                '-c:a', 'copy',  # 🔥 ALWAYS copy!
+                '-shortest',
+                '-pix_fmt', 'yuv420p',
+                '-threads', '0',
+                '-movflags', '+faststart',
+                output_path
+            ]
 
         if verbose:
             print(f"\n📝 FFmpeg command:")

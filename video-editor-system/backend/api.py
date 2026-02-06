@@ -2013,6 +2013,7 @@ def assemble_video_route():
         media_paths = data.get('media_paths', [])
         title = data.get('title', 'video')
         resolution = data.get('resolution', '1920x1080')
+        background_music_path = data.get('background_music_path')  # Optional
 
         if not voice_paths or len(voice_paths) == 0:
             return jsonify({'error': 'At least one voice is required (voice_paths array)'}), 400
@@ -2095,6 +2096,7 @@ def assemble_video_route():
             media_paths=media_paths,
             output_path=output_path,
             resolution=resolution,
+            background_music_path=background_music_path,
             verbose=True
         )
 

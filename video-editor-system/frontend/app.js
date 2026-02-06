@@ -33,7 +33,8 @@ window.videoData = {
     script: '',
     mediaFiles: [],
     mediaLibrary: [], // Media library reference
-    audioFile: null
+    audioFile: null,
+    backgroundMusic: null // Background music file
 };
 
 // Global editor data
@@ -1359,6 +1360,95 @@ function downloadScript() {
 }
 
 // =============================================================================
+// BACKGROUND MUSIC
+// =============================================================================
+function toggleBackgroundMusicUpload() {
+    const checked = document.getElementById('enableBackgroundMusic')?.checked;
+    const section = document.getElementById('backgroundMusicUploadSection');
+    if (section) {
+        section.style.display = checked ? 'block' : 'none';
+    }
+
+    // Clear background music if disabled
+    if (!checked) {
+        window.videoData.backgroundMusic = null;
+        const preview = document.getElementById('backgroundMusicPreview');
+        if (preview) preview.style.display = 'none';
+    }
+}
+
+function renderBackgroundMusicPreview(musicData) {
+    const preview = document.getElementById('backgroundMusicPreview');
+    if (!preview) return;
+
+    const minutes = Math.floor(musicData.duration / 60);
+    const seconds = Math.floor(musicData.duration % 60);
+
+    preview.innerHTML = `
+        <div style="background: rgba(255, 152, 0, 0.15); padding: 15px; border-radius: 8px; border: 2px solid #ff9800;">
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <button onclick="playBackgroundMusicPreview()" style="
+                    background: #ff9800;
+                    color: white;
+                    border: none;
+                    border-radius: 50%;
+                    width: 50px;
+                    height: 50px;
+                    font-size: 20px;
+                    cursor: pointer;
+                ">▶️</button>
+                <div style="flex: 1;">
+                    <strong style="color: #ff9800;">🎵 ${musicData.filename}</strong>
+                    <div style="color: #666; font-size: 0.9em; margin-top: 3px;">
+                        ⏱️ ${minutes}:${seconds.toString().padStart(2, '0')} • Will loop at 10% volume
+                    </div>
+                </div>
+                <button onclick="removeBackgroundMusic()" style="
+                    background: #ff4757;
+                    color: white;
+                    border: none;
+                    border-radius: 5px;
+                    padding: 8px 12px;
+                    cursor: pointer;
+                ">🗑️ Remove</button>
+            </div>
+        </div>
+    `;
+    preview.style.display = 'block';
+}
+
+let backgroundMusicAudio = null;
+
+function playBackgroundMusicPreview() {
+    if (!window.videoData.backgroundMusic) return;
+
+    if (backgroundMusicAudio && !backgroundMusicAudio.paused) {
+        backgroundMusicAudio.pause();
+        backgroundMusicAudio = null;
+        showNotification('⏹️ Music preview stopped', 'info');
+        return;
+    }
+
+    backgroundMusicAudio = new Audio(window.videoData.backgroundMusic.url);
+    backgroundMusicAudio.volume = 0.1; // Preview at 10% volume
+    backgroundMusicAudio.play();
+    showNotification('▶️ Playing music preview at 10% volume...', 'info');
+
+    backgroundMusicAudio.addEventListener('ended', () => {
+        showNotification('⏹️ Music preview ended', 'info');
+    });
+}
+
+function removeBackgroundMusic() {
+    if (confirm('Remove background music?')) {
+        window.videoData.backgroundMusic = null;
+        document.getElementById('backgroundMusicPreview').style.display = 'none';
+        document.getElementById('enableBackgroundMusic').checked = false;
+        showNotification('✅ Background music removed', 'success');
+    }
+}
+
+// =============================================================================
 // MEDIA SECTION
 // =============================================================================
 function toggleMediaSection(type) {
@@ -2262,16 +2352,24 @@ async function assembleVideo() {
             progressFill.style.width = '30%';
         }
 
+        // Prepare API payload
+        const payload = {
+            voice_paths: voicePaths,  // Array of voice paths in ranked order
+            media_paths: mediaPaths,
+            title: title,
+            resolution: quality === '1080' ? '1920x1080' : '1280x720'
+        };
+
+        // Add background music if enabled
+        if (window.videoData.backgroundMusic && window.videoData.backgroundMusic.path) {
+            payload.background_music_path = window.videoData.backgroundMusic.path;
+        }
+
         // Call assembly API with multiple voices
         const response = await fetch('/api/assemble-video', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                voice_paths: voicePaths,  // Array of voice paths in ranked order
-                media_paths: mediaPaths,
-                title: title,
-                resolution: quality === '1080' ? '1920x1080' : '1280x720'
-            })
+            body: JSON.stringify(payload)
         });
 
         const data = await response.json();
@@ -2631,6 +2729,101 @@ document.addEventListener('DOMContentLoaded', () => {
                         console.error('Voice upload failed:', error);
                         showNotification(`❌ Upload failed: ${error.message}`, 'error');
                     }
+                }
+            }
+        });
+    }
+
+    // Setup background music upload
+    const backgroundMusicUpload = document.getElementById('backgroundMusicUpload');
+    if (backgroundMusicUpload) {
+        backgroundMusicUpload.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            if (file.type.startsWith('audio/')) {
+                try {
+                    // Create blob URL for preview
+                    const blobUrl = URL.createObjectURL(file);
+                    const audio = new Audio(blobUrl);
+
+                    // Wait for metadata to get duration
+                    await new Promise((resolve) => {
+                        audio.addEventListener('loadedmetadata', resolve);
+                    });
+
+                    // Upload to server
+                    showNotification(`⏳ Uploading background music...`, 'info');
+                    const uploadResult = await uploadVoiceToServer(file);
+
+                    // Store background music data
+                    window.videoData.backgroundMusic = {
+                        url: blobUrl,
+                        path: uploadResult.path,
+                        filename: file.name,
+                        duration: audio.duration
+                    };
+
+                    renderBackgroundMusicPreview(window.videoData.backgroundMusic);
+                    showNotification(`✅ Background music added: ${file.name}`, 'success');
+                } catch (error) {
+                    console.error('Background music upload failed:', error);
+                    showNotification(`❌ Upload failed: ${error.message}`, 'error');
+                }
+            }
+
+            backgroundMusicUpload.value = '';
+        });
+    }
+
+    // Setup background music dropzone
+    const backgroundMusicDropzone = document.getElementById('backgroundMusicDropzone');
+    if (backgroundMusicDropzone) {
+        backgroundMusicDropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            backgroundMusicDropzone.style.borderColor = '#ff9800';
+            backgroundMusicDropzone.style.background = 'rgba(255, 152, 0, 0.1)';
+        });
+        backgroundMusicDropzone.addEventListener('dragleave', () => {
+            backgroundMusicDropzone.style.borderColor = '#ddd';
+            backgroundMusicDropzone.style.background = '';
+        });
+        backgroundMusicDropzone.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            backgroundMusicDropzone.style.borderColor = '#ddd';
+            backgroundMusicDropzone.style.background = '';
+
+            const file = e.dataTransfer.files[0];
+            if (!file) return;
+
+            if (file.type.startsWith('audio/')) {
+                try {
+                    // Create blob URL for preview
+                    const blobUrl = URL.createObjectURL(file);
+                    const audio = new Audio(blobUrl);
+
+                    // Wait for metadata to get duration
+                    await new Promise((resolve) => {
+                        audio.addEventListener('loadedmetadata', resolve);
+                    });
+
+                    // Upload to server
+                    showNotification(`⏳ Uploading background music...`, 'info');
+                    const uploadResult = await uploadVoiceToServer(file);
+
+                    // Store background music data
+                    window.videoData.backgroundMusic = {
+                        url: blobUrl,
+                        path: uploadResult.path,
+                        filename: file.name,
+                        duration: audio.duration
+                    };
+
+                    renderBackgroundMusicPreview(window.videoData.backgroundMusic);
+                    showNotification(`✅ Background music added: ${file.name}`, 'success');
+                } catch (error) {
+                    console.error('Background music upload failed:', error);
+                    showNotification(`❌ Upload failed: ${error.message}`, 'error');
                 }
             }
         });

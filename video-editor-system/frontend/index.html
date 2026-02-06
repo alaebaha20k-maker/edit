@@ -292,6 +292,36 @@
                             <p style="color: #888; text-align: center; padding: 20px 0;">No voices yet. Generate AI voice or upload your own above.</p>
                         </div>
                     </div>
+
+                    <!-- Background Music Section -->
+                    <div id="backgroundMusicSection" style="margin-top: 30px; background: rgba(255, 152, 0, 0.1); padding: 20px; border-radius: 10px;">
+                        <h3 style="margin-bottom: 15px;">🎵 Background Music <span style="font-size: 14px; color: #888;">(Optional)</span></h3>
+
+                        <label class="checkbox-label" style="margin-bottom: 15px; display: block;">
+                            <input type="checkbox" id="enableBackgroundMusic" onchange="toggleBackgroundMusicUpload()">
+                            <span>🎶 Add Background Music (10% volume, auto-loop)</span>
+                        </label>
+
+                        <div id="backgroundMusicUploadSection" style="display: none;">
+                            <div style="background: rgba(76, 175, 80, 0.1); padding: 12px; border-radius: 8px; margin-bottom: 15px;">
+                                <p style="font-size: 13px; color: #666; margin: 0;">
+                                    💡 <strong>How it works:</strong> Background music plays at 10% volume behind your voice. If music is shorter than video, it loops automatically (cutting first 5 seconds on each loop for smooth transition).
+                                </p>
+                            </div>
+
+                            <div class="upload-zone" id="backgroundMusicDropzone" style="margin-bottom: 15px;">
+                                <div class="upload-icon">🎵</div>
+                                <p><strong>Drag & drop background music here</strong></p>
+                                <p style="font-size: 14px; color: #666;">Supports: MP3, WAV, M4A</p>
+                                <button onclick="document.getElementById('backgroundMusicUpload').click()" class="btn-secondary">Browse Music Files</button>
+                                <input type="file" id="backgroundMusicUpload" accept="audio/mp3,audio/mpeg,audio/wav,audio/m4a" style="display: none;">
+                            </div>
+
+                            <div id="backgroundMusicPreview" style="display: none;">
+                                <!-- Background music preview will be shown here -->
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
 
