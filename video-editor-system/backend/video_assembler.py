@@ -373,8 +373,9 @@ class VideoAssembler:
             if ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']:
                 if verbose:
                     print(f"\n⚡ SUPER FAST MODE: Single image!")
-                    print(f"   Strategy: -r 2 -crf 35 -tune stillimage -c:a copy (ULTRA FAST!)")
+                    print(f"   Strategy: -r 2 -crf 35 -tune stillimage -threads 0")
 
+                # Try audio copy first (fastest!), fallback to encode if fails
                 try:
                     cmd = [
                         'ffmpeg', '-y',
@@ -382,14 +383,41 @@ class VideoAssembler:
                         '-i', media_paths[0],
                         '-i', voice_path,
                         '-c:v', 'libx264',
-                        '-preset', 'ultrafast',  # FASTEST preset!
-                        '-crf', '35',  # Fast encoding, small files
-                        '-r', '2',  # 2 FPS = playable on all devices!
+                        '-preset', 'ultrafast',
+                        '-crf', '35',
+                        '-r', '2',
                         '-tune', 'stillimage',
-                        '-c:a', 'copy',  # NO audio re-encoding!
+                        '-c:a', 'copy',  # Try copy first
                         '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
                         '-shortest',
                         '-pix_fmt', 'yuv420p',
+                        '-threads', '0',  # USE ALL CPU CORES!
+                        '-movflags', '+faststart',
+                        output_path
+                    ]
+
+                    subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=600)
+                except subprocess.CalledProcessError:
+                    # Audio copy failed, encode audio (still fast)
+                    if verbose:
+                        print(f"   Audio copy failed, encoding audio...")
+
+                    cmd = [
+                        'ffmpeg', '-y',
+                        '-loop', '1',
+                        '-i', media_paths[0],
+                        '-i', voice_path,
+                        '-c:v', 'libx264',
+                        '-preset', 'ultrafast',
+                        '-crf', '35',
+                        '-r', '2',
+                        '-tune', 'stillimage',
+                        '-c:a', 'aac',
+                        '-b:a', '128k',  # Low bitrate = faster
+                        '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
+                        '-shortest',
+                        '-pix_fmt', 'yuv420p',
+                        '-threads', '0',  # USE ALL CPU CORES!
                         '-movflags', '+faststart',
                         output_path
                     ]
@@ -450,30 +478,60 @@ class VideoAssembler:
                 f.write(f"file '{os.path.abspath(media_paths[-1])}'\n")
 
             # ONE encode directly from list to final output!
-            cmd = [
-                'ffmpeg', '-y',
-                '-f', 'concat',
-                '-safe', '0',
-                '-i', str(concat_file),
-                '-i', voice_path,
-                '-vsync', 'cfr',
-                '-r', '2',  # 2 FPS = playable everywhere
-                '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
-                '-c:v', 'libx264',
-                '-preset', 'ultrafast',
-                '-crf', '35',
-                '-tune', 'stillimage',
-                '-c:a', 'copy',
-                '-shortest',
-                '-pix_fmt', 'yuv420p',
-                '-movflags', '+faststart',
-                output_path
-            ]
+            try:
+                cmd = [
+                    'ffmpeg', '-y',
+                    '-f', 'concat',
+                    '-safe', '0',
+                    '-i', str(concat_file),
+                    '-i', voice_path,
+                    '-vsync', 'cfr',
+                    '-r', '2',
+                    '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
+                    '-c:v', 'libx264',
+                    '-preset', 'ultrafast',
+                    '-crf', '35',
+                    '-tune', 'stillimage',
+                    '-c:a', 'copy',
+                    '-shortest',
+                    '-pix_fmt', 'yuv420p',
+                    '-threads', '0',  # USE ALL CPU CORES!
+                    '-movflags', '+faststart',
+                    output_path
+                ]
 
-            if verbose:
-                print(f"   Encoding all {len(media_paths)} images in ONE pass...")
+                if verbose:
+                    print(f"   Encoding all {len(media_paths)} images in ONE pass...")
 
-            subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=1200)
+                subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=1200)
+            except subprocess.CalledProcessError:
+                # Audio copy failed, try encoding audio
+                if verbose:
+                    print(f"   Audio copy failed, encoding audio...")
+
+                cmd = [
+                    'ffmpeg', '-y',
+                    '-f', 'concat',
+                    '-safe', '0',
+                    '-i', str(concat_file),
+                    '-i', voice_path,
+                    '-vsync', 'cfr',
+                    '-r', '2',
+                    '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
+                    '-c:v', 'libx264',
+                    '-preset', 'ultrafast',
+                    '-crf', '35',
+                    '-tune', 'stillimage',
+                    '-c:a', 'aac',
+                    '-b:a', '128k',
+                    '-shortest',
+                    '-pix_fmt', 'yuv420p',
+                    '-threads', '0',  # USE ALL CPU CORES!
+                    '-movflags', '+faststart',
+                    output_path
+                ]
+
+                subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=1200)
 
             elapsed = __import__('time').time() - start_time
             size_mb = os.path.getsize(output_path) / (1024 * 1024)
