@@ -293,15 +293,12 @@ class VideoAssembler:
         verbose: bool = True
     ) -> Dict:
         """
-        ULTRA-FAST video assembly - ONE PASS, NO INTERMEDIATE FILES!
-        Creates final video directly from images/videos + voice in single FFmpeg command
+        SUPER FAST video assembly - Uses COPY when possible, 1 FPS for images!
+        - Single VIDEO: -c:v copy -c:a copy (INSTANT, seconds!)
+        - Single IMAGE: -loop 1 -r 1 -c:a copy (FAST, small files!)
+        - Multiple: concat -c copy (NO re-encoding!)
         """
         start_time = __import__('time').time()
-
-        if verbose:
-            print(f"\n{'='*60}")
-            print(f"⚡ ULTRA-FAST VIDEO ASSEMBLY (Single-Pass Mode)")
-            print(f"{'='*60}")
 
         # Get voice duration
         voice_duration = self.get_audio_duration(voice_path)
@@ -309,7 +306,9 @@ class VideoAssembler:
         voice_seconds = int(voice_duration % 60)
 
         if verbose:
-            print(f"\n📊 Analyzing...")
+            print(f"\n{'='*60}")
+            print(f"⚡ INTELLIGENT VIDEO EXPORTER")
+            print(f"{'='*60}")
             print(f"   Voice: {voice_minutes}m {voice_seconds}s")
             print(f"   Media: {len(media_paths)} files")
 
@@ -318,124 +317,213 @@ class VideoAssembler:
         if len(media_paths) == 0:
             raise ValueError("No media items provided")
 
-        # Calculate duration per media
-        duration_per_item = voice_duration / len(media_paths)
-
         # Parse resolution
         width, height = resolution.split('x')
 
+        # STRATEGY 1: Single VIDEO = INSTANT! (just copy, no encoding!)
+        if len(media_paths) == 1:
+            ext = os.path.splitext(media_paths[0])[1].lower()
+
+            # VIDEO: Copy video + copy audio = INSTANT!
+            if ext in ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv']:
+                if verbose:
+                    print(f"\n⚡ INSTANT MODE: Single video!")
+                    print(f"   Strategy: -c:v copy -c:a copy (NO encoding!)")
+
+                try:
+                    cmd = [
+                        'ffmpeg', '-y',
+                        '-i', media_paths[0],
+                        '-i', voice_path,
+                        '-map', '0:v:0',  # Take video from first input
+                        '-map', '1:a:0',  # Take audio from second input
+                        '-c:v', 'copy',   # NO video encoding!
+                        '-c:a', 'copy',   # NO audio encoding!
+                        '-shortest',      # Cut to shortest (audio duration)
+                        '-movflags', '+faststart',
+                        output_path
+                    ]
+
+                    subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=600)
+
+                    elapsed = __import__('time').time() - start_time
+                    size_mb = os.path.getsize(output_path) / (1024 * 1024)
+
+                    if verbose:
+                        print(f"\n✅ DONE! Time: {elapsed:.1f}s | Size: {size_mb:.2f} MB")
+
+                    return {
+                        'success': True,
+                        'output_path': output_path,
+                        'duration_seconds': voice_duration,
+                        'file_size_mb': size_mb,
+                        'processing_time': elapsed,
+                        'media_count': 1,
+                        'voice_duration': voice_duration
+                    }
+                except subprocess.CalledProcessError as e:
+                    raise Exception(f"Export failed: {e.stderr[-1000:]}")
+
+            # IMAGE: Loop 1 frame for entire duration (1 FPS = SMALLEST FILES!)
+            if ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']:
+                if verbose:
+                    print(f"\n⚡ SUPER FAST MODE: Single image!")
+                    print(f"   Strategy: -r 1 -crf 33 -tune stillimage -c:a copy (1 FPS = tiny files!)")
+
+                try:
+                    cmd = [
+                        'ffmpeg', '-y',
+                        '-loop', '1',
+                        '-i', media_paths[0],
+                        '-i', voice_path,
+                        '-c:v', 'libx264',
+                        '-preset', 'ultrafast',
+                        '-crf', '33',
+                        '-r', '1',  # 1 FPS = SUPER SMALL FILES!
+                        '-tune', 'stillimage',
+                        '-c:a', 'copy',  # NO audio re-encoding!
+                        '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
+                        '-shortest',
+                        '-pix_fmt', 'yuv420p',
+                        '-movflags', '+faststart',
+                        output_path
+                    ]
+
+                    subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=600)
+
+                    elapsed = __import__('time').time() - start_time
+                    size_mb = os.path.getsize(output_path) / (1024 * 1024)
+
+                    if verbose:
+                        print(f"\n✅ DONE! Time: {elapsed:.1f}s | Size: {size_mb:.2f} MB")
+
+                    return {
+                        'success': True,
+                        'output_path': output_path,
+                        'duration_seconds': voice_duration,
+                        'file_size_mb': size_mb,
+                        'processing_time': elapsed,
+                        'media_count': 1,
+                        'voice_duration': voice_duration
+                    }
+                except subprocess.CalledProcessError as e:
+                    raise Exception(f"Export failed: {e.stderr[-1000:]}")
+
+        # STRATEGY 2: Multiple media = Fast with -c copy
         if verbose:
-            print(f"\n⚡ Creating video in ONE PASS (MAXIMUM SPEED!)...")
-            print(f"   Format: 1080p, H.264, MP4, 10fps (FAST!)")
-            print(f"   Method: Direct merge - NO intermediate files!")
-            print(f"   Speed: veryfast preset, CRF 28, g=300")
-            print(f"   Duration per item: {duration_per_item:.2f}s")
+            print(f"\n⚡ FAST MODE: Multiple media")
+            print(f"   Strategy: 1 FPS images → concat -c copy → audio -c copy")
 
-        # BUILD ULTRA-FAST SINGLE-PASS COMMAND
-        # This creates the entire video in ONE FFmpeg command!
+        duration_per_item = voice_duration / len(media_paths)
+        prepared_clips = []
 
-        try:
-            # Create filter complex for all images/videos
-            filter_parts = []
-            input_count = 0
+        # Prepare clips
+        for i, media_path in enumerate(media_paths):
+            ext = os.path.splitext(media_path)[1].lower()
+            is_image = ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']
+            is_video = ext in ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv']
+            clip_output = self.temp_dir / f"clip_{i:03d}.mp4"
 
-            for i, media_path in enumerate(media_paths):
-                ext = os.path.splitext(media_path)[1].lower()
-                is_image = ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']
+            if is_image:
+                cmd = [
+                    'ffmpeg', '-y',
+                    '-loop', '1',
+                    '-i', media_path,
+                    '-t', str(duration_per_item),
+                    '-c:v', 'libx264',
+                    '-preset', 'ultrafast',
+                    '-crf', '33',
+                    '-r', '1',  # 1 FPS = SMALLEST FILES!
+                    '-tune', 'stillimage',
+                    '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
+                    '-pix_fmt', 'yuv420p',
+                    '-an',
+                    str(clip_output)
+                ]
+            elif is_video:
+                cmd = [
+                    'ffmpeg', '-y',
+                    '-i', media_path,
+                    '-t', str(duration_per_item),
+                    '-c:v', 'libx264',
+                    '-preset', 'ultrafast',
+                    '-crf', '32',
+                    '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
+                    '-an',
+                    str(clip_output)
+                ]
+            else:
+                if verbose:
+                    print(f"   [{i+1}/{len(media_paths)}] ⚠️ Skipped (unknown format)")
+                continue
 
-                if is_image:
-                    # Image: SUPER FAST encoding (10fps, simple scaling)
-                    filter_parts.append(
-                        f"[{input_count}:v]scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear,"
-                        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,"
-                        f"fps=10,"  # 10fps = 2.4x faster than 24fps!
-                        f"trim=duration={duration_per_item}[v{i}]"
-                    )
-                else:
-                    # Video: FAST encoding (10fps, simple scaling)
-                    filter_parts.append(
-                        f"[{input_count}:v]scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear,"
-                        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,"
-                        f"fps=10,"  # 10fps for speed
-                        f"trim=duration={duration_per_item}[v{i}]"
-                    )
-                input_count += 1
-
-            # Concat all streams
-            concat_inputs = ''.join([f"[v{i}]" for i in range(len(media_paths))])
-            filter_complex = ';'.join(filter_parts) + f";{concat_inputs}concat=n={len(media_paths)}:v=1:a=0[vout]"
-
-            # Build command with ALL inputs
-            cmd = ['ffmpeg', '-y']
-
-            # Add all media inputs
-            for media_path in media_paths:
-                ext = os.path.splitext(media_path)[1].lower()
-                is_image = ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']
-
-                if is_image:
-                    cmd.extend(['-loop', '1'])  # Loop image
-                cmd.extend(['-i', media_path])
-
-            # Add voice input
-            cmd.extend(['-i', voice_path])
-
-            # Add filter complex
-            # OPTIMIZED FOR: MAXIMUM SPEED! (1080p, H.264, MP4, 10fps)
-            cmd.extend([
-                '-filter_complex', filter_complex,
-                '-map', '[vout]',
-                '-map', f'{len(media_paths)}:a',  # Map audio from voice
-                '-c:v', 'libx264',  # H.264 codec
-                '-preset', 'veryfast',  # Very fast encoding (faster than ultrafast for some cases!)
-                '-crf', '28',  # Faster encoding (28 vs 23)
-                '-pix_fmt', 'yuv420p',  # Standard pixel format
-                '-r', '10',  # 10fps output (2.4x faster than 24fps!)
-                '-g', '300',  # Keyframe every 30 seconds (less processing!)
-                '-c:a', 'aac',  # AAC audio
-                '-b:a', '128k',  # Lower audio bitrate for speed
-                '-shortest',  # Match shortest stream
-                '-threads', '0',  # Use all CPU cores
-                '-movflags', '+faststart',
-                output_path
-            ])
-
-            if verbose:
-                print(f"   Running single-pass encode...")
-
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=1200)
-
-            elapsed = __import__('time').time() - start_time
-
-            # Get final file info
             try:
-                final_size = os.path.getsize(output_path)
-                size_mb = final_size / (1024 * 1024)
+                subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=600)
+                prepared_clips.append(str(clip_output))
+                if verbose:
+                    print(f"   [{i+1}/{len(media_paths)}] ✅")
             except:
-                size_mb = 0
+                if verbose:
+                    print(f"   [{i+1}/{len(media_paths)}] ⚠️ Failed")
 
-            if verbose:
-                print(f"\n{'='*60}")
-                print(f"✅ VIDEO ASSEMBLY COMPLETE!")
-                print(f"{'='*60}")
-                print(f"   Time: {elapsed:.1f}s")
-                print(f"   Output: {output_path}")
-                print(f"   Size: {size_mb:.2f} MB")
+        if len(prepared_clips) == 0:
+            raise ValueError("No clips prepared")
 
-            return {
-                'success': True,
-                'output_path': output_path,
-                'duration_seconds': voice_duration,  # FIXED: Added for API compatibility
-                'file_size_mb': size_mb,
-                'processing_time': elapsed,
-                'media_count': len(media_paths),
-                'voice_duration': voice_duration
-            }
+        # Concat with -c copy (NO re-encoding!)
+        concat_file = self.temp_dir / "concat.txt"
+        with open(concat_file, 'w') as f:
+            for clip in prepared_clips:
+                f.write(f"file '{os.path.abspath(clip)}'\n")
 
-        except subprocess.CalledProcessError as e:
-            raise Exception(f"FFmpeg single-pass failed: {e.stderr[-1000:]}")
-        except Exception as e:
-            raise Exception(f"Video assembly failed: {str(e)}")
+        temp_video = self.temp_dir / "temp_video.mp4"
+
+        cmd = [
+            'ffmpeg', '-y',
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', str(concat_file),
+            '-c', 'copy',  # NO re-encoding!
+            str(temp_video)
+        ]
+
+        subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=300)
+
+        # Add audio with -c copy (NO re-encoding!)
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', str(temp_video),
+            '-i', voice_path,
+            '-c:v', 'copy',  # NO video re-encoding!
+            '-c:a', 'copy',  # NO audio re-encoding!
+            '-shortest',
+            '-movflags', '+faststart',
+            output_path
+        ]
+
+        subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=300)
+
+        # Cleanup
+        for clip in prepared_clips:
+            try:
+                os.remove(clip)
+            except:
+                pass
+
+        elapsed = __import__('time').time() - start_time
+        size_mb = os.path.getsize(output_path) / (1024 * 1024)
+
+        if verbose:
+            print(f"\n✅ DONE! Time: {elapsed:.1f}s | Size: {size_mb:.2f} MB")
+
+        return {
+            'success': True,
+            'output_path': output_path,
+            'duration_seconds': voice_duration,
+            'file_size_mb': size_mb,
+            'processing_time': elapsed,
+            'media_count': len(prepared_clips),
+            'voice_duration': voice_duration
+        }
 
 
 # Test function
