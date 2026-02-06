@@ -146,6 +146,8 @@ Each "negative_prompt" MUST include:
 - Style violations: Elements that contradict the chosen style
 
 SCENE DISTRIBUTION STRATEGY:
+- If N = 1: ONLY the very first/opening scene that introduces the topic
+- If N = 2: Opening scene + final/conclusion scene
 - If N = 3-5: Major story beats only (intro, climax, conclusion)
 - If N = 6-10: Key moments from each story section
 - If N = 11-20: Detailed coverage with transitions
