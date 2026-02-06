@@ -28,32 +28,37 @@ class VideoAssembler:
     def _detect_best_encoder(self) -> dict:
         """
         Detect best available video encoder (GPU or CPU)
-        Returns: {'encoder': 'h264_nvenc'/'libx264', 'preset': '...', 'hw_type': 'nvidia/intel/amd/cpu'}
+        ACTUALLY tests if GPU encoder works (not just listed)
         """
-        # Try NVIDIA GPU (fastest if available)
+        # Test NVIDIA GPU by actually trying it
         try:
-            result = subprocess.run(
-                ['ffmpeg', '-hide_banner', '-encoders'],
-                capture_output=True, text=True, timeout=5
+            test = subprocess.run(
+                ['ffmpeg', '-f', 'lavfi', '-i', 'color=black:s=64x64:d=0.1',
+                 '-c:v', 'h264_nvenc', '-f', 'null', '-'],
+                capture_output=True, timeout=3
             )
-            encoders = result.stdout
-
-            # Check for hardware encoders
-            if 'h264_nvenc' in encoders:
-                print("✅ NVIDIA GPU encoder detected (h264_nvenc)")
+            if test.returncode == 0:
+                print("✅ NVIDIA GPU encoder working (h264_nvenc)")
                 return {'encoder': 'h264_nvenc', 'preset': 'p4', 'hw_type': 'nvidia'}
-            elif 'h264_qsv' in encoders:
-                print("✅ Intel Quick Sync encoder detected (h264_qsv)")
-                return {'encoder': 'h264_qsv', 'preset': 'veryfast', 'hw_type': 'intel'}
-            elif 'h264_amf' in encoders:
-                print("✅ AMD GPU encoder detected (h264_amf)")
-                return {'encoder': 'h264_amf', 'preset': 'speed', 'hw_type': 'amd'}
         except:
             pass
 
-        # Fallback to CPU encoding (still optimized)
-        print("ℹ️ Using CPU encoder (libx264) - no GPU detected")
-        return {'encoder': 'libx264', 'preset': 'ultrafast', 'hw_type': 'cpu'}
+        # Test Intel Quick Sync
+        try:
+            test = subprocess.run(
+                ['ffmpeg', '-f', 'lavfi', '-i', 'color=black:s=64x64:d=0.1',
+                 '-c:v', 'h264_qsv', '-f', 'null', '-'],
+                capture_output=True, timeout=3
+            )
+            if test.returncode == 0:
+                print("✅ Intel Quick Sync working (h264_qsv)")
+                return {'encoder': 'h264_qsv', 'preset': 'veryfast', 'hw_type': 'intel'}
+        except:
+            pass
+
+        # Fallback to CPU encoding (fast & reliable!)
+        print("ℹ️ Using CPU encoder (libx264) - fast & reliable")
+        return {'encoder': 'libx264', 'preset': 'veryfast', 'hw_type': 'cpu'}
 
     def get_audio_duration(self, audio_path: str) -> float:
         """Get duration of audio file in seconds"""
@@ -368,7 +373,7 @@ class VideoAssembler:
             if ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']:
                 if verbose:
                     print(f"\n⚡ SUPER FAST MODE: Single image!")
-                    print(f"   Strategy: -r 1 -crf 33 -tune stillimage -c:a copy (1 FPS = tiny files!)")
+                    print(f"   Strategy: -r 1 -crf 35 -tune stillimage -c:a copy (ULTRA FAST!)")
 
                 try:
                     cmd = [
@@ -377,15 +382,16 @@ class VideoAssembler:
                         '-i', media_paths[0],
                         '-i', voice_path,
                         '-c:v', 'libx264',
-                        '-preset', 'ultrafast',
-                        '-crf', '33',
+                        '-preset', 'veryfast',  # FASTER than ultrafast for this case!
+                        '-crf', '35',  # Higher = faster encoding, smaller files
                         '-r', '1',  # 1 FPS = SUPER SMALL FILES!
                         '-tune', 'stillimage',
                         '-c:a', 'copy',  # NO audio re-encoding!
-                        '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
+                        '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
                         '-shortest',
                         '-pix_fmt', 'yuv420p',
                         '-movflags', '+faststart',
+                        '-threads', '0',  # Use all CPU cores
                         output_path
                     ]
 
@@ -431,12 +437,13 @@ class VideoAssembler:
                     '-i', media_path,
                     '-t', str(duration_per_item),
                     '-c:v', 'libx264',
-                    '-preset', 'ultrafast',
-                    '-crf', '33',
+                    '-preset', 'veryfast',  # FASTER!
+                    '-crf', '35',  # Higher = faster, smaller
                     '-r', '1',  # 1 FPS = SMALLEST FILES!
                     '-tune', 'stillimage',
-                    '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
+                    '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
                     '-pix_fmt', 'yuv420p',
+                    '-threads', '0',  # Use all cores
                     '-an',
                     str(clip_output)
                 ]
@@ -446,9 +453,10 @@ class VideoAssembler:
                     '-i', media_path,
                     '-t', str(duration_per_item),
                     '-c:v', 'libx264',
-                    '-preset', 'ultrafast',
-                    '-crf', '32',
-                    '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
+                    '-preset', 'veryfast',  # FASTER!
+                    '-crf', '33',
+                    '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
+                    '-threads', '0',  # Use all cores
                     '-an',
                     str(clip_output)
                 ]
