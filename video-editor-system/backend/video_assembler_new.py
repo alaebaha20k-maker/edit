@@ -161,25 +161,27 @@ class VideoAssembler:
                 except subprocess.CalledProcessError as e:
                     raise Exception(f"Export failed: {e.stderr[-1000:]}")
 
-            # IMAGE: Loop 1 frame for entire duration (1 FPS = SMALLEST FILES!)
+            # IMAGE: Loop image for entire duration (2 FPS = FAST + PLAYABLE!)
             if ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']:
                 if verbose:
                     print(f"\n⚡ SUPER FAST MODE: Single image!")
-                    print(f"   Strategy: -r 1 -crf 35 -tune stillimage -c:a copy (ULTRA FAST!)")
+                    print(f"   Strategy: -framerate 1 -r 2 -crf 35 -g 600 (ULTRA FAST!)")
 
                 try:
                     cmd = [
                         'ffmpeg', '-y',
                         '-loop', '1',
+                        '-framerate', '1',  # 🔥 READ AT 1 FPS (10x faster!)
                         '-i', media_paths[0],
                         '-i', voice_path,
                         '-c:v', 'libx264',
-                        '-preset', 'veryfast',  # FASTER than ultrafast!
+                        '-preset', 'ultrafast',  # MAXIMUM SPEED!
                         '-crf', '35',  # Higher = faster, smaller
-                        '-r', '1',  # 1 FPS = SUPER SMALL FILES!
+                        '-r', '2',  # 🔥 OUTPUT AT 2 FPS (playable!)
+                        '-g', '600',  # 🔥 KEYFRAME EVERY 20s!
                         '-tune', 'stillimage',
                         '-c:a', 'copy',  # NO audio re-encoding!
-                        '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
+                        '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
                         '-shortest',
                         '-pix_fmt', 'yuv420p',
                         '-movflags', '+faststart',
@@ -232,30 +234,31 @@ class VideoAssembler:
                 cmd = [
                     'ffmpeg', '-y',
                     '-loop', '1',
+                    '-framerate', '1',  # 🔥 READ AT 1 FPS!
                     '-i', media_path,
                     '-t', str(duration_per_item),
                     '-c:v', 'libx264',
-                    '-preset', 'veryfast',  # FASTER!
+                    '-preset', 'ultrafast',  # MAXIMUM SPEED!
                     '-crf', '35',  # Higher = faster, smaller
-                    '-r', '1',  # 1 FPS = SMALLEST FILES!
+                    '-r', '2',  # 🔥 OUTPUT AT 2 FPS!
+                    '-g', '600',  # 🔥 KEYFRAME EVERY 20s!
                     '-tune', 'stillimage',
-                    '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
+                    '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
                     '-pix_fmt', 'yuv420p',
                     '-threads', '0',  # Use all cores
                     '-an',
                     str(clip_output)
                 ]
             elif is_video:
-                # For videos: try to use -c copy (fastest!) if no scaling needed
-                # Otherwise re-encode quickly
+                # For videos: re-encode quickly
                 cmd = [
                     'ffmpeg', '-y',
                     '-i', media_path,
                     '-t', str(duration_per_item),
                     '-c:v', 'libx264',
-                    '-preset', 'veryfast',  # FASTER!
-                    '-crf', '33',
-                    '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
+                    '-preset', 'ultrafast',  # MAXIMUM SPEED!
+                    '-crf', '35',
+                    '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
                     '-threads', '0',  # Use all cores
                     '-an',
                     str(clip_output)

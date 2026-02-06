@@ -373,19 +373,21 @@ class VideoAssembler:
             if ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']:
                 if verbose:
                     print(f"\n⚡ SUPER FAST MODE: Single image!")
-                    print(f"   Strategy: -r 2 -crf 35 -tune stillimage -threads 0")
+                    print(f"   Strategy: -framerate 1 -r 2 -crf 35 -g 600 (ULTRA FAST!)")
 
                 # Try audio copy first (fastest!), fallback to encode if fails
                 try:
                     cmd = [
                         'ffmpeg', '-y',
                         '-loop', '1',
+                        '-framerate', '1',  # 🔥 READ AT 1 FPS (10x faster!)
                         '-i', media_paths[0],
                         '-i', voice_path,
                         '-c:v', 'libx264',
                         '-preset', 'ultrafast',
                         '-crf', '35',
-                        '-r', '2',
+                        '-r', '2',  # 🔥 OUTPUT AT 2 FPS
+                        '-g', '600',  # 🔥 KEYFRAME EVERY 20s!
                         '-tune', 'stillimage',
                         '-c:a', 'copy',  # Try copy first
                         '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
@@ -405,12 +407,14 @@ class VideoAssembler:
                     cmd = [
                         'ffmpeg', '-y',
                         '-loop', '1',
+                        '-framerate', '1',  # 🔥 READ AT 1 FPS (10x faster!)
                         '-i', media_paths[0],
                         '-i', voice_path,
                         '-c:v', 'libx264',
                         '-preset', 'ultrafast',
                         '-crf', '35',
-                        '-r', '2',
+                        '-r', '2',  # 🔥 OUTPUT AT 2 FPS
+                        '-g', '600',  # 🔥 KEYFRAME EVERY 20s!
                         '-tune', 'stillimage',
                         '-c:a', 'aac',
                         '-b:a', '128k',  # Low bitrate = faster
@@ -486,7 +490,8 @@ class VideoAssembler:
                     '-i', str(concat_file),
                     '-i', voice_path,
                     '-vsync', 'cfr',
-                    '-r', '2',
+                    '-r', '2',  # 🔥 OUTPUT AT 2 FPS
+                    '-g', '600',  # 🔥 KEYFRAME EVERY 20s!
                     '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
                     '-c:v', 'libx264',
                     '-preset', 'ultrafast',
@@ -516,7 +521,8 @@ class VideoAssembler:
                     '-i', str(concat_file),
                     '-i', voice_path,
                     '-vsync', 'cfr',
-                    '-r', '2',
+                    '-r', '2',  # 🔥 OUTPUT AT 2 FPS
+                    '-g', '600',  # 🔥 KEYFRAME EVERY 20s!
                     '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
                     '-c:v', 'libx264',
                     '-preset', 'ultrafast',
