@@ -1455,7 +1455,12 @@ function toggleMediaSection(type) {
     if (type === 'auto') {
         const checked = document.getElementById('useAutoImages')?.checked;
         const section = document.getElementById('autoImagesSection');
-        if (section) section.style.display = checked ? 'block' : 'none';
+        if (section) {
+            section.style.display = checked ? 'block' : 'none';
+            if (checked) {
+                loadAutoImageStyles(); // Load styles when section opens
+            }
+        }
     } else if (type === 'manual') {
         const checked = document.getElementById('useManualMedia')?.checked;
         const section = document.getElementById('manualMediaSection');
@@ -1625,6 +1630,33 @@ function deleteFromMediaLibrary(id) {
 // =============================================================================
 
 let autoImagesTimeline = null;
+
+// Load and populate style selector
+async function loadAutoImageStyles() {
+    try {
+        const response = await fetch('/api/auto-images/styles');
+        const data = await response.json();
+
+        if (data.success && data.styles) {
+            const styleSelect = document.getElementById('autoImageStyle');
+            if (styleSelect) {
+                styleSelect.innerHTML = '';
+                data.styles.forEach(style => {
+                    const option = document.createElement('option');
+                    option.value = style.id;
+                    const icon = style.id === 'cinematic' ? '🎬' :
+                                 style.id === 'photorealistic' ? '📷' :
+                                 style.id === 'artistic' ? '🎨' :
+                                 style.id === 'animated' ? '🎭' : '✨';
+                    option.textContent = `${icon} ${style.name}`;
+                    styleSelect.appendChild(option);
+                });
+            }
+        }
+    } catch (error) {
+        console.error('Error loading styles:', error);
+    }
+}
 
 async function generateAutoImages() {
     const script = document.getElementById('scriptInput')?.value || window.videoData.script;

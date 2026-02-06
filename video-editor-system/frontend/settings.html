@@ -440,6 +440,7 @@
                 <div class="tab active" data-tab="api-keys">🔑 API Keys</div>
                 <div class="tab" data-tab="formulas">📝 Formulas</div>
                 <div class="tab" data-tab="voices">🎤 Voice Settings</div>
+                <div class="tab" data-tab="image-styles">🎨 Image Styles</div>
             </div>
 
             <!-- Tab 1: API Keys -->
@@ -574,6 +575,80 @@
                     <button class="btn btn-primary" id="save-voice-settings">
                         💾 Save Voice Settings
                     </button>
+                </div>
+            </div>
+
+            <!-- Tab 4: Image Styles -->
+            <div class="tab-content" id="image-styles">
+                <div id="alert-image-styles" class="alert"></div>
+
+                <div class="form-section">
+                    <h3>🎨 Auto Images AI Styles</h3>
+                    <p>Manage custom styles for Auto Images AI Director. Built-in styles cannot be edited or deleted.</p>
+
+                    <div style="background: rgba(76, 175, 80, 0.1); padding: 12px; border-radius: 8px; margin-bottom: 15px;">
+                        <p style="font-size: 13px; color: #666; margin: 0;">
+                            💡 <strong>How it works:</strong> Each style defines visual rules, negative rules, composition, lighting, and color palette. The Director Gemini uses these to generate N prompts for your script.
+                        </p>
+                    </div>
+
+                    <button class="btn btn-secondary" id="add-style-btn" style="margin-bottom: 20px;">
+                        ➕ Create New Style
+                    </button>
+
+                    <div id="styles-list">
+                        <!-- Styles will be loaded here -->
+                    </div>
+                </div>
+
+                <!-- Create/Edit Style Modal (Hidden) -->
+                <div id="style-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; overflow-y: auto;">
+                    <div style="max-width: 800px; margin: 50px auto; background: white; border-radius: 12px; padding: 30px;">
+                        <h3 id="modal-title">Create New Style</h3>
+
+                        <div class="input-group">
+                            <label for="style-name">Style Name *</label>
+                            <input type="text" id="style-name" placeholder="e.g., Cyberpunk Neon">
+                        </div>
+
+                        <div class="input-group">
+                            <label for="style-description">Description *</label>
+                            <textarea id="style-description" rows="2" placeholder="Brief description of this style"></textarea>
+                        </div>
+
+                        <div class="input-group">
+                            <label>Visual Rules * (3-10 items)</label>
+                            <div id="visual-rules-list"></div>
+                            <button type="button" class="btn btn-secondary" onclick="addVisualRule()">➕ Add Rule</button>
+                        </div>
+
+                        <div class="input-group">
+                            <label>Negative Rules * (2-10 items, things to avoid)</label>
+                            <div id="negative-rules-list"></div>
+                            <button type="button" class="btn btn-secondary" onclick="addNegativeRule()">➕ Add Rule</button>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="style-composition">Composition *</label>
+                            <textarea id="style-composition" rows="2" placeholder="Overall composition approach"></textarea>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="style-lighting">Lighting *</label>
+                            <textarea id="style-lighting" rows="2" placeholder="Lighting style"></textarea>
+                        </div>
+
+                        <div class="input-group">
+                            <label>Color Palette * (3-10 colors)</label>
+                            <div id="color-palette-list"></div>
+                            <button type="button" class="btn btn-secondary" onclick="addColor()">➕ Add Color</button>
+                        </div>
+
+                        <div class="button-group" style="margin-top: 20px;">
+                            <button class="btn btn-primary" id="save-style-btn">💾 Save Style</button>
+                            <button class="btn btn-secondary" id="cancel-style-btn">❌ Cancel</button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -850,11 +925,288 @@
             }
         });
 
+        // =============================================================================
+        // IMAGE STYLES MANAGEMENT
+        // =============================================================================
+
+        let currentEditingStyleId = null;
+
+        async function loadImageStyles() {
+            try {
+                const response = await fetch('/api/auto-images/styles');
+                const data = await response.json();
+
+                if (data.success) {
+                    renderImageStyles(data.styles);
+                }
+            } catch (error) {
+                console.error('Error loading styles:', error);
+            }
+        }
+
+        function renderImageStyles(styles) {
+            const container = document.getElementById('styles-list');
+            container.innerHTML = '';
+
+            styles.forEach(style => {
+                const isCustom = style.custom || false;
+                const card = document.createElement('div');
+                card.style.cssText = `
+                    background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+                    border: 2px solid #667eea;
+                    padding: 20px;
+                    border-radius: 8px;
+                    margin-bottom: 15px;
+                `;
+
+                card.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: start;">
+                        <div style="flex: 1;">
+                            <h4 style="margin: 0 0 10px 0;">
+                                ${style.name}
+                                ${!isCustom ? '<span style="background: #4caf50; color: white; padding: 3px 8px; border-radius: 4px; font-size: 12px; margin-left: 10px;">Built-in</span>' : ''}
+                            </h4>
+                            <p style="color: #666; margin: 0 0 10px 0;">${style.description}</p>
+                            <div style="font-size: 13px; color: #888;">
+                                <strong>Visual Rules:</strong> ${style.visual_rules.length} rules<br>
+                                <strong>Negative Rules:</strong> ${style.negative_rules.length} rules<br>
+                                <strong>Colors:</strong> ${style.color_palette.join(', ')}
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <button onclick="viewStyle('${style.id}')" class="btn btn-secondary" style="padding: 8px 15px;">👁️ View</button>
+                            ${isCustom ? `
+                                <button onclick="editStyle('${style.id}')" class="btn btn-secondary" style="padding: 8px 15px;">✏️ Edit</button>
+                                <button onclick="deleteStyle('${style.id}')" class="btn btn-secondary" style="padding: 8px 15px; background: #ff4757;">🗑️</button>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+
+                container.appendChild(card);
+            });
+        }
+
+        function addVisualRule() {
+            const list = document.getElementById('visual-rules-list');
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'visual-rule';
+            input.placeholder = 'e.g., High contrast lighting';
+            input.style.cssText = 'width: 100%; margin-bottom: 8px; padding: 8px; border: 1px solid #ddd; border-radius: 4px;';
+            list.appendChild(input);
+        }
+
+        function addNegativeRule() {
+            const list = document.getElementById('negative-rules-list');
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'negative-rule';
+            input.placeholder = 'e.g., Low quality, blurry';
+            input.style.cssText = 'width: 100%; margin-bottom: 8px; padding: 8px; border: 1px solid #ddd; border-radius: 4px;';
+            list.appendChild(input);
+        }
+
+        function addColor() {
+            const list = document.getElementById('color-palette-list');
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'color-item';
+            input.placeholder = 'e.g., Neon blue';
+            input.style.cssText = 'width: 100%; margin-bottom: 8px; padding: 8px; border: 1px solid #ddd; border-radius: 4px;';
+            list.appendChild(input);
+        }
+
+        function resetStyleForm() {
+            document.getElementById('style-name').value = '';
+            document.getElementById('style-description').value = '';
+            document.getElementById('style-composition').value = '';
+            document.getElementById('style-lighting').value = '';
+            document.getElementById('visual-rules-list').innerHTML = '';
+            document.getElementById('negative-rules-list').innerHTML = '';
+            document.getElementById('color-palette-list').innerHTML = '';
+
+            // Add initial fields
+            addVisualRule();
+            addVisualRule();
+            addVisualRule();
+            addNegativeRule();
+            addNegativeRule();
+            addColor();
+            addColor();
+            addColor();
+        }
+
+        document.getElementById('add-style-btn').addEventListener('click', () => {
+            currentEditingStyleId = null;
+            document.getElementById('modal-title').textContent = 'Create New Style';
+            resetStyleForm();
+            document.getElementById('style-modal').style.display = 'block';
+        });
+
+        document.getElementById('cancel-style-btn').addEventListener('click', () => {
+            document.getElementById('style-modal').style.display = 'none';
+        });
+
+        async function viewStyle(styleId) {
+            try {
+                const response = await fetch(`/api/auto-images/styles/${styleId}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    const style = data.style;
+                    alert(`Style: ${style.name}\n\nDescription: ${style.description}\n\nVisual Rules:\n${style.visual_rules.join('\n')}\n\nNegative Rules:\n${style.negative_rules.join('\n')}\n\nComposition: ${style.composition}\n\nLighting: ${style.lighting}\n\nColors: ${style.color_palette.join(', ')}`);
+                }
+            } catch (error) {
+                showAlert('image-styles', '✗ Error loading style: ' + error.message, 'error');
+            }
+        }
+
+        async function editStyle(styleId) {
+            try {
+                const response = await fetch(`/api/auto-images/styles/${styleId}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    const style = data.style;
+                    currentEditingStyleId = styleId;
+                    document.getElementById('modal-title').textContent = 'Edit Style';
+
+                    document.getElementById('style-name').value = style.name;
+                    document.getElementById('style-description').value = style.description;
+                    document.getElementById('style-composition').value = style.composition;
+                    document.getElementById('style-lighting').value = style.lighting;
+
+                    // Populate lists
+                    const visualList = document.getElementById('visual-rules-list');
+                    visualList.innerHTML = '';
+                    style.visual_rules.forEach(rule => {
+                        const input = document.createElement('input');
+                        input.type = 'text';
+                        input.className = 'visual-rule';
+                        input.value = rule;
+                        input.style.cssText = 'width: 100%; margin-bottom: 8px; padding: 8px; border: 1px solid #ddd; border-radius: 4px;';
+                        visualList.appendChild(input);
+                    });
+
+                    const negativeList = document.getElementById('negative-rules-list');
+                    negativeList.innerHTML = '';
+                    style.negative_rules.forEach(rule => {
+                        const input = document.createElement('input');
+                        input.type = 'text';
+                        input.className = 'negative-rule';
+                        input.value = rule;
+                        input.style.cssText = 'width: 100%; margin-bottom: 8px; padding: 8px; border: 1px solid #ddd; border-radius: 4px;';
+                        negativeList.appendChild(input);
+                    });
+
+                    const colorList = document.getElementById('color-palette-list');
+                    colorList.innerHTML = '';
+                    style.color_palette.forEach(color => {
+                        const input = document.createElement('input');
+                        input.type = 'text';
+                        input.className = 'color-item';
+                        input.value = color;
+                        input.style.cssText = 'width: 100%; margin-bottom: 8px; padding: 8px; border: 1px solid #ddd; border-radius: 4px;';
+                        colorList.appendChild(input);
+                    });
+
+                    document.getElementById('style-modal').style.display = 'block';
+                }
+            } catch (error) {
+                showAlert('image-styles', '✗ Error loading style: ' + error.message, 'error');
+            }
+        }
+
+        async function deleteStyle(styleId) {
+            if (!confirm('Delete this custom style? This cannot be undone.')) return;
+
+            try {
+                const response = await fetch(`/api/auto-images/styles/${styleId}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showAlert('image-styles', '✓ Style deleted successfully!', 'success');
+                    loadImageStyles();
+                } else {
+                    showAlert('image-styles', '✗ Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('image-styles', '✗ Error deleting style: ' + error.message, 'error');
+            }
+        }
+
+        document.getElementById('save-style-btn').addEventListener('click', async () => {
+            const name = document.getElementById('style-name').value.trim();
+            const description = document.getElementById('style-description').value.trim();
+            const composition = document.getElementById('style-composition').value.trim();
+            const lighting = document.getElementById('style-lighting').value.trim();
+
+            const visualRules = Array.from(document.querySelectorAll('.visual-rule'))
+                .map(input => input.value.trim())
+                .filter(v => v.length > 0);
+
+            const negativeRules = Array.from(document.querySelectorAll('.negative-rule'))
+                .map(input => input.value.trim())
+                .filter(v => v.length > 0);
+
+            const colorPalette = Array.from(document.querySelectorAll('.color-item'))
+                .map(input => input.value.trim())
+                .filter(v => v.length > 0);
+
+            if (!name || !description || !composition || !lighting || visualRules.length < 3 || negativeRules.length < 2 || colorPalette.length < 3) {
+                showAlert('image-styles', '✗ Please fill all required fields (min: 3 visual rules, 2 negative rules, 3 colors)', 'error');
+                return;
+            }
+
+            const payload = { name, description, visual_rules: visualRules, negative_rules: negativeRules, composition, lighting, color_palette: colorPalette };
+
+            try {
+                const button = document.getElementById('save-style-btn');
+                button.disabled = true;
+                button.innerHTML = '⏳ Saving...';
+
+                let response;
+                if (currentEditingStyleId) {
+                    response = await fetch(`/api/auto-images/styles/${currentEditingStyleId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                } else {
+                    response = await fetch('/api/auto-images/styles', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                }
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showAlert('image-styles', '✓ Style saved successfully!', 'success');
+                    document.getElementById('style-modal').style.display = 'none';
+                    loadImageStyles();
+                } else {
+                    showAlert('image-styles', '✗ Error: ' + data.error, 'error');
+                }
+
+                button.disabled = false;
+                button.innerHTML = '💾 Save Style';
+            } catch (error) {
+                showAlert('image-styles', '✗ Error saving style: ' + error.message, 'error');
+            }
+        });
+
         // Initialize on page load
         window.addEventListener('DOMContentLoaded', () => {
             loadSettings();
             loadFormulas();
             loadVoices();
+            loadImageStyles();
         });
     </script>
 </body>

@@ -2161,7 +2161,7 @@ def auto_images_generate():
     from auto_images import DirectorClient, ImageGenerator, TimelineManager
     from auto_images.schema import AutoImagesPlan
     from config import Config
-    from image_style_manager import ImageStyleManager
+    from auto_images_style_manager import AutoImagesStyleManager
 
     try:
         data = request.get_json()
@@ -2182,8 +2182,7 @@ def auto_images_generate():
             return jsonify({'error': 'n_images must be between 1 and 100'}), 400
 
         # Get style config
-        styles = ImageStyleManager.get_all_styles()
-        style = next((s for s in styles if s['id'] == style_id), None)
+        style = AutoImagesStyleManager.get_style(style_id)
         if not style:
             return jsonify({'error': f'Style not found: {style_id}'}), 404
 
@@ -2464,6 +2463,188 @@ def auto_images_clear():
             'message': 'Timeline cleared' if success else 'No timeline to clear'
         })
 
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/auto-images/styles', methods=['GET'])
+def auto_images_get_styles():
+    """Get all Auto Images styles"""
+    from auto_images_style_manager import AutoImagesStyleManager
+
+    try:
+        styles = AutoImagesStyleManager.get_all_styles()
+        return jsonify({
+            'success': True,
+            'styles': styles
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/auto-images/styles/<style_id>', methods=['GET'])
+def auto_images_get_style(style_id):
+    """Get specific Auto Images style"""
+    from auto_images_style_manager import AutoImagesStyleManager
+
+    try:
+        style = AutoImagesStyleManager.get_style(style_id)
+        if style:
+            return jsonify({
+                'success': True,
+                'style': style
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Style not found'
+            }), 404
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/auto-images/styles', methods=['POST'])
+def auto_images_create_style():
+    """
+    Create new Auto Images style
+
+    Request JSON:
+        {
+            'name': 'My Style',
+            'description': 'Description of the style',
+            'visual_rules': ['Rule 1', 'Rule 2', 'Rule 3'],
+            'negative_rules': ['Avoid 1', 'Avoid 2'],
+            'composition': 'Composition approach',
+            'lighting': 'Lighting style',
+            'color_palette': ['Color 1', 'Color 2', 'Color 3']
+        }
+    """
+    from auto_images_style_manager import AutoImagesStyleManager
+
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        style = AutoImagesStyleManager.create_style(
+            name=data.get('name', ''),
+            description=data.get('description', ''),
+            visual_rules=data.get('visual_rules', []),
+            negative_rules=data.get('negative_rules', []),
+            composition=data.get('composition', ''),
+            lighting=data.get('lighting', ''),
+            color_palette=data.get('color_palette', [])
+        )
+
+        return jsonify({
+            'success': True,
+            'style': style
+        })
+
+    except ValueError as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/auto-images/styles/<style_id>', methods=['PUT'])
+def auto_images_update_style(style_id):
+    """
+    Update existing Auto Images style (custom only)
+
+    Request JSON: (all fields optional)
+        {
+            'name': 'Updated Name',
+            'description': 'Updated description',
+            'visual_rules': ['...'],
+            'negative_rules': ['...'],
+            'composition': '...',
+            'lighting': '...',
+            'color_palette': ['...']
+        }
+    """
+    from auto_images_style_manager import AutoImagesStyleManager
+
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        style = AutoImagesStyleManager.update_style(
+            style_id=style_id,
+            name=data.get('name'),
+            description=data.get('description'),
+            visual_rules=data.get('visual_rules'),
+            negative_rules=data.get('negative_rules'),
+            composition=data.get('composition'),
+            lighting=data.get('lighting'),
+            color_palette=data.get('color_palette')
+        )
+
+        if style:
+            return jsonify({
+                'success': True,
+                'style': style
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Style not found'
+            }), 404
+
+    except ValueError as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/auto-images/styles/<style_id>', methods=['DELETE'])
+def auto_images_delete_style(style_id):
+    """Delete Auto Images style (custom only)"""
+    from auto_images_style_manager import AutoImagesStyleManager
+
+    try:
+        success = AutoImagesStyleManager.delete_style(style_id)
+
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Style deleted'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Style not found or cannot delete built-in style'
+            }), 404
+
+    except ValueError as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 400
     except Exception as e:
         return jsonify({
             'success': False,
