@@ -245,6 +245,7 @@ class VideoAssembler:
             # Run FFmpeg with timeout (max 10 minutes per clip)
             print(f"      Running FFmpeg command...")
             print(f"      Duration: {duration:.2f}s, Type: {media_type}")
+            print(f"      Encoder: {self.encoder_info['encoder']} ({self.encoder_info['hw_type']})")
 
             result = subprocess.run(
                 cmd,
@@ -259,10 +260,26 @@ class VideoAssembler:
             print(f"❌ FFmpeg timeout after 10 minutes!")
             return False
         except subprocess.CalledProcessError as e:
-            print(f"❌ FFmpeg error preparing media:")
-            print(f"   Command: {' '.join(cmd)}")
-            print(f"   Error: {e.stderr[-500:]}")  # Last 500 chars of error
-            return False
+            # GPU encoding failed - try CPU fallback!
+            if self.encoder_info['hw_type'] != 'cpu':
+                print(f"⚠️ GPU encoder failed, retrying with CPU...")
+                print(f"   GPU Error: {e.stderr[-200:] if e.stderr else 'Unknown'}")
+
+                # Force CPU encoding for this retry
+                original_encoder = self.encoder_info.copy()
+                self.encoder_info = {'encoder': 'libx264', 'preset': 'ultrafast', 'hw_type': 'cpu'}
+
+                try:
+                    # Retry with CPU encoding
+                    return self.prepare_media_clip(media_path, duration, output_path, media_type, resolution)
+                finally:
+                    # Restore original encoder for next clip
+                    self.encoder_info = original_encoder
+            else:
+                print(f"❌ FFmpeg error preparing media:")
+                print(f"   Command: {' '.join(cmd)}")
+                print(f"   Error: {e.stderr[-500:]}")  # Last 500 chars of error
+                return False
         except Exception as e:
             print(f"❌ Error preparing media: {e}")
             return False
