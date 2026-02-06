@@ -53,15 +53,13 @@ class AutoImagesPlan(BaseModel):
         """Ensure number of scenes matches n_images"""
         if info.data and 'n_images' in info.data and len(v) != info.data['n_images']:
             raise ValueError(f"Expected {info.data['n_images']} scenes, got {len(v)}")
-        return v
 
-    @validator('scenes')
-    def validate_scene_ids(cls, v):
-        """Ensure scene IDs are sequential starting from 1"""
+        # Also validate scene IDs are sequential
         expected_ids = list(range(1, len(v) + 1))
         actual_ids = [scene.scene_id for scene in v]
         if actual_ids != expected_ids:
             raise ValueError(f"Scene IDs must be sequential 1..{len(v)}, got {actual_ids}")
+
         return v
 
 

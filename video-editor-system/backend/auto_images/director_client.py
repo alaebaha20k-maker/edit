@@ -211,6 +211,130 @@ OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.
         # Parse JSON
         return json.loads(text)
 
+    def _plan_auto_images_chunked(
+        self,
+        script_text: str,
+        style: Dict,
+        n_images: int,
+        force_regenerate: bool = False,
+        verbose: bool = True
+    ) -> AutoImagesPlan:
+        """
+        Plan auto-images using chunking strategy for large n_images
+        Splits into chunks of 20 to avoid rate limits and large responses
+        """
+        CHUNK_SIZE = 20
+        chunks_needed = (n_images + CHUNK_SIZE - 1) // CHUNK_SIZE  # Ceiling division
+
+        if verbose:
+            print(f"   📦 Splitting into {chunks_needed} chunks of ~{CHUNK_SIZE} images each")
+
+        all_scenes = []
+        scenes_generated = 0
+
+        for chunk_idx in range(chunks_needed):
+            # Calculate how many images for this chunk
+            remaining = n_images - scenes_generated
+            chunk_size = min(CHUNK_SIZE, remaining)
+
+            if verbose:
+                print(f"\n   📦 Chunk {chunk_idx + 1}/{chunks_needed}: Generating {chunk_size} images ({scenes_generated + 1}-{scenes_generated + chunk_size})")
+
+            # Split script proportionally
+            # For example, if total n_images = 50 and chunk_size = 20:
+            # Chunk 1: scenes 1-20 = first 40% of script
+            # Chunk 2: scenes 21-40 = next 40% of script
+            # Chunk 3: scenes 41-50 = last 20% of script
+
+            script_words = script_text.split()
+            total_words = len(script_words)
+
+            start_ratio = scenes_generated / n_images
+            end_ratio = (scenes_generated + chunk_size) / n_images
+
+            start_word_idx = int(start_ratio * total_words)
+            end_word_idx = int(end_ratio * total_words)
+
+            chunk_script = ' '.join(script_words[start_word_idx:end_word_idx])
+
+            # Generate chunk plan
+            chunk_prompt = self._build_director_prompt(chunk_script, style, chunk_size)
+
+            # Add context about chunk position
+            chunk_context = f"""
+IMPORTANT: This is chunk {chunk_idx + 1} of {chunks_needed}.
+Scene IDs should start from {scenes_generated + 1} and end at {scenes_generated + chunk_size}.
+This chunk covers scenes {scenes_generated + 1} to {scenes_generated + chunk_size} out of {n_images} total.
+"""
+            chunk_prompt = chunk_context + chunk_prompt
+
+            # Generate with retries
+            max_attempts = 3
+            for attempt in range(max_attempts):
+                try:
+                    start_time = time.time()
+                    response = self.model.generate_content(chunk_prompt)
+                    response_text = response.text
+                    elapsed = time.time() - start_time
+
+                    if verbose:
+                        print(f"      ⏱️ Generation: {elapsed:.1f}s (attempt {attempt + 1})")
+
+                    # Parse JSON
+                    plan_data = self._parse_json_response(response_text)
+
+                    # Validate chunk
+                    chunk_plan = AutoImagesPlan(**plan_data)
+
+                    # Add scenes to collection
+                    all_scenes.extend(chunk_plan.scenes)
+                    scenes_generated += len(chunk_plan.scenes)
+
+                    if verbose:
+                        print(f"      ✅ Chunk validated: {len(chunk_plan.scenes)} scenes")
+
+                    # Small delay between chunks to avoid rate limits
+                    if chunk_idx < chunks_needed - 1:
+                        time.sleep(1)
+
+                    break  # Success, exit retry loop
+
+                except (json.JSONDecodeError, ValidationError) as e:
+                    if attempt < max_attempts - 1:
+                        if verbose:
+                            print(f"      ❌ Error: {e}. Retrying...")
+                        continue
+                    else:
+                        raise ValueError(f"Chunk {chunk_idx + 1} failed after {max_attempts} attempts: {e}")
+
+        # Combine all chunks into final plan
+        if verbose:
+            print(f"\n   ✅ All chunks complete: {len(all_scenes)} total scenes")
+
+        # Create final plan
+        final_plan_data = {
+            "mode": "auto_images",
+            "style_id": style.get('id', 'cinematic'),
+            "n_images": n_images,
+            "global_style_bible": {
+                "style_name": style.get('name', 'Cinematic'),
+                "visual_rules": style.get('visual_rules', []),
+                "negative_rules": style.get('negative_rules', []),
+                "composition": style.get('composition', 'Professional composition'),
+                "lighting": style.get('lighting', 'Dramatic lighting'),
+                "color_palette": style.get('color_palette', ['Rich colors'])
+            },
+            "scenes": [scene.dict() for scene in all_scenes]
+        }
+
+        final_plan = AutoImagesPlan(**final_plan_data)
+
+        # Cache the final plan
+        cache_key = self._get_cache_key(script_text, style, n_images)
+        self._save_cached_plan(cache_key, final_plan)
+
+        return final_plan
+
     def plan_auto_images(
         self,
         script_text: str,
@@ -221,6 +345,7 @@ OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.
     ) -> AutoImagesPlan:
         """
         Plan auto-generated images using Gemini Director
+        Uses chunking strategy for large n_images to avoid rate limits
 
         Args:
             script_text: Full script text
@@ -237,9 +362,15 @@ OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.
         """
 
         if verbose:
-            print(f"\n🎬 GEMINI DIRECTOR (Separate Instance)")
+            print(f"\n🎬 GEMINI DIRECTOR (Separate Instance - gemini-2.5-flash)")
             print(f"   Style: {style.get('name', 'Cinematic')}")
             print(f"   Target: {n_images} images")
+
+        # Use chunking strategy for large n_images (> 20)
+        if n_images > 20:
+            if verbose:
+                print(f"   📦 Using chunking strategy (n_images > 20)")
+            return self._plan_auto_images_chunked(script_text, style, n_images, force_regenerate, verbose)
 
         # Check cache
         cache_key = self._get_cache_key(script_text, style, n_images)
