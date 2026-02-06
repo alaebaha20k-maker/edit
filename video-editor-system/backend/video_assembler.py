@@ -103,22 +103,19 @@ class VideoAssembler:
 
             if media_type == 'image':
                 # ULTRA-FAST image to video conversion
-                # Use 1fps input instead of 30fps = 30x FASTER!
-                # 12min video: 720 frames instead of 21,600 frames!
+                # Key optimizations: ultrafast preset + lower fps + higher CRF
                 cmd = [
                     'ffmpeg', '-y',
                     '-loop', '1',
-                    '-framerate', '1',  # 1fps input = MUCH faster encoding!
                     '-i', media_path,
                     '-c:v', 'libx264',
                     '-t', str(duration),
                     '-pix_fmt', 'yuv420p',
                     '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1',
-                    '-r', '24',  # Output 24fps (standard, less than 30fps)
+                    '-r', '24',  # 24fps (lower than 30fps = faster)
                     '-preset', 'ultrafast',  # Fastest preset!
-                    '-tune', 'stillimage',  # Optimized for still images
-                    '-crf', '28',  # Higher CRF = faster encoding
-                    '-g', '48',  # Keyframe every 2 seconds
+                    '-crf', '28',  # Higher CRF = faster encoding, good quality
+                    '-movflags', '+faststart',  # Optimize for streaming
                     output_path
                 ]
             else:
@@ -157,11 +154,26 @@ class VideoAssembler:
                         output_path
                     ]
 
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            # Run FFmpeg with timeout (max 10 minutes per clip)
+            print(f"      Running FFmpeg command...")
+            print(f"      Duration: {duration:.2f}s, Type: {media_type}")
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=600  # 10 minute timeout
+            )
             return True
 
+        except subprocess.TimeoutExpired:
+            print(f"❌ FFmpeg timeout after 10 minutes!")
+            return False
         except subprocess.CalledProcessError as e:
-            print(f"❌ FFmpeg error preparing media: {e.stderr}")
+            print(f"❌ FFmpeg error preparing media:")
+            print(f"   Command: {' '.join(cmd)}")
+            print(f"   Error: {e.stderr[-500:]}")  # Last 500 chars of error
             return False
         except Exception as e:
             print(f"❌ Error preparing media: {e}")
@@ -282,13 +294,18 @@ class VideoAssembler:
                 str(temp_video)
             ]
 
-            subprocess.run(cmd, capture_output=True, text=True, check=True)
+            if verbose:
+                print(f"   Concatenating {len(prepared_clips)} clips...")
+
+            subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=300)
 
             if verbose:
                 print(f"   ✅ Video concatenated")
 
+        except subprocess.TimeoutExpired:
+            raise Exception(f"Concatenation timeout after 5 minutes!")
         except subprocess.CalledProcessError as e:
-            raise Exception(f"Failed to concatenate videos: {e.stderr}")
+            raise Exception(f"Failed to concatenate videos: {e.stderr[-500:]}")
 
         # Step 5: Combine video with voice audio
         if verbose:
@@ -308,13 +325,18 @@ class VideoAssembler:
                 output_path
             ]
 
-            subprocess.run(cmd, capture_output=True, text=True, check=True)
+            if verbose:
+                print(f"   Merging audio with video...")
+
+            subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=300)
 
             if verbose:
                 print(f"   ✅ Audio added to video")
 
+        except subprocess.TimeoutExpired:
+            raise Exception(f"Audio merge timeout after 5 minutes!")
         except subprocess.CalledProcessError as e:
-            raise Exception(f"Failed to add audio: {e.stderr}")
+            raise Exception(f"Failed to add audio: {e.stderr[-500:]}")
 
         # Step 6: Cleanup temp files
         if verbose:
