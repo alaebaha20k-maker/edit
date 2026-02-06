@@ -14,7 +14,8 @@
             <span class="tagline">Professional AI-Powered Video Creation</span>
         </div>
         <div class="header-right">
-            <button onclick="window.location.href='settings.html'" class="btn-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); font-weight: 600; font-size: 16px; padding: 10px 24px;">⚙️ Settings</button>
+            <button id="settingsBtn" class="btn-header">⚙️ Quick Settings</button>
+            <button onclick="window.location.href='settings.html'" class="btn-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); font-weight: 600;">🎛️ Advanced Settings</button>
         </div>
     </header>
 
@@ -644,6 +645,121 @@
     <!-- ============================================ -->
     <!-- SETTINGS MODAL -->
     <!-- ============================================ -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>⚙️ Settings</h2>
+                <button onclick="closeSettings()" class="btn-close">✕</button>
+            </div>
+
+            <div class="modal-body">
+                <!-- API Keys Tab -->
+                <div class="settings-section">
+                    <h3>🔑 API Keys</h3>
+                    <div class="input-group">
+                        <label>Gemini API Key (Required for AI generation)</label>
+                        <div class="password-input">
+                            <input type="password" id="geminiKey" placeholder="Enter Gemini API key..." class="input-large">
+                            <button onclick="togglePassword('geminiKey')" class="btn-toggle">👁️</button>
+                        </div>
+                        <span class="hint">Get from: https://aistudio.google.com/app/apikey</span>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Replicate API Token (Required for AI images)</label>
+                        <div class="password-input">
+                            <input type="password" id="replicateKey" placeholder="Enter Replicate token..." class="input-large">
+                            <button onclick="togglePassword('replicateKey')" class="btn-toggle">👁️</button>
+                        </div>
+                        <span class="hint">Get from: https://replicate.com/account/api-tokens</span>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Inworld AI API Key (Required for AI voices)</label>
+                        <div class="password-input">
+                            <input type="password" id="inworldKey" placeholder="Enter Inworld API key..." class="input-large">
+                            <button onclick="togglePassword('inworldKey')" class="btn-toggle">👁️</button>
+                        </div>
+                        <span class="hint">Get from: https://studio.inworld.ai/ (Workspace Settings → API Keys)</span>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Inworld AI API Secret (Required for AI voices)</label>
+                        <div class="password-input">
+                            <input type="password" id="inworldSecret" placeholder="Enter Inworld API secret..." class="input-large">
+                            <button onclick="togglePassword('inworldSecret')" class="btn-toggle">👁️</button>
+                        </div>
+                        <span class="hint">Get from: https://studio.inworld.ai/ (Workspace Settings → API Keys)</span>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Pexels API Key (Optional - for stock footage)</label>
+                        <div class="password-input">
+                            <input type="password" id="pexelsKey" placeholder="Enter Pexels API key..." class="input-large">
+                            <button onclick="togglePassword('pexelsKey')" class="btn-toggle">👁️</button>
+                        </div>
+                        <span class="hint">Get from: https://www.pexels.com/api/</span>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Pixabay API Key (Optional - for stock images)</label>
+                        <div class="password-input">
+                            <input type="password" id="pixabayKey" placeholder="Enter Pixabay API key..." class="input-large">
+                            <button onclick="togglePassword('pixabayKey')" class="btn-toggle">👁️</button>
+                        </div>
+                        <span class="hint">Get from: https://pixabay.com/api/docs/</span>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Unsplash API Key (Optional - for stock images)</label>
+                        <div class="password-input">
+                            <input type="password" id="unsplashKey" placeholder="Enter Unsplash access key..." class="input-large">
+                            <button onclick="togglePassword('unsplashKey')" class="btn-toggle">👁️</button>
+                        </div>
+                        <span class="hint">Get from: https://unsplash.com/developers</span>
+                    </div>
+                </div>
+
+                <!-- Niche Management Section -->
+                <div class="settings-section">
+                    <h3>🎯 Content Niche (Required)</h3>
+                    <p style="color: #666; margin-bottom: 15px;">Select your content category and writing style. This is required for AI generation.</p>
+
+                    <div class="input-group">
+                        <label>Select Active Niche</label>
+                        <select id="nicheSelect" class="input-large" onchange="selectNiche()">
+                            <option value="">-- Select a niche --</option>
+                        </select>
+                    </div>
+
+                    <div class="input-group" style="margin-top: 20px;">
+                        <label>Or Create New Niche</label>
+                        <input type="text" id="newNicheName" placeholder="Niche name (e.g., 'Trading Psychology', 'Tech Reviews')" class="input-large">
+                        <select id="newNicheLanguage" class="input-large" style="margin-top: 10px;">
+                            <option value="English">English</option>
+                            <option value="French">French</option>
+                            <option value="Spanish">Spanish</option>
+                            <option value="Arabic">Arabic</option>
+                            <option value="German">German</option>
+                            <option value="Portuguese">Portuguese</option>
+                        </select>
+                        <textarea id="newNicheGuidelines" rows="4" placeholder="Writing guidelines (min 100 characters)&#10;&#10;Example: Create engaging trading psychology content focused on mindset and discipline. Use simple language with real examples. Target audience: beginner traders. Tone: motivational but realistic." class="textarea-large" style="margin-top: 10px;"></textarea>
+                        <button onclick="createNiche()" class="btn-primary" style="margin-top: 10px;">➕ Create Niche</button>
+                    </div>
+
+                    <div id="nichesList" style="margin-top: 20px;">
+                        <!-- Existing niches will be listed here -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button onclick="saveSettings()" class="btn-success btn-large">💾 Save Settings</button>
+                <button onclick="closeSettings()" class="btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <script src="app.js"></script>
     <script src="capcut_editor.js"></script>
 </body>
