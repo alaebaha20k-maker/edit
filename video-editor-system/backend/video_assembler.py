@@ -22,6 +22,39 @@ class VideoAssembler:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.temp_dir.mkdir(parents=True, exist_ok=True)
 
+        # Detect best video encoder on init (cache it)
+        self.encoder_info = self._detect_best_encoder()
+
+    def _detect_best_encoder(self) -> dict:
+        """
+        Detect best available video encoder (GPU or CPU)
+        Returns: {'encoder': 'h264_nvenc'/'libx264', 'preset': '...', 'hw_type': 'nvidia/intel/amd/cpu'}
+        """
+        # Try NVIDIA GPU (fastest if available)
+        try:
+            result = subprocess.run(
+                ['ffmpeg', '-hide_banner', '-encoders'],
+                capture_output=True, text=True, timeout=5
+            )
+            encoders = result.stdout
+
+            # Check for hardware encoders
+            if 'h264_nvenc' in encoders:
+                print("✅ NVIDIA GPU encoder detected (h264_nvenc)")
+                return {'encoder': 'h264_nvenc', 'preset': 'p4', 'hw_type': 'nvidia'}
+            elif 'h264_qsv' in encoders:
+                print("✅ Intel Quick Sync encoder detected (h264_qsv)")
+                return {'encoder': 'h264_qsv', 'preset': 'veryfast', 'hw_type': 'intel'}
+            elif 'h264_amf' in encoders:
+                print("✅ AMD GPU encoder detected (h264_amf)")
+                return {'encoder': 'h264_amf', 'preset': 'speed', 'hw_type': 'amd'}
+        except:
+            pass
+
+        # Fallback to CPU encoding (still optimized)
+        print("ℹ️ Using CPU encoder (libx264) - no GPU detected")
+        return {'encoder': 'libx264', 'preset': 'ultrafast', 'hw_type': 'cpu'}
+
     def get_audio_duration(self, audio_path: str) -> float:
         """Get duration of audio file in seconds"""
         try:
@@ -102,57 +135,112 @@ class VideoAssembler:
             width, height = resolution.split('x')
 
             if media_type == 'image':
-                # ULTRA-FAST image to video conversion
-                # Key optimizations: ultrafast preset + lower fps + higher CRF
-                cmd = [
-                    'ffmpeg', '-y',
-                    '-loop', '1',
-                    '-i', media_path,
-                    '-c:v', 'libx264',
+                # EXTREME SPEED image to video conversion
+                # Secret: Use 10fps for static images! (2.4x faster than 24fps!)
+                # No motion = no need for high FPS!
+
+                cmd = ['ffmpeg', '-y', '-loop', '1', '-i', media_path]
+
+                # Add encoder-specific settings
+                if self.encoder_info['hw_type'] == 'nvidia':
+                    # NVIDIA GPU encoding (VERY FAST!)
+                    cmd.extend([
+                        '-c:v', 'h264_nvenc',
+                        '-preset', 'p1',  # Fastest NVIDIA preset
+                        '-tune', 'hq',  # High quality
+                        '-rc', 'vbr',  # Variable bitrate
+                        '-cq', '28',  # Quality level
+                        '-b:v', '5M',  # 5Mbps bitrate (good for 1080p)
+                    ])
+                elif self.encoder_info['hw_type'] == 'intel':
+                    # Intel Quick Sync (FAST!)
+                    cmd.extend([
+                        '-c:v', 'h264_qsv',
+                        '-preset', 'veryfast',
+                        '-global_quality', '28',
+                    ])
+                elif self.encoder_info['hw_type'] == 'amd':
+                    # AMD GPU (FAST!)
+                    cmd.extend([
+                        '-c:v', 'h264_amf',
+                        '-quality', 'speed',
+                        '-rc', 'vbr_latency',
+                        '-qp_i', '22',
+                        '-qp_p', '22',
+                    ])
+                else:
+                    # CPU encoding (optimized)
+                    cmd.extend([
+                        '-c:v', 'libx264',
+                        '-preset', 'ultrafast',  # Fastest CPU preset
+                        '-crf', '23',  # Good quality
+                        '-tune', 'zerolatency',  # Faster encoding
+                        '-threads', '0',  # Use all CPU cores
+                    ])
+
+                # Common settings for all encoders
+                cmd.extend([
                     '-t', str(duration),
                     '-pix_fmt', 'yuv420p',
-                    '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1',
-                    '-r', '24',  # 24fps (lower than 30fps = faster)
-                    '-preset', 'ultrafast',  # Fastest preset!
-                    '-crf', '28',  # Higher CRF = faster encoding, good quality
-                    '-movflags', '+faststart',  # Optimize for streaming
+                    '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1',
+                    '-r', '10',  # 10fps for static images (MUCH faster than 24fps!)
+                    '-g', '30',  # Keyframe every 3 seconds
+                    '-movflags', '+faststart',
                     output_path
-                ]
+                ])
+
             else:
-                # Process video clip - Smart duration handling
-                # Get video duration first
+                # Process video clip - Smart duration handling with GPU acceleration
                 video_duration = self._get_duration_ffprobe(media_path)
 
                 if video_duration >= duration:
-                    # Video is longer than needed - trim to exact duration
-                    cmd = [
-                        'ffmpeg', '-y',
-                        '-i', media_path,
-                        '-t', str(duration),  # Cut to exact duration
-                        '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1',
-                        '-c:v', 'libx264',
-                        '-preset', 'ultrafast',  # Fastest encoding!
-                        '-crf', '28',  # Higher CRF = faster
-                        '-r', '24',  # 24fps output
-                        '-an',  # Remove audio from video clips
-                        output_path
-                    ]
+                    # Video is longer - trim to exact duration
+                    cmd = ['ffmpeg', '-y', '-i', media_path, '-t', str(duration)]
                 else:
-                    # Video is shorter than needed - loop it to fill duration
+                    # Video is shorter - loop it to fill duration
                     loops_needed = int(duration / video_duration) + 1
-                    cmd = [
-                        'ffmpeg', '-y',
-                        '-stream_loop', str(loops_needed),  # Loop video
-                        '-i', media_path,
-                        '-t', str(duration),  # Cut to exact duration
-                        '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1',
+                    cmd = ['ffmpeg', '-y', '-stream_loop', str(loops_needed), '-i', media_path, '-t', str(duration)]
+
+                # Add encoder-specific settings for videos
+                if self.encoder_info['hw_type'] == 'nvidia':
+                    cmd.extend([
+                        '-c:v', 'h264_nvenc',
+                        '-preset', 'p2',  # Fast NVIDIA preset
+                        '-tune', 'hq',
+                        '-rc', 'vbr',
+                        '-cq', '23',  # Better quality for videos
+                        '-b:v', '8M',  # 8Mbps for 1080p video
+                    ])
+                elif self.encoder_info['hw_type'] == 'intel':
+                    cmd.extend([
+                        '-c:v', 'h264_qsv',
+                        '-preset', 'fast',
+                        '-global_quality', '23',
+                    ])
+                elif self.encoder_info['hw_type'] == 'amd':
+                    cmd.extend([
+                        '-c:v', 'h264_amf',
+                        '-quality', 'balanced',
+                        '-rc', 'vbr_latency',
+                        '-qp_i', '20',
+                        '-qp_p', '20',
+                    ])
+                else:
+                    cmd.extend([
                         '-c:v', 'libx264',
-                        '-preset', 'ultrafast',  # Fastest encoding!
-                        '-crf', '28',  # Higher CRF = faster
-                        '-r', '24',  # 24fps output
-                        '-an',  # Remove audio from video clips
-                        output_path
-                    ]
+                        '-preset', 'veryfast',  # Faster than ultrafast but better quality
+                        '-crf', '23',
+                        '-threads', '0',
+                    ])
+
+                # Common settings
+                cmd.extend([
+                    '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
+                    '-r', '24',  # 24fps output
+                    '-an',  # Remove audio
+                    '-movflags', '+faststart',
+                    output_path
+                ])
 
             # Run FFmpeg with timeout (max 10 minutes per clip)
             print(f"      Running FFmpeg command...")
