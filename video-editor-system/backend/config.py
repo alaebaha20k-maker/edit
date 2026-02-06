@@ -60,9 +60,9 @@ class Config:
 
     @classmethod
     def get_director_gemini_model(cls):
-        """Get Director Gemini model name"""
+        """Get Director Gemini model name (same as script generator)"""
         saved = cls._load_saved_config()
-        return saved.get('director_gemini_model', 'gemini-1.5-flash')
+        return saved.get('director_gemini_model', 'gemini-2.5-flash')
 
     @classmethod
     def get_replicate_api_token(cls):

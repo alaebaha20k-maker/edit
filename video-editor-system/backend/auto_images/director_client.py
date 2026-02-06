@@ -21,13 +21,13 @@ class DirectorClient:
     DIRECTOR_VERSION = "v1.0"
     CACHE_DIR = Path("cache/director_plans")
 
-    def __init__(self, api_key: str, model_name: str = "gemini-1.5-flash"):
+    def __init__(self, api_key: str, model_name: str = "gemini-2.5-flash"):
         """
         Initialize Director Gemini client
 
         Args:
             api_key: SEPARATE Gemini API key for Director (not script writer!)
-            model_name: Gemini model to use
+            model_name: Gemini model to use (default: gemini-2.5-flash, same as script generator)
         """
         if not api_key:
             raise ValueError("Director Gemini API key is required")
