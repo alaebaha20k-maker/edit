@@ -398,6 +398,23 @@ class VideoAssembler:
                     ]
 
                     subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=600)
+
+                    # ✅ RETURN HERE! (was missing!)
+                    elapsed = __import__('time').time() - start_time
+                    size_mb = os.path.getsize(output_path) / (1024 * 1024)
+
+                    if verbose:
+                        print(f"\n✅ DONE! Time: {elapsed:.1f}s | Size: {size_mb:.2f} MB")
+
+                    return {
+                        'success': True,
+                        'output_path': output_path,
+                        'duration_seconds': voice_duration,
+                        'file_size_mb': size_mb,
+                        'processing_time': elapsed,
+                        'media_count': 1,
+                        'voice_duration': voice_duration
+                    }
                 except subprocess.CalledProcessError:
                     # Audio copy failed, encode audio (still fast)
                     if verbose:
@@ -441,8 +458,6 @@ class VideoAssembler:
                         'media_count': 1,
                         'voice_duration': voice_duration
                     }
-                except subprocess.CalledProcessError as e:
-                    raise Exception(f"Export failed: {e.stderr[-1000:]}")
 
         # STRATEGY 2: Multiple media
         if verbose:
