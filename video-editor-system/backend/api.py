@@ -1441,7 +1441,7 @@ def get_settings():
 
 @app.route('/api/settings/api-keys', methods=['POST'])
 def save_api_keys():
-    """Save API keys (Gemini, Replicate, Inworld AI, Pexels)"""
+    """Save API keys (Script Writer Gemini, Director Gemini, Replicate, Inworld AI, Pexels)"""
     from settings_manager import SettingsManager
 
     try:
@@ -1451,13 +1451,15 @@ def save_api_keys():
             return jsonify({'error': 'No data provided'}), 400
 
         gemini = data.get('gemini')
+        director_gemini = data.get('director_gemini')
         replicate = data.get('replicate')
         inworld = data.get('inworld')
         pexels = data.get('pexels')
 
-        # Save API keys
+        # Save API keys (Script Writer Gemini and Director Gemini are SEPARATE!)
         settings = SettingsManager.save_api_keys(
             gemini=gemini,
+            director_gemini=director_gemini,
             replicate=replicate,
             inworld=inworld,
             pexels=pexels

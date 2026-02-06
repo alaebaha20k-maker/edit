@@ -448,7 +448,7 @@
                 <div id="alert-api-keys" class="alert"></div>
 
                 <div class="form-section">
-                    <h3>🤖 Gemini API Key
+                    <h3>🤖 Gemini API Key (Script Writer)
                         <span id="status-gemini" class="api-status not-configured">Not Configured</span>
                     </h3>
                     <p>Required for AI script generation and title generation</p>
@@ -456,6 +456,18 @@
                         <label for="gemini-key">Gemini API Key</label>
                         <input type="password" id="gemini-key" placeholder="AIza...">
                         <small>Get your key from: <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a></small>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3>🎬 Director Gemini API Key (Auto Images AI)
+                        <span id="status-director-gemini" class="api-status not-configured">Not Configured</span>
+                    </h3>
+                    <p><strong>SEPARATE KEY RECOMMENDED:</strong> Used ONLY for Auto Images AI scene planning. Using a separate key avoids rate limit conflicts with script generation.</p>
+                    <div class="input-group">
+                        <label for="director-gemini-key">Director Gemini API Key (Optional - uses Script Writer key if empty)</label>
+                        <input type="password" id="director-gemini-key" placeholder="AIza... (leave empty to reuse Script Writer key)">
+                        <small>💡 <strong>Best practice:</strong> Create a separate Gemini API key for Auto Images to isolate rate limits. <a href="https://aistudio.google.com/app/apikey" target="_blank">Get new key from Google AI Studio</a></small>
                     </div>
                 </div>
 
@@ -694,6 +706,7 @@
 
                     // Update API key status indicators
                     updateStatusIndicator('gemini', settings.api_keys.gemini.configured);
+                    updateStatusIndicator('director-gemini', settings.api_keys.director_gemini?.configured || false);
                     updateStatusIndicator('replicate', settings.api_keys.replicate.configured);
                     updateStatusIndicator('inworld', settings.api_keys.inworld.configured);
                     updateStatusIndicator('pexels', settings.api_keys.pexels.configured);
@@ -711,13 +724,20 @@
                 indicator.textContent = '✓ Configured';
             } else {
                 indicator.className = 'api-status not-configured';
-                indicator.textContent = key === 'gemini' || key === 'replicate' ? 'Required' : 'Optional';
+                if (key === 'gemini' || key === 'replicate') {
+                    indicator.textContent = 'Required';
+                } else if (key === 'director-gemini') {
+                    indicator.textContent = 'Optional (uses Script Writer key)';
+                } else {
+                    indicator.textContent = 'Optional';
+                }
             }
         }
 
         // Save API Keys
         document.getElementById('save-api-keys').addEventListener('click', async () => {
             const gemini = document.getElementById('gemini-key').value;
+            const director_gemini = document.getElementById('director-gemini-key').value;
             const replicate = document.getElementById('replicate-token').value;
             const inworld = document.getElementById('inworld-key').value;
             const pexels = document.getElementById('pexels-key').value;
@@ -730,7 +750,7 @@
                 const response = await fetch('/api/settings/api-keys', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ gemini, replicate, inworld, pexels })
+                    body: JSON.stringify({ gemini, director_gemini, replicate, inworld, pexels })
                 });
 
                 const data = await response.json();
@@ -740,12 +760,14 @@
 
                     // Update status indicators
                     if (gemini) updateStatusIndicator('gemini', true);
+                    if (director_gemini) updateStatusIndicator('director-gemini', true);
                     if (replicate) updateStatusIndicator('replicate', true);
                     if (inworld) updateStatusIndicator('inworld', true);
                     if (pexels) updateStatusIndicator('pexels', true);
 
                     // Clear input fields
                     document.getElementById('gemini-key').value = '';
+                    document.getElementById('director-gemini-key').value = '';
                     document.getElementById('replicate-token').value = '';
                     document.getElementById('inworld-key').value = '';
                     document.getElementById('pexels-key').value = '';
@@ -762,7 +784,7 @@
 
         // Show/Hide Keys
         document.getElementById('show-keys').addEventListener('click', () => {
-            const inputs = ['gemini-key', 'replicate-token', 'inworld-key', 'pexels-key'];
+            const inputs = ['gemini-key', 'director-gemini-key', 'replicate-token', 'inworld-key', 'pexels-key'];
             inputs.forEach(id => {
                 const input = document.getElementById(id);
                 input.type = input.type === 'password' ? 'text' : 'password';

@@ -256,13 +256,14 @@ Output ONLY the JSON array, no extra text."""
         }
 
     @classmethod
-    def save_api_keys(cls, gemini: str = None, replicate: str = None,
-                     inworld: str = None, pexels: str = None) -> Dict:
+    def save_api_keys(cls, gemini: str = None, director_gemini: str = None,
+                     replicate: str = None, inworld: str = None, pexels: str = None) -> Dict:
         """
         Save API keys to settings file
 
         Args:
-            gemini: Gemini API key
+            gemini: Gemini API key (for script writing)
+            director_gemini: Director Gemini API key (for Auto Images AI)
             replicate: Replicate API token
             inworld: Inworld AI API key (base64 credential)
             pexels: Pexels API key
@@ -276,6 +277,8 @@ Output ONLY the JSON array, no extra text."""
         # Update only provided keys
         if gemini is not None:
             settings['api_keys']['gemini'] = gemini
+        if director_gemini is not None:
+            settings['api_keys']['director_gemini'] = director_gemini
         if replicate is not None:
             settings['api_keys']['replicate'] = replicate
         if inworld is not None:
@@ -286,6 +289,15 @@ Output ONLY the JSON array, no extra text."""
         # Save to file
         with open(cls.SETTINGS_FILE, 'w') as f:
             json.dump(settings, f, indent=2)
+
+        # Also update Config (used by other modules)
+        from config import Config
+        Config.save_api_config(
+            gemini_key=gemini if gemini else None,
+            director_gemini_key=director_gemini if director_gemini else None,
+            replicate_token=replicate if replicate else None,
+            inworld_key=inworld if inworld else None
+        )
 
         return settings
 
@@ -550,6 +562,10 @@ Each title must be distinctive, high-quality, and optimized for CTR.
                 'configured': bool(api_keys.get('gemini')),
                 'required': True
             },
+            'director_gemini': {
+                'configured': bool(api_keys.get('director_gemini')),
+                'required': False  # Optional - falls back to regular gemini key
+            },
             'replicate': {
                 'configured': bool(api_keys.get('replicate')),
                 'required': True
@@ -576,7 +592,7 @@ Each title must be distinctive, high-quality, and optimized for CTR.
                     'configured': api_validation[key]['configured'],
                     'value': '***' if settings['api_keys'].get(key) else ''
                 }
-                for key in ['gemini', 'replicate', 'inworld', 'pexels']
+                for key in ['gemini', 'director_gemini', 'replicate', 'inworld', 'pexels']
             },
             'formulas': {
                 'title': len(cls.load_formula('title')),
