@@ -98,6 +98,9 @@ class VideoAssembler:
             True if successful
         """
         try:
+            # Parse resolution string (e.g., "1920x1080" -> width=1920, height=1080)
+            width, height = resolution.split('x')
+
             if media_type == 'image':
                 # Convert image to video with specified duration
                 cmd = [
@@ -107,7 +110,7 @@ class VideoAssembler:
                     '-c:v', 'libx264',
                     '-t', str(duration),
                     '-pix_fmt', 'yuv420p',
-                    '-vf', f'scale={resolution}:force_original_aspect_ratio=decrease,pad={resolution}:(ow-iw)/2:(oh-ih)/2,setsar=1',
+                    '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1',
                     '-r', '30',
                     '-preset', 'medium',
                     '-crf', '23',
@@ -124,7 +127,7 @@ class VideoAssembler:
                         'ffmpeg', '-y',
                         '-i', media_path,
                         '-t', str(duration),  # Cut to exact duration
-                        '-vf', f'scale={resolution}:force_original_aspect_ratio=decrease,pad={resolution}:(ow-iw)/2:(oh-ih)/2,setsar=1',
+                        '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1',
                         '-c:v', 'libx264',
                         '-preset', 'medium',
                         '-crf', '23',
@@ -139,7 +142,7 @@ class VideoAssembler:
                         '-stream_loop', str(loops_needed),  # Loop video
                         '-i', media_path,
                         '-t', str(duration),  # Cut to exact duration
-                        '-vf', f'scale={resolution}:force_original_aspect_ratio=decrease,pad={resolution}:(ow-iw)/2:(oh-ih)/2,setsar=1',
+                        '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1',
                         '-c:v', 'libx264',
                         '-preset', 'medium',
                         '-crf', '23',
