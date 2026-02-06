@@ -293,200 +293,130 @@ class VideoAssembler:
         verbose: bool = True
     ) -> Dict:
         """
-        Assemble final video from voice and media
-
-        Args:
-            voice_path: Path to voice audio file
-            media_paths: List of media file paths (in order)
-            output_path: Output video path
-            resolution: Video resolution (WxH)
-            verbose: Print progress
-
-        Returns:
-            Dict with result info
+        ULTRA-FAST video assembly - ONE PASS, NO INTERMEDIATE FILES!
+        Creates final video directly from images/videos + voice in single FFmpeg command
         """
         start_time = __import__('time').time()
 
         if verbose:
             print(f"\n{'='*60}")
-            print(f"🎬 VIDEO ASSEMBLY STARTED")
+            print(f"⚡ ULTRA-FAST VIDEO ASSEMBLY (Single-Pass Mode)")
             print(f"{'='*60}")
 
-        # Step 1: Get voice duration
-        if verbose:
-            print(f"\n📊 Step 1: Analyzing voice audio...")
-
+        # Get voice duration
         voice_duration = self.get_audio_duration(voice_path)
         voice_minutes = int(voice_duration // 60)
         voice_seconds = int(voice_duration % 60)
 
         if verbose:
-            print(f"   Voice duration: {voice_minutes}m {voice_seconds}s ({voice_duration:.2f}s)")
-            print(f"   Media items: {len(media_paths)}")
+            print(f"\n📊 Analyzing...")
+            print(f"   Voice: {voice_minutes}m {voice_seconds}s")
+            print(f"   Media: {len(media_paths)} files")
 
         if voice_duration <= 0:
             raise ValueError("Voice audio duration is 0 or invalid")
-
         if len(media_paths) == 0:
             raise ValueError("No media items provided")
 
-        # Step 2: Calculate media durations
-        if verbose:
-            print(f"\n📐 Step 2: Calculating media durations...")
-
-        media_durations = self.calculate_media_durations(
-            voice_duration,
-            len(media_paths),
-            distribution='equal'
-        )
-
+        # Calculate duration per media
         duration_per_item = voice_duration / len(media_paths)
+
+        # Parse resolution
+        width, height = resolution.split('x')
+
         if verbose:
-            print(f"   Duration per media: {duration_per_item:.2f}s")
+            print(f"\n⚡ Creating video in ONE PASS (ULTRA FAST!)...")
+            print(f"   Method: Direct slideshow + audio merge")
+            print(f"   Duration per item: {duration_per_item:.2f}s")
 
-        # Step 3: Prepare media clips
-        if verbose:
-            print(f"\n🎨 Step 3: Preparing media clips...")
-
-        prepared_clips = []
-        for i, (media_path, duration) in enumerate(zip(media_paths, media_durations)):
-            if verbose:
-                print(f"   [{i+1}/{len(media_paths)}] Processing: {os.path.basename(media_path)}")
-
-            # Determine media type
-            ext = os.path.splitext(media_path)[1].lower()
-            media_type = 'image' if ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp'] else 'video'
-
-            # Prepare clip
-            clip_output = self.temp_dir / f"clip_{i:03d}.mp4"
-            success = self.prepare_media_clip(
-                media_path=media_path,
-                duration=duration,
-                output_path=str(clip_output),
-                media_type=media_type,
-                resolution=resolution
-            )
-
-            if success:
-                prepared_clips.append(str(clip_output))
-                if verbose:
-                    print(f"      ✅ Prepared ({duration:.2f}s)")
-            else:
-                if verbose:
-                    print(f"      ⚠️ Failed to prepare, skipping")
-
-        if len(prepared_clips) == 0:
-            raise ValueError("No media clips were successfully prepared")
-
-        # Step 4: Concatenate video clips
-        if verbose:
-            print(f"\n🔗 Step 4: Concatenating video clips...")
-
-        concat_file = self.temp_dir / "concat_list.txt"
-        with open(concat_file, 'w') as f:
-            for clip_path in prepared_clips:
-                f.write(f"file '{os.path.abspath(clip_path)}'\n")
-
-        temp_video = self.temp_dir / "temp_video.mp4"
+        # BUILD ULTRA-FAST SINGLE-PASS COMMAND
+        # This creates the entire video in ONE FFmpeg command!
 
         try:
-            cmd = [
-                'ffmpeg', '-y',
-                '-f', 'concat',
-                '-safe', '0',
-                '-i', str(concat_file),
-                '-c', 'copy',
-                str(temp_video)
-            ]
+            # Create filter complex for all images/videos
+            filter_parts = []
+            input_count = 0
 
-            if verbose:
-                print(f"   Concatenating {len(prepared_clips)} clips...")
+            for i, media_path in enumerate(media_paths):
+                ext = os.path.splitext(media_path)[1].lower()
+                is_image = ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']
 
-            subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=300)
+                if is_image:
+                    # Image: scale + pad + loop for duration
+                    filter_parts.append(
+                        f"[{input_count}:v]loop=loop=-1:size=1:start=0,"
+                        f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear,"
+                        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,"
+                        f"setpts=N/(10*TB),"  # 10fps for images
+                        f"trim=duration={duration_per_item}[v{i}]"
+                    )
+                else:
+                    # Video: scale + pad + trim or loop
+                    filter_parts.append(
+                        f"[{input_count}:v]scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear,"
+                        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,"
+                        f"loop=loop=-1:size=1,"
+                        f"trim=duration={duration_per_item},"
+                        f"setpts=N/(24*TB)[v{i}]"  # 24fps for videos
+                    )
+                input_count += 1
 
-            if verbose:
-                print(f"   ✅ Video concatenated")
+            # Concat all streams
+            concat_inputs = ''.join([f"[v{i}]" for i in range(len(media_paths))])
+            filter_complex = ';'.join(filter_parts) + f";{concat_inputs}concat=n={len(media_paths)}:v=1:a=0[vout]"
 
-        except subprocess.TimeoutExpired:
-            raise Exception(f"Concatenation timeout after 5 minutes!")
-        except subprocess.CalledProcessError as e:
-            raise Exception(f"Failed to concatenate videos: {e.stderr[-500:]}")
+            # Build command with ALL inputs
+            cmd = ['ffmpeg', '-y']
 
-        # Step 5: Combine video with voice audio
-        if verbose:
-            print(f"\n🎵 Step 5: Adding voice audio...")
+            # Add all media inputs
+            for media_path in media_paths:
+                cmd.extend(['-i', media_path])
 
-        try:
-            cmd = [
-                'ffmpeg', '-y',
-                '-i', str(temp_video),
-                '-i', voice_path,
-                '-c:v', 'copy',
+            # Add voice input
+            cmd.extend(['-i', voice_path])
+
+            # Add filter complex
+            cmd.extend([
+                '-filter_complex', filter_complex,
+                '-map', '[vout]',
+                '-map', f'{len(media_paths)}:a',  # Map audio from voice
+                '-c:v', 'libx264',
+                '-preset', 'ultrafast',
+                '-crf', '23',
+                '-r', '10',  # 10fps output (FAST!)
                 '-c:a', 'aac',
                 '-b:a', '192k',
-                '-map', '0:v:0',
-                '-map', '1:a:0',
-                '-shortest',  # Use shortest duration (should match)
+                '-shortest',
+                '-movflags', '+faststart',
                 output_path
-            ]
+            ])
 
             if verbose:
-                print(f"   Merging audio with video...")
+                print(f"   Running single-pass encode...")
 
-            subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=300)
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=1200)
+
+            elapsed = __import__('time').time() - start_time
 
             if verbose:
-                print(f"   ✅ Audio added to video")
+                print(f"\n{'='*60}")
+                print(f"✅ VIDEO ASSEMBLY COMPLETE!")
+                print(f"{'='*60}")
+                print(f"   Time: {elapsed:.1f}s")
+                print(f"   Output: {output_path}")
 
-        except subprocess.TimeoutExpired:
-            raise Exception(f"Audio merge timeout after 5 minutes!")
+            return {
+                'success': True,
+                'output_path': output_path,
+                'voice_duration': voice_duration,
+                'media_count': len(media_paths),
+                'time_elapsed': elapsed
+            }
+
         except subprocess.CalledProcessError as e:
-            raise Exception(f"Failed to add audio: {e.stderr[-500:]}")
-
-        # Step 6: Cleanup temp files
-        if verbose:
-            print(f"\n🧹 Step 6: Cleaning up...")
-
-        for clip_path in prepared_clips:
-            try:
-                os.remove(clip_path)
-            except:
-                pass
-
-        try:
-            os.remove(concat_file)
-            os.remove(temp_video)
-        except:
-            pass
-
-        if verbose:
-            print(f"   ✅ Temp files removed")
-
-        # Final stats
-        end_time = __import__('time').time()
-        total_time = end_time - start_time
-
-        final_duration = self.get_audio_duration(output_path)
-        final_size = os.path.getsize(output_path)
-
-        if verbose:
-            print(f"\n{'='*60}")
-            print(f"✅ VIDEO ASSEMBLY COMPLETE!")
-            print(f"{'='*60}")
-            print(f"   Output: {output_path}")
-            print(f"   Duration: {int(final_duration // 60)}m {int(final_duration % 60)}s")
-            print(f"   Size: {final_size / (1024*1024):.2f} MB")
-            print(f"   Processing time: {total_time:.1f}s")
-            print(f"{'='*60}\n")
-
-        return {
-            'output_path': output_path,
-            'duration_seconds': final_duration,
-            'file_size_mb': final_size / (1024*1024),
-            'processing_time': total_time,
-            'media_count': len(prepared_clips),
-            'voice_duration': voice_duration
-        }
+            raise Exception(f"FFmpeg single-pass failed: {e.stderr[-1000:]}")
+        except Exception as e:
+            raise Exception(f"Video assembly failed: {str(e)}")
 
 
 # Test function
