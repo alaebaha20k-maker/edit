@@ -22,19 +22,21 @@ class ImageGenerator:
     OUTPUT_DIR = Path("output/auto_images")
     MODEL_VERSION = "flux-1.1-pro"  # Track model version for cache
 
-    def __init__(self, api_token: str, max_workers: int = 3):
+    def __init__(self, api_token: str, max_workers: int = 1, delay_between_images: float = 12.0):
         """
         Initialize image generator
 
         Args:
             api_token: Replicate API token
-            max_workers: Max parallel generations
+            max_workers: Max parallel generations (default 1 for rate limit safety)
+            delay_between_images: Delay in seconds between images (default 12s for 6 req/min limit)
         """
         if not api_token:
             raise ValueError("Replicate API token is required")
 
         self.api_token = api_token
         self.max_workers = max_workers
+        self.delay_between_images = delay_between_images
 
         # Set API token
         os.environ['REPLICATE_API_TOKEN'] = api_token
@@ -165,7 +167,8 @@ class ImageGenerator:
         verbose: bool = True
     ) -> List[ImageItem]:
         """
-        Generate all images from plan in parallel
+        Generate all images from plan SEQUENTIALLY with delays
+        Sequential generation avoids Replicate rate limits
 
         Args:
             plan: AutoImagesPlan with scenes
@@ -177,21 +180,18 @@ class ImageGenerator:
         """
 
         if verbose:
-            print(f"\n🎨 IMAGE GENERATION")
+            print(f"\n🎨 IMAGE GENERATION (Sequential with {self.delay_between_images}s delays)")
             print(f"   Scenes: {len(plan.scenes)}")
             print(f"   Aspect ratio: {aspect_ratio}")
-            print(f"   Parallel workers: {self.max_workers}")
+            print(f"   Rate limit safe: 6 requests/minute")
 
         start_time = time.time()
         generated_items = []
 
-        # Generate in parallel
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            future_to_scene = {}
-
-            for scene in plan.scenes:
-                future = executor.submit(
-                    self._generate_single_image,
+        # Generate SEQUENTIALLY (not parallel) to avoid rate limits
+        for idx, scene in enumerate(plan.scenes):
+            try:
+                item = self._generate_single_image(
                     scene.scene_id,
                     scene.image_prompt,
                     scene.negative_prompt,
@@ -200,21 +200,19 @@ class ImageGenerator:
                     2,  # max_retries
                     verbose
                 )
-                future_to_scene[future] = scene
+                if item:
+                    generated_items.append(item)
 
-            # Collect results
-            for future in as_completed(future_to_scene):
-                scene = future_to_scene[future]
-                try:
-                    item = future.result()
-                    if item:
-                        generated_items.append(item)
-                except Exception as e:
+                # Add delay between images (except after last one)
+                # This respects Replicate rate limit: 6 requests/minute = 1 request every 10s
+                if idx < len(plan.scenes) - 1 and self.delay_between_images > 0:
                     if verbose:
-                        print(f"   Scene {scene.scene_id}: ❌ Exception: {e}")
+                        print(f"   ⏳ Waiting {self.delay_between_images}s before next image (rate limit safety)...")
+                    time.sleep(self.delay_between_images)
 
-        # Sort by scene_id to maintain order
-        generated_items.sort(key=lambda x: x.scene_id if x.scene_id else 0)
+            except Exception as e:
+                if verbose:
+                    print(f"   Scene {scene.scene_id}: ❌ Exception: {e}")
 
         elapsed = time.time() - start_time
 

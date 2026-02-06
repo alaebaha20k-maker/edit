@@ -383,6 +383,37 @@ def download_file(filename):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/cache/<path:filepath>', methods=['GET'])
+def serve_cache_file(filepath):
+    """Serve cached files (generated images, etc.)"""
+    try:
+        cache_base = Path('cache')
+        full_path = cache_base / filepath
+
+        # Security: Ensure path doesn't escape cache directory
+        if not str(full_path.resolve()).startswith(str(cache_base.resolve())):
+            return jsonify({'error': 'Invalid path'}), 403
+
+        if full_path.exists() and full_path.is_file():
+            # Determine mimetype
+            if filepath.endswith(('.jpg', '.jpeg')):
+                mimetype = 'image/jpeg'
+            elif filepath.endswith('.png'):
+                mimetype = 'image/png'
+            elif filepath.endswith('.webp'):
+                mimetype = 'image/webp'
+            else:
+                mimetype = None
+
+            return send_file(str(full_path), mimetype=mimetype)
+        else:
+            return jsonify({'error': 'File not found'}), 404
+
+    except Exception as e:
+        print(f"❌ Cache serve error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/output', methods=['GET'])
 @app.route('/output/', methods=['GET'])
 def show_output_directory():
@@ -2246,8 +2277,8 @@ def auto_images_generate():
 
         return jsonify({
             'success': True,
-            'plan': plan.dict(),
-            'timeline': timeline.dict(),
+            'plan': plan.model_dump(),
+            'timeline': timeline.model_dump(),
             'stats': {
                 'requested': n_images,
                 'generated': len(generated_items),
@@ -2276,7 +2307,7 @@ def auto_images_get_timeline():
         if timeline:
             return jsonify({
                 'success': True,
-                'timeline': timeline.dict()
+                'timeline': timeline.model_dump()
             })
         else:
             return jsonify({
@@ -2322,7 +2353,7 @@ def auto_images_add_local():
 
         return jsonify({
             'success': True,
-            'timeline': timeline.dict()
+            'timeline': timeline.model_dump()
         })
 
     except Exception as e:
@@ -2363,7 +2394,7 @@ def auto_images_add_stock():
 
         return jsonify({
             'success': True,
-            'timeline': timeline.dict()
+            'timeline': timeline.model_dump()
         })
 
     except Exception as e:
@@ -2402,7 +2433,7 @@ def auto_images_delete():
 
         return jsonify({
             'success': True,
-            'timeline': timeline.dict()
+            'timeline': timeline.model_dump()
         })
 
     except Exception as e:
@@ -2443,7 +2474,7 @@ def auto_images_move():
 
         return jsonify({
             'success': True,
-            'timeline': timeline.dict()
+            'timeline': timeline.model_dump()
         })
 
     except Exception as e:
