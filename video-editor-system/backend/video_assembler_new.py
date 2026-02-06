@@ -109,9 +109,51 @@ class VideoAssembler:
 
         width, height = resolution.split('x')
 
-        # STRATEGY 1: Single image = SUPER FAST!
+        # STRATEGY 1: Single VIDEO = INSTANT! (just copy, no encoding!)
         if len(media_paths) == 1:
             ext = os.path.splitext(media_paths[0])[1].lower()
+
+            # VIDEO: Copy video + copy audio = INSTANT!
+            if ext in ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv']:
+                if verbose:
+                    print(f"\n⚡ INSTANT MODE: Single video!")
+                    print(f"   Strategy: -c:v copy -c:a copy (NO encoding!)")
+
+                try:
+                    cmd = [
+                        'ffmpeg', '-y',
+                        '-i', media_paths[0],
+                        '-i', voice_path,
+                        '-map', '0:v:0',  # Take video from first input
+                        '-map', '1:a:0',  # Take audio from second input
+                        '-c:v', 'copy',   # NO video encoding!
+                        '-c:a', 'copy',   # NO audio encoding!
+                        '-shortest',      # Cut to shortest (audio duration)
+                        '-movflags', '+faststart',
+                        output_path
+                    ]
+
+                    subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=600)
+
+                    elapsed = __import__('time').time() - start_time
+                    size_mb = os.path.getsize(output_path) / (1024 * 1024)
+
+                    if verbose:
+                        print(f"\n✅ DONE! Time: {elapsed:.1f}s | Size: {size_mb:.2f} MB")
+
+                    return {
+                        'success': True,
+                        'output_path': output_path,
+                        'duration_seconds': voice_duration,
+                        'file_size_mb': size_mb,
+                        'processing_time': elapsed,
+                        'media_count': 1,
+                        'voice_duration': voice_duration
+                    }
+                except subprocess.CalledProcessError as e:
+                    raise Exception(f"Export failed: {e.stderr[-1000:]}")
+
+            # IMAGE: Loop 1 frame for entire duration
             if ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']:
                 if verbose:
                     print(f"\n⚡ SUPER FAST MODE: Single image!")
@@ -159,7 +201,13 @@ class VideoAssembler:
         # STRATEGY 2: Multiple media = Fast with -c copy
         if verbose:
             print(f"\n⚡ FAST MODE: Multiple media")
-            print(f"   Strategy: -r 10 -crf 33 -tune stillimage → concat -c copy → audio -c copy")
+            print(f"   Strategy: Prepare clips → concat -c copy → audio -c copy")
+
+        # Check if all are videos (can potentially concat with -c copy directly)
+        all_videos = all(
+            os.path.splitext(path)[1].lower() in ['.mp4', '.mov', '.avi', '.mkv', '.webm']
+            for path in media_paths
+        )
 
         duration_per_item = voice_duration / len(media_paths)
         prepared_clips = []
@@ -168,6 +216,7 @@ class VideoAssembler:
         for i, media_path in enumerate(media_paths):
             ext = os.path.splitext(media_path)[1].lower()
             is_image = ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']
+            is_video = ext in ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv']
             clip_output = self.temp_dir / f"clip_{i:03d}.mp4"
 
             if is_image:
@@ -186,7 +235,9 @@ class VideoAssembler:
                     '-an',
                     str(clip_output)
                 ]
-            else:
+            elif is_video:
+                # For videos: try to use -c copy (fastest!) if no scaling needed
+                # Otherwise re-encode quickly
                 cmd = [
                     'ffmpeg', '-y',
                     '-i', media_path,
@@ -198,6 +249,11 @@ class VideoAssembler:
                     '-an',
                     str(clip_output)
                 ]
+            else:
+                # Unknown format, skip
+                if verbose:
+                    print(f"   [{i+1}/{len(media_paths)}] ⚠️ Skipped (unknown format)")
+                continue
 
             try:
                 subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=600)
