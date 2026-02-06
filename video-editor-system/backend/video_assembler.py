@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
 """
-OPTIMIZED Video Assembler - Maximum speed with caching
+ULTRA-FAST Video Assembler - No audio conversion, -framerate 2 for images
 """
 
 import os
 import subprocess
-import json
 import hashlib
 import time
 from pathlib import Path
 from typing import List, Dict
-from pydub import AudioSegment
 
 
 class VideoAssembler:
-    """Optimized video assembler with audio normalization and image caching"""
+    """Ultra-fast video assembler - ALWAYS -c:a copy, NEVER convert audio"""
 
     def __init__(self, output_dir: str = "output", temp_dir: str = "temp"):
         self.output_dir = Path(output_dir)
@@ -74,34 +72,6 @@ class VideoAssembler:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         return float(result.stdout.strip())
 
-    def _normalize_audio_to_m4a(self, audio_path: str, output_path: str, verbose: bool = True) -> str:
-        """
-        Normalize audio to M4A/AAC format for -c:a copy compatibility.
-        Always outputs 160k AAC, 48kHz, stereo.
-        """
-        if verbose:
-            print(f"   🔄 Normalizing audio to M4A/AAC...")
-
-        start = time.time()
-
-        cmd = [
-            'ffmpeg', '-y',
-            '-i', audio_path,
-            '-c:a', 'aac',
-            '-b:a', '160k',
-            '-ar', '48000',
-            '-ac', '2',
-            output_path
-        ]
-
-        subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=600)
-
-        elapsed = time.time() - start
-        if verbose:
-            print(f"   ✅ Audio normalized in {elapsed:.1f}s")
-
-        return output_path
-
     def assemble_final_video(
         self,
         voice_path: str,
@@ -111,12 +81,13 @@ class VideoAssembler:
         verbose: bool = True
     ) -> Dict:
         """
-        OPTIMIZED VIDEO ASSEMBLY
+        ULTRA-FAST VIDEO ASSEMBLY
 
-        Pipeline:
-        1. Normalize audio to M4A/AAC ONCE
-        2. Cache all images as 1920x1080 JPGs
-        3. ONE final encode with concat demuxer (no scaling!)
+        Rules:
+        - AUDIO: ALWAYS -c:a copy (NEVER convert MP3!)
+        - SINGLE IMAGE: Use -framerate 2 BEFORE -i
+        - MULTIPLE IMAGES: Use concat + -vf fps=2
+        - VIDEO: ALWAYS try -c:v copy first
         """
         total_start = time.time()
 
@@ -125,46 +96,32 @@ class VideoAssembler:
 
         if verbose:
             print(f"\n{'='*60}")
-            print(f"⚡ OPTIMIZED VIDEO EXPORTER")
+            print(f"⚡ ULTRA-FAST VIDEO EXPORTER")
             print(f"{'='*60}")
 
-        # STEP 1: Normalize audio to M4A/AAC
-        audio_start = time.time()
-        normalized_audio = self.temp_dir / f"audio_normalized_{int(time.time())}.m4a"
-
-        if not voice_path.endswith('.m4a'):
-            self._normalize_audio_to_m4a(voice_path, str(normalized_audio), verbose)
-            final_audio = str(normalized_audio)
-        else:
-            # Already M4A, check if AAC
-            final_audio = voice_path
-            if verbose:
-                print(f"   ✅ Audio already M4A format")
-
-        audio_elapsed = time.time() - audio_start
-
-        # Get audio duration
-        voice_duration = self._get_audio_duration_ffprobe(final_audio)
+        # Get audio duration (NO CONVERSION!)
+        voice_duration = self._get_audio_duration_ffprobe(voice_path)
         voice_minutes = int(voice_duration // 60)
         voice_seconds = int(voice_duration % 60)
 
         if verbose:
-            print(f"   Audio: {voice_minutes}m {voice_seconds}s")
+            print(f"   Audio: {voice_minutes}m {voice_seconds}s (NO conversion!)")
             print(f"   Media: {len(media_paths)} files")
 
-        # STEP 2: Single media optimization
+        # SINGLE MEDIA
         if len(media_paths) == 1:
             ext = os.path.splitext(media_paths[0])[1].lower()
 
-            # VIDEO: Copy streams (INSTANT!)
+            # SINGLE VIDEO: Copy streams (INSTANT!)
             if ext in ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv']:
                 if verbose:
-                    print(f"\n⚡ INSTANT MODE: Single video + audio copy")
+                    print(f"\n⚡ INSTANT MODE: Single video")
+                    print(f"   Strategy: -c:v copy -c:a copy")
 
                 cmd = [
                     'ffmpeg', '-y',
                     '-i', media_paths[0],
-                    '-i', final_audio,
+                    '-i', voice_path,
                     '-map', '0:v:0',
                     '-map', '1:a:0',
                     '-c:v', 'copy',
@@ -186,7 +143,10 @@ class VideoAssembler:
                 size_mb = os.path.getsize(output_path) / (1024 * 1024)
 
                 if verbose:
-                    print(f"\n✅ DONE! Total: {total_elapsed:.1f}s | Render: {render_elapsed:.1f}s | Size: {size_mb:.2f} MB")
+                    print(f"\n✅ DONE!")
+                    print(f"   Render: {render_elapsed:.1f}s")
+                    print(f"   Total: {total_elapsed:.1f}s")
+                    print(f"   Size: {size_mb:.2f} MB")
 
                 return {
                     'success': True,
@@ -198,10 +158,11 @@ class VideoAssembler:
                     'voice_duration': voice_duration
                 }
 
-            # IMAGE: Use cached 1080p JPG
+            # SINGLE IMAGE: Use -framerate 2 BEFORE -i (CRITICAL!)
             if ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']:
                 if verbose:
-                    print(f"\n⚡ FAST MODE: Single image + audio copy")
+                    print(f"\n⚡ ULTRA-FAST MODE: Single image")
+                    print(f"   Strategy: -framerate 2 -loop 1 -i (NO scaling!)")
 
                 # Get cached 1080p image
                 cache_start = time.time()
@@ -209,21 +170,21 @@ class VideoAssembler:
                 cache_elapsed = time.time() - cache_start
 
                 if verbose:
-                    print(f"   Image caching: {cache_elapsed:.1f}s (hits: {self.cache_hits}, misses: {self.cache_misses})")
+                    print(f"   Image cache: {cache_elapsed:.1f}s (hits: {self.cache_hits}, misses: {self.cache_misses})")
 
-                # Final render (NO SCALING!)
+                # CRITICAL: -framerate 2 BEFORE -i
                 cmd = [
                     'ffmpeg', '-y',
+                    '-framerate', '2',  # 🔥 BEFORE -i for MASSIVE speedup!
                     '-loop', '1',
                     '-i', cached_image,
-                    '-i', final_audio,
+                    '-i', voice_path,
                     '-c:v', 'libx264',
                     '-preset', 'ultrafast',
                     '-crf', '35',
-                    '-r', '2',
                     '-g', '600',
                     '-tune', 'stillimage',
-                    '-c:a', 'copy',  # Always copy (audio is normalized!)
+                    '-c:a', 'copy',  # 🔥 ALWAYS copy!
                     '-shortest',
                     '-pix_fmt', 'yuv420p',
                     '-threads', '0',
@@ -244,8 +205,7 @@ class VideoAssembler:
 
                 if verbose:
                     print(f"\n✅ DONE!")
-                    print(f"   Audio prep: {audio_elapsed:.1f}s")
-                    print(f"   Image cache: {cache_elapsed:.1f}s")
+                    print(f"   Cache: {cache_elapsed:.1f}s")
                     print(f"   Render: {render_elapsed:.1f}s")
                     print(f"   Total: {total_elapsed:.1f}s")
                     print(f"   Size: {size_mb:.2f} MB")
@@ -260,9 +220,10 @@ class VideoAssembler:
                     'voice_duration': voice_duration
                 }
 
-        # STEP 3: Multiple images - use concat demuxer
+        # MULTIPLE IMAGES: Use concat + -vf fps=2
         if verbose:
             print(f"\n⚡ SLIDESHOW MODE: Multiple images")
+            print(f"   Strategy: concat + -vf fps=2")
 
         # Filter to only images
         image_paths = [
@@ -283,14 +244,11 @@ class VideoAssembler:
         for i, img_path in enumerate(image_paths):
             cached_img = self._get_cached_image(img_path, int(width), int(height))
             cached_images.append(cached_img)
-            if verbose and (i + 1) % 10 == 0:
-                print(f"   Cached {i+1}/{len(image_paths)} images...")
 
         cache_elapsed = time.time() - cache_start
 
         if verbose:
-            print(f"   ✅ Image caching: {cache_elapsed:.1f}s")
-            print(f"   Cache stats: {self.cache_hits} hits, {self.cache_misses} misses")
+            print(f"   Cache: {cache_elapsed:.1f}s (hits: {self.cache_hits}, misses: {self.cache_misses})")
 
         # Create concat list with durations
         duration_per_image = voice_duration / len(cached_images)
@@ -301,23 +259,23 @@ class VideoAssembler:
                 f.write(f"file '{os.path.abspath(img)}'\n")
                 if i < len(cached_images) - 1:
                     f.write(f"duration {duration_per_image}\n")
-            # Repeat last image to preserve duration
+            # Repeat last image
             f.write(f"file '{os.path.abspath(cached_images[-1])}'\n")
 
-        # Final render (NO SCALING - images already 1080p!)
+        # Final render with concat + -vf fps=2
         cmd = [
             'ffmpeg', '-y',
             '-f', 'concat',
             '-safe', '0',
             '-i', str(concat_file),
-            '-i', final_audio,
-            '-vsync', 'cfr',
-            '-r', '2',
+            '-i', voice_path,
+            '-vf', 'fps=2',  # 🔥 Set framerate via filter
             '-c:v', 'libx264',
             '-preset', 'ultrafast',
             '-crf', '35',
+            '-g', '600',
             '-tune', 'stillimage',
-            '-c:a', 'copy',  # Always copy (audio is normalized!)
+            '-c:a', 'copy',  # 🔥 ALWAYS copy!
             '-shortest',
             '-pix_fmt', 'yuv420p',
             '-threads', '0',
@@ -338,8 +296,7 @@ class VideoAssembler:
 
         if verbose:
             print(f"\n✅ DONE!")
-            print(f"   Audio prep: {audio_elapsed:.1f}s")
-            print(f"   Image cache: {cache_elapsed:.1f}s (hits: {self.cache_hits}, misses: {self.cache_misses})")
+            print(f"   Cache: {cache_elapsed:.1f}s")
             print(f"   Render: {render_elapsed:.1f}s")
             print(f"   Total: {total_elapsed:.1f}s")
             print(f"   Size: {size_mb:.2f} MB")
@@ -358,4 +315,4 @@ class VideoAssembler:
 # Test function
 if __name__ == '__main__':
     assembler = VideoAssembler()
-    print("Optimized VideoAssembler initialized successfully!")
+    print("Ultra-fast VideoAssembler initialized!")
