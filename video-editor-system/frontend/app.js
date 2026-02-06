@@ -1452,9 +1452,9 @@ function removeBackgroundMusic() {
 // MEDIA SECTION
 // =============================================================================
 function toggleMediaSection(type) {
-    if (type === 'ai') {
-        const checked = document.getElementById('useAiImages')?.checked;
-        const section = document.getElementById('aiImagesSection');
+    if (type === 'auto') {
+        const checked = document.getElementById('useAutoImages')?.checked;
+        const section = document.getElementById('autoImagesSection');
         if (section) section.style.display = checked ? 'block' : 'none';
     } else if (type === 'manual') {
         const checked = document.getElementById('useManualMedia')?.checked;
@@ -1620,47 +1620,45 @@ function deleteFromMediaLibrary(id) {
     showNotification('✅ Media removed', 'success');
 }
 
-async function generateAiImages() {
+// =============================================================================
+// AUTO IMAGES AI - SEPARATE DIRECTOR GEMINI + REPLICATE
+// =============================================================================
+
+let autoImagesTimeline = null;
+
+async function generateAutoImages() {
     const script = document.getElementById('scriptInput')?.value || window.videoData.script;
     if (!script) {
         showNotification('⚠️ Please generate or enter a script first', 'warning');
         return;
     }
 
-    const countInput = document.getElementById('aiImageCount');
-    const count = countInput ? parseInt(countInput.value) : 6;
+    const styleSelect = document.getElementById('autoImageStyle');
+    const countInput = document.getElementById('autoImageCount');
 
-    const progressBox = document.getElementById('aiImageProgress');
-    const previewBox = document.getElementById('aiImagePreview');
+    const style_id = styleSelect ? styleSelect.value : 'cinematic';
+    const n_images = countInput ? parseInt(countInput.value) : 10;
+
+    const progressBox = document.getElementById('autoImageProgress');
+    const timelineSection = document.getElementById('autoImageTimeline');
 
     if (progressBox) {
         progressBox.style.display = 'block';
-        progressBox.innerHTML = `<p>🎨 Generating ${count} AI images... This will take ~${count * 12} seconds...</p>`;
+        progressBox.innerHTML = `<p>🎬 Director AI planning ${n_images} scenes...</p>`;
     }
 
-    if (previewBox) previewBox.innerHTML = '';
-
     try {
-        const settings = JSON.parse(localStorage.getItem('videoToolSettings') || '{}');
-        const replicateToken = settings.api_keys?.replicate;
+        showNotification(`🤖 Starting Auto Images AI (Director + Replicate)...`, 'info');
 
-        if (!replicateToken) {
-            throw new Error('Replicate API token not found. Please configure in Settings.');
-        }
-
-        showNotification(`🎨 Generating ${count} images with AI...`, 'info');
-
-        // Call backend API for Replicate image generation
-        const title = document.getElementById('titleInput')?.value || window.videoData.title || 'Untitled';
-
-        const response = await fetch('/api/generate-images', {
+        // Call backend API
+        const response = await fetch('/api/auto-images/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                title: title,
                 script: script,
-                style_id: 'default',  // TODO: Add style selector
-                count: count
+                style_id: style_id,
+                n_images: n_images,
+                aspect_ratio: '16:9'
             })
         });
 
@@ -1672,51 +1670,118 @@ async function generateAiImages() {
         const data = await response.json();
 
         if (!data.success) {
-            throw new Error(data.error || 'Image generation failed');
+            throw new Error(data.error || 'Auto Images generation failed');
         }
 
-        const imageUrls = data.image_urls || [];
-
-        if (imageUrls.length === 0) {
-            throw new Error('No images generated');
-        }
+        autoImagesTimeline = data.timeline;
 
         if (progressBox) {
-            progressBox.innerHTML = `<p>✅ Generated ${imageUrls.length} AI images!</p>`;
+            progressBox.innerHTML = `<p>✅ Generated ${data.stats.generated}/${data.stats.requested} images!</p>`;
         }
 
-        if (previewBox) {
-            previewBox.innerHTML = '';
+        // Render timeline
+        if (timelineSection) {
+            timelineSection.style.display = 'block';
+        }
+        renderAutoImageTimeline();
 
-            imageUrls.forEach((url, index) => {
-                const card = document.createElement('div');
-                card.style.cssText = `
-                    position: relative;
-                    background: rgba(0,0,0,0.3);
-                    border-radius: 10px;
-                    overflow: hidden;
-                    padding: 10px;
-                `;
-
-                card.innerHTML = `
-                    <img src="${url}" alt="AI Image ${index + 1}" style="width: 100%; height: 150px; object-fit: cover; border-radius: 8px;">
-                    <button onclick="addStockToLibrary('${url}', 'image', 'ai')" class="btn-success" style="width: 100%; margin-top: 8px; font-size: 12px;">
-                        ➕ Add to Library
-                    </button>
-                `;
-
-                previewBox.appendChild(card);
-            });
+        // Auto-add to media library
+        if (autoImagesTimeline && autoImagesTimeline.items) {
+            for (const item of autoImagesTimeline.items) {
+                await addAutoImageToLibrary(item);
+            }
         }
 
-        showNotification(`✅ Generated ${imageUrls.length} AI images!`, 'success');
+        showNotification(`✅ Auto Images: ${data.stats.generated}/${data.stats.requested} generated!`, 'success');
 
     } catch (error) {
-        console.error('Image generation failed:', error);
+        console.error('Auto Images generation failed:', error);
         if (progressBox) {
             progressBox.innerHTML = `<p>❌ Error: ${error.message}</p>`;
         }
-        showNotification('❌ Image generation failed: ' + error.message, 'error');
+        showNotification('❌ Auto Images failed: ' + error.message, 'error');
+    }
+}
+
+function renderAutoImageTimeline() {
+    const listContainer = document.getElementById('autoImageTimelineList');
+    if (!listContainer || !autoImagesTimeline || !autoImagesTimeline.items) return;
+
+    listContainer.innerHTML = '';
+
+    autoImagesTimeline.items.forEach((item, index) => {
+        const card = document.createElement('div');
+        card.style.cssText = `
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+            border: 2px solid #667eea;
+            padding: 15px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        `;
+
+        const sourceIcon = item.source_type === 'generated' ? '🤖' : (item.source_type === 'local' ? '📁' : '📹');
+        const sourceLabel = item.source_type === 'generated' ? 'AI Generated' : (item.source_type === 'local' ? 'Local' : 'Stock');
+
+        card.innerHTML = `
+            <div style="background: #667eea; color: white; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0;">
+                #${index + 1}
+            </div>
+            <div style="flex: 1;">
+                <div><strong>${sourceIcon} ${sourceLabel}</strong></div>
+                ${item.scene_id ? `<div style="color: #666; font-size: 0.9em;">Scene ${item.scene_id}</div>` : ''}
+                <div style="color: #888; font-size: 0.85em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    ${item.path}
+                </div>
+            </div>
+            <button onclick="deleteAutoImageFromTimeline(${index})" style="background: #ff4757; color: white; border: none; border-radius: 5px; padding: 8px 12px; cursor: pointer;">
+                🗑️
+            </button>
+        `;
+
+        listContainer.appendChild(card);
+    });
+}
+
+async function addAutoImageToLibrary(item) {
+    if (!item || !item.path) return;
+
+    // Upload to server if needed, or use existing path
+    // For now, assume path is already server-accessible
+    appState.mediaLibrary.push({
+        id: item.id,
+        type: 'image',
+        source: item.source_type,
+        url: item.path,
+        path: item.path,
+        scene_id: item.scene_id
+    });
+
+    updateMediaCount();
+    renderMediaLibrary();
+}
+
+async function deleteAutoImageFromTimeline(index) {
+    if (!confirm('Delete this image from timeline?')) return;
+
+    try {
+        const response = await fetch('/api/auto-images/timeline/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ index: index })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+            autoImagesTimeline = data.timeline;
+            renderAutoImageTimeline();
+            showNotification('✅ Image deleted from timeline', 'success');
+        } else {
+            throw new Error(data.error);
+        }
+    } catch (error) {
+        showNotification('❌ Failed to delete: ' + error.message, 'error');
     }
 }
 

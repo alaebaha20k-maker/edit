@@ -330,12 +330,12 @@
                 <h3><span class="step-number">3</span> Media (Images & Videos)</h3>
                 <div class="media-options">
                     <label class="checkbox-label">
-                        <input type="checkbox" id="useAiImages" onchange="toggleMediaSection('ai')">
-                        <span>🎨 AI Images (Replicate Flux)</span>
+                        <input type="checkbox" id="useAutoImages" onchange="toggleMediaSection('auto')">
+                        <span>🤖 Auto Images AI (Smart Director)</span>
                     </label>
                     <label class="checkbox-label">
                         <input type="checkbox" id="useManualMedia" onchange="toggleMediaSection('manual')">
-                        <span>📤 Upload Images/Videos</span>
+                        <span>📤 Upload Local Images/Videos</span>
                     </label>
                     <label class="checkbox-label">
                         <input type="checkbox" id="useStockFootage" onchange="toggleMediaSection('stock')">
@@ -343,13 +343,45 @@
                     </label>
                 </div>
 
-                <!-- AI Images Section -->
-                <div id="aiImagesSection" class="subsection" style="display: none;">
-                    <label>Number of AI Images:</label>
-                    <input type="number" id="aiImageCount" value="6" min="3" max="30" class="input-medium">
-                    <button onclick="generateAiImages()" class="btn-secondary">🎨 Generate AI Images</button>
-                    <div id="aiImageProgress" class="progress-box" style="display: none;"></div>
-                    <div id="aiImagePreview" class="image-grid"></div>
+                <!-- Auto Images AI Section -->
+                <div id="autoImagesSection" class="subsection" style="display: none;">
+                    <div style="background: rgba(76, 175, 80, 0.1); padding: 12px; border-radius: 8px; margin-bottom: 15px;">
+                        <p style="font-size: 13px; color: #666; margin: 0;">
+                            🤖 <strong>Auto Images AI:</strong> Uses separate Gemini Director to analyze your script and generate exactly N images that follow the story chronologically. Each image is custom-generated with Replicate Flux.
+                        </p>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                        <div>
+                            <label>Image Style:</label>
+                            <select id="autoImageStyle" class="input-large">
+                                <option value="cinematic">🎬 Cinematic</option>
+                                <option value="photorealistic">📷 Photorealistic</option>
+                                <option value="artistic">🎨 Artistic</option>
+                                <option value="animated">🎭 Animated</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>Number of Images:</label>
+                            <input type="number" id="autoImageCount" value="10" min="3" max="50" class="input-medium">
+                        </div>
+                    </div>
+
+                    <button onclick="generateAutoImages()" class="btn-secondary" style="width: 100%;">🎨 Generate Auto Images</button>
+                    <div id="autoImageProgress" class="progress-box" style="display: none;"></div>
+
+                    <!-- Timeline Editor -->
+                    <div id="autoImageTimeline" style="display: none; margin-top: 20px;">
+                        <h4 style="margin-bottom: 10px;">📋 Image Timeline <span style="font-size: 13px; color: #888;">(Drag to reorder, click to delete)</span></h4>
+                        <div style="background: rgba(33, 150, 243, 0.1); padding: 12px; border-radius: 8px; margin-bottom: 10px;">
+                            <p style="font-size: 13px; color: #666; margin: 0;">
+                                💡 You can add local images or stock footage to the timeline, delete images, or reorder them.
+                            </p>
+                        </div>
+                        <div id="autoImageTimelineList" style="display: flex; flex-direction: column; gap: 10px;">
+                            <!-- Timeline items will be rendered here -->
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Manual Upload Section -->

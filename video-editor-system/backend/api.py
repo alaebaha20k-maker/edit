@@ -2133,6 +2133,345 @@ def assemble_video_route():
 
 
 # =============================================================================
+# AUTO IMAGES AI - SEPARATE DIRECTOR GEMINI + REPLICATE
+# =============================================================================
+
+@app.route('/api/auto-images/generate', methods=['POST'])
+def auto_images_generate():
+    """
+    Generate images using Auto Images AI system
+
+    Request JSON:
+        {
+            'script': 'Full script text',
+            'style_id': 'cinematic',
+            'n_images': 10,
+            'aspect_ratio': '16:9',
+            'force_regenerate': false
+        }
+
+    Response:
+        {
+            'success': True,
+            'plan': {...},
+            'timeline': {...},
+            'stats': {...}
+        }
+    """
+    from auto_images import DirectorClient, ImageGenerator, TimelineManager
+    from auto_images.schema import AutoImagesPlan
+    from config import Config
+    from image_style_manager import ImageStyleManager
+
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        script = data.get('script', '').strip()
+        style_id = data.get('style_id', 'cinematic')
+        n_images = data.get('n_images', 10)
+        aspect_ratio = data.get('aspect_ratio', '16:9')
+        force_regenerate = data.get('force_regenerate', False)
+
+        if not script:
+            return jsonify({'error': 'Script is required'}), 400
+
+        if n_images < 1 or n_images > 100:
+            return jsonify({'error': 'n_images must be between 1 and 100'}), 400
+
+        # Get style config
+        styles = ImageStyleManager.get_all_styles()
+        style = next((s for s in styles if s['id'] == style_id), None)
+        if not style:
+            return jsonify({'error': f'Style not found: {style_id}'}), 404
+
+        # Get API keys
+        director_api_key = Config.get_director_gemini_api_key()
+        replicate_token = Config.get_replicate_api_token()
+
+        if not director_api_key:
+            return jsonify({'error': 'Director Gemini API key not configured'}), 500
+        if not replicate_token:
+            return jsonify({'error': 'Replicate API token not configured'}), 500
+
+        print(f"\n{'='*60}")
+        print(f"🎨 AUTO IMAGES AI - GENERATION")
+        print(f"{'='*60}")
+
+        # Step 1: Plan with Director Gemini
+        director = DirectorClient(
+            api_key=director_api_key,
+            model_name=Config.get_director_gemini_model()
+        )
+
+        plan = director.plan_auto_images(
+            script_text=script,
+            style=style,
+            n_images=n_images,
+            force_regenerate=force_regenerate,
+            verbose=True
+        )
+
+        # Step 2: Generate images with Replicate
+        image_gen = ImageGenerator(
+            api_token=replicate_token,
+            max_workers=3
+        )
+
+        generated_items = image_gen.generate_images(
+            plan=plan,
+            aspect_ratio=aspect_ratio,
+            verbose=True
+        )
+
+        # Step 3: Create timeline
+        timeline_mgr = TimelineManager()
+        timeline = timeline_mgr.create_timeline(
+            items=generated_items,
+            style_id=style_id,
+            script_text=script,
+            director_version=DirectorClient.DIRECTOR_VERSION
+        )
+        timeline_mgr.save_timeline(timeline)
+
+        print(f"\n✅ AUTO IMAGES COMPLETE")
+        print(f"   Generated: {len(generated_items)}/{n_images} images")
+        print(f"   Timeline saved")
+        print(f"{'='*60}\n")
+
+        return jsonify({
+            'success': True,
+            'plan': plan.dict(),
+            'timeline': timeline.dict(),
+            'stats': {
+                'requested': n_images,
+                'generated': len(generated_items),
+                'failed': n_images - len(generated_items)
+            }
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/auto-images/timeline', methods=['GET'])
+def auto_images_get_timeline():
+    """Get current timeline"""
+    from auto_images import TimelineManager
+
+    try:
+        timeline_mgr = TimelineManager()
+        timeline = timeline_mgr.load_timeline()
+
+        if timeline:
+            return jsonify({
+                'success': True,
+                'timeline': timeline.dict()
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'No timeline found'
+            }), 404
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/auto-images/timeline/add-local', methods=['POST'])
+def auto_images_add_local():
+    """
+    Add local image to timeline
+
+    Request JSON:
+        {
+            'image_path': '/path/to/image.jpg',
+            'index': 5  # optional, null = append
+        }
+    """
+    from auto_images import TimelineManager
+
+    try:
+        data = request.get_json()
+        image_path = data.get('image_path')
+        index = data.get('index')
+
+        if not image_path:
+            return jsonify({'error': 'image_path is required'}), 400
+
+        timeline_mgr = TimelineManager()
+        timeline = timeline_mgr.load_timeline()
+
+        if not timeline:
+            return jsonify({'error': 'No timeline found'}), 404
+
+        timeline = timeline_mgr.add_local_image(timeline, image_path, index)
+
+        return jsonify({
+            'success': True,
+            'timeline': timeline.dict()
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/auto-images/timeline/add-stock', methods=['POST'])
+def auto_images_add_stock():
+    """
+    Add stock image to timeline
+
+    Request JSON:
+        {
+            'image_path': '/path/to/stock.jpg',
+            'index': 5  # optional, null = append
+        }
+    """
+    from auto_images import TimelineManager
+
+    try:
+        data = request.get_json()
+        image_path = data.get('image_path')
+        index = data.get('index')
+
+        if not image_path:
+            return jsonify({'error': 'image_path is required'}), 400
+
+        timeline_mgr = TimelineManager()
+        timeline = timeline_mgr.load_timeline()
+
+        if not timeline:
+            return jsonify({'error': 'No timeline found'}), 404
+
+        timeline = timeline_mgr.add_stock_image(timeline, image_path, index)
+
+        return jsonify({
+            'success': True,
+            'timeline': timeline.dict()
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/auto-images/timeline/delete', methods=['POST'])
+def auto_images_delete():
+    """
+    Delete image from timeline
+
+    Request JSON:
+        {
+            'index': 5
+        }
+    """
+    from auto_images import TimelineManager
+
+    try:
+        data = request.get_json()
+        index = data.get('index')
+
+        if index is None:
+            return jsonify({'error': 'index is required'}), 400
+
+        timeline_mgr = TimelineManager()
+        timeline = timeline_mgr.load_timeline()
+
+        if not timeline:
+            return jsonify({'error': 'No timeline found'}), 404
+
+        timeline = timeline_mgr.delete_image(timeline, index)
+
+        return jsonify({
+            'success': True,
+            'timeline': timeline.dict()
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/auto-images/timeline/move', methods=['POST'])
+def auto_images_move():
+    """
+    Move image in timeline
+
+    Request JSON:
+        {
+            'old_index': 2,
+            'new_index': 5
+        }
+    """
+    from auto_images import TimelineManager
+
+    try:
+        data = request.get_json()
+        old_index = data.get('old_index')
+        new_index = data.get('new_index')
+
+        if old_index is None or new_index is None:
+            return jsonify({'error': 'old_index and new_index are required'}), 400
+
+        timeline_mgr = TimelineManager()
+        timeline = timeline_mgr.load_timeline()
+
+        if not timeline:
+            return jsonify({'error': 'No timeline found'}), 404
+
+        timeline = timeline_mgr.move_image(timeline, old_index, new_index)
+
+        return jsonify({
+            'success': True,
+            'timeline': timeline.dict()
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/auto-images/timeline/clear', methods=['POST'])
+def auto_images_clear():
+    """Clear timeline"""
+    from auto_images import TimelineManager
+
+    try:
+        timeline_mgr = TimelineManager()
+        success = timeline_mgr.clear_timeline()
+
+        return jsonify({
+            'success': success,
+            'message': 'Timeline cleared' if success else 'No timeline to clear'
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# =============================================================================
 # ERROR HANDLERS
 # =============================================================================
 

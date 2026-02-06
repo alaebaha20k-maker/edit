@@ -44,9 +44,25 @@ class Config:
 
     @classmethod
     def get_gemini_api_key(cls):
-        """Get Gemini API key from saved config or environment"""
+        """Get Gemini API key (for script writing) from saved config or environment"""
         saved = cls._load_saved_config()
         return saved.get('gemini_api_key') or os.getenv('GEMINI_API_KEY', '')
+
+    @classmethod
+    def get_director_gemini_api_key(cls):
+        """
+        Get Director Gemini API key (SEPARATE from script writer!)
+        Used ONLY for Auto Images AI Director
+        """
+        saved = cls._load_saved_config()
+        # Use separate key if available, otherwise fallback to main Gemini key
+        return saved.get('director_gemini_api_key') or saved.get('gemini_api_key') or os.getenv('DIRECTOR_GEMINI_API_KEY') or os.getenv('GEMINI_API_KEY', '')
+
+    @classmethod
+    def get_director_gemini_model(cls):
+        """Get Director Gemini model name"""
+        saved = cls._load_saved_config()
+        return saved.get('director_gemini_model', 'gemini-1.5-flash')
 
     @classmethod
     def get_replicate_api_token(cls):
@@ -71,7 +87,7 @@ class Config:
     REPLICATE_API_TOKEN = property(lambda self: self.get_replicate_api_token())
 
     @classmethod
-    def save_api_config(cls, gemini_key=None, replicate_token=None, inworld_key=None, inworld_secret=None):
+    def save_api_config(cls, gemini_key=None, director_gemini_key=None, replicate_token=None, inworld_key=None, inworld_secret=None):
         """Save API keys to config file"""
         cls.DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -87,6 +103,8 @@ class Config:
         # Update keys (only if provided)
         if gemini_key:
             config['gemini_api_key'] = gemini_key
+        if director_gemini_key:
+            config['director_gemini_api_key'] = director_gemini_key
         if replicate_token:
             config['replicate_api_token'] = replicate_token
         if inworld_key:
