@@ -165,13 +165,12 @@ class VideoAssembler:
             if ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']:
                 if verbose:
                     print(f"\n⚡ SUPER FAST MODE: Single image!")
-                    print(f"   Strategy: -framerate 1 -r 2 -crf 35 -g 600 (ULTRA FAST!)")
+                    print(f"   Strategy: -r 2 -crf 35 -g 600 -preset ultrafast (ULTRA FAST!)")
 
                 try:
                     cmd = [
                         'ffmpeg', '-y',
                         '-loop', '1',
-                        '-framerate', '1',  # 🔥 READ AT 1 FPS (10x faster!)
                         '-i', media_paths[0],
                         '-i', voice_path,
                         '-c:v', 'libx264',
@@ -234,7 +233,6 @@ class VideoAssembler:
                 cmd = [
                     'ffmpeg', '-y',
                     '-loop', '1',
-                    '-framerate', '1',  # 🔥 READ AT 1 FPS!
                     '-i', media_path,
                     '-t', str(duration_per_item),
                     '-c:v', 'libx264',
