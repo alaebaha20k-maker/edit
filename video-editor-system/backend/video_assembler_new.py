@@ -115,7 +115,7 @@ class VideoAssembler:
             if ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']:
                 if verbose:
                     print(f"\n⚡ SUPER FAST MODE: Single image!")
-                    print(f"   Strategy: -loop 1 -tune stillimage -c:a copy")
+                    print(f"   Strategy: -r 10 -crf 32 -tune stillimage -c:a copy")
 
                 try:
                     cmd = [
@@ -125,6 +125,8 @@ class VideoAssembler:
                         '-i', voice_path,
                         '-c:v', 'libx264',
                         '-preset', 'ultrafast',
+                        '-crf', '32',
+                        '-r', '10',
                         '-tune', 'stillimage',
                         '-c:a', 'copy',  # NO audio re-encoding!
                         '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
@@ -157,7 +159,7 @@ class VideoAssembler:
         # STRATEGY 2: Multiple media = Fast with -c copy
         if verbose:
             print(f"\n⚡ FAST MODE: Multiple media")
-            print(f"   Strategy: -tune stillimage → concat -c copy → audio -c copy")
+            print(f"   Strategy: -r 10 -crf 33 -tune stillimage → concat -c copy → audio -c copy")
 
         duration_per_item = voice_duration / len(media_paths)
         prepared_clips = []
@@ -176,6 +178,8 @@ class VideoAssembler:
                     '-t', str(duration_per_item),
                     '-c:v', 'libx264',
                     '-preset', 'ultrafast',
+                    '-crf', '33',
+                    '-r', '10',
                     '-tune', 'stillimage',
                     '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
                     '-pix_fmt', 'yuv420p',
@@ -189,6 +193,7 @@ class VideoAssembler:
                     '-t', str(duration_per_item),
                     '-c:v', 'libx264',
                     '-preset', 'ultrafast',
+                    '-crf', '32',
                     '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
                     '-an',
                     str(clip_output)
