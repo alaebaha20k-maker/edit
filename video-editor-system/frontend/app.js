@@ -1101,6 +1101,16 @@ function renderVoiceLibrary() {
                             📄 ${voice.filename}
                         </div>
                     </div>
+                    <button onclick="event.stopPropagation(); downloadVoice(${index})" style="
+                        background: #4caf50;
+                        color: white;
+                        border: none;
+                        border-radius: 5px;
+                        padding: 8px 12px;
+                        cursor: pointer;
+                        flex-shrink: 0;
+                        font-size: 16px;
+                    " title="Download voice">💾</button>
                     <button onclick="event.stopPropagation(); removeVoiceFromLibrary(${index})" style="
                         background: #ff4757;
                         color: white;
@@ -1131,6 +1141,25 @@ function removeVoiceFromLibrary(index) {
         renderVoiceLibrary();
         showNotification('✅ Voice deleted', 'success');
     }
+}
+
+// Download voice from library
+function downloadVoice(index) {
+    const voice = window.videoData.voiceLibrary[index];
+    if (!voice || !voice.url) {
+        showNotification('❌ Voice file not found', 'error');
+        return;
+    }
+
+    // Create a temporary link and trigger download
+    const link = document.createElement('a');
+    link.href = voice.url;
+    link.download = voice.filename || 'voice.mp3';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    showNotification('💾 Downloading voice...', 'success');
 }
 
 // Play voice preview

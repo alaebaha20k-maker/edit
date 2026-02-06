@@ -357,6 +357,12 @@ def download_file(filename):
             mimetype = 'text/plain'
         elif filename.endswith('.mp4'):
             mimetype = 'video/mp4'
+        elif filename.endswith('.mp3'):
+            mimetype = 'audio/mpeg'
+        elif filename.endswith('.wav'):
+            mimetype = 'audio/wav'
+        elif filename.endswith('.m4a'):
+            mimetype = 'audio/mp4'
         else:
             mimetype = None
 
