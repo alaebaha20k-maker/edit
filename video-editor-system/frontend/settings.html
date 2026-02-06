@@ -438,6 +438,7 @@
             <!-- Tabs -->
             <div class="tabs">
                 <div class="tab active" data-tab="api-keys">🔑 API Keys</div>
+                <div class="tab" data-tab="niches">🎯 Content Niches</div>
                 <div class="tab" data-tab="formulas">📝 Formulas</div>
                 <div class="tab" data-tab="voices">🎤 Voice Settings</div>
                 <div class="tab" data-tab="image-styles">🎨 Image Styles</div>
@@ -517,7 +518,59 @@
                 </div>
             </div>
 
-            <!-- Tab 2: Formulas -->
+            <!-- Tab 2: Content Niches -->
+            <div class="tab-content" id="niches">
+                <div id="alert-niches" class="alert"></div>
+
+                <div class="form-section">
+                    <h3>🎯 Content Niche Management</h3>
+                    <p>Define your content category and writing style. Required for AI script generation.</p>
+
+                    <div class="input-group">
+                        <label for="niche-select">Select Active Niche</label>
+                        <select id="niche-select" class="input-large">
+                            <option value="">-- Select a niche --</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3>➕ Create New Niche</h3>
+                    <div class="input-group">
+                        <label for="new-niche-name">Niche Name</label>
+                        <input type="text" id="new-niche-name" placeholder="e.g., 'Trading Psychology', 'Tech Reviews'">
+                    </div>
+
+                    <div class="input-group">
+                        <label for="new-niche-language">Language</label>
+                        <select id="new-niche-language">
+                            <option value="English">English</option>
+                            <option value="French">French</option>
+                            <option value="Spanish">Spanish</option>
+                            <option value="Arabic">Arabic</option>
+                            <option value="German">German</option>
+                            <option value="Portuguese">Portuguese</option>
+                        </select>
+                    </div>
+
+                    <div class="input-group">
+                        <label for="new-niche-guidelines">Writing Guidelines (min 100 characters)</label>
+                        <textarea id="new-niche-guidelines" rows="6" placeholder="Example: Create engaging trading psychology content focused on mindset and discipline. Use simple language with real examples. Target audience: beginner traders. Tone: motivational but realistic."></textarea>
+                        <small>Describe your content style, target audience, tone, and any specific requirements.</small>
+                    </div>
+
+                    <button id="create-niche-btn" class="btn btn-primary">➕ Create Niche</button>
+                </div>
+
+                <div class="form-section">
+                    <h3>📋 Existing Niches</h3>
+                    <div id="niches-list">
+                        <p style="color: #666;">Loading niches...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 3: Formulas -->
             <div class="tab-content" id="formulas">
                 <div id="alert-formulas" class="alert"></div>
 
@@ -1242,6 +1295,146 @@
             }
         }
 
+        // =============================================================================
+        // NICHE MANAGEMENT
+        // =============================================================================
+
+        async function loadNiches() {
+            try {
+                const response = await fetch('/api/niches');
+                const data = await response.json();
+
+                if (data.success) {
+                    renderNiches(data.niches, data.active_niche_id);
+                }
+            } catch (error) {
+                console.error('Error loading niches:', error);
+            }
+        }
+
+        function renderNiches(niches, activeNicheId) {
+            const select = document.getElementById('niche-select');
+            const nichesList = document.getElementById('niches-list');
+
+            // Update dropdown
+            select.innerHTML = '<option value="">-- Select a niche --</option>';
+            niches.forEach(niche => {
+                const option = document.createElement('option');
+                option.value = niche.id;
+                option.textContent = `${niche.name} (${niche.language})`;
+                option.selected = niche.id === activeNicheId;
+                select.appendChild(option);
+            });
+
+            // Update niches list
+            if (niches.length === 0) {
+                nichesList.innerHTML = '<p style="color: #666;">No niches created yet. Create your first niche above.</p>';
+                return;
+            }
+
+            nichesList.innerHTML = niches.map(niche => `
+                <div class="niche-card" style="border: 2px solid ${niche.id === activeNicheId ? '#667eea' : '#e0e0e0'}; padding: 15px; margin-bottom: 15px; border-radius: 8px; background: ${niche.id === activeNicheId ? '#f0f4ff' : '#fff'};">
+                    <div style="display: flex; justify-content: space-between; align-items: start;">
+                        <div style="flex: 1;">
+                            <h4 style="margin: 0 0 5px 0; color: #333;">${niche.name} ${niche.id === activeNicheId ? '✓' : ''}</h4>
+                            <p style="margin: 0; color: #666; font-size: 14px;">Language: ${niche.language}</p>
+                            <p style="margin: 10px 0 0 0; color: #555; font-size: 14px;">${niche.guidelines}</p>
+                        </div>
+                        <div style="display: flex; gap: 5px;">
+                            ${niche.id !== activeNicheId ? `<button onclick="selectNicheById('${niche.id}')" class="btn btn-primary" style="padding: 5px 10px; font-size: 14px;">✓ Select</button>` : ''}
+                            <button onclick="deleteNiche('${niche.id}')" class="btn btn-secondary" style="padding: 5px 10px; font-size: 14px;">🗑️ Delete</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function selectNicheById(nicheId) {
+            try {
+                const response = await fetch(`/api/niches/${nicheId}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    showAlert('niches', '✓ Niche activated successfully!', 'success');
+                    await loadNiches();
+                }
+            } catch (error) {
+                showAlert('niches', '✗ Error selecting niche: ' + error.message, 'error');
+            }
+        }
+
+        async function deleteNiche(nicheId) {
+            if (!confirm('Are you sure you want to delete this niche?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/niches/${nicheId}`, {
+                    method: 'DELETE'
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    showAlert('niches', '✓ Niche deleted successfully!', 'success');
+                    await loadNiches();
+                } else {
+                    showAlert('niches', '✗ Error: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showAlert('niches', '✗ Error deleting niche: ' + error.message, 'error');
+            }
+        }
+
+        // Niche event listeners (will be initialized in DOMContentLoaded)
+        function initNicheManagement() {
+            document.getElementById('niche-select').addEventListener('change', async (e) => {
+                if (e.target.value) {
+                    await selectNicheById(e.target.value);
+                }
+            });
+
+            document.getElementById('create-niche-btn').addEventListener('click', async () => {
+                const name = document.getElementById('new-niche-name').value.trim();
+                const language = document.getElementById('new-niche-language').value;
+                const guidelines = document.getElementById('new-niche-guidelines').value.trim();
+
+                if (!name || !guidelines || guidelines.length < 100) {
+                    showAlert('niches', '✗ Please fill all fields. Guidelines must be at least 100 characters.', 'error');
+                    return;
+                }
+
+                const button = document.getElementById('create-niche-btn');
+                button.disabled = true;
+                button.innerHTML = '⏳ Creating...';
+
+                try {
+                    const response = await fetch('/api/niches', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, language, guidelines })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        showAlert('niches', '✓ Niche created successfully!', 'success');
+                        document.getElementById('new-niche-name').value = '';
+                        document.getElementById('new-niche-guidelines').value = '';
+                        await loadNiches();
+                    } else {
+                        showAlert('niches', '✗ Error: ' + data.error, 'error');
+                    }
+
+                    button.disabled = false;
+                    button.innerHTML = '➕ Create Niche';
+                } catch (error) {
+                    showAlert('niches', '✗ Error creating niche: ' + error.message, 'error');
+                    button.disabled = false;
+                    button.innerHTML = '➕ Create Niche';
+                }
+            });
+        }
+
         // Initialize on page load
         window.addEventListener('DOMContentLoaded', () => {
             // Initialize all event listeners
@@ -1252,9 +1445,11 @@
             initResetFormulas();
             initVoiceSettings();
             initImageStylesButtons();
+            initNicheManagement();
 
             // Load data
             loadSettings();
+            loadNiches();
             loadFormulas();
             loadVoices();
             loadImageStyles();
