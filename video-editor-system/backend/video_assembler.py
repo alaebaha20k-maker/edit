@@ -325,8 +325,10 @@ class VideoAssembler:
         width, height = resolution.split('x')
 
         if verbose:
-            print(f"\n⚡ Creating video in ONE PASS (ULTRA FAST!)...")
+            print(f"\n⚡ Creating video in ONE PASS (ULTRA FAST + HIGH QUALITY!)...")
+            print(f"   Format: 1080p, 16:9, H.264, MP4, 24fps")
             print(f"   Method: Direct slideshow + audio merge")
+            print(f"   Quality: HIGH (CRF 23)")
             print(f"   Duration per item: {duration_per_item:.2f}s")
 
         # BUILD ULTRA-FAST SINGLE-PASS COMMAND
@@ -342,22 +344,22 @@ class VideoAssembler:
                 is_image = ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']
 
                 if is_image:
-                    # Image: scale + pad + loop for duration (ULTRA FAST - 1fps!)
+                    # Image: scale + pad + loop for duration (FAST + HIGH QUALITY + PLAYABLE!)
                     filter_parts.append(
                         f"[{input_count}:v]loop=loop=-1:size=1:start=0,"
-                        f"scale={width}:{height}:force_original_aspect_ratio=increase:flags=fast_bilinear,"
-                        f"crop={width}:{height},"
-                        f"setpts=N/(1*TB),"  # 1fps for images (Mr Baha method!)
+                        f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=lanczos,"
+                        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,"
+                        f"fps=24,"  # 24fps for smooth playback on all devices!
                         f"trim=duration={duration_per_item}[v{i}]"
                     )
                 else:
                     # Video: scale + pad + trim or loop
                     filter_parts.append(
-                        f"[{input_count}:v]scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear,"
-                        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,"
+                        f"[{input_count}:v]scale={width}:{height}:force_original_aspect_ratio=decrease:flags=lanczos,"
+                        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,"
                         f"loop=loop=-1:size=1,"
                         f"trim=duration={duration_per_item},"
-                        f"setpts=N/(24*TB)[v{i}]"  # 24fps for videos
+                        f"fps=24[v{i}]"  # 24fps standard
                     )
                 input_count += 1
 
@@ -368,34 +370,40 @@ class VideoAssembler:
             # Build command with ALL inputs
             cmd = ['ffmpeg', '-y']
 
-            # Add all media inputs (with framerate 1 for images!)
+            # Add all media inputs
             for media_path in media_paths:
                 ext = os.path.splitext(media_path)[1].lower()
                 is_image = ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']
 
                 if is_image:
-                    cmd.extend(['-framerate', '1', '-loop', '1'])  # Read at 1fps!
+                    cmd.extend(['-loop', '1'])  # Loop image
                 cmd.extend(['-i', media_path])
 
             # Add voice input
             cmd.extend(['-i', voice_path])
 
             # Add filter complex
+            # OPTIMIZED FOR: 1080p, 16:9, H.264, MP4, HIGH QUALITY, SUPER FAST!
             cmd.extend([
                 '-filter_complex', filter_complex,
                 '-map', '[vout]',
                 '-map', f'{len(media_paths)}:a',  # Map audio from voice
-                '-c:v', 'libx264',
-                '-preset', 'ultrafast',
-                '-tune', 'stillimage',  # Mr Baha secret!
-                '-crf', '28',
-                '-g', '600',  # Keyframe every 20s (Mr Baha secret!)
-                '-r', '1',  # 1fps output (Mr Baha secret!)
-                '-c:a', 'aac',
-                '-b:a', '192k',
-                '-shortest',
+                '-c:v', 'libx264',  # H.264 codec (universal compatibility!)
+                '-preset', 'ultrafast',  # Super fast encoding
+                '-profile:v', 'high',  # High profile for better quality
+                '-level', '4.2',  # H.264 Level 4.2 (supports 1080p)
+                '-crf', '23',  # High quality (lower = better quality)
+                '-pix_fmt', 'yuv420p',  # Standard pixel format (compatibility)
+                '-r', '24',  # 24fps (smooth playback, universally supported)
+                '-g', '48',  # Keyframe every 2 seconds (good balance)
+                '-aspect', '16:9',  # Force 16:9 aspect ratio
+                '-c:a', 'aac',  # AAC audio codec
+                '-b:a', '192k',  # High quality audio
+                '-ar', '48000',  # 48kHz sample rate (standard)
+                '-shortest',  # Match shortest stream
                 '-threads', '0',  # Use all CPU cores
-                '-movflags', '+faststart',
+                '-movflags', '+faststart',  # Fast streaming start
+                '-f', 'mp4',  # Force MP4 format
                 output_path
             ])
 
