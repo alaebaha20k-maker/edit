@@ -342,12 +342,12 @@ class VideoAssembler:
                 is_image = ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']
 
                 if is_image:
-                    # Image: scale + pad + loop for duration
+                    # Image: scale + pad + loop for duration (ULTRA FAST - 1fps!)
                     filter_parts.append(
                         f"[{input_count}:v]loop=loop=-1:size=1:start=0,"
-                        f"scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear,"
-                        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,"
-                        f"setpts=N/(10*TB),"  # 10fps for images
+                        f"scale={width}:{height}:force_original_aspect_ratio=increase:flags=fast_bilinear,"
+                        f"crop={width}:{height},"
+                        f"setpts=N/(1*TB),"  # 1fps for images (Mr Baha method!)
                         f"trim=duration={duration_per_item}[v{i}]"
                     )
                 else:
@@ -368,8 +368,13 @@ class VideoAssembler:
             # Build command with ALL inputs
             cmd = ['ffmpeg', '-y']
 
-            # Add all media inputs
+            # Add all media inputs (with framerate 1 for images!)
             for media_path in media_paths:
+                ext = os.path.splitext(media_path)[1].lower()
+                is_image = ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']
+
+                if is_image:
+                    cmd.extend(['-framerate', '1', '-loop', '1'])  # Read at 1fps!
                 cmd.extend(['-i', media_path])
 
             # Add voice input
@@ -382,11 +387,14 @@ class VideoAssembler:
                 '-map', f'{len(media_paths)}:a',  # Map audio from voice
                 '-c:v', 'libx264',
                 '-preset', 'ultrafast',
-                '-crf', '23',
-                '-r', '10',  # 10fps output (FAST!)
+                '-tune', 'stillimage',  # Mr Baha secret!
+                '-crf', '28',
+                '-g', '600',  # Keyframe every 20s (Mr Baha secret!)
+                '-r', '1',  # 1fps output (Mr Baha secret!)
                 '-c:a', 'aac',
                 '-b:a', '192k',
                 '-shortest',
+                '-threads', '0',  # Use all CPU cores
                 '-movflags', '+faststart',
                 output_path
             ])
@@ -398,19 +406,29 @@ class VideoAssembler:
 
             elapsed = __import__('time').time() - start_time
 
+            # Get final file info
+            try:
+                final_size = os.path.getsize(output_path)
+                size_mb = final_size / (1024 * 1024)
+            except:
+                size_mb = 0
+
             if verbose:
                 print(f"\n{'='*60}")
                 print(f"✅ VIDEO ASSEMBLY COMPLETE!")
                 print(f"{'='*60}")
                 print(f"   Time: {elapsed:.1f}s")
                 print(f"   Output: {output_path}")
+                print(f"   Size: {size_mb:.2f} MB")
 
             return {
                 'success': True,
                 'output_path': output_path,
-                'voice_duration': voice_duration,
+                'duration_seconds': voice_duration,  # FIXED: Added for API compatibility
+                'file_size_mb': size_mb,
+                'processing_time': elapsed,
                 'media_count': len(media_paths),
-                'time_elapsed': elapsed
+                'voice_duration': voice_duration
             }
 
         except subprocess.CalledProcessError as e:
