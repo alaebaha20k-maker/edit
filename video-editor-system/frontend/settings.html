@@ -667,22 +667,24 @@
     </div>
 
     <script>
-        // Tab switching
-        document.querySelectorAll('.tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                const targetTab = tab.dataset.tab;
+        // Tab switching (will be initialized in DOMContentLoaded)
+        function initTabSwitching() {
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.addEventListener('click', () => {
+                    const targetTab = tab.dataset.tab;
 
-                // Update active tab
-                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-                tab.classList.add('active');
+                    // Update active tab
+                    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                    tab.classList.add('active');
 
-                // Update active content
-                document.querySelectorAll('.tab-content').forEach(content => {
-                    content.classList.remove('active');
+                    // Update active content
+                    document.querySelectorAll('.tab-content').forEach(content => {
+                        content.classList.remove('active');
+                    });
+                    document.getElementById(targetTab).classList.add('active');
                 });
-                document.getElementById(targetTab).classList.add('active');
             });
-        });
+        }
 
         // Show alert
         function showAlert(section, message, type = 'success') {
@@ -734,8 +736,9 @@
             }
         }
 
-        // Save API Keys
-        document.getElementById('save-api-keys').addEventListener('click', async () => {
+        // Save API Keys (will be initialized in DOMContentLoaded)
+        function initSaveApiKeys() {
+            document.getElementById('save-api-keys').addEventListener('click', async () => {
             const gemini = document.getElementById('gemini-key').value;
             const director_gemini = document.getElementById('director-gemini-key').value;
             const replicate = document.getElementById('replicate-token').value;
@@ -780,16 +783,19 @@
                 button.disabled = false;
                 button.innerHTML = '💾 Save API Keys';
             }
-        });
-
-        // Show/Hide Keys
-        document.getElementById('show-keys').addEventListener('click', () => {
-            const inputs = ['gemini-key', 'director-gemini-key', 'replicate-token', 'inworld-key', 'pexels-key'];
-            inputs.forEach(id => {
-                const input = document.getElementById(id);
-                input.type = input.type === 'password' ? 'text' : 'password';
             });
-        });
+        }
+
+        // Show/Hide Keys (will be initialized in DOMContentLoaded)
+        function initShowHideKeys() {
+            document.getElementById('show-keys').addEventListener('click', () => {
+                const inputs = ['gemini-key', 'director-gemini-key', 'replicate-token', 'inworld-key', 'pexels-key'];
+                inputs.forEach(id => {
+                    const input = document.getElementById(id);
+                    input.type = input.type === 'password' ? 'text' : 'password';
+                });
+            });
+        }
 
         // Load formulas
         async function loadFormulas() {
@@ -809,8 +815,9 @@
             }
         }
 
-        // Save formulas
-        document.getElementById('save-formulas').addEventListener('click', async () => {
+        // Save formulas (will be initialized in DOMContentLoaded)
+        function initSaveFormulas() {
+            document.getElementById('save-formulas').addEventListener('click', async () => {
             const titleFormula = document.getElementById('title-formula').value;
             const scriptFormula = document.getElementById('script-formula').value;
             const imageFormula = document.getElementById('image-formula').value;
@@ -843,15 +850,18 @@
                 button.disabled = false;
                 button.innerHTML = '💾 Save Formulas';
             }
-        });
+            });
+        }
 
-        // Reset formulas (reload from server)
-        document.getElementById('reset-formulas').addEventListener('click', async () => {
-            if (confirm('Reset all formulas to defaults? This will overwrite your current formulas.')) {
-                await loadFormulas();
-                showAlert('formulas', 'ℹ️ Formulas reset to defaults. Click Save to confirm.', 'info');
-            }
-        });
+        // Reset formulas (will be initialized in DOMContentLoaded)
+        function initResetFormulas() {
+            document.getElementById('reset-formulas').addEventListener('click', async () => {
+                if (confirm('Reset all formulas to defaults? This will overwrite your current formulas.')) {
+                    await loadFormulas();
+                    showAlert('formulas', 'ℹ️ Formulas reset to defaults. Click Save to confirm.', 'info');
+                }
+            });
+        }
 
         // Load voices
         async function loadVoices() {
@@ -905,13 +915,15 @@
             }
         }
 
-        // Update speaking rate display
-        document.getElementById('speaking-rate').addEventListener('input', (e) => {
-            document.getElementById('speaking-rate-value').textContent = e.target.value + 'x';
-        });
+        // Voice settings event listeners (will be initialized in DOMContentLoaded)
+        function initVoiceSettings() {
+            // Update speaking rate display
+            document.getElementById('speaking-rate').addEventListener('input', (e) => {
+                document.getElementById('speaking-rate-value').textContent = e.target.value + 'x';
+            });
 
-        // Save voice settings
-        document.getElementById('save-voice-settings').addEventListener('click', async () => {
+            // Save voice settings
+            document.getElementById('save-voice-settings').addEventListener('click', async () => {
             const selectedCard = document.querySelector('.voice-card.selected');
             if (!selectedCard) {
                 showAlert('voices', '✗ Please select a voice', 'error');
@@ -945,7 +957,8 @@
                 button.disabled = false;
                 button.innerHTML = '💾 Save Voice Settings';
             }
-        });
+            });
+        }
 
         // =============================================================================
         // IMAGE STYLES MANAGEMENT
@@ -1059,16 +1072,23 @@
             addColor();
         }
 
-        document.getElementById('add-style-btn').addEventListener('click', () => {
-            currentEditingStyleId = null;
-            document.getElementById('modal-title').textContent = 'Create New Style';
-            resetStyleForm();
-            document.getElementById('style-modal').style.display = 'block';
-        });
+        // Image styles event listeners (will be initialized in DOMContentLoaded)
+        function initImageStylesButtons() {
+            document.getElementById('add-style-btn').addEventListener('click', () => {
+                currentEditingStyleId = null;
+                document.getElementById('modal-title').textContent = 'Create New Style';
+                resetStyleForm();
+                document.getElementById('style-modal').style.display = 'block';
+            });
 
-        document.getElementById('cancel-style-btn').addEventListener('click', () => {
-            document.getElementById('style-modal').style.display = 'none';
-        });
+            document.getElementById('cancel-style-btn').addEventListener('click', () => {
+                document.getElementById('style-modal').style.display = 'none';
+            });
+
+            document.getElementById('save-style-btn').addEventListener('click', saveStyleHandler);
+        }
+
+        async function saveStyleHandler() {
 
         async function viewStyle(styleId) {
             try {
@@ -1161,8 +1181,7 @@
             }
         }
 
-        document.getElementById('save-style-btn').addEventListener('click', async () => {
-            const name = document.getElementById('style-name').value.trim();
+        const name = document.getElementById('style-name').value.trim();
             const description = document.getElementById('style-description').value.trim();
             const composition = document.getElementById('style-composition').value.trim();
             const lighting = document.getElementById('style-lighting').value.trim();
@@ -1221,10 +1240,20 @@
             } catch (error) {
                 showAlert('image-styles', '✗ Error saving style: ' + error.message, 'error');
             }
-        });
+        }
 
         // Initialize on page load
         window.addEventListener('DOMContentLoaded', () => {
+            // Initialize all event listeners
+            initTabSwitching();
+            initSaveApiKeys();
+            initShowHideKeys();
+            initSaveFormulas();
+            initResetFormulas();
+            initVoiceSettings();
+            initImageStylesButtons();
+
+            // Load data
             loadSettings();
             loadFormulas();
             loadVoices();
