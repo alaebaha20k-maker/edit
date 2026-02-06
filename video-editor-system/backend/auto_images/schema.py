@@ -3,8 +3,8 @@ Pydantic schemas for Auto Images AI system
 Strict JSON validation for Gemini Director output
 """
 
-from pydantic import BaseModel, Field, validator
-from typing import List, Optional
+from pydantic import BaseModel, Field, field_validator, ValidationInfo
+from typing import List, Optional, Literal
 
 
 class SceneCard(BaseModel):
@@ -16,7 +16,8 @@ class SceneCard(BaseModel):
     image_prompt: str = Field(..., min_length=50, description="Detailed image generation prompt")
     negative_prompt: str = Field(..., description="What to avoid in the image")
 
-    @validator('image_prompt')
+    @field_validator('image_prompt')
+    @classmethod
     def validate_prompt_quality(cls, v):
         """Ensure prompt has required components"""
         # Prompt should be very detailed: 80-150 words
@@ -40,17 +41,18 @@ class GlobalStyleBible(BaseModel):
 
 class AutoImagesPlan(BaseModel):
     """Complete plan for auto-generated images"""
-    mode: str = Field(default="auto_images", const=True)
+    mode: Literal["auto_images"] = "auto_images"
     style_id: str = Field(..., description="ID of the style used")
     n_images: int = Field(..., ge=1, le=100, description="Number of images to generate")
     global_style_bible: GlobalStyleBible
     scenes: List[SceneCard] = Field(..., description="List of scene cards (must equal n_images)")
 
-    @validator('scenes')
-    def validate_scene_count(cls, v, values):
+    @field_validator('scenes')
+    @classmethod
+    def validate_scene_count(cls, v, info: ValidationInfo):
         """Ensure number of scenes matches n_images"""
-        if 'n_images' in values and len(v) != values['n_images']:
-            raise ValueError(f"Expected {values['n_images']} scenes, got {len(v)}")
+        if info.data and 'n_images' in info.data and len(v) != info.data['n_images']:
+            raise ValueError(f"Expected {info.data['n_images']} scenes, got {len(v)}")
         return v
 
     @validator('scenes')
