@@ -28,27 +28,35 @@ class VideoAssembler:
         self.encoder_info = self._detect_best_encoder()
 
     def _detect_best_encoder(self) -> dict:
-        """Detect best available encoder"""
+        """Detect best available encoder - ACTUALLY tests if GPU works!"""
+        # Test NVIDIA GPU by actually trying it
         try:
-            result = subprocess.run(
-                ['ffmpeg', '-hide_banner', '-encoders'],
-                capture_output=True, text=True, timeout=5
+            test = subprocess.run(
+                ['ffmpeg', '-f', 'lavfi', '-i', 'color=black:s=64x64:d=0.1',
+                 '-c:v', 'h264_nvenc', '-f', 'null', '-'],
+                capture_output=True, timeout=3
             )
-            encoders = result.stdout
-
-            if 'h264_nvenc' in encoders:
-                print("✅ NVIDIA GPU encoder detected")
+            if test.returncode == 0:
+                print("✅ NVIDIA GPU encoder working (h264_nvenc)")
                 return {'encoder': 'h264_nvenc', 'hw_type': 'nvidia'}
-            elif 'h264_qsv' in encoders:
-                print("✅ Intel Quick Sync detected")
-                return {'encoder': 'h264_qsv', 'hw_type': 'intel'}
-            elif 'h264_amf' in encoders:
-                print("✅ AMD GPU encoder detected")
-                return {'encoder': 'h264_amf', 'hw_type': 'amd'}
         except:
             pass
 
-        print("ℹ️ Using CPU encoder (libx264)")
+        # Test Intel Quick Sync
+        try:
+            test = subprocess.run(
+                ['ffmpeg', '-f', 'lavfi', '-i', 'color=black:s=64x64:d=0.1',
+                 '-c:v', 'h264_qsv', '-f', 'null', '-'],
+                capture_output=True, timeout=3
+            )
+            if test.returncode == 0:
+                print("✅ Intel Quick Sync working (h264_qsv)")
+                return {'encoder': 'h264_qsv', 'hw_type': 'intel'}
+        except:
+            pass
+
+        # Fallback to CPU encoding (fast & reliable!)
+        print("ℹ️ Using CPU encoder (libx264) - fast & reliable")
         return {'encoder': 'libx264', 'hw_type': 'cpu'}
 
     def get_audio_duration(self, audio_path: str) -> float:
@@ -153,11 +161,11 @@ class VideoAssembler:
                 except subprocess.CalledProcessError as e:
                     raise Exception(f"Export failed: {e.stderr[-1000:]}")
 
-            # IMAGE: Loop 1 frame for entire duration
+            # IMAGE: Loop 1 frame for entire duration (1 FPS = SMALLEST FILES!)
             if ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']:
                 if verbose:
                     print(f"\n⚡ SUPER FAST MODE: Single image!")
-                    print(f"   Strategy: -r 10 -crf 32 -tune stillimage -c:a copy")
+                    print(f"   Strategy: -r 1 -crf 35 -tune stillimage -c:a copy (ULTRA FAST!)")
 
                 try:
                     cmd = [
@@ -166,15 +174,16 @@ class VideoAssembler:
                         '-i', media_paths[0],
                         '-i', voice_path,
                         '-c:v', 'libx264',
-                        '-preset', 'ultrafast',
-                        '-crf', '32',
-                        '-r', '10',
+                        '-preset', 'veryfast',  # FASTER than ultrafast!
+                        '-crf', '35',  # Higher = faster, smaller
+                        '-r', '1',  # 1 FPS = SUPER SMALL FILES!
                         '-tune', 'stillimage',
                         '-c:a', 'copy',  # NO audio re-encoding!
-                        '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
+                        '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
                         '-shortest',
                         '-pix_fmt', 'yuv420p',
                         '-movflags', '+faststart',
+                        '-threads', '0',  # Use ALL CPU cores!
                         output_path
                     ]
 
@@ -201,7 +210,7 @@ class VideoAssembler:
         # STRATEGY 2: Multiple media = Fast with -c copy
         if verbose:
             print(f"\n⚡ FAST MODE: Multiple media")
-            print(f"   Strategy: Prepare clips → concat -c copy → audio -c copy")
+            print(f"   Strategy: 1 FPS images → concat -c copy → audio -c copy")
 
         # Check if all are videos (can potentially concat with -c copy directly)
         all_videos = all(
@@ -226,12 +235,13 @@ class VideoAssembler:
                     '-i', media_path,
                     '-t', str(duration_per_item),
                     '-c:v', 'libx264',
-                    '-preset', 'ultrafast',
-                    '-crf', '33',
-                    '-r', '10',
+                    '-preset', 'veryfast',  # FASTER!
+                    '-crf', '35',  # Higher = faster, smaller
+                    '-r', '1',  # 1 FPS = SMALLEST FILES!
                     '-tune', 'stillimage',
-                    '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
+                    '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
                     '-pix_fmt', 'yuv420p',
+                    '-threads', '0',  # Use all cores
                     '-an',
                     str(clip_output)
                 ]
@@ -243,9 +253,10 @@ class VideoAssembler:
                     '-i', media_path,
                     '-t', str(duration_per_item),
                     '-c:v', 'libx264',
-                    '-preset', 'ultrafast',
-                    '-crf', '32',
-                    '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
+                    '-preset', 'veryfast',  # FASTER!
+                    '-crf', '33',
+                    '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease:flags=fast_bilinear,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2',
+                    '-threads', '0',  # Use all cores
                     '-an',
                     str(clip_output)
                 ]
