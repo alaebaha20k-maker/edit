@@ -1681,8 +1681,11 @@ async function generateAutoImages() {
     const timelineSection = document.getElementById('autoImageTimeline');
 
     // Check if Whisper timing is requested but no voice exists
-    if (use_whisper_timing && (!window.videoData.voice || !window.videoData.voice.path)) {
-        showNotification('⚠️ Whisper timing requires voice to be generated first. Generate voice first, then generate images.', 'warning');
+    const selectedVoiceIndex = window.videoData.selectedVoiceIndex ?? (window.videoData.voiceLibrary?.length > 0 ? 0 : -1);
+    const selectedVoice = window.videoData.voiceLibrary?.[selectedVoiceIndex];
+
+    if (use_whisper_timing && (!selectedVoice || !selectedVoice.path)) {
+        showNotification('⚠️ Whisper timing requires voice to be generated or uploaded first. Generate/upload voice first, then generate images.', 'warning');
         return;
     }
 
@@ -1704,9 +1707,9 @@ async function generateAutoImages() {
         };
 
         // Add Whisper timing if enabled
-        if (use_whisper_timing && window.videoData.voice && window.videoData.voice.path) {
+        if (use_whisper_timing && selectedVoice && selectedVoice.path) {
             payload.use_whisper_timing = true;
-            payload.voice_path = window.videoData.voice.path;
+            payload.voice_path = selectedVoice.path;
         }
 
         // Call backend API
