@@ -91,6 +91,12 @@ class DirectorClient:
 
 TASK: Create {n_images} DETAILED image generation prompts from this script.
 
+IMPORTANT - MULTILINGUAL SUPPORT:
+- The script may be in ANY language (English, Arabic, French, Spanish, Chinese, etc.)
+- You MUST understand the script content in its original language
+- BUT: ALL image prompts MUST be written in ENGLISH (for optimal image generation quality)
+- Translate/adapt the visual concepts while keeping cultural and contextual accuracy
+
 SCRIPT:
 {script_text}
 
@@ -256,6 +262,8 @@ MANDATORY SELF-CHECK BEFORE OUTPUTTING:
 ✓ Scenes are chronological from start to end of script?
 ✓ Each scene is completely unique (no repetition)?
 ✓ Each image_prompt is 300+ CHARACTERS with EXTREME detail?
+✓ ALL image_prompt text is in ENGLISH (regardless of script language)?
+✓ Cultural context from original script is preserved in visual descriptions?
 ✓ Each image_prompt applies CREATIVE SCENE PRINCIPLES (show don't tell, emotional depth, cinematic composition)?
 ✓ Each image_prompt includes: specific subject details, precise setting, exact action/moment, camera technique, detailed lighting, composition, style tokens, color psychology, professional photography terms?
 ✓ Prompts match the script's CONTENT TYPE (educational/dramatic/tech/nature/personal)?
