@@ -1671,31 +1671,49 @@ async function generateAutoImages() {
 
     const styleSelect = document.getElementById('autoImageStyle');
     const countInput = document.getElementById('autoImageCount');
+    const useWhisperCheckbox = document.getElementById('useWhisperTiming');
 
     const style_id = styleSelect ? styleSelect.value : 'cinematic';
     const n_images = countInput ? parseInt(countInput.value) : 10;
+    const use_whisper_timing = useWhisperCheckbox ? useWhisperCheckbox.checked : false;
 
     const progressBox = document.getElementById('autoImageProgress');
     const timelineSection = document.getElementById('autoImageTimeline');
 
-    if (progressBox) {
-        progressBox.style.display = 'block';
-        progressBox.innerHTML = `<p>🎬 Director AI planning ${n_images} scenes...</p>`;
+    // Check if Whisper timing is requested but no voice exists
+    if (use_whisper_timing && (!window.videoData.voice || !window.videoData.voice.path)) {
+        showNotification('⚠️ Whisper timing requires voice to be generated first. Generate voice first, then generate images.', 'warning');
+        return;
     }
 
-    try {
+    if (progressBox) {
+        progressBox.style.display = 'block';
+        const timingMode = use_whisper_timing ? '🎤 with Whisper timestamps' : 'with even distribution';
+        progressBox.innerHTML = `<p>🎬 Director AI planning ${n_images} scenes ${timingMode}...</p>`;
+    }
+
+    try:
         showNotification(`🤖 Starting Auto Images AI (Director + Replicate)...`, 'info');
+
+        // Prepare request payload
+        const payload = {
+            script: script,
+            style_id: style_id,
+            n_images: n_images,
+            aspect_ratio: '16:9'
+        };
+
+        // Add Whisper timing if enabled
+        if (use_whisper_timing && window.videoData.voice && window.videoData.voice.path) {
+            payload.use_whisper_timing = true;
+            payload.voice_path = window.videoData.voice.path;
+        }
 
         // Call backend API
         const response = await fetch('/api/auto-images/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                script: script,
-                style_id: style_id,
-                n_images: n_images,
-                aspect_ratio: '16:9'
-            })
+            body: JSON.stringify(payload)
         });
 
         if (!response.ok) {
@@ -1712,7 +1730,8 @@ async function generateAutoImages() {
         autoImagesTimeline = data.timeline;
 
         if (progressBox) {
-            progressBox.innerHTML = `<p>✅ Generated ${data.stats.generated}/${data.stats.requested} images!</p>`;
+            const timingInfo = data.whisper_used ? ' (with Whisper STT perfect timing)' : '';
+            progressBox.innerHTML = `<p>✅ Generated ${data.stats.generated}/${data.stats.requested} images${timingInfo}!</p>`;
         }
 
         // Render timeline

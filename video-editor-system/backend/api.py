@@ -2184,7 +2184,9 @@ def auto_images_generate():
             'style_id': 'cinematic',
             'n_images': 10,
             'aspect_ratio': '16:9',
-            'force_regenerate': false
+            'force_regenerate': false,
+            'use_whisper_timing': false,  # Optional: Use Whisper STT for perfect timing
+            'voice_path': 'output/voice_123.mp3'  # Required if use_whisper_timing=true
         }
 
     Response:
@@ -2192,7 +2194,8 @@ def auto_images_generate():
             'success': True,
             'plan': {...},
             'timeline': {...},
-            'stats': {...}
+            'stats': {...},
+            'whisper_used': false
         }
     """
     from auto_images import DirectorClient, ImageGenerator, TimelineManager
@@ -2211,12 +2214,21 @@ def auto_images_generate():
         n_images = data.get('n_images', 10)
         aspect_ratio = data.get('aspect_ratio', '16:9')
         force_regenerate = data.get('force_regenerate', False)
+        use_whisper_timing = data.get('use_whisper_timing', False)
+        voice_path = data.get('voice_path')
 
         if not script:
             return jsonify({'error': 'Script is required'}), 400
 
         if n_images < 1 or n_images > 100:
             return jsonify({'error': 'n_images must be between 1 and 100'}), 400
+
+        # Validate Whisper timing requirements
+        if use_whisper_timing:
+            if not voice_path:
+                return jsonify({'error': 'voice_path is required when use_whisper_timing=true'}), 400
+            if not os.path.exists(voice_path):
+                return jsonify({'error': f'Voice file not found: {voice_path}'}), 404
 
         # Get style config
         style = AutoImagesStyleManager.get_style(style_id)
@@ -2236,6 +2248,50 @@ def auto_images_generate():
         print(f"🎨 AUTO IMAGES AI - GENERATION")
         print(f"{'='*60}")
 
+        # Step 0 (Optional): Whisper STT for perfect timing
+        scene_timing_hints = None
+        if use_whisper_timing:
+            try:
+                from whisper_stt import WhisperSTT
+
+                print(f"\n🎤 WHISPER STT - Perfect Timing")
+                whisper = WhisperSTT(model_size="base")
+                result = whisper.transcribe_with_timestamps(
+                    audio_path=voice_path,
+                    verbose=True
+                )
+
+                # Create N scenes from timestamps
+                scenes_with_timing = whisper.create_n_scenes(
+                    segments=result['segments'],
+                    n_images=n_images,
+                    total_duration=result['segments'][-1]['end'] if result['segments'] else 0,
+                    verbose=True
+                )
+
+                # Create timing hints for Director (what text is in each time window)
+                scene_timing_hints = [
+                    {
+                        'scene_id': scene['scene_id'],
+                        'start_time': scene['start'],
+                        'end_time': scene['end'],
+                        'duration': scene['duration'],
+                        'text_content': scene['text']
+                    }
+                    for scene in scenes_with_timing
+                ]
+
+                print(f"   ✅ Created {len(scene_timing_hints)} scenes with perfect timing")
+
+            except ImportError:
+                print(f"   ⚠️ Whisper not installed. Install with: pip install openai-whisper")
+                print(f"   ℹ️ Falling back to even distribution")
+                use_whisper_timing = False
+            except Exception as e:
+                print(f"   ❌ Whisper transcription failed: {e}")
+                print(f"   ℹ️ Falling back to even distribution")
+                use_whisper_timing = False
+
         # Step 1: Plan with Director Gemini
         director = DirectorClient(
             api_key=director_api_key,
@@ -2246,6 +2302,7 @@ def auto_images_generate():
             script_text=script,
             style=style,
             n_images=n_images,
+            scene_timing_hints=scene_timing_hints,  # Pass timing hints to Director
             force_regenerate=force_regenerate,
             verbose=True
         )
@@ -2281,6 +2338,7 @@ def auto_images_generate():
             'success': True,
             'plan': plan.model_dump(),
             'timeline': timeline.model_dump(),
+            'whisper_used': use_whisper_timing and scene_timing_hints is not None,
             'stats': {
                 'requested': n_images,
                 'generated': len(generated_items),

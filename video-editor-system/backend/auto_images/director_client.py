@@ -8,7 +8,7 @@ import json
 import hashlib
 import time
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 import google.generativeai as genai
 from pydantic import ValidationError
 
@@ -69,7 +69,7 @@ class DirectorClient:
         with open(cache_file, 'w') as f:
             json.dump(plan.model_dump(), f, indent=2)
 
-    def _build_director_prompt(self, script_text: str, style: Dict, n_images: int) -> str:
+    def _build_director_prompt(self, script_text: str, style: Dict, n_images: int, scene_timing_hints: Optional[List[Dict]] = None) -> str:
         """Build the Director prompt with all requirements"""
 
         style_name = style.get('name', 'Cinematic')
@@ -99,6 +99,22 @@ IMPORTANT - MULTILINGUAL SUPPORT:
 
 SCRIPT:
 {script_text}
+{"" if not scene_timing_hints else f'''
+
+═══════════════════════════════════════════════════════════
+WHISPER STT TIMING (PERFECT SYNC WITH VOICE)
+═══════════════════════════════════════════════════════════
+CRITICAL: Use these EXACT time windows from voice transcription.
+Each scene MUST match the text spoken during that time window.
+
+{chr(10).join([f"Scene {hint['scene_id']}: {hint['start_time']:.1f}s - {hint['end_time']:.1f}s ({hint['duration']:.1f}s)\\n   Voice says: \\"{hint['text_content'][:100]}...\\""for hint in scene_timing_hints])}
+
+IMPORTANT:
+- Each image_prompt must describe what's happening during that EXACT time window
+- Match visual concept to the text content spoken in that scene
+- The narration_focus field should contain the text from that time window
+- This ensures PERFECT synchronization between voice and images
+═══════════════════════════════════════════════════════════'''}
 
 ═══════════════════════════════════════════════════════════
 STYLE BIBLE: {style_name}
@@ -424,6 +440,7 @@ This chunk covers scenes {scenes_generated + 1} to {scenes_generated + chunk_siz
         script_text: str,
         style: Dict,
         n_images: int,
+        scene_timing_hints: Optional[List[Dict]] = None,
         force_regenerate: bool = False,
         verbose: bool = True
     ) -> AutoImagesPlan:
@@ -435,6 +452,8 @@ This chunk covers scenes {scenes_generated + 1} to {scenes_generated + chunk_siz
             script_text: Full script text
             style: Style configuration dict with 'id', 'name', 'description'
             n_images: Number of images to generate
+            scene_timing_hints: Optional list of dicts with timing from Whisper STT
+                                [{'scene_id': 1, 'start_time': 0.0, 'end_time': 5.2, 'text_content': '...'}]
             force_regenerate: Skip cache and regenerate
             verbose: Print progress
 
@@ -449,6 +468,8 @@ This chunk covers scenes {scenes_generated + 1} to {scenes_generated + chunk_siz
             print(f"\n🎬 GEMINI DIRECTOR (Separate Instance - gemini-2.5-flash)")
             print(f"   Style: {style.get('name', 'Cinematic')}")
             print(f"   Target: {n_images} images")
+            if scene_timing_hints:
+                print(f"   🎤 Using Whisper timestamps for perfect scene timing")
 
         # Use chunking strategy for large n_images (> 20)
         if n_images > 20:
@@ -470,7 +491,7 @@ This chunk covers scenes {scenes_generated + 1} to {scenes_generated + chunk_siz
         if verbose:
             print(f"   🔄 Generating new plan...")
 
-        prompt = self._build_director_prompt(script_text, style, n_images)
+        prompt = self._build_director_prompt(script_text, style, n_images, scene_timing_hints)
 
         # Try up to 3 times (initial + 2 retries)
         max_attempts = 3
