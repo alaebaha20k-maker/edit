@@ -86,6 +86,33 @@ class DirectorClient:
         visual_rules_text = '\n'.join([f"   - {rule}" for rule in visual_rules])
         negative_rules_text = '\n'.join([f"   - {rule}" for rule in negative_rules])
         color_palette_text = ', '.join(color_palette)
+        negative_rules_joined = ', '.join(negative_rules)  # For use in prompts
+
+        # Build timing hints section if provided
+        timing_section = ""
+        if scene_timing_hints:
+            timing_lines = []
+            for hint in scene_timing_hints:
+                text_preview = hint['text_content'][:100]
+                line = f"Scene {hint['scene_id']}: {hint['start_time']:.1f}s - {hint['end_time']:.1f}s ({hint['duration']:.1f}s)\n   Voice says: \"{text_preview}...\""
+                timing_lines.append(line)
+            timing_hints_text = '\n'.join(timing_lines)
+            timing_section = f'''
+
+═══════════════════════════════════════════════════════════
+WHISPER STT TIMING (PERFECT SYNC WITH VOICE)
+═══════════════════════════════════════════════════════════
+CRITICAL: Use these EXACT time windows from voice transcription.
+Each scene MUST match the text spoken during that time window.
+
+{timing_hints_text}
+
+IMPORTANT:
+- Each image_prompt must describe what's happening during that EXACT time window
+- Match visual concept to the text content spoken in that scene
+- The narration_focus field should contain the text from that time window
+- This ensures PERFECT synchronization between voice and images
+═══════════════════════════════════════════════════════════'''
 
         prompt = f"""You are an AI Director planning visual scenes for a video. You MUST create HIGHLY DETAILED, PROFESSIONAL QUALITY prompts that EXACTLY match the chosen style.
 
@@ -98,23 +125,7 @@ IMPORTANT - MULTILINGUAL SUPPORT:
 - Translate/adapt the visual concepts while keeping cultural and contextual accuracy
 
 SCRIPT:
-{script_text}
-{"" if not scene_timing_hints else f'''
-
-═══════════════════════════════════════════════════════════
-WHISPER STT TIMING (PERFECT SYNC WITH VOICE)
-═══════════════════════════════════════════════════════════
-CRITICAL: Use these EXACT time windows from voice transcription.
-Each scene MUST match the text spoken during that time window.
-
-{chr(10).join([f"Scene {hint['scene_id']}: {hint['start_time']:.1f}s - {hint['end_time']:.1f}s ({hint['duration']:.1f}s)\\n   Voice says: \\"{hint['text_content'][:100]}...\\""for hint in scene_timing_hints])}
-
-IMPORTANT:
-- Each image_prompt must describe what's happening during that EXACT time window
-- Match visual concept to the text content spoken in that scene
-- The narration_focus field should contain the text from that time window
-- This ensures PERFECT synchronization between voice and images
-═══════════════════════════════════════════════════════════'''}
+{script_text}{timing_section}
 
 ═══════════════════════════════════════════════════════════
 STYLE BIBLE: {style_name}
@@ -267,7 +278,7 @@ OUTPUT FORMAT (STRICT JSON - NO MARKDOWN):
       "narration_focus": "What the script talks about here",
       "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
       "image_prompt": "EXTREMELY DETAILED 300+ CHARACTER PROMPT including: specific subject details (age, features, clothing, expression, body language), precise setting description (location type, time of day, environmental elements, atmosphere), exact action/moment captured (pose, movement, interaction, emotion), specific camera technique (shot type, angle, lens, depth of field), detailed lighting matching {lighting_style} (direction, quality, color temperature, mood), composition matching {composition_style} (framing, rule of thirds, leading lines), {style_name} style elements, color palette using {color_palette_text} with color psychology, professional photography terms (high resolution, 8k, sharp focus, cinematic), material and texture details (fabric, surfaces, reflections), and visual storytelling principles that match the script's content type and emotional tone",
-      "negative_prompt": "low quality, blurry, distorted, pixelated, jpeg artifacts, overexposed, underexposed, bad lighting, poor composition, text, watermarks, signatures, {', '.join(negative_rules)}"
+      "negative_prompt": "low quality, blurry, distorted, pixelated, jpeg artifacts, overexposed, underexposed, bad lighting, poor composition, text, watermarks, signatures, {negative_rules_joined}"
     }},
     ... (exactly {n_images} scenes total)
   ]
