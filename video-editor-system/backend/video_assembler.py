@@ -17,6 +17,7 @@ import hashlib
 import time
 from pathlib import Path
 from typing import List, Dict
+from settings_manager import SettingsManager
 
 
 class VideoAssembler:
@@ -151,6 +152,55 @@ class VideoAssembler:
 
         return str(output_path)
 
+    def _get_timed_zoom_filter(self, duration_seconds: float, video_settings: Dict, width: int = 1920, height: int = 1080, output_fps: int = 30) -> str:
+        """
+        Generate zoompan filter for timed zoom effect.
+
+        Args:
+            duration_seconds: Total duration of the video
+            video_settings: Video settings dict with zoom configuration
+            width: Output width
+            height: Output height
+            output_fps: Output framerate (default 30fps for smooth zoom)
+
+        Returns:
+            FFmpeg zoompan filter string
+        """
+        if not video_settings.get('enable_timed_zoom', False):
+            # Return empty filter if timed zoom is disabled
+            return None
+
+        zoom_duration = video_settings.get('zoom_duration', 1.0)
+        zoom_amount = video_settings.get('zoom_amount', 1.05)
+        zoom_direction = video_settings.get('zoom_direction', 'in')
+
+        # Calculate frames for zoom duration at output fps
+        zoom_frames = int(zoom_duration * output_fps)
+
+        # Calculate total output frames
+        total_frames = int(duration_seconds * output_fps)
+
+        # Zoompan 'd' parameter: frames to output per input frame
+        # Since we're using -framerate 2 input, we need d=15 to get 30fps output (2 * 15 = 30)
+        d_param = int(output_fps / 2)
+
+        if zoom_direction == 'in':
+            # Zoom in: Start at 1.0, zoom to zoom_amount over first N frames, then stay at zoom_amount
+            # Formula: if(lte(on,N), 1 + (zoom_amount-1)*(on/N), zoom_amount)
+            zoom_factor = zoom_amount - 1.0
+            zoom_expr = f"if(lte(on,{zoom_frames}),1+{zoom_factor:.6f}*(on/{zoom_frames}),{zoom_amount:.6f})"
+        else:  # zoom_direction == 'out'
+            # Zoom out: Start at zoom_amount, zoom to 1.0 over first N frames, then stay at 1.0
+            # Formula: if(lte(on,N), zoom_amount - (zoom_amount-1)*(on/N), 1.0)
+            zoom_factor = zoom_amount - 1.0
+            zoom_expr = f"if(lte(on,{zoom_frames}),{zoom_amount:.6f}-{zoom_factor:.6f}*(on/{zoom_frames}),1.0)"
+
+        # Build zoompan filter
+        # z: zoom expression
+        # d: duration (frames per input frame)
+        # s: output size
+        return f"zoompan=z='{zoom_expr}':d={d_param}:s={width}x{height}"
+
     def assemble_final_video(
         self,
         voice_path: str,
@@ -173,6 +223,10 @@ class VideoAssembler:
         """
         total_start = time.time()
 
+        # Load video settings for timed zoom
+        video_settings = SettingsManager.get_video_settings()
+        use_timed_zoom = video_settings.get('enable_timed_zoom', False)
+
         # Parse resolution
         width, height = resolution.split('x')
 
@@ -180,6 +234,11 @@ class VideoAssembler:
             print(f"\n{'='*60}")
             print(f"⚡ ULTRA-FAST VIDEO EXPORTER")
             print(f"{'='*60}")
+            if use_timed_zoom:
+                zoom_dir = video_settings.get('zoom_direction', 'in')
+                zoom_dur = video_settings.get('zoom_duration', 1.0)
+                zoom_amt = video_settings.get('zoom_amount', 1.05)
+                print(f"🎬 Timed Zoom: {zoom_dir.upper()} | {zoom_dur}s | {zoom_amt}x")
 
         # Get audio duration (NO CONVERSION!)
         voice_duration = self._get_audio_duration_ffprobe(voice_path)
@@ -243,8 +302,15 @@ class VideoAssembler:
             # SINGLE IMAGE: Use -framerate 2 BEFORE -i (CRITICAL!)
             if ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']:
                 if verbose:
-                    ken_burns_status = "WITH Ken Burns (subtle zoom)" if use_ken_burns else "NO zoom"
-                    print(f"\n⚡ ULTRA-FAST MODE: Single image ({ken_burns_status})")
+                    if use_timed_zoom:
+                        zoom_dir = video_settings.get('zoom_direction', 'in').upper()
+                        zoom_dur = video_settings.get('zoom_duration', 1.0)
+                        zoom_status = f"WITH Timed Zoom ({zoom_dir} for {zoom_dur}s, then hold)"
+                    elif use_ken_burns:
+                        zoom_status = "WITH Ken Burns (subtle zoom)"
+                    else:
+                        zoom_status = "NO zoom"
+                    print(f"\n⚡ ULTRA-FAST MODE: Single image ({zoom_status})")
                     print(f"   Strategy: -framerate 2 -loop 1 -i (NO scaling!)")
 
                 # Get cached 1080p image
@@ -265,9 +331,13 @@ class VideoAssembler:
                 # CRITICAL: -framerate 2 BEFORE -i + OPTIMIZED x264-params
                 if prepared_music_path:
                     # WITH background music: Mix audio at 10% volume
-                    # Build filter_complex with optional Ken Burns
-                    if use_ken_burns:
-                        # Calculate Ken Burns zoom parameters
+                    # Build filter_complex with optional zoom effect
+                    if use_timed_zoom:
+                        # Use timed zoom (zoom for specified duration, then hold)
+                        zoom_filter = self._get_timed_zoom_filter(voice_duration, video_settings, int(width), int(height), output_fps=30)
+                        video_filter = '{}[v];[1:a]volume=1.0[voice];[2:a]volume=0.1[music];[voice][music]amix=inputs=2:duration=shortest[aout]'.format(zoom_filter)
+                    elif use_ken_burns:
+                        # Traditional Ken Burns (zoom throughout entire duration)
                         total_frames = int(voice_duration * 2)  # fps=2
                         zoom_step = 0.05 / total_frames  # 5% zoom over entire duration
                         video_filter = 'zoompan=z=\'min(zoom+{:.6f},1.05)\':d=1:s={}x{}[v];[1:a]volume=1.0[voice];[2:a]volume=0.1[music];[voice][music]amix=inputs=2:duration=shortest[aout]'.format(zoom_step, width, height)
@@ -286,7 +356,7 @@ class VideoAssembler:
                         '-i', voice_path,
                         '-i', prepared_music_path,
                         '-filter_complex', video_filter,
-                        '-map', '[v]' if use_ken_burns else '0:v',
+                        '-map', '[v]' if (use_ken_burns or use_timed_zoom) else '0:v',
                         '-map', '[aout]',
                         '-c:v', 'libx264',
                         '-preset', 'ultrafast',
@@ -328,13 +398,17 @@ class VideoAssembler:
                         output_path
                     ]
 
-                    # Add Ken Burns zoom effect if enabled (subtle: 1.0 to 1.05)
-                    if use_ken_burns:
-                        # Calculate total frames for zoompan duration
+                    # Add zoom effect if enabled
+                    if use_timed_zoom:
+                        # Use timed zoom (zoom for specified duration, then hold)
+                        zoom_filter = self._get_timed_zoom_filter(voice_duration, video_settings, int(width), int(height), output_fps=30)
+                        vf_index = cmd.index('-c:v')
+                        cmd.insert(vf_index, zoom_filter)
+                        cmd.insert(vf_index, '-vf')
+                    elif use_ken_burns:
+                        # Traditional Ken Burns (zoom throughout entire duration)
                         total_frames = int(voice_duration * 2)  # fps=2
                         zoom_step = 0.05 / total_frames  # 5% zoom over entire duration
-
-                        # Insert zoompan filter before -c:v
                         vf_index = cmd.index('-c:v')
                         cmd.insert(vf_index, 'zoompan=z=\'min(zoom+{:.6f},1.05)\':d=1:s={}x{}'.format(zoom_step, width, height))
                         cmd.insert(vf_index, '-vf')
@@ -369,8 +443,15 @@ class VideoAssembler:
 
         # MULTIPLE IMAGES: Use concat + -vf fps=2
         if verbose:
-            ken_burns_status = "WITH Ken Burns (subtle zoom per image)" if use_ken_burns else "NO zoom"
-            print(f"\n⚡ SLIDESHOW MODE: Multiple images ({ken_burns_status})")
+            if use_timed_zoom:
+                zoom_dir = video_settings.get('zoom_direction', 'in').upper()
+                zoom_dur = video_settings.get('zoom_duration', 1.0)
+                zoom_status = f"WITH Timed Zoom ({zoom_dir} for {zoom_dur}s per image, then hold)"
+            elif use_ken_burns:
+                zoom_status = "WITH Ken Burns (subtle zoom per image)"
+            else:
+                zoom_status = "NO zoom"
+            print(f"\n⚡ SLIDESHOW MODE: Multiple images ({zoom_status})")
             print(f"   Strategy: concat + -vf fps=2")
 
         # Filter to only images
@@ -418,9 +499,14 @@ class VideoAssembler:
             )
 
         # Final render with concat + -vf fps=2 + OPTIMIZED x264-params
-        # Build video filter chain (fps=2 + optional Ken Burns)
-        if use_ken_burns:
-            # Calculate zoom per image (each image gets same zoom effect)
+        # Build video filter chain (fps=2 + optional zoom)
+        if use_timed_zoom:
+            # Use timed zoom (zoom for specified duration, then hold) - per image
+            zoom_filter = self._get_timed_zoom_filter(duration_per_image, video_settings, int(width), int(height), output_fps=30)
+            # Note: For slideshow, each image gets the timed zoom effect independently
+            video_filters = f'fps=30,{zoom_filter}'
+        elif use_ken_burns:
+            # Traditional Ken Burns (zoom throughout entire duration of each image)
             frames_per_image = int(duration_per_image * 2)  # fps=2
             zoom_step = 0.05 / frames_per_image  # 5% zoom per image
             video_filters = 'fps=2,zoompan=z=\'min(zoom+{:.6f},1.05)\':d=1:s={}x{}'.format(zoom_step, width, height)
