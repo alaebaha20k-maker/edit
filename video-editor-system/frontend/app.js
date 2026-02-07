@@ -1650,8 +1650,11 @@ function renderMediaLibrary() {
             </label>`
             : '';
 
-        const deleteButton = !selectionState.isSelectionMode
-            ? `<button onclick="deleteFromMediaLibrary(${media.id})" class="btn-secondary" style="margin-top: 8px; font-size: 11px; padding: 4px 8px;">🗑️ Delete</button>`
+        const actionButtons = !selectionState.isSelectionMode
+            ? `<div style="display: flex; gap: 5px; margin-top: 8px;">
+                <button onclick="downloadMedia(${media.id})" class="btn-secondary" style="flex: 1; font-size: 11px; padding: 4px 8px;">💾</button>
+                <button onclick="deleteFromMediaLibrary(${media.id})" class="btn-secondary" style="flex: 1; font-size: 11px; padding: 4px 8px;">🗑️</button>
+            </div>`
             : '';
 
         card.innerHTML = `
@@ -1661,7 +1664,7 @@ function renderMediaLibrary() {
                 <div style="font-size: 11px; color: #888; text-transform: uppercase;">${media.source} ${media.type}</div>
                 <div style="font-size: 13px; margin-top: 3px;">Rank: #${index + 1}</div>
                 ${muteToggle}
-                ${deleteButton}
+                ${actionButtons}
             </div>
         `;
 
@@ -1736,6 +1739,31 @@ function toggleMediaMute(id) {
         media.muted = !media.muted;
         showNotification(media.muted ? '🔇 Video muted' : '🔊 Video unmuted', 'info');
     }
+}
+
+function downloadMedia(id) {
+    const media = appState.mediaLibrary.find(m => m.id === id);
+    if (!media) {
+        showNotification('⚠️ Media not found', 'warning');
+        return;
+    }
+
+    // Generate filename based on source
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const extension = media.type === 'video' ? 'mp4' : 'jpg';
+    const sourcePrefix = media.source === 'ai' ? 'generated' : media.source;
+    const filename = `${sourcePrefix}_${media.type}_${timestamp}.${extension}`;
+
+    // Create download link
+    const link = document.createElement('a');
+    link.href = media.url;
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    showNotification(`💾 Downloading ${filename}...`, 'success');
 }
 
 function deleteFromMediaLibrary(id) {
