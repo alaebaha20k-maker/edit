@@ -20,12 +20,12 @@ class SceneCard(BaseModel):
     @classmethod
     def validate_prompt_quality(cls, v):
         """Ensure prompt has required components"""
-        # Prompt should be very detailed: 80-150 words
-        word_count = len(v.split())
-        if word_count < 50:
-            raise ValueError(f'Prompt too short: {word_count} words (minimum 50 words for quality)')
-        if word_count > 250:
-            raise ValueError(f'Prompt too long: {word_count} words (maximum 250 words)')
+        # Prompt must be extremely detailed: 300+ characters minimum
+        char_count = len(v)
+        if char_count < 300:
+            raise ValueError(f'Prompt too short: {char_count} characters (minimum 300 characters for quality)')
+        if char_count > 2000:
+            raise ValueError(f'Prompt too long: {char_count} characters (maximum 2000 characters)')
         return v
 
 

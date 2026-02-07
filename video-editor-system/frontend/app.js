@@ -2466,6 +2466,12 @@ async function assembleVideo() {
             payload.background_music_path = window.videoData.backgroundMusic.path;
         }
 
+        // Add Ken Burns effect if enabled
+        const useKenBurns = document.getElementById('useKenBurns');
+        if (useKenBurns && useKenBurns.checked) {
+            payload.use_ken_burns = true;
+        }
+
         // Call assembly API with multiple voices
         const response = await fetch('/api/assemble-video', {
             method: 'POST',

@@ -2049,6 +2049,7 @@ def assemble_video_route():
         title = data.get('title', 'video')
         resolution = data.get('resolution', '1920x1080')
         background_music_path = data.get('background_music_path')  # Optional
+        use_ken_burns = data.get('use_ken_burns', False)  # Optional Ken Burns zoom effect
 
         if not voice_paths or len(voice_paths) == 0:
             return jsonify({'error': 'At least one voice is required (voice_paths array)'}), 400
@@ -2132,6 +2133,7 @@ def assemble_video_route():
             output_path=output_path,
             resolution=resolution,
             background_music_path=background_music_path,
+            use_ken_burns=use_ken_burns,
             verbose=True
         )
 

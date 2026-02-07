@@ -158,6 +158,7 @@ class VideoAssembler:
         output_path: str,
         resolution: str = '1920x1080',
         background_music_path: str = None,
+        use_ken_burns: bool = False,
         verbose: bool = True
     ) -> Dict:
         """
@@ -168,6 +169,7 @@ class VideoAssembler:
         - SINGLE IMAGE: Use -framerate 2 BEFORE -i
         - MULTIPLE IMAGES: Use concat + -vf fps=2
         - VIDEO: ALWAYS try -c:v copy first
+        - KEN BURNS: Optional subtle zoom effect on images (1.0 to 1.05)
         """
         total_start = time.time()
 
@@ -241,7 +243,8 @@ class VideoAssembler:
             # SINGLE IMAGE: Use -framerate 2 BEFORE -i (CRITICAL!)
             if ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']:
                 if verbose:
-                    print(f"\n⚡ ULTRA-FAST MODE: Single image")
+                    ken_burns_status = "WITH Ken Burns (subtle zoom)" if use_ken_burns else "NO zoom"
+                    print(f"\n⚡ ULTRA-FAST MODE: Single image ({ken_burns_status})")
                     print(f"   Strategy: -framerate 2 -loop 1 -i (NO scaling!)")
 
                 # Get cached 1080p image
@@ -262,6 +265,15 @@ class VideoAssembler:
                 # CRITICAL: -framerate 2 BEFORE -i + OPTIMIZED x264-params
                 if prepared_music_path:
                     # WITH background music: Mix audio at 10% volume
+                    # Build filter_complex with optional Ken Burns
+                    if use_ken_burns:
+                        # Calculate Ken Burns zoom parameters
+                        total_frames = int(voice_duration * 2)  # fps=2
+                        zoom_step = 0.05 / total_frames  # 5% zoom over entire duration
+                        video_filter = 'zoompan=z=\'min(zoom+{:.6f},1.05)\':d=1:s={}x{}[v];[1:a]volume=1.0[voice];[2:a]volume=0.1[music];[voice][music]amix=inputs=2:duration=shortest[aout]'.format(zoom_step, width, height)
+                    else:
+                        video_filter = '[1:a]volume=1.0[voice];[2:a]volume=0.1[music];[voice][music]amix=inputs=2:duration=shortest[aout]'
+
                     cmd = [
                         'ffmpeg', '-y',
                         '-thread_queue_size', '512',
@@ -273,8 +285,8 @@ class VideoAssembler:
                         '-thread_queue_size', '512',
                         '-i', voice_path,
                         '-i', prepared_music_path,
-                        '-filter_complex', '[1:a]volume=1.0[voice];[2:a]volume=0.1[music];[voice][music]amix=inputs=2:duration=shortest[aout]',
-                        '-map', '0:v',
+                        '-filter_complex', video_filter,
+                        '-map', '[v]' if use_ken_burns else '0:v',
                         '-map', '[aout]',
                         '-c:v', 'libx264',
                         '-preset', 'ultrafast',
@@ -316,6 +328,17 @@ class VideoAssembler:
                         output_path
                     ]
 
+                    # Add Ken Burns zoom effect if enabled (subtle: 1.0 to 1.05)
+                    if use_ken_burns:
+                        # Calculate total frames for zoompan duration
+                        total_frames = int(voice_duration * 2)  # fps=2
+                        zoom_step = 0.05 / total_frames  # 5% zoom over entire duration
+
+                        # Insert zoompan filter before -c:v
+                        vf_index = cmd.index('-c:v')
+                        cmd.insert(vf_index, 'zoompan=z=\'min(zoom+{:.6f},1.05)\':d=1:s={}x{}'.format(zoom_step, width, height))
+                        cmd.insert(vf_index, '-vf')
+
                 if verbose:
                     print(f"\n📝 FFmpeg command:")
                     print(f"   {' '.join(cmd)}")
@@ -346,7 +369,8 @@ class VideoAssembler:
 
         # MULTIPLE IMAGES: Use concat + -vf fps=2
         if verbose:
-            print(f"\n⚡ SLIDESHOW MODE: Multiple images")
+            ken_burns_status = "WITH Ken Burns (subtle zoom per image)" if use_ken_burns else "NO zoom"
+            print(f"\n⚡ SLIDESHOW MODE: Multiple images ({ken_burns_status})")
             print(f"   Strategy: concat + -vf fps=2")
 
         # Filter to only images
@@ -394,6 +418,15 @@ class VideoAssembler:
             )
 
         # Final render with concat + -vf fps=2 + OPTIMIZED x264-params
+        # Build video filter chain (fps=2 + optional Ken Burns)
+        if use_ken_burns:
+            # Calculate zoom per image (each image gets same zoom effect)
+            frames_per_image = int(duration_per_image * 2)  # fps=2
+            zoom_step = 0.05 / frames_per_image  # 5% zoom per image
+            video_filters = 'fps=2,zoompan=z=\'min(zoom+{:.6f},1.05)\':d=1:s={}x{}'.format(zoom_step, width, height)
+        else:
+            video_filters = 'fps=2'
+
         if prepared_music_path:
             # WITH background music: Mix audio at 10% volume
             cmd = [
@@ -408,7 +441,7 @@ class VideoAssembler:
                 '-filter_complex', '[1:a]volume=1.0[voice];[2:a]volume=0.1[music];[voice][music]amix=inputs=2:duration=shortest[aout]',
                 '-map', '0:v',
                 '-map', '[aout]',
-                '-vf', 'fps=2',
+                '-vf', video_filters,
                 '-c:v', 'libx264',
                 '-preset', 'ultrafast',
                 '-crf', '35',
@@ -433,7 +466,7 @@ class VideoAssembler:
                 '-i', str(concat_file),
                 '-thread_queue_size', '512',
                 '-i', voice_path,
-                '-vf', 'fps=2',
+                '-vf', video_filters,
                 '-c:v', 'libx264',
                 '-preset', 'ultrafast',
                 '-crf', '35',

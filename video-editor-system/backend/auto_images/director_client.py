@@ -67,7 +67,7 @@ class DirectorClient:
         """Save plan to cache"""
         cache_file = self.CACHE_DIR / f"{cache_key}.json"
         with open(cache_file, 'w') as f:
-            json.dump(plan.dict(), f, indent=2)
+            json.dump(plan.model_dump(), f, indent=2)
 
     def _build_director_prompt(self, script_text: str, style: Dict, n_images: int) -> str:
         """Build the Director prompt with all requirements"""
@@ -115,7 +115,78 @@ CRITICAL REQUIREMENTS:
 2. Scenes MUST be CHRONOLOGICAL (beginning → end of script)
 3. Each scene covers a DISTINCT part of the story
 4. NO REPETITION - each scene is completely unique
-5. Each prompt MUST be 80-150 WORDS with extreme detail
+5. Each prompt MUST be 300+ CHARACTERS (not words!) with EXTREME DETAIL
+6. Focus on VISUAL STORYTELLING - create images that tell the story without text
+
+═══════════════════════════════════════════════════════════
+CREATIVE SCENE PRINCIPLES - HOW TO CREATE GREAT VISUALS
+═══════════════════════════════════════════════════════════
+
+🎨 VISUAL STORYTELLING MASTERY:
+
+1. SHOW, DON'T TELL
+   - Instead of "person looking sad" → "woman in her 30s with red-rimmed eyes and tear-stained cheeks, shoulders slumped, staring blankly at an empty coffee cup on a rain-streaked window sill"
+   - Instead of "office workspace" → "cluttered mahogany desk with scattered papers, overflowing inbox, cold half-finished coffee, and a framed photo face-down, illuminated by harsh fluorescent overhead lights"
+
+2. EMOTIONAL DEPTH THROUGH DETAILS
+   - Small details reveal emotion: trembling hands, clenched jaw, forced smile, distant gaze
+   - Environment reflects mood: warm golden hour for hope, harsh shadows for tension, soft diffused light for peace
+   - Body language tells stories: confident stance vs defensive posture, open arms vs crossed arms
+
+3. CINEMATIC COMPOSITION TECHNIQUES
+   - Rule of thirds: Position key elements at intersection points for dynamic composition
+   - Leading lines: Use roads, railings, shadows to guide viewer's eye to subject
+   - Depth layers: Foreground, mid-ground, background create immersive 3D feeling
+   - Frame within frame: Doorways, windows, arches focus attention on subject
+
+4. LIGHTING AS EMOTION
+   - Golden hour (sunrise/sunset): Warmth, hope, nostalgia, romance
+   - Blue hour (twilight): Mystery, contemplation, transition, melancholy
+   - Harsh noon sun: Clarity, exposure, harsh reality, intensity
+   - Soft overcast: Calm, neutral, introspective, gentle
+   - Dramatic side lighting: Tension, conflict, duality, revelation
+   - Backlight/rim light: Heroic, ethereal, mysterious, dramatic
+
+5. COLOR PSYCHOLOGY FOR MOOD
+   - Warm tones (red, orange, yellow): Energy, passion, urgency, excitement
+   - Cool tones (blue, cyan, teal): Calm, technology, sadness, distance
+   - Desaturated/muted: Serious, documentary, realistic, somber
+   - High saturation: Vibrant, energetic, artificial, stylized
+   - Complementary colors: Visual tension and energy (blue/orange, purple/yellow)
+
+6. MATCH SCENES TO SCRIPT CONTENT TYPE
+   - Educational/Tutorial content → Clean, bright, organized visuals with clear focus
+   - Dramatic/Story content → Cinematic lighting, emotional expressions, narrative moments
+   - Tech/Business content → Modern, sleek, professional environments with cool tones
+   - Nature/Travel content → Epic landscapes, golden hour lighting, sense of scale
+   - Personal/Vlog content → Intimate framing, warm tones, relatable settings
+
+7. CAMERA ANGLE PSYCHOLOGY
+   - Eye level: Neutral, relatable, documentary style
+   - Low angle (looking up): Power, dominance, heroic, impressive
+   - High angle (looking down): Vulnerability, weakness, overview, context
+   - Dutch angle (tilted): Unease, tension, disorientation, chaos
+   - Over-shoulder: Conversation, involvement, perspective
+   - Bird's eye view: Scale, pattern, planning, god's perspective
+
+8. DEPTH OF FIELD STORYTELLING
+   - Shallow (blurred background): Focus on subject, intimacy, isolation from surroundings
+   - Deep (everything sharp): Context importance, environment as character, documentary feel
+   - Rack focus: Shift attention, reveal, dramatic moment
+
+9. VISUAL METAPHORS AND SYMBOLISM
+   - Weather matches emotion: Storm = turmoil, sunshine = happiness, fog = confusion
+   - Objects tell stories: Wilted flower = lost hope, rising smoke = fleeting time
+   - Positioning shows relationships: Close = connection, separated = distance
+   - Height in frame = status/power dynamics
+
+10. PROFESSIONAL POLISH
+    - Specific materials and textures: "brushed aluminum MacBook", "weathered leather chair", "glossy marble countertop"
+    - Exact time of day: "early morning mist at 6am", "golden hour at 7:30pm", "harsh midday sun"
+    - Precise clothing details: "navy blue suit with white pocket square", "faded denim jacket with rolled sleeves"
+    - Technical camera terms: "85mm lens with f/1.4 aperture", "35mm wide angle", "macro close-up"
+
+═══════════════════════════════════════════════════════════
 
 PROMPT QUALITY RULES (MANDATORY - NO EXCEPTIONS):
 
@@ -132,8 +203,8 @@ Each "image_prompt" MUST include ALL of these elements:
 9. QUALITY: Add "professional photography, high resolution, sharp focus, detailed"
 10. TEXTURE & DETAILS: Materials, surfaces, depth of field
 
-EXAMPLE OF GOOD PROMPT (This is the level of detail required):
-"A determined young trader in his late 20s with short dark hair and focused expression, wearing a crisp white shirt, sitting at a modern glass desk in a sleek minimalist office with floor-to-ceiling windows overlooking a city skyline at golden hour, leaning forward studying multiple glowing monitors displaying colorful trading charts and data, medium close-up shot from a slight side angle capturing both his concentrated face and the illuminated screens, warm golden sunlight streaming through windows creating dramatic rim lighting on his profile while cool blue monitor glow illuminates his face, {style_name} style, shallow depth of field with sharp focus on subject and soft bokeh background, rich warm golds and cool blues color palette, professional photography, high resolution, 8k quality, sharp details"
+EXAMPLE OF EXCELLENT PROMPT (300+ characters, extreme detail - THIS IS THE STANDARD):
+"A determined young trader in his late 20s with short dark hair, intense brown eyes, and deeply focused expression showing slight tension in his jaw, wearing a perfectly pressed crisp white shirt with rolled-up sleeves revealing a silver watch, sitting at a modern minimalist glass desk with brushed steel legs in a sleek corner office featuring floor-to-ceiling windows overlooking a golden-hour city skyline with skyscrapers bathed in warm orange light, leaning forward with both hands gripping the edge of the desk while studying three large glowing 27-inch monitors displaying colorful candlestick trading charts with red and green bars and flowing data streams, medium close-up shot from a 45-degree side angle capturing both his concentrated face profile and the illuminated screens reflection in his eyes, warm golden sunlight at 7pm streaming through the tall windows creating dramatic rim lighting that outlines his profile and shoulders while cool blue-teal monitor glow illuminates his face from the front creating a striking color contrast, {style_name} style, shot with 50mm lens at f/2.8 creating shallow depth of field with razor-sharp focus on subject's face and hands while the background city lights blur into soft bokeh orbs, rich color palette of warm golds and oranges mixing with cool blues and teals, professional photography, high resolution 8k quality, cinematic lighting, sharp details on fabric texture and screen reflections, photorealistic, masterpiece quality"
 
 EXAMPLE OF BAD PROMPT (DO NOT DO THIS):
 "Trader at desk looking at computer, {style_name} style"
@@ -173,7 +244,7 @@ OUTPUT FORMAT (STRICT JSON - NO MARKDOWN):
       "scene_summary": "What happens in this part of the story",
       "narration_focus": "What the script talks about here",
       "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
-      "image_prompt": "DETAILED 80-150 WORD PROMPT including subject, setting, action, camera angle, lighting matching {lighting_style}, composition matching {composition_style}, {style_name} style, color palette using {color_palette_text}, professional quality, high resolution, sharp focus, detailed textures",
+      "image_prompt": "EXTREMELY DETAILED 300+ CHARACTER PROMPT including: specific subject details (age, features, clothing, expression, body language), precise setting description (location type, time of day, environmental elements, atmosphere), exact action/moment captured (pose, movement, interaction, emotion), specific camera technique (shot type, angle, lens, depth of field), detailed lighting matching {lighting_style} (direction, quality, color temperature, mood), composition matching {composition_style} (framing, rule of thirds, leading lines), {style_name} style elements, color palette using {color_palette_text} with color psychology, professional photography terms (high resolution, 8k, sharp focus, cinematic), material and texture details (fabric, surfaces, reflections), and visual storytelling principles that match the script's content type and emotional tone",
       "negative_prompt": "low quality, blurry, distorted, pixelated, jpeg artifacts, overexposed, underexposed, bad lighting, poor composition, text, watermarks, signatures, {', '.join(negative_rules)}"
     }},
     ... (exactly {n_images} scenes total)
@@ -184,13 +255,16 @@ MANDATORY SELF-CHECK BEFORE OUTPUTTING:
 ✓ Number of scenes = {n_images} EXACTLY?
 ✓ Scenes are chronological from start to end of script?
 ✓ Each scene is completely unique (no repetition)?
-✓ Each image_prompt is 80-150 WORDS with extreme detail?
-✓ Each image_prompt includes: subject, setting, action, camera, lighting, composition, style tokens, colors, quality?
+✓ Each image_prompt is 300+ CHARACTERS with EXTREME detail?
+✓ Each image_prompt applies CREATIVE SCENE PRINCIPLES (show don't tell, emotional depth, cinematic composition)?
+✓ Each image_prompt includes: specific subject details, precise setting, exact action/moment, camera technique, detailed lighting, composition, style tokens, color psychology, professional photography terms?
+✓ Prompts match the script's CONTENT TYPE (educational/dramatic/tech/nature/personal)?
 ✓ All visual rules from style bible applied consistently?
 ✓ All negative rules from style bible included in negative_prompts?
 ✓ Lighting matches: {lighting_style}?
 ✓ Composition matches: {composition_style}?
 ✓ Color palette uses: {color_palette_text}?
+✓ Visual storytelling creates EMOTION and ATMOSPHERE, not just descriptions?
 
 OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.
 """
@@ -326,7 +400,7 @@ This chunk covers scenes {scenes_generated + 1} to {scenes_generated + chunk_siz
                 "lighting": style.get('lighting', 'Dramatic lighting'),
                 "color_palette": style.get('color_palette', ['Rich colors'])
             },
-            "scenes": [scene.dict() for scene in all_scenes]
+            "scenes": [scene.model_dump() for scene in all_scenes]
         }
 
         final_plan = AutoImagesPlan(**final_plan_data)
@@ -459,7 +533,7 @@ Return only the corrected JSON."""
 CRITICAL REQUIREMENTS:
 1. scenes array must have EXACTLY {n_images} items
 2. scene_id must be 1, 2, 3, ... {n_images} (sequential)
-3. Each image_prompt must be detailed (50+ characters)
+3. Each image_prompt must be EXTREMELY detailed (300+ characters MINIMUM)
 4. Each field must match the schema
 
 OUTPUT VALID JSON ONLY. NO MARKDOWN.
