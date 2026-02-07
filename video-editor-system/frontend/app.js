@@ -1692,7 +1692,7 @@ async function generateAutoImages() {
         progressBox.innerHTML = `<p>🎬 Director AI planning ${n_images} scenes ${timingMode}...</p>`;
     }
 
-    try:
+    try {
         showNotification(`🤖 Starting Auto Images AI (Director + Replicate)...`, 'info');
 
         // Prepare request payload
