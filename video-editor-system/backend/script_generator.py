@@ -11,6 +11,7 @@ import google.generativeai as genai
 from typing import Dict, Optional, List, Tuple
 from config import Config
 from niche_manager import NicheManager
+from utils import detect_language_from_text, get_language_name
 
 
 class ScriptGenerator:
@@ -584,6 +585,14 @@ COMPLETE NOW:"""
         if not niche:
             raise ValueError(f"Niche not found: {niche_id}")
 
+        # Detect language from title (high priority over niche language)
+        detected_lang_code = detect_language_from_text(title)
+        detected_lang_name = get_language_name(detected_lang_code)
+
+        # Override niche language with detected language from title
+        original_niche_lang = niche.get('language', 'English')
+        niche['language'] = detected_lang_name  # Override with detected language
+
         # Load script formula from settings
         script_formula = SettingsManager.load_formula('script')
 
@@ -594,7 +603,10 @@ COMPLETE NOW:"""
             print(f"Title: {title}")
             print(f"Target: {length:,} characters (±3% tolerance)")
             print(f"Niche: {niche['name']}")
-            print(f"Language: {niche['language']}")
+            if detected_lang_name != original_niche_lang:
+                print(f"Language: {detected_lang_name} (detected from title, overriding niche: {original_niche_lang})")
+            else:
+                print(f"Language: {detected_lang_name}")
             print(f"Max Retries: {Config.MAX_SCRIPT_RETRIES}")
             print(f"{'='*70}\n")
 
@@ -1032,9 +1044,21 @@ Output ONLY the spoken narration. No preamble. No meta-commentary. Start immedia
         if not niche:
             raise ValueError(f"Niche not found: {niche_id}")
 
+        # Detect language from title (high priority over niche language)
+        detected_lang_code = detect_language_from_text(title)
+        detected_lang_name = get_language_name(detected_lang_code)
+
+        # Override niche language with detected language from title
+        original_niche_lang = niche.get('language', 'English')
+        niche['language'] = detected_lang_name  # Override with detected language
+
         if verbose:
             print(f"\n🎬 Generating script: {title}")
             print(f"📏 Target: {length:,} characters")
+            if detected_lang_name != original_niche_lang:
+                print(f"🌐 Language: {detected_lang_name} (detected from title, overriding niche: {original_niche_lang})")
+            else:
+                print(f"🌐 Language: {detected_lang_name}")
 
         # Detect narrative approach (EXACT from HTML)
         approach = self.select_narrative_approach(title)

@@ -258,6 +258,151 @@ def create_progress_callback(total_steps):
     return callback
 
 
+def detect_language_from_text(text):
+    """
+    Detect language from text (title or script)
+
+    Uses character patterns and common words to detect:
+    - Spanish (es)
+    - German (de)
+    - French (fr)
+    - English (en) - default
+
+    Args:
+        text: Text to analyze (title or script)
+
+    Returns:
+        str: Language code ('es', 'de', 'fr', 'en')
+    """
+    if not text or not isinstance(text, str):
+        return 'en'
+
+    text_lower = text.lower()
+
+    # Spanish indicators
+    spanish_patterns = [
+        'ñ',  # Spanish-specific character
+        'á', 'é', 'í', 'ó', 'ú',  # Spanish accents
+        '¿', '¡',  # Spanish punctuation
+    ]
+    spanish_words = [
+        'el', 'la', 'los', 'las', 'un', 'una', 'de', 'del', 'al',
+        'por', 'para', 'con', 'sin', 'sobre', 'entre',
+        'cómo', 'qué', 'cuál', 'cuándo', 'dónde', 'por qué',
+        'mejor', 'peor', 'más', 'menos', 'muy', 'tan',
+        'este', 'esta', 'estos', 'estas', 'ese', 'esa',
+    ]
+
+    # German indicators
+    german_patterns = [
+        'ä', 'ö', 'ü', 'ß',  # German-specific characters
+    ]
+    german_words = [
+        'der', 'die', 'das', 'den', 'dem', 'des',
+        'ein', 'eine', 'einen', 'einem', 'eines',
+        'und', 'oder', 'aber', 'nicht', 'auch',
+        'wie', 'was', 'wann', 'wo', 'warum',
+        'für', 'mit', 'von', 'zu', 'nach', 'bei',
+        'dieser', 'diese', 'dieses', 'jener', 'jene',
+        'können', 'müssen', 'sollen', 'werden', 'sein',
+    ]
+
+    # French indicators
+    french_patterns = [
+        'à', 'â', 'ç', 'è', 'é', 'ê', 'ë', 'î', 'ï', 'ô', 'ù', 'û', 'ü', 'ÿ',
+    ]
+    french_words = [
+        'le', 'la', 'les', 'un', 'une', 'des', 'du', 'de', 'au', 'aux',
+        'et', 'ou', 'mais', 'donc', 'car', 'ne', 'pas',
+        'comment', 'quoi', 'quel', 'quelle', 'quand', 'où', 'pourquoi',
+        'pour', 'avec', 'sans', 'sur', 'sous', 'dans', 'par',
+        'ce', 'cet', 'cette', 'ces',
+        'être', 'avoir', 'faire', 'aller', 'pouvoir', 'vouloir',
+    ]
+
+    # Count matches
+    scores = {
+        'es': 0,
+        'de': 0,
+        'fr': 0,
+        'en': 0
+    }
+
+    # Check Spanish
+    for pattern in spanish_patterns:
+        if pattern in text_lower:
+            scores['es'] += 3
+    for word in spanish_words:
+        if f' {word} ' in f' {text_lower} ' or text_lower.startswith(f'{word} ') or text_lower.endswith(f' {word}'):
+            scores['es'] += 1
+
+    # Check German
+    for pattern in german_patterns:
+        if pattern in text_lower:
+            scores['de'] += 3
+    for word in german_words:
+        if f' {word} ' in f' {text_lower} ' or text_lower.startswith(f'{word} ') or text_lower.endswith(f' {word}'):
+            scores['de'] += 1
+
+    # Check French
+    for pattern in french_patterns:
+        if pattern in text_lower:
+            scores['fr'] += 3
+    for word in french_words:
+        if f' {word} ' in f' {text_lower} ' or text_lower.startswith(f'{word} ') or text_lower.endswith(f' {word}'):
+            scores['fr'] += 1
+
+    # English is default, but check for common English words
+    english_words = [
+        'the', 'of', 'to', 'and', 'a', 'in', 'is', 'it',
+        'you', 'that', 'he', 'was', 'for', 'on', 'are', 'with',
+        'how', 'what', 'when', 'where', 'why', 'who', 'which',
+        'this', 'these', 'that', 'those',
+    ]
+    for word in english_words:
+        if f' {word} ' in f' {text_lower} ' or text_lower.startswith(f'{word} ') or text_lower.endswith(f' {word}'):
+            scores['en'] += 1
+
+    # Find language with highest score
+    max_score = max(scores.values())
+
+    # If no language detected (all scores 0), return English as default
+    if max_score == 0:
+        return 'en'
+
+    # Return language with highest score
+    detected_lang = max(scores, key=scores.get)
+
+    return detected_lang
+
+
+def get_language_name(language_code):
+    """
+    Convert language code to full language name
+
+    Args:
+        language_code: Language code (es, de, fr, en)
+
+    Returns:
+        str: Full language name
+    """
+    language_names = {
+        'es': 'Spanish',
+        'de': 'German',
+        'fr': 'French',
+        'en': 'English',
+        'pt': 'Portuguese',
+        'it': 'Italian',
+        'nl': 'Dutch',
+        'ru': 'Russian',
+        'zh': 'Chinese',
+        'ja': 'Japanese',
+        'ko': 'Korean',
+        'ar': 'Arabic',
+    }
+    return language_names.get(language_code, 'English')
+
+
 if __name__ == "__main__":
     # Test utility functions
     print("Utility Functions - Test Mode\n")
