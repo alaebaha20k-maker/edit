@@ -252,6 +252,12 @@ Output ONLY the JSON array, no extra text."""
             'voice_settings': {
                 'default_voice': 'olivia',
                 'speaking_rate': 1.0
+            },
+            'video_settings': {
+                'enable_timed_zoom': False,
+                'zoom_direction': 'in',  # 'in' or 'out'
+                'zoom_duration': 1.0,    # seconds
+                'zoom_amount': 1.05      # zoom factor (1.05 = 5% zoom)
             }
         }
 
@@ -542,6 +548,63 @@ Each title must be distinctive, high-quality, and optimized for CTR.
         })
 
     @classmethod
+    def save_video_settings(cls, enable_timed_zoom: bool = None,
+                           zoom_direction: str = None,
+                           zoom_duration: float = None,
+                           zoom_amount: float = None) -> Dict:
+        """
+        Save video zoom settings
+
+        Args:
+            enable_timed_zoom: Enable/disable timed zoom effect for images
+            zoom_direction: 'in' (zoom in) or 'out' (zoom out)
+            zoom_duration: Duration of zoom effect in seconds (default 1.0)
+            zoom_amount: Zoom factor (default 1.05 for 5% zoom)
+
+        Returns:
+            Updated settings dictionary
+        """
+        cls.ensure_directories()
+        settings = cls.load_settings()
+
+        if 'video_settings' not in settings:
+            settings['video_settings'] = cls._get_default_settings()['video_settings']
+
+        if enable_timed_zoom is not None:
+            settings['video_settings']['enable_timed_zoom'] = bool(enable_timed_zoom)
+
+        if zoom_direction is not None:
+            if zoom_direction not in ['in', 'out']:
+                raise ValueError("zoom_direction must be 'in' or 'out'")
+            settings['video_settings']['zoom_direction'] = zoom_direction
+
+        if zoom_duration is not None:
+            if not 0.1 <= zoom_duration <= 5.0:
+                raise ValueError("zoom_duration must be between 0.1 and 5.0 seconds")
+            settings['video_settings']['zoom_duration'] = float(zoom_duration)
+
+        if zoom_amount is not None:
+            if not 1.01 <= zoom_amount <= 2.0:
+                raise ValueError("zoom_amount must be between 1.01 and 2.0")
+            settings['video_settings']['zoom_amount'] = float(zoom_amount)
+
+        with open(cls.SETTINGS_FILE, 'w') as f:
+            json.dump(settings, f, indent=2)
+
+        return settings
+
+    @classmethod
+    def get_video_settings(cls) -> Dict:
+        """Get current video zoom settings"""
+        settings = cls.load_settings()
+        return settings.get('video_settings', {
+            'enable_timed_zoom': False,
+            'zoom_direction': 'in',
+            'zoom_duration': 1.0,
+            'zoom_amount': 1.05
+        })
+
+    @classmethod
     def get_all_voices(cls) -> Dict:
         """Get all available Inworld AI voices"""
         return cls.INWORLD_VOICES
@@ -600,6 +663,7 @@ Each title must be distinctive, high-quality, and optimized for CTR.
                 'image': len(cls.load_formula('image'))
             },
             'voice_settings': cls.get_voice_settings(),
+            'video_settings': cls.get_video_settings(),
             'available_voices': len(cls.INWORLD_VOICES)
         }
 

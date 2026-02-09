@@ -37,6 +37,13 @@ window.videoData = {
     backgroundMusic: null // Background music file
 };
 
+// Selection state for multi-select
+const selectionState = {
+    selectedMedia: new Set(),
+    selectedVoices: new Set(),
+    isSelectionMode: false
+};
+
 // Global editor data
 window.editorData = {
     originalFile: null,
@@ -1031,6 +1038,7 @@ function renderVoiceLibrary() {
 
     if (voices.length === 0) {
         container.innerHTML = '<p style="color: #888; text-align: center; padding: 20px 0;">No voices yet. Generate AI voice or upload your own above.</p>';
+        updateVoiceSelectionButtons();
         return;
     }
 
@@ -1045,6 +1053,12 @@ function renderVoiceLibrary() {
             <span style="color: #888; margin-left: 10px;">(${voices.length} voice${voices.length > 1 ? 's' : ''})</span>
         </div>
         ${voices.map((voice, index) => {
+            const isSelected = selectionState.selectedVoices.has(index);
+            const selectCheckbox = selectionState.isSelectionMode ? `
+                <input type="checkbox" ${isSelected ? 'checked' : ''}
+                    onchange="toggleVoiceSelection(${index})"
+                    style="width: 20px; height: 20px; cursor: pointer; margin-right: 10px;">
+            ` : '';
             const isPlaying = currentPlayingIndex === index;
             const duration = parseFloat(voice.duration);
             const isValidDuration = !isNaN(duration) && duration > 0;
@@ -1056,17 +1070,18 @@ function renderVoiceLibrary() {
             const modelLabel = voice.model ? (voice.model.includes('max') ? 'Max Quality' : 'Mini Quality') : '';
 
             return `
-                <div class="voice-item-draggable" draggable="true" data-index="${index}" style="
+                <div class="voice-item-draggable" draggable="${!selectionState.isSelectionMode}" data-index="${index}" style="
                     background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
-                    border: 2px solid #667eea;
+                    border: 2px solid ${isSelected ? '#ff4757' : '#667eea'};
                     padding: 15px;
                     border-radius: 8px;
                     display: flex;
                     align-items: center;
                     gap: 15px;
-                    cursor: grab;
+                    cursor: ${selectionState.isSelectionMode ? 'pointer' : 'grab'};
                     transition: all 0.3s;
-                ">
+                " ${selectionState.isSelectionMode ? `onclick="toggleVoiceSelection(${index})"` : ''}>
+                    ${selectCheckbox}
                     <div style="
                         background: #667eea;
                         color: white;
@@ -1106,6 +1121,7 @@ function renderVoiceLibrary() {
                             📄 ${voice.filename}
                         </div>
                     </div>
+                    ${!selectionState.isSelectionMode ? `
                     <button onclick="event.stopPropagation(); downloadVoice(${index})" style="
                         background: #4caf50;
                         color: white;
@@ -1125,18 +1141,24 @@ function renderVoiceLibrary() {
                         cursor: pointer;
                         flex-shrink: 0;
                     ">🗑️</button>
+                    ` : ''}
                 </div>
             `;
         }).join('')}
     `;
 
-    // Add drag and drop event listeners
-    setupVoiceDragAndDrop();
+    // Add drag and drop event listeners (only when not in selection mode)
+    if (!selectionState.isSelectionMode) {
+        setupVoiceDragAndDrop();
+    }
 
     // Update assembly stats with total duration
     if (totalDuration > 0) {
         updateAssemblyStats(totalDuration);
     }
+
+    // Update selection buttons
+    updateVoiceSelectionButtons();
 }
 
 // Remove voice from library
@@ -1145,6 +1167,83 @@ function removeVoiceFromLibrary(index) {
         window.videoData.voiceLibrary.splice(index, 1);
         renderVoiceLibrary();
         showNotification('✅ Voice deleted', 'success');
+    }
+}
+
+// Multi-select functions for voices
+function toggleVoiceSelectionMode() {
+    selectionState.isSelectionMode = !selectionState.isSelectionMode;
+    if (!selectionState.isSelectionMode) {
+        selectionState.selectedVoices.clear();
+    }
+    renderVoiceLibrary();
+}
+
+function toggleVoiceSelection(index) {
+    if (selectionState.selectedVoices.has(index)) {
+        selectionState.selectedVoices.delete(index);
+    } else {
+        selectionState.selectedVoices.add(index);
+    }
+    renderVoiceLibrary();
+}
+
+function selectAllVoices() {
+    const voices = window.videoData.voiceLibrary || [];
+    voices.forEach((_, index) => {
+        selectionState.selectedVoices.add(index);
+    });
+    renderVoiceLibrary();
+}
+
+function deleteSelectedVoices() {
+    const count = selectionState.selectedVoices.size;
+    if (count === 0) {
+        showNotification('⚠️ No voices selected', 'warning');
+        return;
+    }
+
+    if (!confirm(`Delete ${count} selected voice(s)?`)) return;
+
+    // Convert Set to array and sort in descending order to delete from end first
+    const indicesToDelete = Array.from(selectionState.selectedVoices).sort((a, b) => b - a);
+
+    indicesToDelete.forEach(index => {
+        window.videoData.voiceLibrary.splice(index, 1);
+    });
+
+    selectionState.selectedVoices.clear();
+    selectionState.isSelectionMode = false;
+
+    renderVoiceLibrary();
+    showNotification(`✅ Deleted ${count} voice(s)`, 'success');
+}
+
+function updateVoiceSelectionButtons() {
+    const container = document.getElementById('voiceSelectionButtons');
+    if (!container) return;
+
+    const voices = window.videoData.voiceLibrary || [];
+    const hasVoices = voices.length > 0;
+    const selectedCount = selectionState.selectedVoices.size;
+
+    if (!hasVoices) {
+        container.innerHTML = '';
+        return;
+    }
+
+    if (selectionState.isSelectionMode) {
+        container.innerHTML = `
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; padding: 10px; background: rgba(255, 71, 87, 0.1); border-radius: 8px;">
+                <button onclick="selectAllVoices()" class="btn-secondary" style="font-size: 13px;">✅ Select All</button>
+                <button onclick="deleteSelectedVoices()" class="btn-secondary" style="font-size: 13px;">🗑️ Delete Selected (${selectedCount})</button>
+                <button onclick="toggleVoiceSelectionMode()" class="btn-secondary" style="font-size: 13px;">✖️ Cancel</button>
+            </div>
+        `;
+    } else {
+        container.innerHTML = `
+            <button onclick="toggleVoiceSelectionMode()" class="btn-primary" style="font-size: 13px;">📋 Select Multiple</button>
+        `;
     }
 }
 
@@ -1507,6 +1606,7 @@ function renderMediaLibrary() {
 
     if (appState.mediaLibrary.length === 0) {
         grid.innerHTML = '<p style="color: #888; grid-column: 1/-1;">No media added yet. Upload or fetch stock footage above.</p>';
+        updateMediaSelectionButtons();
         return;
     }
 
@@ -1515,17 +1615,19 @@ function renderMediaLibrary() {
     appState.mediaLibrary.forEach((media, index) => {
         const card = document.createElement('div');
         card.className = 'media-library-card';
-        card.draggable = true;
+        card.draggable = !selectionState.isSelectionMode;
         card.dataset.id = media.id;
         card.dataset.index = index;
+
+        const isSelected = selectionState.selectedMedia.has(media.id);
 
         card.style.cssText = `
             position: relative;
             background: rgba(0,0,0,0.3);
             border-radius: 8px;
             overflow: hidden;
-            cursor: grab;
-            border: 2px solid transparent;
+            cursor: ${selectionState.isSelectionMode ? 'pointer' : 'grab'};
+            border: 2px solid ${isSelected ? '#667eea' : 'transparent'};
             transition: all 0.2s;
         `;
 
@@ -1535,31 +1637,54 @@ function renderMediaLibrary() {
             ? `<video src="${media.url}" style="width: 100%; height: 120px; object-fit: cover;"></video>`
             : `<img src="${media.url}" style="width: 100%; height: 120px; object-fit: cover;">`;
 
-        const muteToggle = isVideo
+        const selectCheckbox = selectionState.isSelectionMode
+            ? `<input type="checkbox" ${isSelected ? 'checked' : ''}
+                onchange="toggleMediaSelection(${media.id})"
+                style="position: absolute; top: 8px; left: 8px; width: 20px; height: 20px; cursor: pointer; z-index: 10;">`
+            : '';
+
+        const muteToggle = isVideo && !selectionState.isSelectionMode
             ? `<label style="display: flex; align-items: center; gap: 5px; font-size: 12px; margin-top: 5px;">
                 <input type="checkbox" ${media.muted ? 'checked' : ''} onchange="toggleMediaMute(${media.id})">
                 <span>Mute</span>
             </label>`
             : '';
 
+        const actionButtons = !selectionState.isSelectionMode
+            ? `<div style="display: flex; gap: 5px; margin-top: 8px;">
+                <button onclick="downloadMedia(${media.id})" class="btn-secondary" style="flex: 1; font-size: 11px; padding: 4px 8px;">💾</button>
+                <button onclick="deleteFromMediaLibrary(${media.id})" class="btn-secondary" style="flex: 1; font-size: 11px; padding: 4px 8px;">🗑️</button>
+            </div>`
+            : '';
+
         card.innerHTML = `
+            ${selectCheckbox}
             ${preview}
             <div style="padding: 8px;">
                 <div style="font-size: 11px; color: #888; text-transform: uppercase;">${media.source} ${media.type}</div>
                 <div style="font-size: 13px; margin-top: 3px;">Rank: #${index + 1}</div>
                 ${muteToggle}
-                <button onclick="deleteFromMediaLibrary(${media.id})" class="btn-secondary" style="margin-top: 8px; font-size: 11px; padding: 4px 8px;">🗑️ Delete</button>
+                ${actionButtons}
             </div>
         `;
 
-        // Drag events
-        card.addEventListener('dragstart', handleDragStart);
-        card.addEventListener('dragover', handleDragOver);
-        card.addEventListener('drop', handleDrop);
-        card.addEventListener('dragend', handleDragEnd);
+        // Click to select in selection mode
+        if (selectionState.isSelectionMode) {
+            card.addEventListener('click', () => toggleMediaSelection(media.id));
+        }
+
+        // Drag events (only when not in selection mode)
+        if (!selectionState.isSelectionMode) {
+            card.addEventListener('dragstart', handleDragStart);
+            card.addEventListener('dragover', handleDragOver);
+            card.addEventListener('drop', handleDrop);
+            card.addEventListener('dragend', handleDragEnd);
+        }
 
         grid.appendChild(card);
     });
+
+    updateMediaSelectionButtons();
 }
 
 let draggedElement = null;
@@ -1616,6 +1741,31 @@ function toggleMediaMute(id) {
     }
 }
 
+function downloadMedia(id) {
+    const media = appState.mediaLibrary.find(m => m.id === id);
+    if (!media) {
+        showNotification('⚠️ Media not found', 'warning');
+        return;
+    }
+
+    // Generate filename based on source
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const extension = media.type === 'video' ? 'mp4' : 'jpg';
+    const sourcePrefix = media.source === 'ai' ? 'generated' : media.source;
+    const filename = `${sourcePrefix}_${media.type}_${timestamp}.${extension}`;
+
+    // Create download link
+    const link = document.createElement('a');
+    link.href = media.url;
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    showNotification(`💾 Downloading ${filename}...`, 'success');
+}
+
 function deleteFromMediaLibrary(id) {
     if (!confirm('Remove this media from library?')) return;
 
@@ -1627,6 +1777,78 @@ function deleteFromMediaLibrary(id) {
     renderMediaLibrary();
     updateMediaCount(); // Update the media count display
     showNotification('✅ Media removed', 'success');
+}
+
+// Multi-select functions for media
+function toggleMediaSelectionMode() {
+    selectionState.isSelectionMode = !selectionState.isSelectionMode;
+    if (!selectionState.isSelectionMode) {
+        selectionState.selectedMedia.clear();
+    }
+    renderMediaLibrary();
+}
+
+function toggleMediaSelection(id) {
+    if (selectionState.selectedMedia.has(id)) {
+        selectionState.selectedMedia.delete(id);
+    } else {
+        selectionState.selectedMedia.add(id);
+    }
+    renderMediaLibrary();
+}
+
+function selectAllMedia() {
+    appState.mediaLibrary.forEach(media => {
+        selectionState.selectedMedia.add(media.id);
+    });
+    renderMediaLibrary();
+}
+
+function deleteSelectedMedia() {
+    const count = selectionState.selectedMedia.size;
+    if (count === 0) {
+        showNotification('⚠️ No media selected', 'warning');
+        return;
+    }
+
+    if (!confirm(`Delete ${count} selected media item(s)?`)) return;
+
+    appState.mediaLibrary = appState.mediaLibrary.filter(m => !selectionState.selectedMedia.has(m.id));
+    window.videoData.mediaLibrary = appState.mediaLibrary;
+
+    selectionState.selectedMedia.clear();
+    selectionState.isSelectionMode = false;
+
+    renderMediaLibrary();
+    updateMediaCount();
+    showNotification(`✅ Deleted ${count} media item(s)`, 'success');
+}
+
+function updateMediaSelectionButtons() {
+    const container = document.getElementById('mediaSelectionButtons');
+    if (!container) return;
+
+    const hasMedia = appState.mediaLibrary.length > 0;
+    const selectedCount = selectionState.selectedMedia.size;
+
+    if (!hasMedia) {
+        container.innerHTML = '';
+        return;
+    }
+
+    if (selectionState.isSelectionMode) {
+        container.innerHTML = `
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; padding: 10px; background: rgba(102, 126, 234, 0.1); border-radius: 8px;">
+                <button onclick="selectAllMedia()" class="btn-secondary" style="font-size: 13px;">✅ Select All</button>
+                <button onclick="deleteSelectedMedia()" class="btn-secondary" style="font-size: 13px;">🗑️ Delete Selected (${selectedCount})</button>
+                <button onclick="toggleMediaSelectionMode()" class="btn-secondary" style="font-size: 13px;">✖️ Cancel</button>
+            </div>
+        `;
+    } else {
+        container.innerHTML = `
+            <button onclick="toggleMediaSelectionMode()" class="btn-primary" style="font-size: 13px;">📋 Select Multiple</button>
+        `;
+    }
 }
 
 // =============================================================================
@@ -1681,8 +1903,11 @@ async function generateAutoImages() {
     const timelineSection = document.getElementById('autoImageTimeline');
 
     // Check if Whisper timing is requested but no voice exists
-    if (use_whisper_timing && (!window.videoData.voice || !window.videoData.voice.path)) {
-        showNotification('⚠️ Whisper timing requires voice to be generated first. Generate voice first, then generate images.', 'warning');
+    const selectedVoiceIndex = window.videoData.selectedVoiceIndex ?? (window.videoData.voiceLibrary?.length > 0 ? 0 : -1);
+    const selectedVoice = window.videoData.voiceLibrary?.[selectedVoiceIndex];
+
+    if (use_whisper_timing && (!selectedVoice || !selectedVoice.path)) {
+        showNotification('⚠️ Whisper timing requires voice to be generated or uploaded first. Generate/upload voice first, then generate images.', 'warning');
         return;
     }
 
@@ -1692,7 +1917,7 @@ async function generateAutoImages() {
         progressBox.innerHTML = `<p>🎬 Director AI planning ${n_images} scenes ${timingMode}...</p>`;
     }
 
-    try:
+    try {
         showNotification(`🤖 Starting Auto Images AI (Director + Replicate)...`, 'info');
 
         // Prepare request payload
@@ -1704,9 +1929,9 @@ async function generateAutoImages() {
         };
 
         // Add Whisper timing if enabled
-        if (use_whisper_timing && window.videoData.voice && window.videoData.voice.path) {
+        if (use_whisper_timing && selectedVoice && selectedVoice.path) {
             payload.use_whisper_timing = true;
-            payload.voice_path = window.videoData.voice.path;
+            payload.voice_path = selectedVoice.path;
         }
 
         // Call backend API

@@ -14,6 +14,7 @@ from typing import Dict, List
 from config import Config
 from niche_manager import NicheManager
 from chunk_planner import ChunkPlanner
+from utils import detect_language_from_text, get_language_name
 
 
 class ScriptGenerator3Chunk:
@@ -72,6 +73,14 @@ class ScriptGenerator3Chunk:
         if not niche:
             raise ValueError(f"Niche not found: {niche_id}")
 
+        # Detect language from title (high priority over niche language)
+        detected_lang_code = detect_language_from_text(title)
+        detected_lang_name = get_language_name(detected_lang_code)
+
+        # Override niche language with detected language from title
+        original_niche_lang = niche.get('language', 'English')
+        niche['language'] = detected_lang_name  # Override with detected language
+
         # Use niche writing guidelines (formulas removed - guidelines define the writing style)
         writing_guidelines = niche['writing_guidelines']
 
@@ -81,7 +90,11 @@ class ScriptGenerator3Chunk:
             print(f"{'='*70}")
             print(f"Title: {title}")
             print(f"Target: {length:,} characters")
-            print(f"Niche: {niche['name']} ({niche['language']})")
+            print(f"Niche: {niche['name']}")
+            if detected_lang_name != original_niche_lang:
+                print(f"Language: {detected_lang_name} (detected from title, overriding niche: {original_niche_lang})")
+            else:
+                print(f"Language: {detected_lang_name}")
             print(f"Chunks: 3 (30% + 40% + 30%)")
             print(f"{'='*70}\n")
 
@@ -257,9 +270,16 @@ WRITING GUIDELINES (follow this style and approach):
 CRITICAL OUTPUT RULES (MANDATORY)
 ════════════════════════════════════════════════════════════
 
+LANGUAGE REQUIREMENT (HIGHEST PRIORITY):
+- Write the ENTIRE script in {language}
+- Use {language} grammar, vocabulary, and natural expressions
+- Do NOT write in English if the title is in another language
+- The script MUST match the language of the title: "{title}"
+- Use high-quality, native-level {language} language
+
 YOU MUST OUTPUT:
 - ONE continuous block of plain text
-- RAW VOICE TEXT ONLY
+- RAW VOICE TEXT ONLY in {language}
 - No visual cues (NO "VISUAL:", "VIDEO:", "SHOW:")
 - No narrator labels (NO "NARRATOR:", "SPEAKER:")
 - No timestamps (NO "(0:00-0:15)", NO "(pause)")
@@ -284,10 +304,10 @@ LENGTH REQUIREMENT:
 - Do not rush content
 
 ════════════════════════════════════════════════════════════
-NOW WRITE THE CHUNK
+NOW WRITE THE CHUNK IN {language.upper()}
 ════════════════════════════════════════════════════════════
 
-Write natural, engaging narration that sounds deeply human.
+Write natural, engaging narration in {language} that sounds deeply human.
 Start writing immediately - no preamble.
 """
 

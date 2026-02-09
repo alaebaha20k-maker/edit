@@ -1617,6 +1617,59 @@ def save_voice_settings():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/settings/video', methods=['GET'])
+def get_video_settings():
+    """Get current video zoom settings"""
+    from settings_manager import SettingsManager
+
+    try:
+        video_settings = SettingsManager.get_video_settings()
+
+        return jsonify({
+            'success': True,
+            'settings': video_settings
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/settings/video', methods=['POST'])
+def save_video_settings():
+    """Save video zoom settings"""
+    from settings_manager import SettingsManager
+
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        enable_timed_zoom = data.get('enable_timed_zoom')
+        zoom_direction = data.get('zoom_direction')
+        zoom_duration = data.get('zoom_duration')
+        zoom_amount = data.get('zoom_amount')
+
+        # Save video settings
+        settings = SettingsManager.save_video_settings(
+            enable_timed_zoom=enable_timed_zoom,
+            zoom_direction=zoom_direction,
+            zoom_duration=zoom_duration,
+            zoom_amount=zoom_amount
+        )
+
+        return jsonify({
+            'success': True,
+            'message': 'Video settings saved successfully',
+            'settings': settings
+        })
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 # =============================================================================
 # MEDIA UPLOAD & PREVIEW ROUTES
 # =============================================================================
