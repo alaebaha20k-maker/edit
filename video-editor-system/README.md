@@ -1,379 +1,632 @@
-# Video Editing Automation System - Ultra Fast Edition
+# 🎬 AI-Powered Video Generation System
 
-A complete, production-ready automated video editing system that combines videos, images, and audio files using FFmpeg. **Optimized for maximum speed** - process 1-hour videos in just 4-6 minutes!
+A complete end-to-end system for generating high-quality YouTube videos using AI. Automatically creates scripts, generates images, converts text to speech, and assembles professional videos with zoom effects, transitions, and audio mixing.
 
-## 🚀 ULTRA PERFORMANCE - 90% FASTER
+---
 
-**Processing Speed:**
-- **1-hour video**: 4-6 minutes (was 45-65 minutes)
-- **5-minute video**: < 1 minute (was 5-8 minutes)
-- **30-second video**: < 20 seconds (was 2-3 minutes)
+## 📋 TABLE OF CONTENTS
 
-**Performance Optimizations:**
-- ✅ No caption processing (removed Whisper AI)
-- ✅ FFmpeg ultrafast preset (was veryfast)
-- ✅ Optimized CRF 28 (was 23)
-- ✅ Stillimage tuning for static images
-- ✅ Large GOP size for image clips (70% faster)
-- ✅ Multi-threaded encoding (all CPU cores)
-- ✅ Stream copy for audio (no re-encoding)
+1. [Overview](#overview)
+2. [System Architecture](#system-architecture)
+3. [Core Features](#core-features)
+4. [System Components](#system-components)
+5. [Installation](#installation)
+6. [Configuration](#configuration)
+7. [Usage Guide](#usage-guide)
+8. [API Endpoints](#api-endpoints)
+9. [File Structure](#file-structure)
+10. [Advanced Features](#advanced-features)
+11. [Troubleshooting](#troubleshooting)
 
-## Features
+---
 
-- **Automated Video Processing**: Upload and rank videos, images, and audio files
-- **Smart Duration Calculation**: Automatically calculates image display times to match audio length
-- **Professional Output**: 1080p@30fps video with optimized encoding
-- **Ultra-Fast Processing**: 90% faster than previous version
-- **Web Interface**: Easy-to-use browser-based interface
-- **REST API**: Full API support for integration
-- **CPU Optimized**: Maximizes performance on Intel i5 8th gen and similar CPUs
+## 🎯 OVERVIEW
 
-## System Requirements
+This system automates the entire YouTube video creation pipeline:
 
-### Required Software
-- **Python**: 3.8 or higher
-- **FFmpeg**: Latest version with FFprobe
-- **Operating System**: Linux, macOS, or Windows
+1. **Generate Title** → AI creates engaging titles based on your niche
+2. **Generate Script** → AI writes voice-ready narration (supports multiple languages)
+3. **Generate Images** → AI creates stunning visuals that match the script
+4. **Text-to-Speech** → Converts script to natural voice (multiple voices supported)
+5. **Video Assembly** → Combines everything with zoom effects, transitions, and background music
+6. **Export** → Professional MP4 video ready to upload
 
-### Hardware Recommendations
-- **CPU**: Intel i5 8th gen or better
-- **RAM**: 8GB minimum, 16GB recommended
-- **Storage**: 10GB+ free space
-- **GPU**: Not required (CPU-only processing)
+### 🌟 Key Highlights
 
-## Quick Start
+- **Multilingual Support**: Spanish, German, French, English (auto-detected from title)
+- **AI-Powered**: Uses Gemini 2.5 Flash for scripts and RunPod/Replicate for images
+- **Professional Quality**: Zoom effects, transitions, audio mixing, perfect timing
+- **Modular Design**: Each component works independently or as a pipeline
+- **Media Libraries**: Voice library and image library for reusable content
+- **Real-time Monitoring**: Progress tracking and live previews
 
-### 1. Installation
+---
 
-#### Linux/macOS
-```bash
-# Clone or download the repository
-cd video-editor-system
+## 🏗️ SYSTEM ARCHITECTURE
 
-# Run installation script
-chmod +x install.sh
-./install.sh
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    FRONTEND (Web UI)                        │
+│  index.html │ app.js │ unified-generator.js │ styles.css   │
+└─────────────────────────┬───────────────────────────────────┘
+                          │ HTTP REST API
+┌─────────────────────────▼───────────────────────────────────┐
+│                    BACKEND (Python Flask)                    │
+│                         api.py                               │
+└──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬────┘
+       │      │      │      │      │      │      │      │
+   ┌───▼──┐ ┌─▼────┐ ┌▼───┐ ┌▼──┐ ┌▼───┐ ┌▼────┐ ┌▼───┐ ┌▼──┐
+   │Title │ │Script│ │Img │ │TTS│ │Video│ │Media│ │Niche│ │DB │
+   │  Gen │ │  Gen │ │Gen │ │   │ │Asm │ │ Lib │ │Mgmt │ │   │
+   └──────┘ └──────┘ └────┘ └───┘ └────┘ └─────┘ └─────┘ └───┘
+       │        │       │      │      │
+   ┌───▼────────▼───────▼──────▼──────▼────┐
+   │         AI Services Layer             │
+   │  Gemini │ RunPod │ Replicate │ ElevenLabs │
+   └───────────────────────────────────────┘
 ```
 
-#### Windows
-```batch
-REM Run installation script
-install.bat
+---
+
+## ✨ CORE FEATURES
+
+### 1. **Title Generation** 🎯
+- AI-powered title creation using customizable formulas
+- Niche-specific title strategies
+- Automatic language detection
+- Hook + Topic + Value Promise structure
+- **API**: `/api/generate-title`
+
+### 2. **Script Generation** 📝
+- **3-Chunk Architecture** (30% Hook / 40% Content / 30% Conclusion)
+- Multilingual support (auto-detected from title)
+- Length: 1,000 - 80,000 characters
+- Voice-ready narration (no visual cues, timestamps, or formatting)
+- Title-lock validation (prevents topic drift)
+- Uses niche writing guidelines
+- **API**: `/api/generate-script`
+
+### 3. **Image Generation** 🖼️
+- **AI Director System**: Analyzes script and generates perfect image prompts
+- **Multi-Provider Support**:
+  - RunPod (Flux.1 Schnell - fastest)
+  - Replicate (Flux.1 Dev - highest quality)
+- **Auto Images**: Intelligently determines number of images needed
+- **Perfect Timing**: Optional Whisper STT for precise image-to-narration alignment
+- **Timed Zoom Effects**: Dynamic zoom on each image
+- **API**: `/api/generate-image-prompts`, `/api/generate-images-runpod`
+
+### 4. **Text-to-Speech** 🔊
+- **ElevenLabs Integration**: Professional voice synthesis
+- **Voice Library**: Save and reuse favorite voices
+- Multiple voice models supported
+- Natural-sounding narration
+- **API**: `/api/text-to-speech`
+
+### 5. **Video Assembly** 🎥
+- **Automatic Timing**: Matches images to script perfectly
+- **Zoom Effects**: Ken Burns effect on all images
+- **Transitions**: Smooth crossfades between images
+- **Audio Mixing**:
+  - Voice narration (primary track)
+  - Background music (ducked under voice)
+  - Adjustable volume levels
+- **Professional Output**: 1920x1080 MP4 with H.264 encoding
+- **API**: `/api/assemble-video`
+
+### 6. **Media Libraries** 📚
+- **Voice Library**: Save voices with name, provider, and settings
+- **Image Library**: Store generated images with metadata
+- **Multi-Select**: Download or delete multiple items at once
+- **Search & Filter**: Find content quickly
+
+### 7. **Niche Management** 🎨
+- Create custom niches with writing guidelines
+- Language settings per niche
+- Product integration support
+- Formula customization (title, script, image)
+- **API**: `/api/niches`
+
+---
+
+## 🔧 SYSTEM COMPONENTS
+
+### Backend Components
+
+#### 1. **Script Generators**
+- `script_generator_3chunk.py` - **Production version** (3-chunk system)
+- `script_generator.py` - Alternative with one-block generation
+- `chunk_planner.py` - Calculates chunk sizes (30/40/30 split)
+- `title_generator.py` - AI title generation
+
+#### 2. **Image Generation**
+- `auto_images/director_client.py` - AI Director for image planning
+- `image_generator_runpod.py` - RunPod Flux.1 Schnell integration
+- `replicate_image_generator.py` - Replicate API integration
+- `whisper_stt.py` - Audio timing analysis (optional)
+
+#### 3. **Video Assembly**
+- `video_assembler.py` - Main video assembly with MoviePy
+- `audio_mixer.py` - Professional audio mixing and ducking
+
+#### 4. **Core Services**
+- `api.py` - Main Flask REST API server
+- `database.py` - JSON-based data persistence
+- `niche_manager.py` - Niche CRUD operations
+- `settings_manager.py` - Formula and settings management
+- `config.py` - Centralized configuration
+
+#### 5. **Utilities**
+- `utils.py` - Language detection, file operations
+- `test_language_detection.py` - Language detection test suite
+
+### Frontend Components
+
+#### 1. **Main Interface**
+- `index.html` - Main web interface
+- `app.js` - Core application logic
+- `unified-generator.js` - Unified video generation workflow
+- `styles.css` - UI styling
+
+#### 2. **Configuration Pages**
+- `api-config.html` - API key configuration
+- `settings.html` - Formula editor
+- `test.html` - Testing interface
+
+---
+
+## 🚀 INSTALLATION
+
+### Prerequisites
+
+```bash
+# System Requirements
+- Python 3.8+
+- FFmpeg (for video processing)
+- 4GB+ RAM
+- 10GB+ disk space
+
+# Operating Systems
+- Linux (recommended)
+- macOS
+- Windows (with WSL recommended)
 ```
 
-#### Manual Installation
+### Step 1: Clone Repository
+
 ```bash
-# Install FFmpeg
-# Ubuntu/Debian:
-sudo apt install ffmpeg
+git clone https://github.com/alaebaha20k-maker/edit.git
+cd edit/video-editor-system
+```
 
-# macOS:
-brew install ffmpeg
+### Step 2: Install Python Dependencies
 
-# Windows:
-# Download from https://ffmpeg.org/
-
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate  # Linux/macOS
-# venv\Scripts\activate.bat  # Windows
-
-# Install Python dependencies
+```bash
+cd backend
 pip install -r requirements.txt
 ```
 
-### 2. Verify Installation
+**Key Dependencies:**
+- `flask` - Web server
+- `google-generativeai` - Gemini API
+- `moviepy` - Video editing
+- `replicate` - Image generation
+- `requests` - HTTP client
+- `python-dotenv` - Environment variables
+
+### Step 3: Install FFmpeg
+
+**Ubuntu/Debian:**
+```bash
+sudo apt update
+sudo apt install ffmpeg
+```
+
+**macOS:**
+```bash
+brew install ffmpeg
+```
+
+**Windows:**
+Download from https://ffmpeg.org/download.html
+
+### Step 4: Configuration
+
+Create `.env` file in `backend/` directory:
 
 ```bash
-# Run test suite
-python3 test_system.py
+# Required API Keys
+GEMINI_API_KEY=your_gemini_api_key_here
+RUNPOD_API_KEY=your_runpod_api_key_here
+ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
+
+# Optional API Keys
+REPLICATE_API_TOKEN=your_replicate_api_key_here
 ```
 
-All tests should pass before proceeding.
+### Step 5: Start the Server
 
-### 3. Run the Application
-
-#### Option A: Web Interface (Recommended)
 ```bash
-# Start the API server
-python3 backend/api.py
-
-# Open browser to:
-# http://localhost:5000
+cd backend
+python api.py
 ```
 
-#### Option B: Command Line
-```bash
-# Use the backend directly
-python3 backend/main.py
+Server starts at: `http://localhost:5000`
+
+### Step 6: Open Web Interface
+
+Open in browser:
+```
+http://localhost:5000
 ```
 
-## Usage Guide
+---
 
-### Web Interface
+## ⚙️ CONFIGURATION
 
-1. **Upload Visual Media**
-   - Drag & drop videos and images into Line 1
-   - Supported formats: MP4, MOV, JPG, JPEG, JFIF, PNG
-   - Rank files in desired order
+### API Keys Setup
 
-2. **Upload Audio Files**
-   - Drag & drop audio files into Line 2
-   - Supported formats: MP3, WAV, AAC, M4A
-   - Rank files in desired order
+Navigate to: `http://localhost:5000/api-config.html`
 
-3. **Configure Settings**
-   - Set output filename (optional)
+**Required Keys:**
 
-4. **Create Video**
-   - Click "Create Video" button
-   - Wait for processing to complete
-   - Download the final video
+1. **Gemini API Key** (Google AI)
+   - Get it: https://makersuite.google.com/app/apikey
+   - Used for: Title generation, script generation, image prompts
 
-### Python API Usage
+2. **RunPod API Key**
+   - Get it: https://www.runpod.io/console/user/settings
+   - Used for: Fast image generation (Flux.1 Schnell)
 
-```python
-from main import VideoEditorSystem
+3. **ElevenLabs API Key**
+   - Get it: https://elevenlabs.io/
+   - Used for: Text-to-speech voice synthesis
 
-# Initialize system
-editor = VideoEditorSystem(
-    temp_dir="temp",
-    output_dir="output",
-    verbose=True
-)
+**Optional Keys:**
 
-# Prepare input data
-visual_media = [
-    {'rank': 1, 'type': 'video', 'path': 'intro.mp4'},
-    {'rank': 2, 'type': 'image', 'path': 'slide1.jpg'},
-    {'rank': 3, 'type': 'video', 'path': 'demo.mp4'},
-]
+4. **Replicate API Token**
+   - Get it: https://replicate.com/account/api-tokens
+   - Used for: High-quality image generation (Flux.1 Dev)
 
-audio_files = [
-    {'rank': 1, 'path': 'narration.mp3'},
-    {'rank': 2, 'path': 'music.mp3'},
-]
+### Formula Configuration
 
-# Process video
-result = editor.process_video_project(
-    visual_media=visual_media,
-    audio_files=audio_files,
-    whisper_model="base",
-    cleanup_temp=True
-)
+Navigate to: `http://localhost:5000/settings.html`
 
-print(f"Video created: {result['output_path']}")
+**Available Formulas:**
+
+1. **Title Formula** - Defines title structure
+2. **Script Formula** - Defines narrative flow
+3. **Image Formula** - Guides image generation
+
+### Niche Configuration
+
+Create custom niches with:
+- Name and description
+- Default language
+- Writing guidelines
+- Product mentions (optional)
+
+---
+
+## 📖 USAGE GUIDE
+
+### Quick Start: Generate Your First Video
+
+#### Step 1: Create a Niche
+
+1. Go to main interface
+2. Click **"Add Niche"**
+3. Fill in details
+4. Click **"Save"**
+
+#### Step 2: Generate Title
+
+1. Enter topic
+2. Select niche
+3. Click **"Generate Title"**
+
+#### Step 3: Generate Script
+
+1. Title auto-filled
+2. Select script length
+3. Click **"Generate Script"**
+
+#### Step 4: Generate Images
+
+1. Script auto-filled
+2. Select provider
+3. Click **"Generate Images"**
+
+#### Step 5: Generate Voice
+
+1. Select a voice
+2. Click **"Generate TTS"**
+
+#### Step 6: Assemble Video
+
+1. Optional: Add background music
+2. Click **"Assemble Video"**
+3. Video downloads automatically
+
+**Total Time: 5-10 minutes for a complete video!**
+
+---
+
+## 🔌 API ENDPOINTS
+
+### Title Generation
+```http
+POST /api/generate-title
 ```
 
-### REST API Endpoints
-
-#### Upload File
-```bash
-POST /api/upload
-Content-Type: multipart/form-data
-
-Parameters:
-- file: File data
-- type: 'video', 'image', or 'audio'
-
-Response:
-{
-    "success": true,
-    "file_id": "unique-id",
-    "filename": "uploaded_file.mp4",
-    "size": "1.5 MB",
-    "type": "video"
-}
+### Script Generation
+```http
+POST /api/generate-script
 ```
 
-#### Process Video
-```bash
-POST /api/process
-Content-Type: application/json
-
-Body:
-{
-    "visual_media": [
-        {"rank": 1, "type": "video", "file_id": "..."},
-        {"rank": 2, "type": "image", "file_id": "..."}
-    ],
-    "audio_files": [
-        {"rank": 1, "file_id": "..."}
-    ],
-    "whisper_model": "base",
-    "output_filename": "my_video.mp4"
-}
-
-Response:
-{
-    "success": true,
-    "job_id": "unique-job-id",
-    "status": "completed",
-    "result": {
-        "output_path": "output/final_video.mp4",
-        "duration": 120.5,
-        "file_size": "15.2 MB"
-    }
-}
+### Image Generation
+```http
+POST /api/generate-image-prompts
+POST /api/generate-images-runpod
 ```
 
-## Technical Specifications
+### Text-to-Speech
+```http
+POST /api/text-to-speech
+```
 
-### Output Video Format
-- **Resolution**: 1920x1080 (1080p)
-- **Aspect Ratio**: 16:9
-- **Frame Rate**: 30fps
-- **Video Codec**: H.264 (libx264)
-- **Audio Codec**: AAC
-- **Bitrate**: 192 kbps (audio)
-- **No black bars** (all media cropped to fill frame)
-- **Encoding**: Ultrafast preset with CRF 28
-- **Multi-threading**: Uses all available CPU cores
+### Video Assembly
+```http
+POST /api/assemble-video
+```
 
-### Processing Pipeline (8 Steps - Ultra Optimized)
+### Niche Management
+```http
+GET    /api/niches
+POST   /api/niches
+PUT    /api/niches/<id>
+DELETE /api/niches/<id>
+```
 
-1. **File Validation**: Verify all input files
-2. **Sorting**: Sort media by rank
-3. **Duration Calculation**: Calculate image display times to match audio
-4. **Image Conversion**: Convert images to video clips (with stillimage tuning + large GOP)
-5. **Video Normalization**: Standardize all videos to 1080p@30fps (ultrafast preset)
-6. **Video Concatenation**: Join all visual media in ranked order (stream copy)
-7. **Audio Merging**: Combine all audio files (stream copy - no re-encoding)
-8. **Final Assembly**: Combine video + audio (no caption processing for maximum speed)
+For detailed API documentation, see the inline comments in `api.py`.
 
-## Project Structure
+---
+
+## 📁 FILE STRUCTURE
 
 ```
 video-editor-system/
 ├── backend/
-│   ├── main.py              # Main orchestration script
-│   ├── api.py               # Flask API server
-│   ├── file_validator.py    # File validation
-│   ├── duration_calculator.py # Duration calculations
-│   ├── ffmpeg_processor.py  # FFmpeg operations
-│   ├── whisper_handler.py   # Caption generation
-│   └── utils.py             # Utility functions
+│   ├── api.py                          # Main Flask API server
+│   ├── config.py                       # Configuration
+│   ├── database.py                     # Data persistence
+│   ├── script_generator_3chunk.py      # Script generator (production)
+│   ├── script_generator.py             # Alternative generator
+│   ├── chunk_planner.py                # Chunk planning
+│   ├── title_generator.py              # Title generation
+│   ├── auto_images/
+│   │   └── director_client.py          # AI Director
+│   ├── image_generator_runpod.py       # RunPod integration
+│   ├── replicate_image_generator.py    # Replicate integration
+│   ├── eleven_tts.py                   # ElevenLabs TTS
+│   ├── video_assembler.py              # Video assembly
+│   ├── audio_mixer.py                  # Audio mixing
+│   ├── whisper_stt.py                  # Audio timing
+│   ├── niche_manager.py                # Niche management
+│   ├── settings_manager.py             # Settings
+│   ├── utils.py                        # Utilities + Language detection
+│   ├── data/                           # Data storage
+│   ├── output/                         # Generated videos
+│   ├── media_library/                  # Media storage
+│   ├── README_LANGUAGE_DETECTION.md    # Language docs
+│   └── requirements.txt                # Dependencies
+│
 ├── frontend/
-│   ├── index.html           # Web interface
-│   ├── styles.css           # Styling
-│   └── app.js               # Frontend logic
-├── uploads/                 # Uploaded files
-├── temp/                    # Temporary processing files
-├── output/                  # Final rendered videos
-├── sample_data/             # Sample test files
-├── requirements.txt         # Python dependencies
-├── install.sh               # Installation script (Unix)
-├── install.bat              # Installation script (Windows)
-├── test_system.py           # Test suite
-└── README.md                # This file
+│   ├── index.html                      # Main interface
+│   ├── app.js                          # Application logic
+│   ├── unified-generator.js            # Workflow
+│   ├── styles.css                      # Styling
+│   ├── api-config.html                 # API configuration
+│   ├── settings.html                   # Formula editor
+│   └── test.html                       # Testing
+│
+└── README.md                           # This file
 ```
 
-## Configuration
+---
 
-### FFmpeg Encoding Presets
+## 🌟 ADVANCED FEATURES
 
-Current setting: `ultrafast` (maximum speed)
+### 1. **Automatic Language Detection**
 
-Other options:
-- `ultrafast`: Fastest encoding, larger files
-- `fast`: Fast encoding
-- `medium`: Default FFmpeg preset
-- `slow`: Better quality, much slower
-- `veryslow`: Best quality, very slow
+The system automatically detects the language from your video title:
 
-## Troubleshooting
+- **Spanish** - Detects ñ, á, é, í, ó, ú and Spanish words
+- **German** - Detects ä, ö, ü, ß and German words
+- **French** - Detects à, ç, è, é, ê and French words
+- **English** - Default language
 
-### FFmpeg Not Found
-```bash
-# Ubuntu/Debian
-sudo apt install ffmpeg
+See: `backend/README_LANGUAGE_DETECTION.md` for complete details
 
-# macOS
-brew install ffmpeg
+### 2. **AI Director System**
 
-# Windows
-# Download from https://ffmpeg.org/
-# Add to system PATH
-```
+Analyzes your script and intelligently plans image generation with:
+- Scene analysis
+- Image count optimization
+- Timing suggestions
+- Prompt generation with reasoning
 
-### Memory Issues
-- Process shorter videos
-- Close other applications
-- Increase system swap space
+### 3. **Timed Zoom Effects**
 
-### Slow Processing
-- Already using ultrafast preset (fastest available)
-- Close other applications
-- Ensure no other intensive processes running
-- Consider upgrading CPU for better performance
+Every image gets a dynamic Ken Burns zoom effect based on duration.
 
-## Performance Benchmarks
+### 4. **Smart Audio Mixing**
 
-Tested on Intel i5 8th gen with 8GB RAM (Ultra-Fast Edition):
+Professional audio with:
+- Voice priority
+- Music ducking
+- Volume normalization
+- Smooth transitions
 
-| Video Length | Processing Time | Speedup vs Previous |
-|--------------|----------------|---------------------|
-| 30 seconds   | < 20 seconds   | 9x faster           |
-| 5 minutes    | < 1 minute     | 5x faster           |
-| 15 minutes   | 2-3 minutes    | 4x faster           |
-| 1 hour       | 4-6 minutes    | 10x faster          |
+### 5. **Formula System**
 
-*Note: No caption processing for maximum speed. Previous version included Whisper AI transcription.*
+Customize content generation with flexible formulas for titles, scripts, and images.
 
-## Development
+### 6. **Media Library Management**
 
-### Running Tests
-```bash
-python3 test_system.py
-```
+Save and reuse:
+- Favorite voices
+- Generated images
+- Multi-select operations
 
-### Adding New Features
+### 7. **Quality Validation**
 
-The system is modular and extensible:
+Scripts are validated for:
+- Length accuracy (±10%)
+- Format compliance
+- Title lock
+- Clean output
 
-- **File validation**: Edit `backend/file_validator.py`
-- **FFmpeg operations**: Edit `backend/ffmpeg_processor.py`
-- **Duration calculations**: Edit `backend/duration_calculator.py`
-- **API endpoints**: Edit `backend/api.py`
-- **Frontend UI**: Edit `frontend/index.html` and `frontend/app.js`
+---
 
-## License
+## 🐛 TROUBLESHOOTING
 
-This project is provided as-is for educational and commercial use.
+### Common Issues
 
-## Support
+**"GEMINI_API_KEY not set"**
+- Add key to `.env` file or via web interface
 
-For issues and questions:
-- Check the troubleshooting section
-- Review test results: `python3 test_system.py`
-- Verify FFmpeg installation: `ffmpeg -version`
-- Check Python dependencies: `pip list`
+**"FFmpeg not found"**
+- Install FFmpeg: `sudo apt install ffmpeg`
 
-## Credits
+**"Rate limit exceeded"**
+- Wait 60 seconds between generations
+- Free tier: 20 calls/min (Gemini)
 
-Built with:
-- **FFmpeg**: Video/audio processing (ultrafast encoding)
-- **Flask**: Web framework
-- **Python**: Backend logic
-- **NumPy**: Numerical computations
+**"Script validation failed"**
+- System auto-retries up to 3 times
+- Check niche guidelines are clear
 
-## Changelog
+**"Image generation timeout"**
+- Check API key is valid
+- Try different provider
 
-### Version 2.0.0 (Ultra-Fast Edition)
-- 🚀 90% performance improvement (removed Whisper AI caption processing)
-- ⚡ FFmpeg ultrafast preset for maximum speed
-- ⚡ Optimized CRF 28 for faster encoding
-- ⚡ Stillimage tuning for static images (30% faster)
-- ⚡ Large GOP size for image clips (70% faster)
-- ⚡ Multi-threaded encoding (uses all CPU cores)
-- ⚡ Audio stream copy (no re-encoding)
-- 🎬 1-hour video now processes in 4-6 minutes (was 45-65 minutes)
-- 📦 Removed PyTorch and Whisper dependencies (smaller installation)
+**"Video assembly failed"**
+- Verify FFmpeg is installed
+- Check disk space (need 2GB+)
 
-### Version 1.0.0 (Initial Release)
-- Complete video editing automation
-- AI-powered caption generation
-- Web interface and REST API
-- Full test suite
-- Production-ready code
-- Optimized for i5 8th gen CPUs
+**"Language not detected correctly"**
+- Add language-specific characters to title
+- See language detection README
+
+**"Audio out of sync"**
+- Enable Whisper STT for perfect timing
+- Adjust image duration manually
+
+### Getting Help
+
+1. Check console logs for errors
+2. Test components individually
+3. Verify API keys are valid
+4. Review documentation
+5. Create GitHub issue with logs
+
+---
+
+## 📊 SYSTEM REQUIREMENTS
+
+### Minimum
+- **CPU**: Dual-core 2.0 GHz
+- **RAM**: 4 GB
+- **Storage**: 10 GB free
+- **Internet**: 10 Mbps
+- **Python**: 3.8+
+- **FFmpeg**: Latest
+
+### Recommended
+- **CPU**: Quad-core 3.0 GHz+
+- **RAM**: 8 GB+
+- **Storage**: 50 GB+ SSD
+- **Internet**: 50 Mbps+
+- **Python**: 3.10+
+
+### API Rate Limits
+
+**Gemini (Free Tier):**
+- 20 requests/minute
+- 1,500 requests/day
+
+**ElevenLabs (Free Tier):**
+- 10,000 characters/month
+
+**RunPod / Replicate:**
+- Pay per use
+- No rate limits
+
+---
+
+## 🔐 SECURITY & PRIVACY
+
+- API keys stored in `.env` (not committed to git)
+- All data stored locally
+- No external data sharing except AI APIs
+- Keep API keys secret
+
+---
+
+## 🚧 ROADMAP
+
+**Planned Features:**
+- More language support
+- YouTube direct upload
+- Video templates
+- Batch generation
+- Custom voice cloning
+- Analytics dashboard
+- Subtitle generation
+
+---
+
+## 📄 LICENSE
+
+This project is proprietary software. All rights reserved.
+
+---
+
+## 👥 CONTRIBUTING
+
+Contributions welcome! Please:
+1. Fork the repository
+2. Create feature branch
+3. Make changes
+4. Submit pull request
+
+---
+
+## 📞 SUPPORT
+
+- **Issues**: https://github.com/alaebaha20k-maker/edit/issues
+- **Documentation**: See README files in each directory
+
+---
+
+## 🎉 ACKNOWLEDGMENTS
+
+**AI Services:**
+- Google Gemini 2.5 Flash
+- RunPod Flux.1 Schnell
+- Replicate Flux.1 Dev
+- ElevenLabs Text-to-Speech
+- OpenAI Whisper
+
+**Libraries:**
+- Flask
+- MoviePy
+- FFmpeg
+
+---
+
+**Built with ❤️ for content creators**
+
+**Version**: 1.0.0
+**Last Updated**: 2026-02-09
