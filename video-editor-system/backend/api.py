@@ -1474,7 +1474,7 @@ def get_settings():
 
 @app.route('/api/settings/api-keys', methods=['POST'])
 def save_api_keys():
-    """Save API keys (Script Writer Gemini, Director Gemini, Replicate, Inworld AI, Pexels)"""
+    """Save API keys (Script Writer Gemini, Director Gemini, Replicate, Inworld AI, Pexels, Pixabay)"""
     from settings_manager import SettingsManager
 
     try:
@@ -1488,6 +1488,7 @@ def save_api_keys():
         replicate = data.get('replicate')
         inworld = data.get('inworld')
         pexels = data.get('pexels')
+        pixabay = data.get('pixabay')
 
         # Save API keys (Script Writer Gemini and Director Gemini are SEPARATE!)
         settings = SettingsManager.save_api_keys(
@@ -1495,7 +1496,8 @@ def save_api_keys():
             director_gemini=director_gemini,
             replicate=replicate,
             inworld=inworld,
-            pexels=pexels
+            pexels=pexels,
+            pixabay=pixabay
         )
 
         # Get validation status

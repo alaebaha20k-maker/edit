@@ -247,7 +247,8 @@ Output ONLY the JSON array, no extra text."""
                 'gemini': '',
                 'replicate': '',
                 'inworld': '',
-                'pexels': ''
+                'pexels': '',
+                'pixabay': ''
             },
             'voice_settings': {
                 'default_voice': 'olivia',
@@ -263,7 +264,8 @@ Output ONLY the JSON array, no extra text."""
 
     @classmethod
     def save_api_keys(cls, gemini: str = None, director_gemini: str = None,
-                     replicate: str = None, inworld: str = None, pexels: str = None) -> Dict:
+                     replicate: str = None, inworld: str = None, pexels: str = None,
+                     pixabay: str = None) -> Dict:
         """
         Save API keys to settings file
 
@@ -273,6 +275,7 @@ Output ONLY the JSON array, no extra text."""
             replicate: Replicate API token
             inworld: Inworld AI API key (base64 credential)
             pexels: Pexels API key
+            pixabay: Pixabay API key
 
         Returns:
             Updated settings dictionary
@@ -291,6 +294,8 @@ Output ONLY the JSON array, no extra text."""
             settings['api_keys']['inworld'] = inworld
         if pexels is not None:
             settings['api_keys']['pexels'] = pexels
+        if pixabay is not None:
+            settings['api_keys']['pixabay'] = pixabay
 
         # Save to file
         with open(cls.SETTINGS_FILE, 'w') as f:
@@ -313,7 +318,7 @@ Output ONLY the JSON array, no extra text."""
         Get a specific API key
 
         Args:
-            key_name: One of 'gemini', 'replicate', 'inworld', 'pexels'
+            key_name: One of 'gemini', 'replicate', 'inworld', 'pexels', 'pixabay'
 
         Returns:
             API key string (empty if not set)
@@ -640,6 +645,10 @@ Each title must be distinctive, high-quality, and optimized for CTR.
             'pexels': {
                 'configured': bool(api_keys.get('pexels')),
                 'required': False  # Optional for now
+            },
+            'pixabay': {
+                'configured': bool(api_keys.get('pixabay')),
+                'required': False  # Optional for now
             }
         }
 
@@ -655,7 +664,7 @@ Each title must be distinctive, high-quality, and optimized for CTR.
                     'configured': api_validation[key]['configured'],
                     'value': '***' if settings['api_keys'].get(key) else ''
                 }
-                for key in ['gemini', 'director_gemini', 'replicate', 'inworld', 'pexels']
+                for key in ['gemini', 'director_gemini', 'replicate', 'inworld', 'pexels', 'pixabay']
             },
             'formulas': {
                 'title': len(cls.load_formula('title')),
