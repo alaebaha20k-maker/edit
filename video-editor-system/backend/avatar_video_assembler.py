@@ -5,6 +5,7 @@ Assembles final video with avatar loops + media + audio using FFmpeg ultra-fast
 """
 
 import os
+import json
 import subprocess
 from typing import List, Dict
 from datetime import datetime
