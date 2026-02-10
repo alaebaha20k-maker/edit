@@ -448,10 +448,22 @@ class AvatarVideoAssembler:
         audio_path: str,
         verbose: bool = False
     ) -> str:
-        """Add audio to video"""
+        """Add audio to video - video MUST match audio duration exactly"""
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = os.path.join(self.output_dir, f"avatar_video_{timestamp}.mp4")
+
+        # Get durations to verify
+        if verbose:
+            video_duration = self._get_video_duration(video_path)
+            audio_duration = self._get_video_duration(audio_path)
+            print(f"\n   🔍 Final Duration Check:")
+            print(f"   Video: {video_duration:.2f}s")
+            print(f"   Audio: {audio_duration:.2f}s")
+            if abs(video_duration - audio_duration) < 0.1:
+                print(f"   ✅ Durations match!")
+            else:
+                print(f"   ⚠️  Mismatch: {abs(video_duration - audio_duration):.2f}s difference")
 
         cmd = [
             'ffmpeg',
@@ -461,7 +473,7 @@ class AvatarVideoAssembler:
             '-c:v', 'copy',  # Copy video (no re-encode)
             '-c:a', 'aac',
             '-b:a', '192k',
-            '-shortest',  # Match shortest stream
+            # NO -shortest flag! Video should already match audio duration exactly
             output_path
         ]
 
@@ -471,6 +483,21 @@ class AvatarVideoAssembler:
         subprocess.run(cmd, check=True)
 
         return output_path
+
+    def _get_video_duration(self, video_path: str) -> float:
+        """Get video duration using ffprobe"""
+        import subprocess
+
+        cmd = [
+            'ffprobe',
+            '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            video_path
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        return float(result.stdout.strip())
 
 
 if __name__ == "__main__":

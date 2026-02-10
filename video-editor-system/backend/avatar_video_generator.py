@@ -296,6 +296,9 @@ class AvatarVideoGenerator:
                 media_seg_duration=media_seg_duration
             )
 
+        # CRITICAL: Validate and fix total duration
+        plan = self._validate_and_fix_duration(plan, audio_duration, verbose)
+
         return plan
 
     def _build_planning_prompt(
@@ -405,6 +408,72 @@ Generate the media plan now as valid JSON:
 """
 
         return prompt
+
+    def _validate_and_fix_duration(
+        self,
+        plan: Dict,
+        target_duration: float,
+        verbose: bool = False
+    ) -> Dict:
+        """
+        CRITICAL: Ensure segments add up to EXACT audio duration
+
+        Args:
+            plan: Media plan from Gemini
+            target_duration: Target audio duration in seconds
+            verbose: Print debugging info
+
+        Returns:
+            Fixed plan with exact duration
+        """
+        segments = plan.get('segments', [])
+
+        # Calculate actual total duration from segments
+        actual_duration = sum(seg['duration'] for seg in segments)
+
+        if verbose:
+            print(f"\n🔍 Duration Validation:")
+            print(f"   Target: {target_duration:.2f}s")
+            print(f"   Actual: {actual_duration:.2f}s")
+            print(f"   Difference: {actual_duration - target_duration:.2f}s")
+
+        # If durations match (within 0.1 second), we're good
+        if abs(actual_duration - target_duration) < 0.1:
+            if verbose:
+                print(f"   ✅ Duration matches!")
+            plan['total_duration'] = target_duration
+            return plan
+
+        # NEED TO FIX: Durations don't match
+        difference = target_duration - actual_duration
+
+        if verbose:
+            print(f"   ⚠️  Adjusting last segment by {difference:.2f}s...")
+
+        # Adjust the LAST avatar segment to fill the gap
+        if segments:
+            last_segment = segments[-1]
+            if last_segment['type'] == 'avatar':
+                # Extend or shorten last avatar segment
+                last_segment['duration'] += difference
+                if verbose:
+                    print(f"   ✅ Last avatar segment adjusted to {last_segment['duration']:.2f}s")
+            else:
+                # Add a final avatar segment to fill the gap
+                last_start = segments[-1]['start'] + segments[-1]['duration']
+                segments.append({
+                    'type': 'avatar',
+                    'start': last_start,
+                    'duration': difference,
+                    'search_query': None
+                })
+                if verbose:
+                    print(f"   ✅ Added final avatar segment: {difference:.2f}s")
+
+        plan['total_duration'] = target_duration
+        plan['segments'] = segments
+
+        return plan
 
     def _create_fallback_plan(
         self,
