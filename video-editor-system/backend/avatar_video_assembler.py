@@ -1,0 +1,458 @@
+#!/usr/bin/env python3
+"""
+Avatar Video Assembler
+Assembles final video with avatar loops + media + audio using FFmpeg ultra-fast
+"""
+
+import os
+import subprocess
+from typing import List, Dict
+from datetime import datetime
+
+
+class AvatarVideoAssembler:
+    """
+    Assemble avatar video with ultra-fast FFmpeg
+
+    Features:
+    - Avatar video looping
+    - AI images or stock videos insertion
+    - Audio synchronization
+    - Ultra-fast processing
+    - Exact audio length matching
+    """
+
+    def __init__(self, temp_dir: str = "temp/avatar", output_dir: str = "output"):
+        """
+        Initialize assembler
+
+        Args:
+            temp_dir: Temporary directory for processing
+            output_dir: Output directory for final video
+        """
+        self.temp_dir = temp_dir
+        self.output_dir = output_dir
+
+        os.makedirs(temp_dir, exist_ok=True)
+        os.makedirs(output_dir, exist_ok=True)
+
+    def assemble_video(
+        self,
+        avatar_video_path: str,
+        audio_path: str,
+        media_plan: Dict,
+        media_items: List[Dict],
+        mode: str,
+        verbose: bool = True
+    ) -> str:
+        """
+        Assemble final avatar video
+
+        Args:
+            avatar_video_path: Path to avatar video
+            audio_path: Path to audio narration
+            media_plan: Media plan from AvatarVideoGenerator
+            media_items: Generated/downloaded media items
+            mode: "ai_images" or "stock_videos"
+            verbose: Print progress
+
+        Returns:
+            str: Path to final video
+        """
+        if verbose:
+            print(f"\n{'='*70}")
+            print(f"🎬 ASSEMBLING AVATAR VIDEO")
+            print(f"{'='*70}\n")
+
+        # Step 1: Create avatar loops for all avatar segments
+        if verbose:
+            print("📹 Step 1: Creating avatar loops...")
+
+        avatar_clips = self._create_avatar_loops(
+            avatar_video_path=avatar_video_path,
+            media_plan=media_plan,
+            verbose=verbose
+        )
+
+        # Step 2: Prepare media items (images/videos)
+        if verbose:
+            print(f"\n🖼️  Step 2: Preparing {mode}...")
+
+        media_clips = self._prepare_media_clips(
+            media_items=media_items,
+            media_plan=media_plan,
+            mode=mode,
+            verbose=verbose
+        )
+
+        # Step 3: Create concat list
+        if verbose:
+            print("\n📝 Step 3: Creating video sequence...")
+
+        concat_file = self._create_concat_list(
+            media_plan=media_plan,
+            avatar_clips=avatar_clips,
+            media_clips=media_clips,
+            verbose=verbose
+        )
+
+        # Step 4: Concatenate all clips
+        if verbose:
+            print("\n🔗 Step 4: Concatenating video clips...")
+
+        concatenated_video = self._concatenate_clips(concat_file, verbose)
+
+        # Step 5: Add audio
+        if verbose:
+            print("\n🔊 Step 5: Adding audio narration...")
+
+        final_video = self._add_audio(
+            video_path=concatenated_video,
+            audio_path=audio_path,
+            verbose=verbose
+        )
+
+        if verbose:
+            print(f"\n{'='*70}")
+            print(f"✅ AVATAR VIDEO COMPLETE")
+            print(f"{'='*70}")
+            print(f"Output: {final_video}")
+            print(f"{'='*70}\n")
+
+        return final_video
+
+    def _create_avatar_loops(
+        self,
+        avatar_video_path: str,
+        media_plan: Dict,
+        verbose: bool = False
+    ) -> Dict[int, str]:
+        """
+        Create looped avatar clips for all avatar segments
+
+        Args:
+            avatar_video_path: Path to original avatar video
+            media_plan: Media plan
+            verbose: Print progress
+
+        Returns:
+            Dict mapping segment index to avatar clip path
+        """
+        avatar_clips = {}
+        avatar_segments = [
+            (i, seg) for i, seg in enumerate(media_plan['segments'])
+            if seg['type'] == 'avatar'
+        ]
+
+        for i, (seg_idx, segment) in enumerate(avatar_segments):
+            target_duration = segment['duration']
+
+            if verbose:
+                print(f"   [{i+1}/{len(avatar_segments)}] Creating {target_duration:.1f}s avatar loop...")
+
+            # Create looped clip
+            output_path = os.path.join(self.temp_dir, f"avatar_loop_{seg_idx}.mp4")
+
+            clip_path = self._loop_avatar_video(
+                avatar_video_path=avatar_video_path,
+                target_duration=target_duration,
+                output_path=output_path,
+                verbose=verbose
+            )
+
+            avatar_clips[seg_idx] = clip_path
+
+        return avatar_clips
+
+    def _loop_avatar_video(
+        self,
+        avatar_video_path: str,
+        target_duration: float,
+        output_path: str,
+        verbose: bool = False
+    ) -> str:
+        """
+        Loop avatar video to target duration
+
+        Args:
+            avatar_video_path: Original avatar video
+            target_duration: Target duration in seconds
+            output_path: Output path
+            verbose: Print progress
+
+        Returns:
+            str: Path to looped video
+        """
+        # Use FFmpeg to loop video
+        # Formula: loop = ceil(target_duration / avatar_duration)
+
+        # Get avatar duration
+        cmd = [
+            'ffprobe',
+            '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            avatar_video_path
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        avatar_duration = float(result.stdout.strip())
+
+        # Calculate number of loops
+        import math
+        num_loops = math.ceil(target_duration / avatar_duration)
+
+        # Create looped video with exact duration
+        cmd = [
+            'ffmpeg',
+            '-y',
+            '-stream_loop', str(num_loops - 1),  # loop n-1 times (total n loops)
+            '-i', avatar_video_path,
+            '-t', str(target_duration),  # Exact duration
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',
+            '-crf', '28',
+            '-r', '30',
+            '-s', '1920x1080',
+            '-c:a', 'aac',
+            '-b:a', '192k',
+            '-shortest',
+            output_path
+        ]
+
+        if not verbose:
+            cmd.extend(['-loglevel', 'error'])
+
+        subprocess.run(cmd, check=True)
+
+        return output_path
+
+    def _prepare_media_clips(
+        self,
+        media_items: List[Dict],
+        media_plan: Dict,
+        mode: str,
+        verbose: bool = False
+    ) -> Dict[int, str]:
+        """
+        Prepare media clips (images to videos or trim videos)
+
+        Args:
+            media_items: Media items from generator
+            media_plan: Media plan
+            mode: "ai_images" or "stock_videos"
+            verbose: Print progress
+
+        Returns:
+            Dict mapping segment index to media clip path
+        """
+        media_clips = {}
+
+        # Get media segments from plan
+        media_segments = {
+            i: seg for i, seg in enumerate(media_plan['segments'])
+            if seg['type'] in ['ai_image', 'stock_video']
+        }
+
+        for item in media_items:
+            seg_idx = item.get('segment_index')
+
+            if seg_idx not in media_segments:
+                continue
+
+            segment = media_segments[seg_idx]
+            target_duration = segment['duration']
+
+            if mode == "ai_images":
+                # Convert image to video
+                if verbose:
+                    print(f"   Converting image to {target_duration}s video...")
+
+                output_path = os.path.join(self.temp_dir, f"image_{seg_idx}.mp4")
+                clip_path = self._image_to_video(
+                    image_path=item['path'],
+                    duration=target_duration,
+                    output_path=output_path,
+                    verbose=verbose
+                )
+            else:  # stock_videos
+                # Trim or use video as-is
+                if verbose:
+                    print(f"   Preparing {target_duration}s stock video...")
+
+                output_path = os.path.join(self.temp_dir, f"stock_{seg_idx}.mp4")
+                clip_path = self._prepare_stock_video(
+                    video_path=item['path'],
+                    target_duration=target_duration,
+                    output_path=output_path,
+                    verbose=verbose
+                )
+
+            media_clips[seg_idx] = clip_path
+
+        return media_clips
+
+    def _image_to_video(
+        self,
+        image_path: str,
+        duration: float,
+        output_path: str,
+        verbose: bool = False
+    ) -> str:
+        """Convert image to video with duration"""
+
+        cmd = [
+            'ffmpeg',
+            '-y',
+            '-loop', '1',
+            '-i', image_path,
+            '-t', str(duration),
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',
+            '-tune', 'stillimage',
+            '-crf', '28',
+            '-r', '30',
+            '-s', '1920x1080',
+            '-pix_fmt', 'yuv420p',
+            '-vf', 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080',
+            output_path
+        ]
+
+        if not verbose:
+            cmd.extend(['-loglevel', 'error'])
+
+        subprocess.run(cmd, check=True)
+
+        return output_path
+
+    def _prepare_stock_video(
+        self,
+        video_path: str,
+        target_duration: float,
+        output_path: str,
+        verbose: bool = False
+    ) -> str:
+        """Prepare stock video (trim or standardize)"""
+
+        # Get video duration
+        cmd = [
+            'ffprobe',
+            '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            video_path
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        duration = float(result.stdout.strip())
+
+        # Trim if needed
+        if duration > target_duration:
+            trim_duration = target_duration
+        else:
+            trim_duration = duration
+
+        cmd = [
+            'ffmpeg',
+            '-y',
+            '-i', video_path,
+            '-t', str(trim_duration),
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',
+            '-crf', '28',
+            '-r', '30',
+            '-s', '1920x1080',
+            '-vf', 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080',
+            '-c:a', 'aac',
+            '-b:a', '192k',
+            output_path
+        ]
+
+        if not verbose:
+            cmd.extend(['-loglevel', 'error'])
+
+        subprocess.run(cmd, check=True)
+
+        return output_path
+
+    def _create_concat_list(
+        self,
+        media_plan: Dict,
+        avatar_clips: Dict[int, str],
+        media_clips: Dict[int, str],
+        verbose: bool = False
+    ) -> str:
+        """Create FFmpeg concat file"""
+
+        concat_file = os.path.join(self.temp_dir, "concat_list.txt")
+
+        with open(concat_file, 'w') as f:
+            for i, segment in enumerate(media_plan['segments']):
+                if segment['type'] == 'avatar':
+                    clip_path = avatar_clips.get(i)
+                else:
+                    clip_path = media_clips.get(i)
+
+                if clip_path:
+                    # FFmpeg concat format
+                    f.write(f"file '{os.path.abspath(clip_path)}'\n")
+
+        if verbose:
+            print(f"   Created concat list with {len(media_plan['segments'])} clips")
+
+        return concat_file
+
+    def _concatenate_clips(self, concat_file: str, verbose: bool = False) -> str:
+        """Concatenate all clips"""
+
+        output_path = os.path.join(self.temp_dir, "concatenated.mp4")
+
+        cmd = [
+            'ffmpeg',
+            '-y',
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', concat_file,
+            '-c', 'copy',  # Stream copy for speed
+            output_path
+        ]
+
+        if not verbose:
+            cmd.extend(['-loglevel', 'error'])
+
+        subprocess.run(cmd, check=True)
+
+        return output_path
+
+    def _add_audio(
+        self,
+        video_path: str,
+        audio_path: str,
+        verbose: bool = False
+    ) -> str:
+        """Add audio to video"""
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = os.path.join(self.output_dir, f"avatar_video_{timestamp}.mp4")
+
+        cmd = [
+            'ffmpeg',
+            '-y',
+            '-i', video_path,
+            '-i', audio_path,
+            '-c:v', 'copy',  # Copy video (no re-encode)
+            '-c:a', 'aac',
+            '-b:a', '192k',
+            '-shortest',  # Match shortest stream
+            output_path
+        ]
+
+        if not verbose:
+            cmd.extend(['-loglevel', 'error'])
+
+        subprocess.run(cmd, check=True)
+
+        return output_path
+
+
+if __name__ == "__main__":
+    # Test
+    print("✅ Avatar Video Assembler loaded successfully!")

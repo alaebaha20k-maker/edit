@@ -3336,6 +3336,170 @@ def timeline_merge_clips():
         }), 500
 
 
+# ============================================================================
+# AVATAR AI - Video generation with avatar loops + AI images/stock videos
+# ============================================================================
+
+@app.route('/api/avatar/generate', methods=['POST'])
+def avatar_generate():
+    """
+    Generate avatar video with AI images or stock videos
+
+    Body:
+    {
+        "avatar_video": "path/to/avatar.mp4",
+        "audio": "path/to/audio.mp3",
+        "mode": "ai_images" | "stock_videos",
+        "script": "optional script for context",
+        "stock_apis": ["pexels", "pixabay"]  // optional, for stock_videos mode
+    }
+    """
+    try:
+        from avatar_video_generator import AvatarVideoGenerator
+        from avatar_video_assembler import AvatarVideoAssembler
+
+        data = request.json
+
+        avatar_video_path = data.get('avatar_video')
+        audio_path = data.get('audio')
+        mode = data.get('mode', 'ai_images')
+        script = data.get('script', '')
+        stock_apis = data.get('stock_apis', ['pexels'])
+
+        if not avatar_video_path or not audio_path:
+            return jsonify({
+                'success': False,
+                'error': 'avatar_video and audio are required'
+            }), 400
+
+        # Validate mode
+        if mode not in ['ai_images', 'stock_videos']:
+            return jsonify({
+                'success': False,
+                'error': 'mode must be "ai_images" or "stock_videos"'
+            }), 400
+
+        print(f"\n🎬 AVATAR AI Generation Starting...")
+        print(f"   Mode: {mode}")
+        print(f"   Avatar: {avatar_video_path}")
+        print(f"   Audio: {audio_path}")
+
+        # Step 1: Generate media plan
+        generator = AvatarVideoGenerator()
+
+        result = generator.generate_avatar_video(
+            avatar_video_path=avatar_video_path,
+            audio_path=audio_path,
+            mode=mode,
+            script=script,
+            stock_apis=stock_apis,
+            verbose=True
+        )
+
+        # Step 2: Assemble video
+        assembler = AvatarVideoAssembler()
+
+        final_video = assembler.assemble_video(
+            avatar_video_path=avatar_video_path,
+            audio_path=audio_path,
+            media_plan=result['media_plan'],
+            media_items=result['media_items'],
+            mode=mode,
+            verbose=True
+        )
+
+        return jsonify({
+            'success': True,
+            'video_path': final_video,
+            'media_plan': result['media_plan'],
+            'audio_duration': result['audio_duration'],
+            'generation_time': result['generation_time'],
+            'mode': mode
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/avatar/upload-avatar', methods=['POST'])
+def avatar_upload_avatar():
+    """Upload avatar video"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided'}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'No file selected'}), 400
+
+        # Save to upload folder
+        filename = secure_filename(file.filename)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"avatar_{timestamp}_{filename}"
+        file_path = os.path.join(UPLOAD_FOLDER, filename)
+
+        file.save(file_path)
+
+        return jsonify({
+            'success': True,
+            'file_path': file_path,
+            'filename': filename
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/avatar/upload-audio', methods=['POST'])
+def avatar_upload_audio():
+    """Upload audio for avatar video"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided'}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'No file selected'}), 400
+
+        # Save to upload folder
+        filename = secure_filename(file.filename)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"avatar_audio_{timestamp}_{filename}"
+        file_path = os.path.join(UPLOAD_FOLDER, filename)
+
+        file.save(file_path)
+
+        return jsonify({
+            'success': True,
+            'file_path': file_path,
+            'filename': filename
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/avatar/status', methods=['GET'])
+def avatar_status():
+    """Get avatar generation status"""
+    # TODO: Implement progress tracking if needed
+    return jsonify({
+        'success': True,
+        'status': 'ready'
+    })
+
+
 if __name__ == '__main__':
     print("="*60)
     print("🎬 VIDEO EDITOR API SERVER")
