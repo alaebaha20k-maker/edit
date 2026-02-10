@@ -1572,6 +1572,14 @@ function toggleMediaSection(type) {
         const checked = document.getElementById('useStockFootage')?.checked;
         const section = document.getElementById('stockFootageSection');
         if (section) section.style.display = checked ? 'block' : 'none';
+    } else if (type === 'autovideos') {
+        const checked = document.getElementById('useAutoVideos')?.checked;
+        const section = document.getElementById('autoVideosSection');
+        if (section) section.style.display = checked ? 'block' : 'none';
+    } else if (type === 'autoavatar') {
+        const checked = document.getElementById('useAutoAvatar')?.checked;
+        const section = document.getElementById('autoAvatarSection');
+        if (section) section.style.display = checked ? 'block' : 'none';
     }
 }
 
@@ -4353,6 +4361,284 @@ function formatTime(seconds) {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}m ${secs}s`;
+}
+
+// =============================================================================
+// AUTO VIDEOS AI & AUTO AVATAR MIX (INTEGRATED INTO QUICK GENERATOR)
+// =============================================================================
+
+// Global state for avatar videos
+window.autoVideosAvatarData = null;
+window.autoAvatarVideoData = null;
+
+/**
+ * Handle Auto Videos AI avatar upload (auto-muted)
+ */
+async function handleAutoVideosAvatarUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    showNotification('📤 Uploading and auto-muting avatar video...', 'info');
+
+    try {
+        // Upload to server and auto-mute
+        const formData = new FormData();
+        formData.append('avatar', file);
+
+        const response = await fetch('/api/avatar/upload-avatar', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to upload avatar video');
+        }
+
+        const result = await response.json();
+
+        // Store avatar data
+        window.autoVideosAvatarData = {
+            path: result.path,
+            filename: file.name,
+            duration: result.duration || 0
+        };
+
+        // Show preview
+        const preview = document.getElementById('autoVideosAvatarPreview');
+        preview.innerHTML = `
+            <div style="background: rgba(76, 175, 80, 0.1); padding: 10px; border-radius: 5px; margin-top: 10px;">
+                ✅ <strong>${file.name}</strong> (${(result.duration || 0).toFixed(1)}s, auto-muted)
+                <button onclick="clearAutoVideosAvatar()" style="float: right; background: #f44336; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">Remove</button>
+            </div>
+        `;
+
+        showNotification('✅ Avatar video uploaded and auto-muted!', 'success');
+    } catch (error) {
+        console.error('Error uploading avatar:', error);
+        showNotification('❌ Failed to upload avatar video', 'error');
+    }
+}
+
+/**
+ * Handle Auto Avatar Mix video upload (auto-muted)
+ */
+async function handleAutoAvatarVideoUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    showNotification('📤 Uploading and auto-muting avatar video...', 'info');
+
+    try {
+        // Upload to server and auto-mute
+        const formData = new FormData();
+        formData.append('avatar', file);
+
+        const response = await fetch('/api/avatar/upload-avatar', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to upload avatar video');
+        }
+
+        const result = await response.json();
+
+        // Store avatar data
+        window.autoAvatarVideoData = {
+            path: result.path,
+            filename: file.name,
+            duration: result.duration || 0
+        };
+
+        // Show preview
+        const preview = document.getElementById('autoAvatarVideoPreview');
+        preview.innerHTML = `
+            <div style="background: rgba(76, 175, 80, 0.1); padding: 10px; border-radius: 5px; margin-top: 10px;">
+                ✅ <strong>${file.name}</strong> (${(result.duration || 0).toFixed(1)}s, auto-muted)
+                <button onclick="clearAutoAvatarVideo()" style="float: right; background: #f44336; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">Remove</button>
+            </div>
+        `;
+
+        showNotification('✅ Avatar video uploaded and auto-muted!', 'success');
+    } catch (error) {
+        console.error('Error uploading avatar:', error);
+        showNotification('❌ Failed to upload avatar video', 'error');
+    }
+}
+
+/**
+ * Clear Auto Videos AI avatar
+ */
+function clearAutoVideosAvatar() {
+    window.autoVideosAvatarData = null;
+    document.getElementById('autoVideosAvatarPreview').innerHTML = '';
+    document.getElementById('autoVideosAvatarUpload').value = '';
+    showNotification('Avatar video removed', 'info');
+}
+
+/**
+ * Clear Auto Avatar Mix video
+ */
+function clearAutoAvatarVideo() {
+    window.autoAvatarVideoData = null;
+    document.getElementById('autoAvatarVideoPreview').innerHTML = '';
+    document.getElementById('autoAvatarVideoUpload').value = '';
+    showNotification('Avatar video removed', 'info');
+}
+
+/**
+ * Generate Auto Videos AI (Avatar + Stock Videos)
+ * Uses Whisper + Gemini Director to automatically create mixed video
+ */
+async function generateAutoVideos() {
+    // Validation
+    if (!window.autoVideosAvatarData) {
+        showNotification('⚠️ Please upload an avatar video first', 'warning');
+        return;
+    }
+
+    if (!window.videoData.voice?.path) {
+        showNotification('⚠️ Please generate voice first (Step 2)', 'warning');
+        return;
+    }
+
+    const script = document.getElementById('scriptInput')?.value;
+    if (!script || script.trim().length === 0) {
+        showNotification('⚠️ Please generate a script first (Step 2)', 'warning');
+        return;
+    }
+
+    const stockAPI = document.getElementById('autoVideosStockAPI')?.value || 'both';
+    const videoCount = parseInt(document.getElementById('autoVideosCount')?.value) || 10;
+
+    const progressDiv = document.getElementById('autoVideosProgress');
+    progressDiv.style.display = 'block';
+    progressDiv.innerHTML = '<div style="padding: 15px;">🤖 Analyzing voice with Whisper...</div>';
+
+    try {
+        // Call Avatar AI backend
+        const response = await fetch('/api/avatar/generate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                avatar_video_path: window.autoVideosAvatarData.path,
+                audio_path: window.videoData.voice.path,
+                mode: 'videos_stock_auto',
+                script: script,
+                stock_apis: stockAPI === 'both' ? ['pexels', 'pixabay'] : [stockAPI],
+                media_count: videoCount
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('Generation failed');
+        }
+
+        const result = await response.json();
+
+        // Add videos to media library
+        if (result.media_items && result.media_items.length > 0) {
+            progressDiv.innerHTML = '<div style="padding: 15px; background: rgba(76, 175, 80, 0.1);">✅ Generated! Adding to media library...</div>';
+
+            for (const item of result.media_items) {
+                addToMediaLibrary(
+                    null,
+                    item.url || item.path,
+                    'video',
+                    'avatar-ai',
+                    false,
+                    item.path
+                );
+            }
+
+            showNotification(`✅ Generated ${result.media_items.length} videos!`, 'success');
+        }
+
+        progressDiv.innerHTML = '<div style="padding: 15px; background: rgba(76, 175, 80, 0.1);">✅ Complete! Videos added to Media Library below.</div>';
+
+    } catch (error) {
+        console.error('Auto Videos generation error:', error);
+        progressDiv.innerHTML = '<div style="padding: 15px; background: rgba(244, 67, 54, 0.1); color: #f44336;">❌ Generation failed. Check console for details.</div>';
+        showNotification('❌ Failed to generate auto videos', 'error');
+    }
+}
+
+/**
+ * Generate Auto Avatar Mix (Avatar + AI Images)
+ * Uses Whisper + Gemini Director + Flux.1 to automatically create mixed video
+ */
+async function generateAutoAvatar() {
+    // Validation
+    if (!window.autoAvatarVideoData) {
+        showNotification('⚠️ Please upload an avatar video first', 'warning');
+        return;
+    }
+
+    if (!window.videoData.voice?.path) {
+        showNotification('⚠️ Please generate voice first (Step 2)', 'warning');
+        return;
+    }
+
+    const script = document.getElementById('scriptInput')?.value;
+    if (!script || script.trim().length === 0) {
+        showNotification('⚠️ Please generate a script first (Step 2)', 'warning');
+        return;
+    }
+
+    const imageStyle = document.getElementById('autoAvatarImageStyle')?.value || 'cinematic';
+    const imageCount = parseInt(document.getElementById('autoAvatarImageCount')?.value) || 10;
+
+    const progressDiv = document.getElementById('autoAvatarProgress');
+    progressDiv.style.display = 'block';
+    progressDiv.innerHTML = '<div style="padding: 15px;">🤖 Analyzing voice with Whisper...</div>';
+
+    try {
+        // Call Avatar AI backend
+        const response = await fetch('/api/avatar/generate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                avatar_video_path: window.autoAvatarVideoData.path,
+                audio_path: window.videoData.voice.path,
+                mode: 'ai_images_auto',
+                script: script,
+                image_style: imageStyle,
+                media_count: imageCount
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('Generation failed');
+        }
+
+        const result = await response.json();
+
+        // Add images to media library
+        if (result.media_items && result.media_items.length > 0) {
+            progressDiv.innerHTML = '<div style="padding: 15px; background: rgba(76, 175, 80, 0.1);">✅ Generated! Adding to media library...</div>';
+
+            for (const item of result.media_items) {
+                addToMediaLibrary(
+                    null,
+                    item.url || item.path,
+                    'image',
+                    'avatar-ai',
+                    false,
+                    item.path
+                );
+            }
+
+            showNotification(`✅ Generated ${result.media_items.length} images!`, 'success');
+        }
+
+        progressDiv.innerHTML = '<div style="padding: 15px; background: rgba(76, 175, 80, 0.1);">✅ Complete! Images added to Media Library below.</div>';
+
+    } catch (error) {
+        console.error('Auto Avatar generation error:', error);
+        progressDiv.innerHTML = '<div style="padding: 15px; background: rgba(244, 67, 54, 0.1); color: #f44336;">❌ Generation failed. Check console for details.</div>';
+        showNotification('❌ Failed to generate auto avatar mix', 'error');
+    }
 }
 
 console.log('✅ Avatar AI functionality loaded');

@@ -36,10 +36,6 @@
             <span class="nav-icon">📁</span>
             <span class="nav-text">Output Files</span>
         </button>
-        <button class="nav-btn" onclick="showTab('avatar')" data-tab="avatar">
-            <span class="nav-icon">🎭</span>
-            <span class="nav-text">Avatar AI</span>
-        </button>
     </nav>
 
     <!-- MAIN CONTENT AREA -->
@@ -74,12 +70,6 @@
                     <h3>Output Files</h3>
                     <p>Browse generated videos</p>
                     <button onclick="showTab('output')" class="btn-primary">Browse Files</button>
-                </div>
-                <div class="dashboard-card">
-                    <div class="card-icon">🎭</div>
-                    <h3>Avatar AI</h3>
-                    <p>Generate videos with avatar loops + AI media</p>
-                    <button onclick="showTab('avatar')" class="btn-primary">Create Avatar Video</button>
                 </div>
             </div>
 
@@ -353,6 +343,14 @@
                         <input type="checkbox" id="useStockFootage" onchange="toggleMediaSection('stock')">
                         <span>📹 Stock Footage (Pexels)</span>
                     </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="useAutoVideos" onchange="toggleMediaSection('autovideos')">
+                        <span>🎬 Auto Videos AI (Avatar + Stock)</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="useAutoAvatar" onchange="toggleMediaSection('autoavatar')">
+                        <span>🎭 Auto Avatar Mix (Avatar + AI Images)</span>
+                    </label>
                 </div>
 
                 <!-- Auto Images AI Section -->
@@ -451,6 +449,83 @@
                     <button onclick="fetchStockFootage()" class="btn-secondary">🔍 Search Stock Media</button>
                     <div id="stockProgress" class="progress-box" style="display: none;"></div>
                     <div id="stockPreview" class="image-grid"></div>
+                </div>
+
+                <!-- Auto Videos AI Section (Avatar + Stock Videos) -->
+                <div id="autoVideosSection" class="subsection" style="display: none;">
+                    <div style="background: rgba(156, 39, 176, 0.1); padding: 12px; border-radius: 8px; margin-bottom: 15px;">
+                        <p style="font-size: 13px; color: #666; margin: 0;">
+                            🎬 <strong>Auto Videos AI:</strong> Upload your avatar video and let Gemini Director analyze your voice to automatically create a video mixing avatar loops with stock videos from Pexels/Pixabay. Whisper STT ensures perfect timing!
+                        </p>
+                    </div>
+
+                    <!-- Avatar Video Upload -->
+                    <div style="margin-bottom: 15px;">
+                        <label>Avatar Video (will be auto-muted):</label>
+                        <div class="upload-zone" style="padding: 20px; text-align: center;">
+                            <input type="file" id="autoVideosAvatarUpload" accept="video/*" style="display: none;" onchange="handleAutoVideosAvatarUpload(event)">
+                            <button onclick="document.getElementById('autoVideosAvatarUpload').click()" class="btn-secondary">📤 Upload Avatar Video</button>
+                            <div id="autoVideosAvatarPreview" style="margin-top: 10px;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Options -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                        <div>
+                            <label>Stock API:</label>
+                            <select id="autoVideosStockAPI" class="input-large">
+                                <option value="pexels">Pexels</option>
+                                <option value="pixabay">Pixabay</option>
+                                <option value="both">Both (Best Match)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>Number of Stock Videos:</label>
+                            <input type="number" id="autoVideosCount" value="10" min="1" max="30" class="input-medium">
+                        </div>
+                    </div>
+
+                    <button onclick="generateAutoVideos()" class="btn-secondary" style="width: 100%;">🎬 Generate Auto Videos Mix</button>
+                    <div id="autoVideosProgress" class="progress-box" style="display: none;"></div>
+                </div>
+
+                <!-- Auto Avatar Mix Section (Avatar + AI Images) -->
+                <div id="autoAvatarSection" class="subsection" style="display: none;">
+                    <div style="background: rgba(255, 152, 0, 0.1); padding: 12px; border-radius: 8px; margin-bottom: 15px;">
+                        <p style="font-size: 13px; color: #666; margin: 0;">
+                            🎭 <strong>Auto Avatar Mix:</strong> Upload your avatar video and let Gemini Director analyze your voice to automatically create a video mixing avatar loops with AI-generated images. Whisper STT + Flux.1 for perfect sync!
+                        </p>
+                    </div>
+
+                    <!-- Avatar Video Upload -->
+                    <div style="margin-bottom: 15px;">
+                        <label>Avatar Video (will be auto-muted):</label>
+                        <div class="upload-zone" style="padding: 20px; text-align: center;">
+                            <input type="file" id="autoAvatarVideoUpload" accept="video/*" style="display: none;" onchange="handleAutoAvatarVideoUpload(event)">
+                            <button onclick="document.getElementById('autoAvatarVideoUpload').click()" class="btn-secondary">📤 Upload Avatar Video</button>
+                            <div id="autoAvatarVideoPreview" style="margin-top: 10px;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Options -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                        <div>
+                            <label>Image Style:</label>
+                            <select id="autoAvatarImageStyle" class="input-large">
+                                <option value="cinematic">🎬 Cinematic</option>
+                                <option value="photorealistic">📷 Photorealistic</option>
+                                <option value="artistic">🎨 Artistic</option>
+                                <option value="animated">🎭 Animated</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>Number of AI Images:</label>
+                            <input type="number" id="autoAvatarImageCount" value="10" min="1" max="30" class="input-medium">
+                        </div>
+                    </div>
+
+                    <button onclick="generateAutoAvatar()" class="btn-secondary" style="width: 100%;">🎭 Generate Auto Avatar Mix</button>
+                    <div id="autoAvatarProgress" class="progress-box" style="display: none;"></div>
                 </div>
 
                 <!-- Media Library -->
@@ -674,113 +749,6 @@
                 <button onclick="refreshOutputFiles()" class="btn-secondary">🔄 Refresh</button>
                 <div id="outputFileList" class="file-list-container">
                     <p class="loading">Loading files...</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- ============================================ -->
-        <!-- AVATAR AI TAB -->
-        <!-- ============================================ -->
-        <div id="tab-avatar" class="tab-content">
-            <h2>🎭 Avatar AI</h2>
-            <p class="subtitle">Generate videos with avatar loops + AI images or stock videos</p>
-
-            <!-- Step 1: Upload Avatar Video -->
-            <div class="section-card">
-                <h3>📹 Step 1: Upload Avatar Video</h3>
-                <p class="hint">Upload your avatar video (e.g., 33 seconds)</p>
-
-                <div class="upload-zone" id="avatarUploadZone" onclick="document.getElementById('avatarFileInput').click()">
-                    <div class="upload-icon">📹</div>
-                    <div class="upload-text">
-                        <p><strong>Click to upload avatar video</strong></p>
-                        <p class="hint">MP4, MOV supported</p>
-                    </div>
-                </div>
-                <input type="file" id="avatarFileInput" accept="video/*" style="display: none;" onchange="handleAvatarUpload(event)">
-
-                <div id="avatarInfo" class="file-info-card" style="display: none;">
-                    <p><strong>File:</strong> <span id="avatarFileName"></span></p>
-                    <p><strong>Path:</strong> <span id="avatarFilePath"></span></p>
-                </div>
-            </div>
-
-            <!-- Step 2: Upload Audio -->
-            <div class="section-card">
-                <h3>🔊 Step 2: Upload Audio Narration</h3>
-                <p class="hint">Upload your audio narration (e.g., 27 minutes)</p>
-
-                <div class="upload-zone" id="audioUploadZone" onclick="document.getElementById('audioFileInput').click()">
-                    <div class="upload-icon">🔊</div>
-                    <div class="upload-text">
-                        <p><strong>Click to upload audio</strong></p>
-                        <p class="hint">MP3, WAV supported</p>
-                    </div>
-                </div>
-                <input type="file" id="audioFileInput" accept="audio/*" style="display: none;" onchange="handleAudioUploadAvatar(event)">
-
-                <div id="audioInfoAvatar" class="file-info-card" style="display: none;">
-                    <p><strong>File:</strong> <span id="audioFileNameAvatar"></span></p>
-                    <p><strong>Path:</strong> <span id="audioFilePathAvatar"></span></p>
-                </div>
-            </div>
-
-            <!-- Step 3: Select Mode -->
-            <div class="section-card">
-                <h3>🎨 Step 3: Select Mode</h3>
-
-                <div class="mode-selector-grid">
-                    <div class="mode-card selected" id="modeAiImages" onclick="selectAvatarMode('ai_images')">
-                        <div class="mode-icon">🖼️</div>
-                        <h4>AI Images Auto</h4>
-                        <p>Pattern: 1 min avatar → 5 sec AI image → repeat</p>
-                        <p class="mode-detail">Uses Replicate for high-quality images</p>
-                    </div>
-
-                    <div class="mode-card" id="modeStockVideos" onclick="selectAvatarMode('stock_videos')">
-                        <div class="mode-icon">🎥</div>
-                        <h4>Videos Stock Auto</h4>
-                        <p>Pattern: 30 sec avatar → 5-10 sec stock video → repeat</p>
-                        <p class="mode-detail">Searches Pexels & Pixabay APIs</p>
-                    </div>
-                </div>
-
-                <div class="input-group">
-                    <label>Optional: Add script for better context</label>
-                    <textarea id="avatarScriptInput" placeholder="Paste your script here (helps AI choose relevant media)..." rows="4"></textarea>
-                </div>
-            </div>
-
-            <!-- Step 4: Generate -->
-            <div class="section-card">
-                <h3>🚀 Step 4: Generate Video</h3>
-                <p class="hint">System will create video matching exact audio length with last 2 minutes as full avatar</p>
-
-                <button id="avatarGenerateBtn" onclick="generateAvatarVideo()" class="btn-primary btn-large" disabled>
-                    Generate Avatar Video
-                </button>
-
-                <div id="avatarProgress" class="progress-card" style="display: none;">
-                    <p class="progress-title" id="avatarProgressText">Initializing...</p>
-                    <div class="progress-bar">
-                        <div class="progress-bar-fill" id="avatarProgressBar"></div>
-                    </div>
-                    <p class="progress-details" id="avatarProgressDetails"></p>
-                </div>
-
-                <div id="avatarResult" class="result-card" style="display: none;">
-                    <div class="success-header">✅ Video Generated Successfully!</div>
-                    <div class="result-info">
-                        <p><strong>Output:</strong> <span id="avatarResultPath"></span></p>
-                        <p><strong>Duration:</strong> <span id="avatarResultDuration"></span></p>
-                        <p><strong>Generation Time:</strong> <span id="avatarResultTime"></span></p>
-                    </div>
-                    <video id="avatarResultVideo" controls class="result-video"></video>
-                    <div class="result-actions">
-                        <a id="avatarDownloadLink" href="#" download>
-                            <button class="btn-primary">Download Video</button>
-                        </a>
-                    </div>
                 </div>
             </div>
         </div>
