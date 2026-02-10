@@ -4558,9 +4558,7 @@ async function generateAutoVideos() {
                         <source src="/api/download/${videoFilename}" type="video/mp4">
                     </video>
                     <div>
-                        <a href="/api/download/${videoFilename}" download="${videoFilename}">
-                            <button class="btn-primary" style="margin-top: 10px;">📥 Download Video (MP4)</button>
-                        </a>
+                        <button class="btn-primary" style="margin-top: 10px;" onclick="window.location.href='/api/download/${videoFilename}'">📥 Download Video (MP4)</button>
                     </div>
                 </div>
             `;
@@ -4646,9 +4644,7 @@ async function generateAutoAvatar() {
                         <source src="/api/download/${videoFilename}" type="video/mp4">
                     </video>
                     <div>
-                        <a href="/api/download/${videoFilename}" download="${videoFilename}">
-                            <button class="btn-primary" style="margin-top: 10px;">📥 Download Video (MP4)</button>
-                        </a>
+                        <button class="btn-primary" style="margin-top: 10px;" onclick="window.location.href='/api/download/${videoFilename}'">📥 Download Video (MP4)</button>
                     </div>
                 </div>
             `;
