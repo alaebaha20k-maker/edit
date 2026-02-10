@@ -3400,7 +3400,10 @@ def avatar_generate():
         )
 
         # Step 2: Assemble video
-        assembler = AvatarVideoAssembler()
+        assembler = AvatarVideoAssembler(
+            temp_dir=TEMP_FOLDER,
+            output_dir=OUTPUT_FOLDER  # Use same output folder as other videos
+        )
 
         final_video = assembler.assemble_video(
             avatar_video_path=avatar_video_path,
@@ -3411,9 +3414,12 @@ def avatar_generate():
             verbose=True
         )
 
+        # Get just the filename for frontend
+        video_filename = os.path.basename(final_video)
+
         return jsonify({
             'success': True,
-            'video_path': final_video,
+            'video_path': video_filename,  # Just filename, not full path
             'media_plan': result['media_plan'],
             'audio_duration': result['audio_duration'],
             'generation_time': result['generation_time'],

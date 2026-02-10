@@ -331,40 +331,59 @@ class AvatarVideoAssembler:
         output_path: str,
         verbose: bool = False
     ) -> str:
-        """Prepare stock video (trim or standardize)"""
+        """Prepare stock video (trim with FAST COPY when possible)"""
 
-        # Get video duration
-        cmd = [
+        # Get video duration and codec info
+        probe_cmd = [
             'ffprobe',
             '-v', 'error',
-            '-show_entries', 'format=duration',
-            '-of', 'default=noprint_wrappers=1:nokey=1',
+            '-select_streams', 'v:0',
+            '-show_entries', 'stream=codec_name,width,height:format=duration',
+            '-of', 'json',
             video_path
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        duration = float(result.stdout.strip())
+        result = subprocess.run(probe_cmd, capture_output=True, text=True)
+        info = json.loads(result.stdout)
 
-        # Trim if needed
-        if duration > target_duration:
-            trim_duration = target_duration
+        duration = float(info['format']['duration'])
+        codec = info['streams'][0].get('codec_name', '')
+        width = info['streams'][0].get('width', 0)
+        height = info['streams'][0].get('height', 0)
+
+        # Trim duration
+        trim_duration = min(duration, target_duration)
+
+        # Check if video is already h264 and 1920x1080 (can use copy)
+        is_h264 = codec == 'h264'
+        is_1080p = (width == 1920 and height == 1080)
+
+        if is_h264 and is_1080p:
+            # FAST: Use copy codec (no re-encoding!)
+            cmd = [
+                'ffmpeg',
+                '-y',
+                '-i', video_path,
+                '-t', str(trim_duration),
+                '-c', 'copy',  # FAST COPY
+                output_path
+            ]
         else:
-            trim_duration = duration
-
-        cmd = [
-            'ffmpeg',
-            '-y',
-            '-i', video_path,
-            '-t', str(trim_duration),
-            '-c:v', 'libx264',
-            '-preset', 'ultrafast',
-            '-crf', '28',
-            '-r', '30',
-            '-s', '1920x1080',
-            '-vf', 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080',
-            '-c:a', 'aac',
-            '-b:a', '192k',
-            output_path
-        ]
+            # SLOW: Must re-encode to standardize
+            cmd = [
+                'ffmpeg',
+                '-y',
+                '-i', video_path,
+                '-t', str(trim_duration),
+                '-c:v', 'libx264',
+                '-preset', 'ultrafast',
+                '-crf', '28',
+                '-r', '30',
+                '-s', '1920x1080',
+                '-vf', 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080',
+                '-c:a', 'aac',
+                '-b:a', '192k',
+                output_path
+            ]
 
         if not verbose:
             cmd.extend(['-loglevel', 'error'])
