@@ -282,6 +282,11 @@ class AvatarVideoGenerator:
 
         last_2_min_seconds = 120
 
+        # Prepare script context (can't use backslash in f-string expression)
+        script_context = ""
+        if script:
+            script_context = "**SCRIPT CONTEXT:**\n" + script[:1000] + "\n"
+
         prompt = f"""You are an AI video planner. Create a media sequence plan.
 
 **TASK:** Plan a video with avatar loops and {"AI images" if mode == "ai_images" else "stock videos"}.
@@ -317,8 +322,7 @@ class AvatarVideoGenerator:
   ]
 }}
 
-{"**SCRIPT CONTEXT:**\n" + script[:1000] if script else ""}
-
+{script_context}
 **IMPORTANT:**
 - Be creative in choosing 5 sec vs 10 sec for stock videos
 - Search queries should be relevant to the audio timing
