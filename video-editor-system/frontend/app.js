@@ -4498,8 +4498,10 @@ async function generateAutoVideos() {
         return;
     }
 
-    if (!window.videoData.voice?.path) {
-        showNotification('⚠️ Please generate voice first (Step 2)', 'warning');
+    // Check voice library (voices already generated in Step 2)
+    const voiceLibrary = window.videoData.voiceLibrary || [];
+    if (voiceLibrary.length === 0) {
+        showNotification('⚠️ Please generate or upload voice first (Step 2 - Voice Library)', 'warning');
         return;
     }
 
@@ -4516,13 +4518,21 @@ async function generateAutoVideos() {
     progressDiv.innerHTML = '<div style="padding: 15px;">🤖 Analyzing voice with Whisper + Gemini calculating media count...</div>';
 
     try {
+        // Get all voice paths (they will be merged in sequence)
+        const voicePaths = voiceLibrary.map(voice => voice.path).filter(p => p);
+
+        // Get background music if enabled
+        const backgroundMusic = window.videoData.backgroundMusic || null;
+
         // Call Avatar AI backend (Gemini calculates count automatically)
         const response = await fetch('/api/avatar/generate', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
                 avatar_video_path: window.autoVideosAvatarData.path,
-                audio_path: window.videoData.voice.path,
+                audio_path: voicePaths[0], // Use first voice (or we can merge server-side)
+                voice_paths: voicePaths, // All voices in library
+                background_music: backgroundMusic, // Include background music
                 mode: 'videos_stock_auto',
                 script: script,
                 stock_apis: stockAPI === 'both' ? ['pexels', 'pixabay'] : [stockAPI]
@@ -4574,8 +4584,10 @@ async function generateAutoAvatar() {
         return;
     }
 
-    if (!window.videoData.voice?.path) {
-        showNotification('⚠️ Please generate voice first (Step 2)', 'warning');
+    // Check voice library (voices already generated in Step 2)
+    const voiceLibrary = window.videoData.voiceLibrary || [];
+    if (voiceLibrary.length === 0) {
+        showNotification('⚠️ Please generate or upload voice first (Step 2 - Voice Library)', 'warning');
         return;
     }
 
@@ -4592,13 +4604,21 @@ async function generateAutoAvatar() {
     progressDiv.innerHTML = '<div style="padding: 15px;">🤖 Analyzing voice with Whisper + Gemini calculating media count...</div>';
 
     try {
+        // Get all voice paths (they will be merged in sequence)
+        const voicePaths = voiceLibrary.map(voice => voice.path).filter(p => p);
+
+        // Get background music if enabled
+        const backgroundMusic = window.videoData.backgroundMusic || null;
+
         // Call Avatar AI backend (Gemini calculates count automatically)
         const response = await fetch('/api/avatar/generate', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
                 avatar_video_path: window.autoAvatarVideoData.path,
-                audio_path: window.videoData.voice.path,
+                audio_path: voicePaths[0], // Use first voice (or we can merge server-side)
+                voice_paths: voicePaths, // All voices in library
+                background_music: backgroundMusic, // Include background music
                 mode: 'ai_images_auto',
                 script: script,
                 image_style: imageStyle
