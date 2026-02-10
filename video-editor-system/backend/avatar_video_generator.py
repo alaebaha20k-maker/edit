@@ -311,10 +311,34 @@ class AvatarVideoGenerator:
 
         last_2_min_seconds = 120
 
-        # Prepare script context (can't use backslash in f-string expression)
-        script_context = ""
-        if script:
-            script_context = "**SCRIPT CONTEXT:**\n" + script[:1000] + "\n"
+        # CRITICAL: Analyze script by timing to plan WHAT media to show WHEN
+        # Calculate characters per second (rough estimate for timing)
+        chars_per_second = len(script) / audio_duration if script and audio_duration > 0 else 0
+
+        # Create timing-based script chunks (every 30 seconds)
+        script_chunks = []
+        if script and chars_per_second > 0:
+            current_time = 0
+            chunk_interval = 30  # Analyze script every 30 seconds
+            while current_time < audio_duration - last_2_min_seconds:
+                start_char = int(current_time * chars_per_second)
+                end_char = int((current_time + chunk_interval) * chars_per_second)
+                chunk_text = script[start_char:end_char] if start_char < len(script) else ""
+                if chunk_text:
+                    script_chunks.append({
+                        'time_start': current_time,
+                        'time_end': current_time + chunk_interval,
+                        'text': chunk_text[:150]  # First 150 chars for context
+                    })
+                current_time += chunk_interval
+
+        # Build script timeline for Gemini
+        script_timeline = ""
+        if script_chunks:
+            script_timeline = "**SCRIPT TIMELINE (what audio says at each time):**\n"
+            for chunk in script_chunks[:10]:  # Show first 10 chunks
+                script_timeline += f"[{chunk['time_start']:.0f}s-{chunk['time_end']:.0f}s]: \"{chunk['text']}...\"\n"
+            script_timeline += "\n"
 
         prompt = f"""You are an AI video planner. Create a media sequence plan.
 
@@ -324,6 +348,8 @@ class AvatarVideoGenerator:
 - Audio duration: {audio_duration:.2f} seconds ({audio_duration/60:.2f} minutes)
 - Avatar video duration: {avatar_duration:.2f} seconds
 - Mode: {mode}
+
+{script_timeline}
 
 **RULES:**
 1. Pattern: {avatar_seg_duration} sec avatar → {media_seg_duration if media_seg_duration else "5-10"} sec {"AI image" if mode == "ai_images" else "stock video"} → repeat
@@ -345,23 +371,33 @@ class AvatarVideoGenerator:
       "type": "{"ai_image" if mode == "ai_images" else "stock_video"}",
       "start": {avatar_seg_duration},
       "duration": {media_seg_duration if media_seg_duration else "5 or 10"},
-      "search_query": "business"
+      "search_query": "business meeting"
     }},
     ...
   ]
 }}
 
-{script_context}
-**CRITICAL - SEARCH QUERY RULES:**
-- Search queries MUST be 1-3 words maximum (e.g., "business", "technology office", "handshake")
-- Use SIMPLE, SPECIFIC keywords that match stock video libraries
-- Good examples: "laptop", "cityscape", "meeting", "nature forest", "typing keyboard"
-- Bad examples: "person working on laptop in modern office" (too long!)
-- Match keywords to the script context and timing
+**CRITICAL - HOW TO GENERATE SEARCH QUERIES:**
+1. READ the script timeline above - see what the audio is saying at each time
+2. For each media segment, check what time it starts
+3. Look at the script text for that time range
+4. Extract 1-3 keywords that match the topic being discussed
+5. Use SIMPLE, SPECIFIC keywords for stock video libraries
+
+**SEARCH QUERY RULES:**
+- MUST be 1-3 words maximum
+- Match the script content at that specific timing
+- Examples based on script content:
+  * If script talks about "trading": use "stock market" or "trading"
+  * If script talks about "nature": use "forest" or "mountains"
+  * If script talks about "technology": use "laptop office" or "coding"
+- DON'T use generic keywords if script is specific!
+- Good: "handshake", "cityscape", "coffee meeting", "typing code"
+- Bad: "person working in office environment" (too long!)
 
 **IMPORTANT:**
-- Be creative in choosing 5 sec vs 10 sec for stock videos
-- Search queries: 1-3 words only!
+- ANALYZE the script timeline to match media to content!
+- Search queries: 1-3 words, content-specific!
 - Last segment must end at exactly {audio_duration:.2f} seconds
 - Last {last_2_min_seconds} seconds = continuous avatar
 

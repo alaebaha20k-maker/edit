@@ -3376,6 +3376,13 @@ def avatar_generate():
                 'error': 'avatar_video and audio are required'
             }), 400
 
+        # CRITICAL: Script is REQUIRED so Gemini knows what media to place where
+        if not script or len(script.strip()) < 50:
+            return jsonify({
+                'success': False,
+                'error': 'Script is REQUIRED! Gemini needs the script text to know what videos/images to place at each timing. Please provide the full audio script.'
+            }), 400
+
         # Validate mode
         if mode not in ['ai_images', 'stock_videos']:
             return jsonify({
