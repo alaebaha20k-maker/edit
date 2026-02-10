@@ -420,13 +420,16 @@ Generate the media plan now as valid JSON:
         generator = ReplicateImageGenerator()
         images = []
 
-        # Get all ai_image segments
-        image_segments = [s for s in media_plan['segments'] if s['type'] == 'ai_image']
+        # Get all ai_image segments with their ORIGINAL indices
+        image_segments = [
+            (seg_idx, seg) for seg_idx, seg in enumerate(media_plan['segments'])
+            if seg['type'] == 'ai_image'
+        ]
 
         if verbose:
             print(f"   Generating {len(image_segments)} AI images...")
 
-        for i, segment in enumerate(image_segments):
+        for i, (seg_idx, segment) in enumerate(image_segments):
             if verbose:
                 print(f"   [{i+1}/{len(image_segments)}] Generating image for: {segment.get('search_query', 'generic')}")
 
@@ -441,7 +444,7 @@ Generate the media plan now as valid JSON:
                 )
 
                 images.append({
-                    'segment_index': i,
+                    'segment_index': seg_idx,  # Use ORIGINAL index from media_plan['segments']
                     'path': image_path,
                     'prompt': prompt,
                     'duration': segment['duration'],
@@ -481,13 +484,16 @@ Generate the media plan now as valid JSON:
         downloader = StockVideoDownloader(apis=stock_apis or ['pexels'])
         videos = []
 
-        # Get all stock_video segments
-        video_segments = [s for s in media_plan['segments'] if s['type'] == 'stock_video']
+        # Get all stock_video segments with their ORIGINAL indices
+        video_segments = [
+            (seg_idx, seg) for seg_idx, seg in enumerate(media_plan['segments'])
+            if seg['type'] == 'stock_video'
+        ]
 
         if verbose:
             print(f"   Downloading {len(video_segments)} stock videos...")
 
-        for i, segment in enumerate(video_segments):
+        for i, (seg_idx, segment) in enumerate(video_segments):
             if verbose:
                 print(f"   [{i+1}/{len(video_segments)}] Searching: {segment.get('search_query', 'generic')}")
 
@@ -500,7 +506,7 @@ Generate the media plan now as valid JSON:
                 )
 
                 videos.append({
-                    'segment_index': i,
+                    'segment_index': seg_idx,  # Use ORIGINAL index from media_plan['segments']
                     'path': video_path,
                     'query': segment.get('search_query'),
                     'duration': segment['duration'],
