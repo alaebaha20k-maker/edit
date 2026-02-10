@@ -149,10 +149,10 @@ class AvatarVideoGenerator:
         """
         try:
             # Use Whisper to get exact duration
-            result = self.whisper.transcribe_with_timing(
+            result = self.whisper.transcribe_with_timestamps(
                 audio_path=audio_path,
-                model_size='base',
-                language=None  # Auto-detect
+                language=None,  # Auto-detect
+                verbose=verbose
             )
 
             if 'segments' in result and len(result['segments']) > 0:
