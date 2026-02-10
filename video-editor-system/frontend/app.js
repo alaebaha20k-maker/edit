@@ -4147,3 +4147,212 @@ window.openSettings = function() {
 };
 
 console.log('✅ MR BAHA Editor with backend FFmpeg initialized');
+
+// ============================================================================
+// AVATAR AI FUNCTIONALITY
+// ============================================================================
+
+let avatarVideoPath = null;
+let avatarAudioPath = null;
+let selectedAvatarMode = 'ai_images';
+
+// Handle avatar video upload
+async function handleAvatarUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        showNotification('Uploading avatar video...', 'info');
+
+        const response = await fetch('/api/avatar/upload-avatar', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            avatarVideoPath = data.file_path;
+
+            // Update UI
+            document.getElementById('avatarUploadZone').classList.add('uploaded');
+            document.getElementById('avatarUploadZone').innerHTML = `
+                <div class="upload-icon">✅</div>
+                <div class="upload-text">
+                    <p><strong>Avatar uploaded</strong></p>
+                    <p class="hint">${file.name}</p>
+                </div>
+            `;
+
+            document.getElementById('avatarFileName').textContent = data.filename;
+            document.getElementById('avatarFilePath').textContent = data.file_path;
+            document.getElementById('avatarInfo').style.display = 'block';
+
+            showNotification('✅ Avatar video uploaded!', 'success');
+            checkAvatarReadyToGenerate();
+        } else {
+            showNotification('❌ Upload failed: ' + data.error, 'error');
+        }
+    } catch (error) {
+        showNotification('❌ Upload error: ' + error.message, 'error');
+    }
+}
+
+// Handle audio upload for avatar
+async function handleAudioUploadAvatar(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        showNotification('Uploading audio...', 'info');
+
+        const response = await fetch('/api/avatar/upload-audio', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            avatarAudioPath = data.file_path;
+
+            // Update UI
+            document.getElementById('audioUploadZone').classList.add('uploaded');
+            document.getElementById('audioUploadZone').innerHTML = `
+                <div class="upload-icon">✅</div>
+                <div class="upload-text">
+                    <p><strong>Audio uploaded</strong></p>
+                    <p class="hint">${file.name}</p>
+                </div>
+            `;
+
+            document.getElementById('audioFileNameAvatar').textContent = data.filename;
+            document.getElementById('audioFilePathAvatar').textContent = data.file_path;
+            document.getElementById('audioInfoAvatar').style.display = 'block';
+
+            showNotification('✅ Audio uploaded!', 'success');
+            checkAvatarReadyToGenerate();
+        } else {
+            showNotification('❌ Upload failed: ' + data.error, 'error');
+        }
+    } catch (error) {
+        showNotification('❌ Upload error: ' + error.message, 'error');
+    }
+}
+
+// Select avatar mode
+function selectAvatarMode(mode) {
+    selectedAvatarMode = mode;
+
+    // Update UI
+    document.getElementById('modeAiImages').classList.remove('selected');
+    document.getElementById('modeStockVideos').classList.remove('selected');
+
+    if (mode === 'ai_images') {
+        document.getElementById('modeAiImages').classList.add('selected');
+    } else {
+        document.getElementById('modeStockVideos').classList.add('selected');
+    }
+}
+
+// Check if ready to generate
+function checkAvatarReadyToGenerate() {
+    if (avatarVideoPath && avatarAudioPath) {
+        document.getElementById('avatarGenerateBtn').disabled = false;
+    }
+}
+
+// Generate avatar video
+async function generateAvatarVideo() {
+    const script = document.getElementById('avatarScriptInput').value;
+
+    // Disable button and show progress
+    document.getElementById('avatarGenerateBtn').disabled = true;
+    document.getElementById('avatarProgress').style.display = 'block';
+    document.getElementById('avatarResult').style.display = 'none';
+
+    updateAvatarProgress(10, 'Analyzing audio with Whisper...', 'This may take 2-3 minutes...');
+
+    try {
+        const response = await fetch('/api/avatar/generate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                avatar_video: avatarVideoPath,
+                audio: avatarAudioPath,
+                mode: selectedAvatarMode,
+                script: script,
+                stock_apis: ['pexels', 'pixabay']
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            updateAvatarProgress(100, 'Complete!', 'Video generated successfully');
+
+            setTimeout(() => {
+                // Hide progress and show result
+                document.getElementById('avatarProgress').style.display = 'none';
+                document.getElementById('avatarResult').style.display = 'block';
+
+                // Populate result
+                document.getElementById('avatarResultPath').textContent = data.video_path;
+                document.getElementById('avatarResultDuration').textContent = formatDuration(data.audio_duration);
+                document.getElementById('avatarResultTime').textContent = formatTime(data.generation_time);
+
+                // Set video source
+                const video = document.getElementById('avatarResultVideo');
+                video.src = '/' + data.video_path;
+
+                // Set download link
+                const downloadLink = document.getElementById('avatarDownloadLink');
+                downloadLink.href = '/' + data.video_path;
+
+                // Re-enable button
+                document.getElementById('avatarGenerateBtn').disabled = false;
+
+                showNotification('✅ Avatar video generated!', 'success');
+            }, 500);
+        } else {
+            showNotification('❌ Generation failed: ' + data.error, 'error');
+            document.getElementById('avatarProgress').style.display = 'none';
+            document.getElementById('avatarGenerateBtn').disabled = false;
+        }
+    } catch (error) {
+        showNotification('❌ Error: ' + error.message, 'error');
+        document.getElementById('avatarProgress').style.display = 'none';
+        document.getElementById('avatarGenerateBtn').disabled = false;
+    }
+}
+
+// Update avatar progress
+function updateAvatarProgress(percent, text, details = '') {
+    document.getElementById('avatarProgressBar').style.width = percent + '%';
+    document.getElementById('avatarProgressText').textContent = text;
+    document.getElementById('avatarProgressDetails').textContent = details;
+}
+
+// Format duration (seconds to MM:SS)
+function formatDuration(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Format time (seconds to Xm Ys)
+function formatTime(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}m ${secs}s`;
+}
+
+console.log('✅ Avatar AI functionality loaded');
