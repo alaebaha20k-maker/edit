@@ -3551,6 +3551,60 @@ def avatar_status():
     })
 
 
+@app.route('/api/check-script', methods=['GET'])
+def check_script():
+    """Check if a script file exists in the output folder"""
+    try:
+        import glob
+        import os
+        from datetime import datetime
+
+        # Find all script files in output folder
+        script_pattern = os.path.join(OUTPUT_FOLDER, 'script_*.txt')
+        script_files = glob.glob(script_pattern)
+
+        if not script_files:
+            return jsonify({
+                'success': True,
+                'has_script': False
+            })
+
+        # Get the most recent script file
+        most_recent_script = max(script_files, key=os.path.getmtime)
+
+        # Read the script content
+        with open(most_recent_script, 'r', encoding='utf-8') as f:
+            script_content = f.read()
+
+        # Get file stats
+        file_stats = os.stat(most_recent_script)
+        file_size = file_stats.st_size
+        modified_time = datetime.fromtimestamp(file_stats.st_mtime)
+
+        # Calculate stats
+        char_count = len(script_content)
+        word_count = len(script_content.split())
+
+        return jsonify({
+            'success': True,
+            'has_script': True,
+            'script': script_content,
+            'script_filename': os.path.basename(most_recent_script),
+            'length': char_count,
+            'words': word_count,
+            'file_size': file_size,
+            'modified': modified_time.strftime('%Y-%m-%d %H:%M:%S')
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 if __name__ == '__main__':
     print("="*60)
     print("🎬 VIDEO EDITOR API SERVER")

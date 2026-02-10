@@ -122,6 +122,97 @@ function showTab(tabName) {
     // Load specific tab content
     if (tabName === 'output') {
         refreshOutputFiles();
+    } else if (tabName === 'generator') {
+        checkForExistingScript();
+    }
+}
+
+// Check for existing script file when AI Generator tab is opened
+async function checkForExistingScript() {
+    try {
+        const response = await fetch('/api/check-script');
+        const data = await response.json();
+
+        if (data.success && data.has_script) {
+            // Script exists - populate the UI
+            displayExistingScript(data);
+        } else {
+            // No script exists - make sure UI is in generation mode
+            ensureGenerationMode();
+        }
+    } catch (error) {
+        console.error('Error checking for script:', error);
+        // On error, just ensure generation mode is available
+        ensureGenerationMode();
+    }
+}
+
+// Display existing script in the UI
+function displayExistingScript(scriptData) {
+    // Populate script input
+    const scriptInput = document.getElementById('scriptInput');
+    if (scriptInput) {
+        scriptInput.value = scriptData.script;
+        window.videoData.script = scriptData.script;
+        appState.generatedScript = scriptData.script;
+    }
+
+    // Show script stats
+    const statsBox = document.getElementById('scriptStats');
+    if (statsBox) {
+        statsBox.style.display = 'block';
+        statsBox.innerHTML = `
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px;">
+                <div>
+                    <strong>📏 Length:</strong><br>${scriptData.length.toLocaleString()} chars
+                </div>
+                <div>
+                    <strong>📝 Words:</strong><br>${scriptData.words.toLocaleString()}
+                </div>
+                <div>
+                    <strong>📄 File:</strong><br>${scriptData.script_filename || 'script.txt'}
+                </div>
+                <div>
+                    <strong>📅 Modified:</strong><br>${scriptData.modified || 'Recently'}
+                </div>
+            </div>
+        `;
+    }
+
+    // Show download button
+    const downloadSection = document.getElementById('scriptDownloadSection');
+    if (downloadSection) {
+        downloadSection.style.display = 'block';
+    }
+
+    // Show voice generation section
+    const voiceSection = document.getElementById('voiceGenerationSection');
+    if (voiceSection) {
+        voiceSection.style.display = 'block';
+    }
+}
+
+// Ensure the UI is in generation mode (when no script exists)
+function ensureGenerationMode() {
+    // Make sure script input is empty or in manual mode
+    const scriptManualSection = document.getElementById('scriptManualSection');
+    const scriptAutoSection = document.getElementById('scriptAutoSection');
+
+    // Check which mode is selected
+    const scriptMode = document.querySelector('input[name="scriptMode"]:checked')?.value || 'manual';
+
+    if (scriptMode === 'manual') {
+        if (scriptManualSection) scriptManualSection.style.display = 'block';
+        if (scriptAutoSection) scriptAutoSection.style.display = 'none';
+    } else {
+        if (scriptManualSection) scriptManualSection.style.display = 'none';
+        if (scriptAutoSection) scriptAutoSection.style.display = 'block';
+    }
+
+    // Hide voice generation section until script is ready
+    const voiceSection = document.getElementById('voiceGenerationSection');
+    if (voiceSection && (!window.videoData.script || window.videoData.script.trim() === '')) {
+        voiceSection.style.display = 'none';
     }
 }
 
