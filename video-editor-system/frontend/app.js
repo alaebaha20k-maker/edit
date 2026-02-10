@@ -4529,11 +4529,11 @@ async function generateAutoVideos() {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
-                avatar_video_path: window.autoVideosAvatarData.path,
-                audio_path: voicePaths[0], // Use first voice (or we can merge server-side)
+                avatar_video: window.autoVideosAvatarData.path,
+                audio: voicePaths[0], // Use first voice (or we can merge server-side)
                 voice_paths: voicePaths, // All voices in library
                 background_music: backgroundMusic, // Include background music
-                mode: 'videos_stock_auto',
+                mode: 'stock_videos',
                 script: script,
                 stock_apis: stockAPI === 'both' ? ['pexels', 'pixabay'] : [stockAPI]
                 // No media_count - Gemini calculates automatically!
@@ -4616,11 +4616,11 @@ async function generateAutoAvatar() {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
-                avatar_video_path: window.autoAvatarVideoData.path,
-                audio_path: voicePaths[0], // Use first voice (or we can merge server-side)
+                avatar_video: window.autoAvatarVideoData.path,
+                audio: voicePaths[0], // Use first voice (or we can merge server-side)
                 voice_paths: voicePaths, // All voices in library
                 background_music: backgroundMusic, // Include background music
-                mode: 'ai_images_auto',
+                mode: 'ai_images',
                 script: script,
                 image_style: imageStyle
                 // No media_count - Gemini calculates automatically!
