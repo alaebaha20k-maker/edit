@@ -44,6 +44,7 @@ class AvatarVideoGenerator:
         mode: str = "ai_images",
         script: str = None,
         stock_apis: List[str] = None,
+        use_whisper: bool = False,
         verbose: bool = True
     ) -> Dict:
         """
@@ -55,6 +56,7 @@ class AvatarVideoGenerator:
             mode: "ai_images" or "stock_videos"
             script: Optional script for context (for stock video search)
             stock_apis: List of stock API names to search (for stock_videos mode)
+            use_whisper: If True, use Whisper STT for timing (slow). If False, use fast Gemini planning (default: False)
             verbose: Print progress
 
         Returns:
@@ -71,11 +73,15 @@ class AvatarVideoGenerator:
             print(f"Audio: {audio_path}")
             print(f"{'='*70}\n")
 
-        # Step 1: Analyze audio with Whisper
-        if verbose:
-            print("📊 Step 1: Analyzing audio with Whisper...")
-
-        audio_duration = self._get_audio_duration_whisper(audio_path, verbose)
+        # Step 1: Get audio duration (fast or with Whisper)
+        if use_whisper:
+            if verbose:
+                print("📊 Step 1: Analyzing audio with Whisper STT (detailed timing)...")
+            audio_duration = self._get_audio_duration_whisper(audio_path, verbose)
+        else:
+            if verbose:
+                print("⚡ Step 1: Getting audio duration (fast mode)...")
+            audio_duration = self._get_audio_duration_fast(audio_path)
 
         if verbose:
             print(f"✅ Audio duration: {audio_duration:.2f} seconds ({audio_duration/60:.2f} minutes)\n")
@@ -135,6 +141,29 @@ class AvatarVideoGenerator:
             print(f"{'='*70}\n")
 
         return result
+
+    def _get_audio_duration_fast(self, audio_path: str) -> float:
+        """
+        Get audio duration using ffprobe (ultra-fast, no transcription)
+
+        Args:
+            audio_path: Path to audio file
+
+        Returns:
+            float: Duration in seconds
+        """
+        import subprocess
+
+        cmd = [
+            'ffprobe',
+            '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            audio_path
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        return float(result.stdout.strip())
 
     def _get_audio_duration_whisper(self, audio_path: str, verbose: bool = False) -> float:
         """
@@ -316,16 +345,23 @@ class AvatarVideoGenerator:
       "type": "{"ai_image" if mode == "ai_images" else "stock_video"}",
       "start": {avatar_seg_duration},
       "duration": {media_seg_duration if media_seg_duration else "5 or 10"},
-      "search_query": "relevant search term based on timing"
+      "search_query": "business"
     }},
     ...
   ]
 }}
 
 {script_context}
+**CRITICAL - SEARCH QUERY RULES:**
+- Search queries MUST be 1-3 words maximum (e.g., "business", "technology office", "handshake")
+- Use SIMPLE, SPECIFIC keywords that match stock video libraries
+- Good examples: "laptop", "cityscape", "meeting", "nature forest", "typing keyboard"
+- Bad examples: "person working on laptop in modern office" (too long!)
+- Match keywords to the script context and timing
+
 **IMPORTANT:**
 - Be creative in choosing 5 sec vs 10 sec for stock videos
-- Search queries should be relevant to the audio timing
+- Search queries: 1-3 words only!
 - Last segment must end at exactly {audio_duration:.2f} seconds
 - Last {last_2_min_seconds} seconds = continuous avatar
 

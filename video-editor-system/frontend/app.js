@@ -4513,9 +4513,12 @@ async function generateAutoVideos() {
 
     const stockAPI = document.getElementById('autoVideosStockAPI')?.value || 'both';
 
+    // Get timing method
+    const useWhisper = document.getElementById('autoVideosUseWhisper')?.checked || false;
+
     const progressDiv = document.getElementById('autoVideosProgress');
     progressDiv.style.display = 'block';
-    progressDiv.innerHTML = '<div style="padding: 15px;">🤖 Analyzing voice with Whisper + Gemini calculating media count...</div>';
+    progressDiv.innerHTML = `<div style="padding: 15px;">🤖 ${useWhisper ? 'Analyzing voice with Whisper STT (slow)...' : 'Using fast Gemini planning...'}</div>`;
 
     try {
         // Get all voice paths (they will be merged in sequence)
@@ -4535,7 +4538,8 @@ async function generateAutoVideos() {
                 background_music: backgroundMusic, // Include background music
                 mode: 'stock_videos',
                 script: script,
-                stock_apis: stockAPI === 'both' ? ['pexels', 'pixabay'] : [stockAPI]
+                stock_apis: stockAPI === 'both' ? ['pexels', 'pixabay'] : [stockAPI],
+                use_whisper: useWhisper  // NEW: timing method (default: false = fast Gemini)
                 // No media_count - Gemini calculates automatically!
             })
         });
@@ -4599,9 +4603,12 @@ async function generateAutoAvatar() {
 
     const imageStyle = document.getElementById('autoAvatarImageStyle')?.value || 'cinematic';
 
+    // Get timing method
+    const useWhisper = document.getElementById('autoAvatarUseWhisper')?.checked || false;
+
     const progressDiv = document.getElementById('autoAvatarProgress');
     progressDiv.style.display = 'block';
-    progressDiv.innerHTML = '<div style="padding: 15px;">🤖 Analyzing voice with Whisper + Gemini calculating media count...</div>';
+    progressDiv.innerHTML = `<div style="padding: 15px;">🤖 ${useWhisper ? 'Analyzing voice with Whisper STT (slow)...' : 'Using fast Gemini planning...'}</div>`;
 
     try {
         // Get all voice paths (they will be merged in sequence)
@@ -4621,7 +4628,8 @@ async function generateAutoAvatar() {
                 background_music: backgroundMusic, // Include background music
                 mode: 'ai_images',
                 script: script,
-                image_style: imageStyle
+                image_style: imageStyle,
+                use_whisper: useWhisper  // NEW: timing method (default: false = fast Gemini)
                 // No media_count - Gemini calculates automatically!
             })
         });

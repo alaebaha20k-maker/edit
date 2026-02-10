@@ -30,9 +30,15 @@ class StockVideoDownloader:
         """
         self.apis = apis or ['pexels']
 
-        # API keys from environment
-        self.pexels_api_key = os.getenv('PEXELS_API_KEY', '')
-        self.pixabay_api_key = os.getenv('PIXABAY_API_KEY', '')
+        # API keys from settings
+        try:
+            from settings_manager import SettingsManager
+            self.pexels_api_key = SettingsManager.get_api_key('pexels')
+            self.pixabay_api_key = SettingsManager.get_api_key('pixabay')
+        except:
+            # Fallback to environment variables
+            self.pexels_api_key = os.getenv('PEXELS_API_KEY', '')
+            self.pixabay_api_key = os.getenv('PIXABAY_API_KEY', '')
 
     def search_and_download(
         self,

@@ -3368,6 +3368,7 @@ def avatar_generate():
         mode = data.get('mode', 'ai_images')
         script = data.get('script', '')
         stock_apis = data.get('stock_apis', ['pexels'])
+        use_whisper = data.get('use_whisper', False)  # Default: fast Gemini mode
 
         if not avatar_video_path or not audio_path:
             return jsonify({
@@ -3386,6 +3387,7 @@ def avatar_generate():
         print(f"   Mode: {mode}")
         print(f"   Avatar: {avatar_video_path}")
         print(f"   Audio: {audio_path}")
+        print(f"   Timing: {'Whisper STT (slow)' if use_whisper else 'Gemini Direct (fast)'}")
 
         # Step 1: Generate media plan
         generator = AvatarVideoGenerator()
@@ -3396,6 +3398,7 @@ def avatar_generate():
             mode=mode,
             script=script,
             stock_apis=stock_apis,
+            use_whisper=use_whisper,
             verbose=True
         )
 

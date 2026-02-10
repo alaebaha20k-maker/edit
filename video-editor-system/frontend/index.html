@@ -481,6 +481,18 @@
                         </select>
                     </div>
 
+                    <!-- Timing Method -->
+                    <div style="margin-bottom: 15px;">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="autoVideosUseWhisper">
+                            <span>⏱️ Use Whisper STT (slower but more detailed timing)</span>
+                        </label>
+                        <p style="font-size: 12px; color: #666; margin: 5px 0 0 24px;">
+                            ⚡ Default: Fast Gemini planning (recommended)<br>
+                            🐌 Whisper: Better timing but takes longer
+                        </p>
+                    </div>
+
                     <button onclick="generateAutoVideos()" class="btn-secondary" style="width: 100%;">🎬 Generate Auto Videos Mix</button>
                     <div id="autoVideosProgress" class="progress-box" style="display: none;"></div>
                 </div>
@@ -514,6 +526,18 @@
                             <option value="artistic">🎨 Artistic</option>
                             <option value="animated">🎭 Animated</option>
                         </select>
+                    </div>
+
+                    <!-- Timing Method -->
+                    <div style="margin-bottom: 15px;">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="autoAvatarUseWhisper">
+                            <span>⏱️ Use Whisper STT (slower but more detailed timing)</span>
+                        </label>
+                        <p style="font-size: 12px; color: #666; margin: 5px 0 0 24px;">
+                            ⚡ Default: Fast Gemini planning (recommended)<br>
+                            🐌 Whisper: Better timing but takes longer
+                        </p>
                     </div>
 
                     <button onclick="generateAutoAvatar()" class="btn-secondary" style="width: 100%;">🎭 Generate Auto Avatar Mix</button>
