@@ -172,7 +172,7 @@ class AvatarVideoAssembler:
         verbose: bool = False
     ) -> str:
         """
-        Loop avatar video to target duration
+        Loop avatar video to target duration using FAST COPY codec
 
         Args:
             avatar_video_path: Original avatar video
@@ -183,9 +183,6 @@ class AvatarVideoAssembler:
         Returns:
             str: Path to looped video
         """
-        # Use FFmpeg to loop video
-        # Formula: loop = ceil(target_duration / avatar_duration)
-
         # Get avatar duration
         cmd = [
             'ffprobe',
@@ -201,21 +198,21 @@ class AvatarVideoAssembler:
         import math
         num_loops = math.ceil(target_duration / avatar_duration)
 
-        # Create looped video with exact duration
+        # Create concat file for ultra-fast copy
+        concat_file = output_path.replace('.mp4', '_concat.txt')
+        with open(concat_file, 'w') as f:
+            for _ in range(num_loops):
+                f.write(f"file '{os.path.abspath(avatar_video_path)}'\n")
+
+        # Use concat demuxer with COPY codec (ultra-fast!)
         cmd = [
             'ffmpeg',
             '-y',
-            '-stream_loop', str(num_loops - 1),  # loop n-1 times (total n loops)
-            '-i', avatar_video_path,
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', concat_file,
             '-t', str(target_duration),  # Exact duration
-            '-c:v', 'libx264',
-            '-preset', 'ultrafast',
-            '-crf', '28',
-            '-r', '30',
-            '-s', '1920x1080',
-            '-c:a', 'aac',
-            '-b:a', '192k',
-            '-shortest',
+            '-c', 'copy',  # FAST COPY - no re-encoding!
             output_path
         ]
 
@@ -223,6 +220,9 @@ class AvatarVideoAssembler:
             cmd.extend(['-loglevel', 'error'])
 
         subprocess.run(cmd, check=True)
+
+        # Clean up concat file
+        os.remove(concat_file)
 
         return output_path
 

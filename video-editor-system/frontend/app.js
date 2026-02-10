@@ -4548,17 +4548,18 @@ async function generateAutoVideos() {
 
         // Show final video result (backend auto-assembled it!)
         if (result.success && result.video_path) {
+            const videoFilename = result.video_path.split('/').pop();
             progressDiv.innerHTML = `
                 <div style="padding: 20px; background: rgba(76, 175, 80, 0.1); border-radius: 8px;">
                     <h3 style="color: #4CAF50; margin: 0 0 15px 0;">✅ Avatar Video Generated Successfully!</h3>
                     <p><strong>Duration:</strong> ${(result.audio_duration || 0).toFixed(1)}s</p>
                     <p><strong>Generation Time:</strong> ${(result.generation_time || 0).toFixed(1)}s</p>
-                    <video controls style="width: 100%; max-width: 800px; margin: 15px 0; border-radius: 8px;">
-                        <source src="/outputs/${result.video_path.split('/').pop()}" type="video/mp4">
+                    <video controls style="width: 100%; max-width: 800px; aspect-ratio: 16/9; margin: 15px 0; border-radius: 8px; background: #000;">
+                        <source src="/api/download/${videoFilename}" type="video/mp4">
                     </video>
                     <div>
-                        <a href="/outputs/${result.video_path.split('/').pop()}" download>
-                            <button class="btn-primary" style="margin-top: 10px;">📥 Download Video</button>
+                        <a href="/api/download/${videoFilename}" download="${videoFilename}">
+                            <button class="btn-primary" style="margin-top: 10px;">📥 Download Video (MP4)</button>
                         </a>
                     </div>
                 </div>
@@ -4635,17 +4636,18 @@ async function generateAutoAvatar() {
 
         // Show final video result (backend auto-assembled it!)
         if (result.success && result.video_path) {
+            const videoFilename = result.video_path.split('/').pop();
             progressDiv.innerHTML = `
                 <div style="padding: 20px; background: rgba(255, 152, 0, 0.1); border-radius: 8px;">
                     <h3 style="color: #FF9800; margin: 0 0 15px 0;">✅ Avatar Mix Video Generated Successfully!</h3>
                     <p><strong>Duration:</strong> ${(result.audio_duration || 0).toFixed(1)}s</p>
                     <p><strong>Generation Time:</strong> ${(result.generation_time || 0).toFixed(1)}s</p>
-                    <video controls style="width: 100%; max-width: 800px; margin: 15px 0; border-radius: 8px;">
-                        <source src="/outputs/${result.video_path.split('/').pop()}" type="video/mp4">
+                    <video controls style="width: 100%; max-width: 800px; aspect-ratio: 16/9; margin: 15px 0; border-radius: 8px; background: #000;">
+                        <source src="/api/download/${videoFilename}" type="video/mp4">
                     </video>
                     <div>
-                        <a href="/outputs/${result.video_path.split('/').pop()}" download>
-                            <button class="btn-primary" style="margin-top: 10px;">📥 Download Video</button>
+                        <a href="/api/download/${videoFilename}" download="${videoFilename}">
+                            <button class="btn-primary" style="margin-top: 10px;">📥 Download Video (MP4)</button>
                         </a>
                     </div>
                 </div>
