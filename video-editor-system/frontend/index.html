@@ -455,7 +455,9 @@
                 <div id="autoVideosSection" class="subsection" style="display: none;">
                     <div style="background: rgba(156, 39, 176, 0.1); padding: 12px; border-radius: 8px; margin-bottom: 15px;">
                         <p style="font-size: 13px; color: #666; margin: 0;">
-                            🎬 <strong>Auto Videos AI:</strong> Upload your avatar video and let Gemini Director analyze your voice to automatically create a video mixing avatar loops with stock videos from Pexels/Pixabay. Whisper STT ensures perfect timing!
+                            🎬 <strong>Auto Videos AI:</strong> Upload your avatar video and let Gemini + Whisper automatically create a video mixing avatar loops with stock videos from Pexels/Pixabay.<br>
+                            📐 <strong>Pattern:</strong> [30s avatar] → [5-10s stock] → [30s avatar] → [5-10s stock] → ... → [Last 2 min: full avatar]<br>
+                            🤖 <strong>Auto Calculation:</strong> Gemini calculates exactly how many videos needed based on voice length!
                         </p>
                     </div>
 
@@ -470,19 +472,13 @@
                     </div>
 
                     <!-- Options -->
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
-                        <div>
-                            <label>Stock API:</label>
-                            <select id="autoVideosStockAPI" class="input-large">
-                                <option value="pexels">Pexels</option>
-                                <option value="pixabay">Pixabay</option>
-                                <option value="both">Both (Best Match)</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label>Number of Stock Videos:</label>
-                            <input type="number" id="autoVideosCount" value="10" min="1" max="30" class="input-medium">
-                        </div>
+                    <div style="margin-bottom: 15px;">
+                        <label>Stock APIs (searches all selected APIs for best match):</label>
+                        <select id="autoVideosStockAPI" class="input-large">
+                            <option value="both">🔍 Search Both (Pexels + Pixabay)</option>
+                            <option value="pexels">Pexels Only</option>
+                            <option value="pixabay">Pixabay Only</option>
+                        </select>
                     </div>
 
                     <button onclick="generateAutoVideos()" class="btn-secondary" style="width: 100%;">🎬 Generate Auto Videos Mix</button>
@@ -493,7 +489,9 @@
                 <div id="autoAvatarSection" class="subsection" style="display: none;">
                     <div style="background: rgba(255, 152, 0, 0.1); padding: 12px; border-radius: 8px; margin-bottom: 15px;">
                         <p style="font-size: 13px; color: #666; margin: 0;">
-                            🎭 <strong>Auto Avatar Mix:</strong> Upload your avatar video and let Gemini Director analyze your voice to automatically create a video mixing avatar loops with AI-generated images. Whisper STT + Flux.1 for perfect sync!
+                            🎭 <strong>Auto Avatar Mix:</strong> Upload your avatar video and let Gemini + Whisper automatically create a video mixing avatar loops with AI-generated images.<br>
+                            📐 <strong>Pattern:</strong> [1 min avatar] → [5 sec image] → [1 min avatar] → [5 sec image] → ... → [Last 2 min: full avatar]<br>
+                            🤖 <strong>Auto Calculation:</strong> Gemini calculates exactly how many images needed based on voice length!
                         </p>
                     </div>
 
@@ -508,20 +506,14 @@
                     </div>
 
                     <!-- Options -->
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
-                        <div>
-                            <label>Image Style:</label>
-                            <select id="autoAvatarImageStyle" class="input-large">
-                                <option value="cinematic">🎬 Cinematic</option>
-                                <option value="photorealistic">📷 Photorealistic</option>
-                                <option value="artistic">🎨 Artistic</option>
-                                <option value="animated">🎭 Animated</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label>Number of AI Images:</label>
-                            <input type="number" id="autoAvatarImageCount" value="10" min="1" max="30" class="input-medium">
-                        </div>
+                    <div style="margin-bottom: 15px;">
+                        <label>Image Style:</label>
+                        <select id="autoAvatarImageStyle" class="input-large">
+                            <option value="cinematic">🎬 Cinematic</option>
+                            <option value="photorealistic">📷 Photorealistic</option>
+                            <option value="artistic">🎨 Artistic</option>
+                            <option value="animated">🎭 Animated</option>
+                        </select>
                     </div>
 
                     <button onclick="generateAutoAvatar()" class="btn-secondary" style="width: 100%;">🎭 Generate Auto Avatar Mix</button>

@@ -4510,14 +4510,13 @@ async function generateAutoVideos() {
     }
 
     const stockAPI = document.getElementById('autoVideosStockAPI')?.value || 'both';
-    const videoCount = parseInt(document.getElementById('autoVideosCount')?.value) || 10;
 
     const progressDiv = document.getElementById('autoVideosProgress');
     progressDiv.style.display = 'block';
-    progressDiv.innerHTML = '<div style="padding: 15px;">🤖 Analyzing voice with Whisper...</div>';
+    progressDiv.innerHTML = '<div style="padding: 15px;">🤖 Analyzing voice with Whisper + Gemini calculating media count...</div>';
 
     try {
-        // Call Avatar AI backend
+        // Call Avatar AI backend (Gemini calculates count automatically)
         const response = await fetch('/api/avatar/generate', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -4526,8 +4525,8 @@ async function generateAutoVideos() {
                 audio_path: window.videoData.voice.path,
                 mode: 'videos_stock_auto',
                 script: script,
-                stock_apis: stockAPI === 'both' ? ['pexels', 'pixabay'] : [stockAPI],
-                media_count: videoCount
+                stock_apis: stockAPI === 'both' ? ['pexels', 'pixabay'] : [stockAPI]
+                // No media_count - Gemini calculates automatically!
             })
         });
 
@@ -4587,14 +4586,13 @@ async function generateAutoAvatar() {
     }
 
     const imageStyle = document.getElementById('autoAvatarImageStyle')?.value || 'cinematic';
-    const imageCount = parseInt(document.getElementById('autoAvatarImageCount')?.value) || 10;
 
     const progressDiv = document.getElementById('autoAvatarProgress');
     progressDiv.style.display = 'block';
-    progressDiv.innerHTML = '<div style="padding: 15px;">🤖 Analyzing voice with Whisper...</div>';
+    progressDiv.innerHTML = '<div style="padding: 15px;">🤖 Analyzing voice with Whisper + Gemini calculating media count...</div>';
 
     try {
-        // Call Avatar AI backend
+        // Call Avatar AI backend (Gemini calculates count automatically)
         const response = await fetch('/api/avatar/generate', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -4603,8 +4601,8 @@ async function generateAutoAvatar() {
                 audio_path: window.videoData.voice.path,
                 mode: 'ai_images_auto',
                 script: script,
-                image_style: imageStyle,
-                media_count: imageCount
+                image_style: imageStyle
+                // No media_count - Gemini calculates automatically!
             })
         });
 

@@ -3430,12 +3430,12 @@ def avatar_generate():
 
 @app.route('/api/avatar/upload-avatar', methods=['POST'])
 def avatar_upload_avatar():
-    """Upload avatar video"""
+    """Upload avatar video and auto-mute it"""
     try:
-        if 'file' not in request.files:
+        if 'avatar' not in request.files:
             return jsonify({'success': False, 'error': 'No file provided'}), 400
 
-        file = request.files['file']
+        file = request.files['avatar']
         if file.filename == '':
             return jsonify({'success': False, 'error': 'No file selected'}), 400
 
@@ -3447,13 +3447,45 @@ def avatar_upload_avatar():
 
         file.save(file_path)
 
+        # Get video duration and auto-mute
+        import subprocess
+
+        # Get duration
+        probe_cmd = [
+            'ffprobe', '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            file_path
+        ]
+        duration_result = subprocess.run(probe_cmd, capture_output=True, text=True)
+        duration = float(duration_result.stdout.strip()) if duration_result.stdout.strip() else 0
+
+        # Auto-mute the video
+        muted_filename = f"muted_{filename}"
+        muted_path = os.path.join(UPLOAD_FOLDER, muted_filename)
+
+        mute_cmd = [
+            'ffmpeg', '-i', file_path,
+            '-an',  # Remove audio
+            '-c:v', 'copy',  # Copy video codec (no re-encoding)
+            '-y',
+            muted_path
+        ]
+        subprocess.run(mute_cmd, check=True, capture_output=True)
+
+        # Remove original, keep muted version
+        os.remove(file_path)
+
         return jsonify({
             'success': True,
-            'file_path': file_path,
-            'filename': filename
+            'path': muted_path,
+            'filename': muted_filename,
+            'duration': duration
         })
 
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'success': False,
             'error': str(e)
