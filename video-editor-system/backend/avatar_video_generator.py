@@ -237,50 +237,70 @@ class AvatarVideoGenerator:
         self,
         script: str,
         verbose: bool = False
-    ) -> List[str]:
+    ) -> Dict:
         """
-        SUPER SMART: Extract principal keywords from script using Gemini
-        These will be used strategically for video search
+        SUPER SMART: Extract MAIN SUBJECT + keywords from script using Gemini
+        Ensures EVERY search query includes the main subject!
 
         Args:
             script: Full script text
             verbose: Print progress
 
         Returns:
-            List of principal keywords (main topics/concepts)
+            Dict with 'main_subject' and 'keywords' list
         """
         if not script or len(script.strip()) < 50:
-            return ['generic', 'business', 'professional']
+            return {
+                'main_subject': 'business',
+                'keywords': ['professional', 'office', 'meeting']
+            }
 
         if verbose:
-            print("\n🧠 ANALYZING SCRIPT: Extracting principal keywords with Gemini...")
+            print("\n🧠 ANALYZING SCRIPT: Extracting MAIN SUBJECT + keywords with Gemini...")
 
-        prompt = f"""Analyze this video script and extract the PRINCIPAL KEYWORDS.
+        prompt = f"""Analyze this video script and extract the MAIN SUBJECT and specific KEYWORDS.
 
 SCRIPT:
 {script[:2000]}
 
 TASK:
-Extract 8-12 principal keywords/topics from this script. These will be used to search for relevant stock videos.
+1. Identify the PRIMARY SUBJECT/TOPIC of this script (1-2 words)
+2. Extract 8-12 specific keywords/concepts related to that subject
 
 RULES:
-1. Extract MAIN TOPICS and CONCEPTS (not random words)
-2. Each keyword should be 1-3 words maximum
-3. Focus on VISUAL concepts that can be shown in videos
-4. If it's about trading → extract trading-specific keywords
-5. If it's about business → extract business keywords
-6. If it's about nature → extract nature keywords
-7. Be SPECIFIC to the script content
+1. MAIN SUBJECT = the core topic (e.g., "trading", "business", "technology", "health", "nature")
+2. KEYWORDS = specific concepts within that subject (e.g., for trading: "chart", "analysis", "psychology", "risk")
+3. Keywords should be 1-2 words each
+4. Focus on VISUAL concepts that can be shown in videos
+
+CRITICAL RULE:
+- When searching for videos, we will ALWAYS combine: [MAIN SUBJECT] + [KEYWORD]
+- Example: If main subject is "trading" and keyword is "chart" → search query = "trading chart"
+- Example: If main subject is "trading" and keyword is "analysis" → search query = "trading analysis"
 
 EXAMPLES:
-- Trading script → "stock chart", "trading floor", "candlestick chart", "wall street", "forex market"
-- Business script → "handshake", "office work", "team meeting", "laptop typing", "presentation"
-- Tech script → "coding screen", "data center", "programming", "servers", "tech startup"
+Trading script:
+- Main subject: "trading"
+- Keywords: ["chart", "analysis", "floor", "psychology", "risk", "candlestick", "forex", "market"]
+- Search queries: "trading chart", "trading analysis", "trading floor", "trading psychology"
 
-OUTPUT FORMAT (JSON array):
-["keyword1", "keyword2", "keyword3", ...]
+Business script:
+- Main subject: "business"
+- Keywords: ["meeting", "handshake", "presentation", "office", "team", "collaboration"]
+- Search queries: "business meeting", "business handshake", "business presentation"
 
-CRITICAL: Extract keywords that are HYPER-SPECIFIC to this script's main topic!
+Technology script:
+- Main subject: "technology"
+- Keywords: ["coding", "data center", "programming", "servers", "startup"]
+- Search queries: "technology coding", "technology data center", "technology programming"
+
+OUTPUT FORMAT (JSON):
+{{
+  "main_subject": "subject_here",
+  "keywords": ["keyword1", "keyword2", ...]
+}}
+
+CRITICAL: Extract the MAIN SUBJECT that describes this script's core topic!
 """
 
         try:
@@ -294,19 +314,27 @@ CRITICAL: Extract keywords that are HYPER-SPECIFIC to this script's main topic!
                 )
             )
 
-            keywords = json.loads(response.text)
+            result = json.loads(response.text)
+            main_subject = result.get('main_subject', 'professional')
+            keywords = result.get('keywords', [])[:12]  # Max 12 keywords
 
             if verbose:
-                print(f"   ✅ Extracted {len(keywords)} principal keywords:")
-                print(f"   {', '.join(keywords[:10])}")  # Show first 10
+                print(f"   ✅ MAIN SUBJECT: {main_subject}")
+                print(f"   ✅ Extracted {len(keywords)} keywords: {', '.join(keywords[:8])}")
 
-            return keywords[:12]  # Return max 12 keywords
+            return {
+                'main_subject': main_subject,
+                'keywords': keywords
+            }
 
         except Exception as e:
             if verbose:
                 print(f"   ⚠️  Keyword extraction failed, using fallback: {e}")
-            # Fallback keywords based on common topics
-            return ['professional', 'business', 'work', 'office', 'meeting', 'success', 'technology', 'data']
+            # Fallback
+            return {
+                'main_subject': 'professional',
+                'keywords': ['business', 'work', 'office', 'meeting', 'success', 'technology', 'data']
+            }
 
     def _plan_media_sequence(
         self,
@@ -330,8 +358,11 @@ CRITICAL: Extract keywords that are HYPER-SPECIFIC to this script's main topic!
         Returns:
             Dict with media plan
         """
-        # STEP 1: Extract principal keywords from script (SMART!)
-        principal_keywords = self._extract_principal_keywords(script, verbose) if script else []
+        # STEP 1: Extract MAIN SUBJECT + keywords from script (SMART!)
+        keyword_data = self._extract_principal_keywords(script, verbose) if script else {
+            'main_subject': 'professional',
+            'keywords': []
+        }
 
         # Determine segment pattern based on mode
         if mode == "ai_images":
@@ -341,7 +372,7 @@ CRITICAL: Extract keywords that are HYPER-SPECIFIC to this script's main topic!
             avatar_seg_duration = 30  # 30 seconds (perfect balance!)
             media_seg_duration = 8     # 8 seconds (FIXED: was None, now enforced!)
 
-        # Build prompt for Gemini (NOW with principal keywords!)
+        # Build prompt for Gemini (NOW with MAIN SUBJECT + keywords!)
         prompt = self._build_planning_prompt(
             audio_duration=audio_duration,
             avatar_duration=avatar_duration,
@@ -349,7 +380,7 @@ CRITICAL: Extract keywords that are HYPER-SPECIFIC to this script's main topic!
             avatar_seg_duration=avatar_seg_duration,
             media_seg_duration=media_seg_duration,
             script=script,
-            principal_keywords=principal_keywords  # NEW: Pass extracted keywords!
+            keyword_data=keyword_data  # NEW: Pass main subject + keywords!
         )
 
         # Call Gemini
@@ -389,9 +420,9 @@ CRITICAL: Extract keywords that are HYPER-SPECIFIC to this script's main topic!
         avatar_seg_duration: int,
         media_seg_duration: int,
         script: str = None,
-        principal_keywords: List[str] = None
+        keyword_data: Dict = None
     ) -> str:
-        """Build prompt for Gemini media planning with INTELLIGENT keyword usage"""
+        """Build prompt for Gemini media planning with MAIN SUBJECT + keywords"""
 
         last_2_min_seconds = 120
 
@@ -424,31 +455,40 @@ CRITICAL: Extract keywords that are HYPER-SPECIFIC to this script's main topic!
                 script_timeline += f"[{chunk['time_start']:.0f}s-{chunk['time_end']:.0f}s]: \"{chunk['text']}...\"\n"
             script_timeline += "\n"
 
-        # Build principal keywords section (SUPER SMART!)
+        # Build keywords section with MAIN SUBJECT (CRITICAL!)
         keywords_section = ""
-        if principal_keywords and len(principal_keywords) > 0:
-            keywords_section = f"""**🎯 PRINCIPAL KEYWORDS (extracted from script):**
-{', '.join(principal_keywords)}
+        if keyword_data and keyword_data.get('main_subject'):
+            main_subject = keyword_data.get('main_subject', 'professional')
+            keywords = keyword_data.get('keywords', [])
 
-**HOW TO USE THESE KEYWORDS:**
-1. These are the MAIN TOPICS from the script - use them strategically!
-2. You CAN reuse the same keyword multiple times (creative variations)
-3. Combine keywords to create variations (e.g., "stock chart" → "stock chart", "stock trading", "stock market")
-4. Match keywords to the timing - use trading keywords when script talks about trading
-5. Be CREATIVE but stay within these principal topics!
-6. Each video should still be DIFFERENT (different results from stock API)
+            keywords_section = f"""**🎯 MAIN SUBJECT: {main_subject.upper()}**
 
-EXAMPLES OF CREATIVE USAGE:
-- Principal keyword: "stock chart"
-  * Video 1: "stock chart"
-  * Video 2: "stock trading"
-  * Video 3: "stock market"
-  * Video 4: "stock graph"
-- Principal keyword: "trading floor"
-  * Video 1: "trading floor"
-  * Video 2: "traders working"
-  * Video 3: "stock exchange"
-  * Video 4: "wall street"
+**📋 SPECIFIC KEYWORDS (concepts within this subject):**
+{', '.join(keywords) if keywords else 'general concepts'}
+
+**🔒 CRITICAL RULE - ALWAYS USE MAIN SUBJECT:**
+EVERY search query MUST start with the main subject "{main_subject}"!
+
+**QUERY FORMAT:**
+"{main_subject}" + [specific keyword]
+
+**EXAMPLES:**
+If main subject = "{main_subject}" and keywords = {keywords[:4] if keywords else ['concept1', 'concept2']}:
+- Video 1: "{main_subject} {keywords[0] if keywords else 'concept'}"
+- Video 2: "{main_subject} {keywords[1] if keywords else 'topic'}"
+- Video 3: "{main_subject} {keywords[2] if keywords and len(keywords) > 2 else 'scene'}"
+- Video 4: "{main_subject} {keywords[3] if keywords and len(keywords) > 3 else 'visual'}"
+
+**WHY THIS MATTERS:**
+- If video is about TRADING, we need "trading chart" NOT just "chart"
+- If video is about TRADING, we need "trading analysis" NOT just "analysis"
+- If video is about BUSINESS, we need "business meeting" NOT just "meeting"
+- ALWAYS include the main subject to ensure relevance!
+
+**CREATIVE VARIATIONS (still using main subject):**
+- "{main_subject} data" → "{main_subject} analysis" → "{main_subject} graph"
+- "{main_subject} strategy" → "{main_subject} planning" → "{main_subject} tactics"
+- All different videos, all relevant to {main_subject}!
 
 """
 
@@ -493,32 +533,38 @@ EXAMPLES OF CREATIVE USAGE:
   ]
 }}
 
-**CRITICAL - HOW TO GENERATE SEARCH QUERIES (HIGH IQ APPROACH!):**
-1. START with the PRINCIPAL KEYWORDS above - these are your foundation!
-2. For each media segment, check what time it starts
-3. Look at the script timeline to see what's being discussed at that time
-4. PICK the most relevant principal keyword for that moment
-5. CREATE VARIATIONS if needed (e.g., "stock chart" → "stock market", "trading chart", etc.)
-6. Each query should be 1-3 words maximum
+**🔒 CRITICAL - SEARCH QUERY GENERATION RULES:**
 
-**CREATIVE QUERY GENERATION:**
-- Use the principal keywords as your VOCABULARY
-- Make creative variations and combinations
-- Example: If keywords include "stock chart", "trading", "market"
-  * Query 1: "stock chart"
-  * Query 2: "stock trading"
-  * Query 3: "market data"
-  * Query 4: "trading floor"
-  * Query 5: "stock market"
-  * Query 6: "financial chart"
-- Stock API will return DIFFERENT videos for each variation!
+**MANDATORY FORMAT:**
+Every search query MUST follow this pattern:
+"[MAIN SUBJECT]" + "[SPECIFIC KEYWORD]"
 
-**CRITICAL RULES:**
-- ONLY use variations of the principal keywords provided
-- Match the topic being discussed at each time in the script
-- 1-3 words maximum per query
-- Stock API ensures each video is different (you can reuse keywords!)
-- NEVER use random keywords not related to principal keywords!
+**STEP-BY-STEP PROCESS:**
+1. Look at what time the video segment starts
+2. Check the script timeline - what's being discussed at that time?
+3. Pick a specific keyword from the list that matches that moment
+4. ALWAYS combine: MAIN SUBJECT + that keyword
+5. Example: Main subject="trading", scene is about "analysis" → query = "trading analysis"
+
+**MANDATORY EXAMPLES:**
+If main subject = "trading":
+- Scene about charts → "trading chart" (NOT just "chart")
+- Scene about analysis → "trading analysis" (NOT just "analysis")
+- Scene about psychology → "trading psychology" (NOT just "psychology")
+- Scene about risk → "trading risk" (NOT just "risk")
+- Scene about strategies → "trading strategy" (NOT just "strategy")
+
+If main subject = "business":
+- Scene about meetings → "business meeting" (NOT just "meeting")
+- Scene about growth → "business growth" (NOT just "growth")
+- Scene about strategy → "business strategy" (NOT just "strategy")
+
+**ABSOLUTE REQUIREMENTS:**
+- EVERY query MUST start with the main subject
+- No exceptions - even if keyword seems clear, include main subject
+- This ensures ALL videos are relevant to the main topic
+- Stock API will return different videos for each query
+- Main subject + different keywords = different but relevant videos
 
 **IMPORTANT:**
 - ANALYZE the script timeline to match media to content!
