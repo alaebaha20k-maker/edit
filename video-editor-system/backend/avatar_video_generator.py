@@ -259,7 +259,7 @@ class AvatarVideoGenerator:
             avatar_seg_duration = 60  # 1 minute
             media_seg_duration = 5    # 5 seconds
         else:  # stock_videos
-            avatar_seg_duration = 10  # 10 seconds (CHANGED: was 30, too long!)
+            avatar_seg_duration = 30  # 30 seconds (perfect balance!)
             media_seg_duration = 8     # 8 seconds (FIXED: was None, now enforced!)
 
         # Build prompt for Gemini
