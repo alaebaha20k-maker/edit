@@ -892,8 +892,15 @@ async function generateScript() {
                 throw new Error(data.error || 'Script generation failed');
             }
 
-            // Store script
+            // Store script in both window.videoData AND the textarea input
             window.videoData.script = data.script;
+            appState.generatedScript = data.script;
+
+            // CRITICAL FIX: Populate the scriptInput textarea so it's available for all features
+            const scriptInput = document.getElementById('scriptInput');
+            if (scriptInput) {
+                scriptInput.value = data.script;
+            }
 
             // DON'T display full script (can be very long - just show success message)
             if (resultBox) {
