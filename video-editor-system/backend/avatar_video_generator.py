@@ -258,49 +258,25 @@ class AvatarVideoGenerator:
         if verbose:
             print("\n🧠 ANALYZING SCRIPT: Extracting MAIN SUBJECT + keywords with Gemini...")
 
-        prompt = f"""Analyze this video script and extract the MAIN SUBJECT and specific KEYWORDS.
+        # Clean script for safe inclusion in prompt
+        clean_script = script[:2000].replace('"', "'").replace('\n', ' ').strip()
+
+        prompt = f"""Analyze this video script and identify the MAIN SUBJECT and keywords.
 
 SCRIPT:
-{script[:2000]}
+{clean_script}
 
 TASK:
-1. Identify the PRIMARY SUBJECT/TOPIC of this script (1-2 words)
-2. Extract 8-12 specific keywords/concepts related to that subject
-
-RULES:
-1. MAIN SUBJECT = the core topic (e.g., "trading", "business", "technology", "health", "nature")
-2. KEYWORDS = specific concepts within that subject (e.g., for trading: "chart", "analysis", "psychology", "risk")
-3. Keywords should be 1-2 words each
-4. Focus on VISUAL concepts that can be shown in videos
-
-CRITICAL RULE:
-- When searching for videos, we will ALWAYS combine: [MAIN SUBJECT] + [KEYWORD]
-- Example: If main subject is "trading" and keyword is "chart" → search query = "trading chart"
-- Example: If main subject is "trading" and keyword is "analysis" → search query = "trading analysis"
+1. What is the PRIMARY TOPIC? (trading, business, technology, health, finance, marketing, etc.)
+2. List 8-12 visual keywords related to that topic
 
 EXAMPLES:
-Trading script:
-- Main subject: "trading"
-- Keywords: ["chart", "analysis", "floor", "psychology", "risk", "candlestick", "forex", "market"]
-- Search queries: "trading chart", "trading analysis", "trading floor", "trading psychology"
+If trading script → main_subject: "trading", keywords: ["chart", "analysis", "psychology", "risk", "market", "floor", "candlestick", "forex"]
+If business script → main_subject: "business", keywords: ["meeting", "handshake", "office", "team", "presentation", "growth"]
+If tech script → main_subject: "technology", keywords: ["coding", "servers", "data", "programming", "startup"]
 
-Business script:
-- Main subject: "business"
-- Keywords: ["meeting", "handshake", "presentation", "office", "team", "collaboration"]
-- Search queries: "business meeting", "business handshake", "business presentation"
-
-Technology script:
-- Main subject: "technology"
-- Keywords: ["coding", "data center", "programming", "servers", "startup"]
-- Search queries: "technology coding", "technology data center", "technology programming"
-
-OUTPUT FORMAT (JSON):
-{{
-  "main_subject": "subject_here",
-  "keywords": ["keyword1", "keyword2", ...]
-}}
-
-CRITICAL: Extract the MAIN SUBJECT that describes this script's core topic!
+Return ONLY this JSON (no markdown, no formatting):
+{{"main_subject": "topic_here", "keywords": ["keyword1", "keyword2", "keyword3"]}}
 """
 
         try:
@@ -308,18 +284,32 @@ CRITICAL: Extract the MAIN SUBJECT that describes this script's core topic!
             response = model.generate_content(
                 prompt,
                 generation_config=genai.types.GenerationConfig(
-                    temperature=0.3,  # Low temp for consistent extraction
-                    max_output_tokens=500,
+                    temperature=0.2,  # Very low temp for consistent output
+                    max_output_tokens=300,
                     response_mime_type="application/json"
                 )
             )
 
-            result = json.loads(response.text)
-            main_subject = result.get('main_subject', 'professional')
+            # Try to parse JSON response
+            response_text = response.text.strip()
+
+            # Remove markdown code blocks if present
+            if response_text.startswith('```'):
+                # Extract content between ```json and ```
+                lines = response_text.split('\n')
+                response_text = '\n'.join(lines[1:-1]) if len(lines) > 2 else response_text
+                response_text = response_text.replace('```json', '').replace('```', '').strip()
+
+            result = json.loads(response_text)
+            main_subject = result.get('main_subject', '').lower().strip()
             keywords = result.get('keywords', [])[:12]  # Max 12 keywords
 
+            # Validate we got something useful
+            if not main_subject or len(main_subject) == 0:
+                raise ValueError("Empty main subject")
+
             if verbose:
-                print(f"   ✅ MAIN SUBJECT: {main_subject}")
+                print(f"   ✅ MAIN SUBJECT: '{main_subject}'")
                 print(f"   ✅ Extracted {len(keywords)} keywords: {', '.join(keywords[:8])}")
 
             return {
@@ -329,11 +319,40 @@ CRITICAL: Extract the MAIN SUBJECT that describes this script's core topic!
 
         except Exception as e:
             if verbose:
-                print(f"   ⚠️  Keyword extraction failed, using fallback: {e}")
-            # Fallback
+                print(f"   ⚠️  Keyword extraction failed: {e}")
+                print(f"   🔄 Using SMART fallback based on script content...")
+
+            # SMART FALLBACK: Analyze script for common topics
+            script_lower = script.lower()
+
+            # Check for trading/finance keywords
+            if any(word in script_lower for word in ['trading', 'trader', 'stock', 'market', 'forex', 'candlestick', 'chart']):
+                main_subject = 'trading'
+                keywords = ['chart', 'analysis', 'psychology', 'risk', 'market', 'strategy', 'floor', 'candlestick']
+            # Check for business keywords
+            elif any(word in script_lower for word in ['business', 'entrepreneur', 'startup', 'company', 'corporate']):
+                main_subject = 'business'
+                keywords = ['meeting', 'handshake', 'office', 'team', 'presentation', 'growth', 'strategy']
+            # Check for technology keywords
+            elif any(word in script_lower for word in ['technology', 'coding', 'programming', 'software', 'computer', 'tech']):
+                main_subject = 'technology'
+                keywords = ['coding', 'servers', 'data', 'programming', 'startup', 'computer']
+            # Check for finance keywords
+            elif any(word in script_lower for word in ['finance', 'money', 'investment', 'wealth', 'financial']):
+                main_subject = 'finance'
+                keywords = ['money', 'investment', 'wealth', 'planning', 'strategy', 'growth']
+            # Default fallback
+            else:
+                main_subject = 'professional'
+                keywords = ['work', 'business', 'office', 'meeting', 'success', 'growth', 'strategy']
+
+            if verbose:
+                print(f"   ✅ SMART FALLBACK: '{main_subject}'")
+                print(f"   ✅ Keywords: {', '.join(keywords)}")
+
             return {
-                'main_subject': 'professional',
-                'keywords': ['business', 'work', 'office', 'meeting', 'success', 'technology', 'data']
+                'main_subject': main_subject,
+                'keywords': keywords
             }
 
     def _plan_media_sequence(
