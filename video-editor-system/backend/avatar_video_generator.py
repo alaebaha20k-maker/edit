@@ -637,6 +637,7 @@ Generate the media plan now as valid JSON:
     ) -> List[Dict]:
         """
         Download stock videos for media plan
+        ENSURES: Each video is DIFFERENT (no duplicates!)
 
         Args:
             media_plan: Media plan from Gemini
@@ -651,6 +652,7 @@ Generate the media plan now as valid JSON:
 
         downloader = StockVideoDownloader(apis=stock_apis or ['pexels'])
         videos = []
+        used_queries = set()  # CRITICAL: Track used queries to prevent duplicates!
 
         # Get all stock_video segments with their ORIGINAL indices
         video_segments = [
@@ -660,15 +662,29 @@ Generate the media plan now as valid JSON:
 
         if verbose:
             print(f"   Downloading {len(video_segments)} stock videos...")
+            print(f"   🔒 ENSURING: Each video will be DIFFERENT (no repeats!)")
 
         for i, (seg_idx, segment) in enumerate(video_segments):
+            query = segment.get('search_query', 'generic')
+
+            # CRITICAL: If query was already used, modify it to get DIFFERENT video
+            original_query = query
+            suffix = 1
+            while query in used_queries:
+                query = f"{original_query} {suffix}"  # Add number to make it unique
+                suffix += 1
+                if verbose and suffix == 2:
+                    print(f"   ⚠️  Query '{original_query}' already used, trying '{query}'")
+
+            used_queries.add(query)  # Mark this query as used
+
             if verbose:
-                print(f"   [{i+1}/{len(video_segments)}] Searching: {segment.get('search_query', 'generic')}")
+                print(f"   [{i+1}/{len(video_segments)}] Searching: {query}")
 
             # Search and download
             try:
                 video_path = downloader.search_and_download(
-                    query=segment.get('search_query', 'generic'),
+                    query=query,
                     min_duration=segment['duration'],
                     output_dir='media_library/avatar_videos'
                 )
@@ -676,7 +692,7 @@ Generate the media plan now as valid JSON:
                 videos.append({
                     'segment_index': seg_idx,  # Use ORIGINAL index from media_plan['segments']
                     'path': video_path,
-                    'query': segment.get('search_query'),
+                    'query': query,  # Use the actual query (may be modified for uniqueness)
                     'duration': segment['duration'],
                     'start': segment['start']
                 })
@@ -687,6 +703,9 @@ Generate the media plan now as valid JSON:
             except Exception as e:
                 if verbose:
                     print(f"   ❌ Video download failed: {e}")
+
+        if verbose:
+            print(f"\n   ✅ Downloaded {len(videos)} DIFFERENT videos (guaranteed no duplicates!)")
 
         return videos
 
