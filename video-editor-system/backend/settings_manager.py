@@ -290,20 +290,20 @@ Output ONLY the JSON array, no extra text."""
         if 'api_keys' not in settings:
             settings['api_keys'] = {}
 
-        # Update only provided keys
-        if gemini is not None:
+        # Update only provided keys (skip empty strings - only save actual keys)
+        if gemini is not None and gemini != '':
             settings['api_keys']['gemini'] = gemini
-        if director_gemini is not None:
+        if director_gemini is not None and director_gemini != '':
             settings['api_keys']['director_gemini'] = director_gemini
-        if replicate is not None:
+        if replicate is not None and replicate != '':
             settings['api_keys']['replicate'] = replicate
-        if inworld is not None:
+        if inworld is not None and inworld != '':
             settings['api_keys']['inworld'] = inworld
-        if inworld_secret is not None:
+        if inworld_secret is not None and inworld_secret != '':
             settings['api_keys']['inworld_secret'] = inworld_secret
-        if pexels is not None:
+        if pexels is not None and pexels != '':
             settings['api_keys']['pexels'] = pexels
-        if pixabay is not None:
+        if pixabay is not None and pixabay != '':
             settings['api_keys']['pixabay'] = pixabay
 
         # Save to file

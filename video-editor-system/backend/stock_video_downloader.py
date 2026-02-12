@@ -30,15 +30,21 @@ class StockVideoDownloader:
         """
         self.apis = apis or ['pexels']
 
-        # API keys from settings
+    def _get_pexels_key(self):
+        """Get Pexels API key from settings (checked dynamically)"""
         try:
             from settings_manager import SettingsManager
-            self.pexels_api_key = SettingsManager.get_api_key('pexels')
-            self.pixabay_api_key = SettingsManager.get_api_key('pixabay')
+            return SettingsManager.get_api_key('pexels')
         except:
-            # Fallback to environment variables
-            self.pexels_api_key = os.getenv('PEXELS_API_KEY', '')
-            self.pixabay_api_key = os.getenv('PIXABAY_API_KEY', '')
+            return os.getenv('PEXELS_API_KEY', '')
+
+    def _get_pixabay_key(self):
+        """Get Pixabay API key from settings (checked dynamically)"""
+        try:
+            from settings_manager import SettingsManager
+            return SettingsManager.get_api_key('pixabay')
+        except:
+            return os.getenv('PIXABAY_API_KEY', '')
 
     def search_and_download(
         self,
@@ -94,12 +100,13 @@ class StockVideoDownloader:
         Returns:
             str: Path to downloaded video
         """
-        if not self.pexels_api_key:
+        pexels_api_key = self._get_pexels_key()
+        if not pexels_api_key:
             raise Exception("PEXELS_API_KEY not set in environment")
 
         # Search for videos
         url = "https://api.pexels.com/videos/search"
-        headers = {"Authorization": self.pexels_api_key}
+        headers = {"Authorization": pexels_api_key}
         params = {
             "query": query,
             "per_page": 15,
@@ -155,13 +162,14 @@ class StockVideoDownloader:
         Returns:
             str: Path to downloaded video
         """
-        if not self.pixabay_api_key:
+        pixabay_api_key = self._get_pixabay_key()
+        if not pixabay_api_key:
             raise Exception("PIXABAY_API_KEY not set in environment")
 
         # Search for videos
         url = "https://pixabay.com/api/videos/"
         params = {
-            "key": self.pixabay_api_key,
+            "key": pixabay_api_key,
             "q": query,
             "per_page": 15,
             "video_type": "all"

@@ -1473,6 +1473,44 @@ def get_settings():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/settings/api-keys', methods=['GET'])
+def get_api_keys_status():
+    """Get API keys status (for debugging)"""
+    from settings_manager import SettingsManager
+
+    try:
+        settings = SettingsManager.load_settings()
+        api_keys = settings.get('api_keys', {})
+
+        # Return masked keys (show first 4 chars only)
+        def mask_key(key):
+            if not key or len(key) == 0:
+                return ''
+            if len(key) <= 8:
+                return '***'
+            return key[:4] + '***' + key[-4:]
+
+        return jsonify({
+            'success': True,
+            'api_keys': {
+                'gemini': mask_key(api_keys.get('gemini', '')),
+                'director_gemini': mask_key(api_keys.get('director_gemini', '')),
+                'replicate': mask_key(api_keys.get('replicate', '')),
+                'inworld': mask_key(api_keys.get('inworld', '')),
+                'inworld_secret': mask_key(api_keys.get('inworld_secret', '')),
+                'pexels': mask_key(api_keys.get('pexels', '')),
+                'pixabay': mask_key(api_keys.get('pixabay', ''))
+            },
+            'settings_file': str(SettingsManager.SETTINGS_FILE),
+            'file_exists': SettingsManager.SETTINGS_FILE.exists()
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/settings/api-keys', methods=['POST'])
 def save_api_keys():
     """Save API keys (Script Writer Gemini, Director Gemini, Replicate, Inworld AI Key+Secret, Pexels, Pixabay)"""
@@ -1491,6 +1529,16 @@ def save_api_keys():
         inworld_secret = data.get('inworld_secret')
         pexels = data.get('pexels')
         pixabay = data.get('pixabay')
+
+        # Debug: Log what keys we received (show length not actual value)
+        print("\n🔑 Received API keys:")
+        print(f"   Gemini: {'SET (' + str(len(gemini)) + ' chars)' if gemini else 'NOT SET'}")
+        print(f"   Director Gemini: {'SET (' + str(len(director_gemini)) + ' chars)' if director_gemini else 'NOT SET'}")
+        print(f"   Replicate: {'SET (' + str(len(replicate)) + ' chars)' if replicate else 'NOT SET'}")
+        print(f"   Inworld: {'SET (' + str(len(inworld)) + ' chars)' if inworld else 'NOT SET'}")
+        print(f"   Inworld Secret: {'SET (' + str(len(inworld_secret)) + ' chars)' if inworld_secret else 'NOT SET'}")
+        print(f"   Pexels: {'SET (' + str(len(pexels)) + ' chars)' if pexels else 'NOT SET'}")
+        print(f"   Pixabay: {'SET (' + str(len(pixabay)) + ' chars)' if pixabay else 'NOT SET'}")
 
         # Save API keys (Script Writer Gemini and Director Gemini are SEPARATE!)
         settings = SettingsManager.save_api_keys(
