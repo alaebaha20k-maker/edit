@@ -259,8 +259,8 @@ class AvatarVideoGenerator:
             avatar_seg_duration = 60  # 1 minute
             media_seg_duration = 5    # 5 seconds
         else:  # stock_videos
-            avatar_seg_duration = 30  # 30 seconds
-            media_seg_duration = None  # 5-10 seconds (Gemini decides)
+            avatar_seg_duration = 10  # 10 seconds (CHANGED: was 30, too long!)
+            media_seg_duration = 8     # 8 seconds (FIXED: was None, now enforced!)
 
         # Build prompt for Gemini
         prompt = self._build_planning_prompt(
@@ -355,10 +355,12 @@ class AvatarVideoGenerator:
 {script_timeline}
 
 **RULES:**
-1. Pattern: {avatar_seg_duration} sec avatar → {media_seg_duration if media_seg_duration else "5-10"} sec {"AI image" if mode == "ai_images" else "stock video"} → repeat
+1. Pattern: {avatar_seg_duration} sec avatar → {media_seg_duration if media_seg_duration else "EXACTLY 8"} sec {"AI image" if mode == "ai_images" else "stock video"} → repeat
 2. Last {last_2_min_seconds} seconds: FULL avatar (to match exact audio length)
 3. Total duration MUST exactly match audio duration: {audio_duration:.2f} seconds
-4. {"AI images are 5 seconds each" if mode == "ai_images" else "Stock videos are 5 or 10 seconds (be creative)"}
+4. {"AI images are EXACTLY 5 seconds each" if mode == "ai_images" else f"Stock videos are EXACTLY {media_seg_duration if media_seg_duration else 8} seconds (NO LONGER!)"}
+5. CRITICAL: Each media segment MUST have different search query - NO REPETITION!
+6. CRITICAL: Search queries MUST match script content at that exact timing!
 
 **OUTPUT JSON FORMAT:**
 {{
@@ -381,26 +383,42 @@ class AvatarVideoGenerator:
 }}
 
 **CRITICAL - HOW TO GENERATE SEARCH QUERIES:**
-1. READ the script timeline above - see what the audio is saying at each time
+1. READ the script timeline above - UNDERSTAND what the audio is saying at each time
 2. For each media segment, check what time it starts
-3. Look at the script text for that time range
-4. Extract 1-3 keywords that match the topic being discussed
-5. Use SIMPLE, SPECIFIC keywords for stock video libraries
+3. Look at the script text for that EXACT time range
+4. Extract the MAIN TOPIC/CONCEPT being discussed at that moment
+5. Convert to 1-3 SPECIFIC keywords that match stock video content
 
-**SEARCH QUERY RULES:**
-- MUST be 1-3 words maximum
-- Match the script content at that specific timing
-- Examples based on script content:
-  * If script talks about "trading": use "stock market" or "trading"
-  * If script talks about "nature": use "forest" or "mountains"
-  * If script talks about "technology": use "laptop office" or "coding"
-- DON'T use generic keywords if script is specific!
-- Good: "handshake", "cityscape", "coffee meeting", "typing code"
-- Bad: "person working in office environment" (too long!)
+**SEARCH QUERY RULES (SUPER IMPORTANT!):**
+- MUST be 1-3 words maximum (e.g., "stock market", "trading chart", "wall street")
+- MUST match the script content at that EXACT timing
+- Each segment MUST have a DIFFERENT search query (NO REPEATING!)
+- BE HYPER-SPECIFIC to the script topic!
+
+**TRADING/FINANCE KEYWORDS (if script is about trading/markets):**
+- Good: "stock chart", "trading floor", "wall street", "candlestick chart", "forex trading", "bull market", "stock exchange", "financial graph", "market crash", "trading desk"
+- Bad: "generic", "medicine", "pills", "health"
+
+**BUSINESS KEYWORDS (if script is about business):**
+- Good: "handshake", "business meeting", "office work", "laptop typing", "team collaboration", "presentation"
+
+**TECHNOLOGY KEYWORDS (if script is about tech):**
+- Good: "coding screen", "data center", "programming", "servers", "tech startup"
+
+**NATURE/LIFESTYLE KEYWORDS (if script is about life/nature):**
+- Good: "mountain sunset", "ocean waves", "forest trail", "peaceful lake"
+
+**CRITICAL RULE:**
+- READ the script! If it talks about "trading psychology" → use "trading chart" or "stock market"
+- If it talks about "risk management" → use "financial risk" or "market volatility"
+- If it talks about "success mindset" → use "business success" or "achievement"
+- NEVER use irrelevant keywords like "medicine" for a trading video!
 
 **IMPORTANT:**
 - ANALYZE the script timeline to match media to content!
-- Search queries: 1-3 words, content-specific!
+- Search queries: 1-3 words, hyper-specific to script!
+- NO GENERIC QUERIES! Match the script topic!
+- Each video MUST be relevant to what audio is saying at that moment!
 - Last segment must end at exactly {audio_duration:.2f} seconds
 - Last {last_2_min_seconds} seconds = continuous avatar
 
@@ -416,7 +434,7 @@ Generate the media plan now as valid JSON:
         verbose: bool = False
     ) -> Dict:
         """
-        CRITICAL: Ensure segments add up to EXACT audio duration
+        CRITICAL: Ensure segments add up to EXACT audio duration AND enforce max durations
 
         Args:
             plan: Media plan from Gemini
@@ -427,6 +445,15 @@ Generate the media plan now as valid JSON:
             Fixed plan with exact duration
         """
         segments = plan.get('segments', [])
+
+        # CRITICAL: Enforce maximum duration for stock videos (NEVER more than 10 seconds!)
+        for seg in segments:
+            if seg['type'] in ['stock_video', 'ai_image']:
+                max_allowed = 10 if seg['type'] == 'stock_video' else 5
+                if seg['duration'] > max_allowed:
+                    if verbose:
+                        print(f"   ⚠️  Segment at {seg['start']}s was {seg['duration']}s, capping to {max_allowed}s")
+                    seg['duration'] = max_allowed
 
         # Calculate actual total duration from segments
         actual_duration = sum(seg['duration'] for seg in segments)
