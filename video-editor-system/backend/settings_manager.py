@@ -245,8 +245,10 @@ Output ONLY the JSON array, no extra text."""
         return {
             'api_keys': {
                 'gemini': '',
+                'director_gemini': '',
                 'replicate': '',
                 'inworld': '',
+                'inworld_secret': '',
                 'pexels': '',
                 'pixabay': ''
             },
@@ -264,8 +266,8 @@ Output ONLY the JSON array, no extra text."""
 
     @classmethod
     def save_api_keys(cls, gemini: str = None, director_gemini: str = None,
-                     replicate: str = None, inworld: str = None, pexels: str = None,
-                     pixabay: str = None) -> Dict:
+                     replicate: str = None, inworld: str = None, inworld_secret: str = None,
+                     pexels: str = None, pixabay: str = None) -> Dict:
         """
         Save API keys to settings file
 
@@ -273,7 +275,8 @@ Output ONLY the JSON array, no extra text."""
             gemini: Gemini API key (for script writing)
             director_gemini: Director Gemini API key (for Auto Images AI)
             replicate: Replicate API token
-            inworld: Inworld AI API key (base64 credential)
+            inworld: Inworld AI API key
+            inworld_secret: Inworld AI API secret
             pexels: Pexels API key
             pixabay: Pixabay API key
 
@@ -282,6 +285,10 @@ Output ONLY the JSON array, no extra text."""
         """
         cls.ensure_directories()
         settings = cls.load_settings()
+
+        # Ensure all keys exist in settings
+        if 'api_keys' not in settings:
+            settings['api_keys'] = {}
 
         # Update only provided keys
         if gemini is not None:
@@ -292,6 +299,8 @@ Output ONLY the JSON array, no extra text."""
             settings['api_keys']['replicate'] = replicate
         if inworld is not None:
             settings['api_keys']['inworld'] = inworld
+        if inworld_secret is not None:
+            settings['api_keys']['inworld_secret'] = inworld_secret
         if pexels is not None:
             settings['api_keys']['pexels'] = pexels
         if pixabay is not None:
@@ -301,13 +310,14 @@ Output ONLY the JSON array, no extra text."""
         with open(cls.SETTINGS_FILE, 'w') as f:
             json.dump(settings, f, indent=2)
 
-        # Also update Config (used by other modules)
+        # Also update Config (used by other modules like voice_generator)
         from config import Config
         Config.save_api_config(
             gemini_key=gemini if gemini else None,
             director_gemini_key=director_gemini if director_gemini else None,
             replicate_token=replicate if replicate else None,
-            inworld_key=inworld if inworld else None
+            inworld_key=inworld if inworld else None,
+            inworld_secret=inworld_secret if inworld_secret else None
         )
 
         return settings
@@ -639,7 +649,7 @@ Each title must be distinctive, high-quality, and optimized for CTR.
                 'required': True
             },
             'inworld': {
-                'configured': bool(api_keys.get('inworld')),
+                'configured': bool(api_keys.get('inworld') and api_keys.get('inworld_secret')),
                 'required': False  # Optional for now
             },
             'pexels': {
@@ -658,11 +668,14 @@ Each title must be distinctive, high-quality, and optimized for CTR.
         settings = cls.load_settings()
         api_validation = cls.validate_api_keys()
 
+        # Get all API keys from settings
+        api_keys_dict = settings.get('api_keys', {})
+
         return {
             'api_keys': {
                 key: {
                     'configured': api_validation[key]['configured'],
-                    'value': '***' if settings['api_keys'].get(key) else ''
+                    'value': '***' if api_keys_dict.get(key) else ''
                 }
                 for key in ['gemini', 'director_gemini', 'replicate', 'inworld', 'pexels', 'pixabay']
             },

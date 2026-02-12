@@ -308,22 +308,26 @@ const saveSettings = async () => {
         localStorage.setItem('videoToolSettings', JSON.stringify(settings));
         appState.settings = settings;
 
-        // Also save to backend API config
+        // Save ALL API keys to backend via the correct endpoint
         try {
-            const response = await fetch('/api/config', {
+            const response = await fetch('/api/settings/api-keys', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
-                    gemini_api_key: settings.api_keys.gemini,
-                    director_gemini_key: settings.api_keys.director_gemini,
-                    replicate_api_token: settings.api_keys.replicate,
-                    inworld_api_key: settings.api_keys.inworld,
-                    inworld_api_secret: settings.api_keys.inworld_secret
+                    gemini: settings.api_keys.gemini,
+                    director_gemini: settings.api_keys.director_gemini,
+                    replicate: settings.api_keys.replicate,
+                    inworld: settings.api_keys.inworld,
+                    inworld_secret: settings.api_keys.inworld_secret,
+                    pexels: settings.api_keys.pexels,
+                    pixabay: settings.api_keys.pixabay
                 })
             });
 
             if (!response.ok) {
                 console.warn('Failed to save to backend:', await response.text());
+            } else {
+                console.log('✅ All API keys saved to backend successfully');
             }
         } catch (error) {
             console.warn('Failed to save to backend:', error);
