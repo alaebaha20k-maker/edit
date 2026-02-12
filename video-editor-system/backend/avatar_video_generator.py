@@ -233,6 +233,81 @@ class AvatarVideoGenerator:
         result = subprocess.run(cmd, capture_output=True, text=True)
         return float(result.stdout.strip())
 
+    def _extract_principal_keywords(
+        self,
+        script: str,
+        verbose: bool = False
+    ) -> List[str]:
+        """
+        SUPER SMART: Extract principal keywords from script using Gemini
+        These will be used strategically for video search
+
+        Args:
+            script: Full script text
+            verbose: Print progress
+
+        Returns:
+            List of principal keywords (main topics/concepts)
+        """
+        if not script or len(script.strip()) < 50:
+            return ['generic', 'business', 'professional']
+
+        if verbose:
+            print("\n🧠 ANALYZING SCRIPT: Extracting principal keywords with Gemini...")
+
+        prompt = f"""Analyze this video script and extract the PRINCIPAL KEYWORDS.
+
+SCRIPT:
+{script[:2000]}
+
+TASK:
+Extract 8-12 principal keywords/topics from this script. These will be used to search for relevant stock videos.
+
+RULES:
+1. Extract MAIN TOPICS and CONCEPTS (not random words)
+2. Each keyword should be 1-3 words maximum
+3. Focus on VISUAL concepts that can be shown in videos
+4. If it's about trading → extract trading-specific keywords
+5. If it's about business → extract business keywords
+6. If it's about nature → extract nature keywords
+7. Be SPECIFIC to the script content
+
+EXAMPLES:
+- Trading script → "stock chart", "trading floor", "candlestick chart", "wall street", "forex market"
+- Business script → "handshake", "office work", "team meeting", "laptop typing", "presentation"
+- Tech script → "coding screen", "data center", "programming", "servers", "tech startup"
+
+OUTPUT FORMAT (JSON array):
+["keyword1", "keyword2", "keyword3", ...]
+
+CRITICAL: Extract keywords that are HYPER-SPECIFIC to this script's main topic!
+"""
+
+        try:
+            model = genai.GenerativeModel('gemini-2.5-flash')
+            response = model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.3,  # Low temp for consistent extraction
+                    max_output_tokens=500,
+                    response_mime_type="application/json"
+                )
+            )
+
+            keywords = json.loads(response.text)
+
+            if verbose:
+                print(f"   ✅ Extracted {len(keywords)} principal keywords:")
+                print(f"   {', '.join(keywords[:10])}")  # Show first 10
+
+            return keywords[:12]  # Return max 12 keywords
+
+        except Exception as e:
+            if verbose:
+                print(f"   ⚠️  Keyword extraction failed, using fallback: {e}")
+            # Fallback keywords based on common topics
+            return ['professional', 'business', 'work', 'office', 'meeting', 'success', 'technology', 'data']
+
     def _plan_media_sequence(
         self,
         audio_duration: float,
@@ -243,6 +318,7 @@ class AvatarVideoGenerator:
     ) -> Dict:
         """
         Plan media sequence using Gemini AI
+        NOW WITH INTELLIGENT KEYWORD EXTRACTION!
 
         Args:
             audio_duration: Total audio duration in seconds
@@ -254,6 +330,9 @@ class AvatarVideoGenerator:
         Returns:
             Dict with media plan
         """
+        # STEP 1: Extract principal keywords from script (SMART!)
+        principal_keywords = self._extract_principal_keywords(script, verbose) if script else []
+
         # Determine segment pattern based on mode
         if mode == "ai_images":
             avatar_seg_duration = 60  # 1 minute
@@ -262,14 +341,15 @@ class AvatarVideoGenerator:
             avatar_seg_duration = 30  # 30 seconds (perfect balance!)
             media_seg_duration = 8     # 8 seconds (FIXED: was None, now enforced!)
 
-        # Build prompt for Gemini
+        # Build prompt for Gemini (NOW with principal keywords!)
         prompt = self._build_planning_prompt(
             audio_duration=audio_duration,
             avatar_duration=avatar_duration,
             mode=mode,
             avatar_seg_duration=avatar_seg_duration,
             media_seg_duration=media_seg_duration,
-            script=script
+            script=script,
+            principal_keywords=principal_keywords  # NEW: Pass extracted keywords!
         )
 
         # Call Gemini
@@ -308,9 +388,10 @@ class AvatarVideoGenerator:
         mode: str,
         avatar_seg_duration: int,
         media_seg_duration: int,
-        script: str = None
+        script: str = None,
+        principal_keywords: List[str] = None
     ) -> str:
-        """Build prompt for Gemini media planning"""
+        """Build prompt for Gemini media planning with INTELLIGENT keyword usage"""
 
         last_2_min_seconds = 120
 
@@ -343,7 +424,35 @@ class AvatarVideoGenerator:
                 script_timeline += f"[{chunk['time_start']:.0f}s-{chunk['time_end']:.0f}s]: \"{chunk['text']}...\"\n"
             script_timeline += "\n"
 
-        prompt = f"""You are an AI video planner. Create a media sequence plan.
+        # Build principal keywords section (SUPER SMART!)
+        keywords_section = ""
+        if principal_keywords and len(principal_keywords) > 0:
+            keywords_section = f"""**🎯 PRINCIPAL KEYWORDS (extracted from script):**
+{', '.join(principal_keywords)}
+
+**HOW TO USE THESE KEYWORDS:**
+1. These are the MAIN TOPICS from the script - use them strategically!
+2. You CAN reuse the same keyword multiple times (creative variations)
+3. Combine keywords to create variations (e.g., "stock chart" → "stock chart", "stock trading", "stock market")
+4. Match keywords to the timing - use trading keywords when script talks about trading
+5. Be CREATIVE but stay within these principal topics!
+6. Each video should still be DIFFERENT (different results from stock API)
+
+EXAMPLES OF CREATIVE USAGE:
+- Principal keyword: "stock chart"
+  * Video 1: "stock chart"
+  * Video 2: "stock trading"
+  * Video 3: "stock market"
+  * Video 4: "stock graph"
+- Principal keyword: "trading floor"
+  * Video 1: "trading floor"
+  * Video 2: "traders working"
+  * Video 3: "stock exchange"
+  * Video 4: "wall street"
+
+"""
+
+        prompt = f"""You are a SUPER INTELLIGENT AI video planner. Create a media sequence plan.
 
 **TASK:** Plan a video with avatar loops and {"AI images" if mode == "ai_images" else "stock videos"}.
 
@@ -352,15 +461,17 @@ class AvatarVideoGenerator:
 - Avatar video duration: {avatar_duration:.2f} seconds
 - Mode: {mode}
 
-{script_timeline}
+{keywords_section}{script_timeline}
 
 **RULES:**
 1. Pattern: {avatar_seg_duration} sec avatar → {media_seg_duration if media_seg_duration else "EXACTLY 8"} sec {"AI image" if mode == "ai_images" else "stock video"} → repeat
 2. Last {last_2_min_seconds} seconds: FULL avatar (to match exact audio length)
 3. Total duration MUST exactly match audio duration: {audio_duration:.2f} seconds
 4. {"AI images are EXACTLY 5 seconds each" if mode == "ai_images" else f"Stock videos are EXACTLY {media_seg_duration if media_seg_duration else 8} seconds (NO LONGER!)"}
-5. CRITICAL: Each media segment MUST have different search query - NO REPETITION!
-6. CRITICAL: Search queries MUST match script content at that exact timing!
+5. USE PRINCIPAL KEYWORDS: Build search queries from the principal keywords above!
+6. CREATIVE VARIATIONS: You can reuse keywords but make variations (different phrasing)
+7. Each video will be DIFFERENT because stock API returns different results
+8. Match keywords to what the script is saying at that time!
 
 **OUTPUT JSON FORMAT:**
 {{
@@ -382,37 +493,32 @@ class AvatarVideoGenerator:
   ]
 }}
 
-**CRITICAL - HOW TO GENERATE SEARCH QUERIES:**
-1. READ the script timeline above - UNDERSTAND what the audio is saying at each time
+**CRITICAL - HOW TO GENERATE SEARCH QUERIES (HIGH IQ APPROACH!):**
+1. START with the PRINCIPAL KEYWORDS above - these are your foundation!
 2. For each media segment, check what time it starts
-3. Look at the script text for that EXACT time range
-4. Extract the MAIN TOPIC/CONCEPT being discussed at that moment
-5. Convert to 1-3 SPECIFIC keywords that match stock video content
+3. Look at the script timeline to see what's being discussed at that time
+4. PICK the most relevant principal keyword for that moment
+5. CREATE VARIATIONS if needed (e.g., "stock chart" → "stock market", "trading chart", etc.)
+6. Each query should be 1-3 words maximum
 
-**SEARCH QUERY RULES (SUPER IMPORTANT!):**
-- MUST be 1-3 words maximum (e.g., "stock market", "trading chart", "wall street")
-- MUST match the script content at that EXACT timing
-- Each segment MUST have a DIFFERENT search query (NO REPEATING!)
-- BE HYPER-SPECIFIC to the script topic!
+**CREATIVE QUERY GENERATION:**
+- Use the principal keywords as your VOCABULARY
+- Make creative variations and combinations
+- Example: If keywords include "stock chart", "trading", "market"
+  * Query 1: "stock chart"
+  * Query 2: "stock trading"
+  * Query 3: "market data"
+  * Query 4: "trading floor"
+  * Query 5: "stock market"
+  * Query 6: "financial chart"
+- Stock API will return DIFFERENT videos for each variation!
 
-**TRADING/FINANCE KEYWORDS (if script is about trading/markets):**
-- Good: "stock chart", "trading floor", "wall street", "candlestick chart", "forex trading", "bull market", "stock exchange", "financial graph", "market crash", "trading desk"
-- Bad: "generic", "medicine", "pills", "health"
-
-**BUSINESS KEYWORDS (if script is about business):**
-- Good: "handshake", "business meeting", "office work", "laptop typing", "team collaboration", "presentation"
-
-**TECHNOLOGY KEYWORDS (if script is about tech):**
-- Good: "coding screen", "data center", "programming", "servers", "tech startup"
-
-**NATURE/LIFESTYLE KEYWORDS (if script is about life/nature):**
-- Good: "mountain sunset", "ocean waves", "forest trail", "peaceful lake"
-
-**CRITICAL RULE:**
-- READ the script! If it talks about "trading psychology" → use "trading chart" or "stock market"
-- If it talks about "risk management" → use "financial risk" or "market volatility"
-- If it talks about "success mindset" → use "business success" or "achievement"
-- NEVER use irrelevant keywords like "medicine" for a trading video!
+**CRITICAL RULES:**
+- ONLY use variations of the principal keywords provided
+- Match the topic being discussed at each time in the script
+- 1-3 words maximum per query
+- Stock API ensures each video is different (you can reuse keywords!)
+- NEVER use random keywords not related to principal keywords!
 
 **IMPORTANT:**
 - ANALYZE the script timeline to match media to content!
@@ -583,9 +689,9 @@ Generate the media plan now as valid JSON:
         Returns:
             List of generated image paths with metadata
         """
-        from replicate_image_generator import ReplicateImageGenerator
+        from image_generator import ImageGenerator
 
-        generator = ReplicateImageGenerator()
+        generator = ImageGenerator()
         images = []
 
         # Get all ai_image segments with their ORIGINAL indices
