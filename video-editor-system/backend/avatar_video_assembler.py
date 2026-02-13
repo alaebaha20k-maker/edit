@@ -7,6 +7,7 @@ Assembles final video with avatar loops + media + audio using FFmpeg ultra-fast
 import os
 import json
 import subprocess
+import time
 from typing import List, Dict
 from datetime import datetime
 
@@ -37,6 +38,54 @@ class AvatarVideoAssembler:
         os.makedirs(temp_dir, exist_ok=True)
         os.makedirs(output_dir, exist_ok=True)
 
+    def _prepare_looped_background_music(self, music_path: str, target_duration: float, verbose: bool = False) -> str:
+        """Prepare background music with looping if needed. Returns path to prepared music file."""
+        cmd = [
+            'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1', music_path
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        music_duration = float(result.stdout.strip())
+
+        if verbose:
+            print(f"\n🎵 Background music: {music_duration:.1f}s (target: {target_duration:.1f}s)")
+
+        output_path = os.path.join(self.temp_dir, f"bgmusic_prepared_{int(time.time())}.mp3")
+
+        if music_duration >= target_duration:
+            cmd = ['ffmpeg', '-y', '-i', music_path, '-t', str(target_duration), '-c:a', 'copy', output_path]
+            subprocess.run(cmd, capture_output=True, check=True, timeout=60)
+            if verbose:
+                print(f"   ✅ Trimmed to {target_duration:.1f}s")
+            return output_path
+
+        # Need to loop: build concat list
+        concat_file = os.path.join(self.temp_dir, f"bgmusic_concat_{int(time.time())}.txt")
+        current_duration = 0.0
+        loop_count = 0
+        with open(concat_file, 'w') as f:
+            while current_duration < target_duration:
+                if loop_count == 0:
+                    f.write(f"file '{os.path.abspath(music_path)}'\n")
+                    current_duration += music_duration
+                else:
+                    # Skip first 5s on subsequent loops for smooth transition
+                    trimmed = os.path.join(self.temp_dir, f"bgmusic_loop{loop_count}_{int(time.time())}.mp3")
+                    trim_cmd = ['ffmpeg', '-y', '-i', music_path, '-ss', '5', '-c:a', 'copy', trimmed]
+                    subprocess.run(trim_cmd, capture_output=True, check=True, timeout=60)
+                    f.write(f"file '{os.path.abspath(trimmed)}'\n")
+                    current_duration += (music_duration - 5.0)
+                loop_count += 1
+
+        cmd = [
+            'ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', concat_file,
+            '-t', str(target_duration), '-c:a', 'copy', output_path
+        ]
+        subprocess.run(cmd, capture_output=True, check=True, timeout=120)
+        if verbose:
+            print(f"   ✅ Looped {loop_count}x to {target_duration:.1f}s")
+        return output_path
+
     def assemble_video(
         self,
         avatar_video_path: str,
@@ -44,6 +93,7 @@ class AvatarVideoAssembler:
         media_plan: Dict,
         media_items: List[Dict],
         mode: str,
+        background_music_path: str = None,
         verbose: bool = True
     ) -> str:
         """
@@ -110,6 +160,7 @@ class AvatarVideoAssembler:
         final_video = self._add_audio(
             video_path=concatenated_video,
             audio_path=audio_path,
+            background_music_path=background_music_path,
             verbose=verbose
         )
 
@@ -446,6 +497,7 @@ class AvatarVideoAssembler:
         self,
         video_path: str,
         audio_path: str,
+        background_music_path: str = None,
         verbose: bool = False
     ) -> str:
         """Add audio to video - video MUST match audio duration exactly"""
@@ -465,17 +517,43 @@ class AvatarVideoAssembler:
             else:
                 print(f"   ⚠️  Mismatch: {abs(video_duration - audio_duration):.2f}s difference")
 
-        cmd = [
-            'ffmpeg',
-            '-y',
-            '-i', video_path,
-            '-i', audio_path,
-            '-c:v', 'copy',  # Copy video (no re-encode)
-            '-c:a', 'aac',
-            '-b:a', '192k',
-            # NO -shortest flag! Video should already match audio duration exactly
-            output_path
-        ]
+        # Prepare background music if provided
+        prepared_music = None
+        if background_music_path and os.path.exists(background_music_path):
+            audio_duration = self._get_video_duration(audio_path)
+            if verbose:
+                print(f"   🎵 Adding background music at 10% volume...")
+            prepared_music = self._prepare_looped_background_music(
+                background_music_path, audio_duration, verbose
+            )
+
+        if prepared_music:
+            # WITH background music: mix voice at 100% + music at 10%
+            cmd = [
+                'ffmpeg', '-y',
+                '-i', video_path,
+                '-i', audio_path,
+                '-i', prepared_music,
+                '-filter_complex', '[1:a]volume=1.0[voice];[2:a]volume=0.1[music];[voice][music]amix=inputs=2:duration=shortest[aout]',
+                '-map', '0:v',
+                '-map', '[aout]',
+                '-c:v', 'copy',
+                '-c:a', 'aac',
+                '-b:a', '192k',
+                output_path
+            ]
+        else:
+            # NO background music
+            cmd = [
+                'ffmpeg',
+                '-y',
+                '-i', video_path,
+                '-i', audio_path,
+                '-c:v', 'copy',  # Copy video (no re-encode)
+                '-c:a', 'aac',
+                '-b:a', '192k',
+                output_path
+            ]
 
         if not verbose:
             cmd.extend(['-loglevel', 'error'])

@@ -4400,7 +4400,8 @@ async function generateAvatarVideo() {
                 audio: avatarAudioPath,
                 mode: selectedAvatarMode,
                 script: script,
-                stock_apis: ['pexels', 'pixabay']
+                stock_apis: ['pexels', 'pixabay'],
+                background_music_path: (window.videoData.backgroundMusic && window.videoData.backgroundMusic.path) ? window.videoData.backgroundMusic.path : null
             })
         });
 

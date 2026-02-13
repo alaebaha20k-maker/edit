@@ -3419,6 +3419,7 @@ def avatar_generate():
         script = data.get('script', '')
         stock_apis = data.get('stock_apis', ['pexels'])
         use_whisper = data.get('use_whisper', False)  # Default: fast Gemini mode
+        background_music_path = data.get('background_music_path')  # Optional
 
         if not avatar_video_path or not audio_path:
             return jsonify({
@@ -3471,6 +3472,7 @@ def avatar_generate():
             media_plan=result['media_plan'],
             media_items=result['media_items'],
             mode=mode,
+            background_music_path=background_music_path,
             verbose=True
         )
 
