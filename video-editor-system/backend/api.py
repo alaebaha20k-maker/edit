@@ -723,9 +723,9 @@ def manage_niches():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/niches/<niche_id>', methods=['GET', 'DELETE'])
+@app.route('/api/niches/<niche_id>', methods=['GET', 'PUT', 'DELETE'])
 def manage_niche(niche_id):
-    """Get or delete specific niche by ID"""
+    """Get, update, or delete specific niche by ID"""
     from niche_manager import NicheManager
 
     try:
@@ -736,6 +736,27 @@ def manage_niche(niche_id):
                 return jsonify({'error': 'Niche not found'}), 404
 
             return jsonify({'niche': niche})
+
+        elif request.method == 'PUT':
+            data = request.get_json()
+            if not data:
+                return jsonify({'error': 'No data provided'}), 400
+
+            name = data.get('name')
+            language = data.get('language')
+            writing_guidelines = data.get('writing_guidelines')
+
+            updated = NicheManager.update_niche(
+                niche_id=niche_id,
+                name=name,
+                language=language,
+                writing_guidelines=writing_guidelines
+            )
+
+            if not updated:
+                return jsonify({'error': 'Niche not found'}), 404
+
+            return jsonify({'success': True, 'niche': updated})
 
         elif request.method == 'DELETE':
             success = NicheManager.delete_niche(niche_id)

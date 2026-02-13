@@ -344,6 +344,12 @@
             animation: spin 1s linear infinite;
         }
 
+        /* Niche Cards */
+        .niche-card:hover {
+            border-color: #667eea !important;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+        }
+
         /* Animations */
         @keyframes fadeIn {
             from { opacity: 0; }
@@ -441,6 +447,7 @@
                 <div class="tab" data-tab="formulas">📝 Formulas</div>
                 <div class="tab" data-tab="voices">🎤 Voice Settings</div>
                 <div class="tab" data-tab="image-styles">🎨 Image Styles</div>
+                <div class="tab" data-tab="niches">🎯 Niches</div>
             </div>
 
             <!-- Tab 1: API Keys -->
@@ -674,6 +681,86 @@
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <!-- Tab 5: Niches -->
+            <div class="tab-content" id="niches">
+                <div id="alert-niches" class="alert"></div>
+
+                <div class="form-section">
+                    <h3>🎯 Existing Niches</h3>
+                    <p>View and edit your content niches. Each niche defines the writing style and guidelines for script generation.</p>
+
+                    <button class="btn btn-primary" id="create-niche-btn" style="margin-bottom: 24px;" onclick="showNicheForm(null)">
+                        ➕ Create New Niche
+                    </button>
+
+                    <div id="niches-list">
+                        <p style="color:#999;">Loading niches...</p>
+                    </div>
+                </div>
+
+                <!-- Inline create / edit form (hidden by default) -->
+                <div id="niche-form-section" style="display:none;">
+                    <div style="background:#f8f9fa; border:2px solid #667eea; border-radius:12px; padding:28px; margin-top:10px;">
+                        <h3 id="niche-form-title" style="margin:0 0 20px 0; color:#667eea;">✏️ Edit Niche</h3>
+
+                        <div class="input-group">
+                            <label for="niche-name-input">Niche Name *</label>
+                            <input type="text" id="niche-name-input" placeholder="e.g., Trading Psychology">
+                        </div>
+
+                        <div class="input-group">
+                            <label for="niche-language-input">Language *</label>
+                            <select id="niche-language-input">
+                                <option value="English">English</option>
+                                <option value="French">French</option>
+                                <option value="Spanish">Spanish</option>
+                                <option value="Arabic">Arabic</option>
+                                <option value="German">German</option>
+                                <option value="Portuguese">Portuguese</option>
+                                <option value="Italian">Italian</option>
+                                <option value="Chinese">Chinese</option>
+                                <option value="Japanese">Japanese</option>
+                            </select>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="niche-guidelines-input">
+                                Writing Guidelines *
+                                <span id="niche-char-count" style="font-weight:400; color:#999; margin-left:8px;">0 chars</span>
+                            </label>
+                            <textarea id="niche-guidelines-input"
+                                      rows="16"
+                                      placeholder="Describe tone, structure, key topics, language rules, content requirements... (min 100 characters)"
+                                      oninput="updateNicheCharCount()"></textarea>
+                            <small>Minimum 100 characters. Used by Gemini to generate scripts in this niche's style.</small>
+                        </div>
+
+                        <div class="button-group">
+                            <button class="btn btn-primary" id="niche-save-btn" onclick="saveNiche()">
+                                💾 Save Niche
+                            </button>
+                            <button class="btn btn-secondary" onclick="cancelNicheForm()">
+                                ✕ Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Niche delete confirmation modal -->
+    <div id="niche-delete-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:2000; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:12px; padding:32px; max-width:420px; width:90%; text-align:center; box-shadow:0 20px 60px rgba(0,0,0,0.4);">
+            <p style="font-size:48px; margin:0 0 12px;">🗑️</p>
+            <h3 style="margin:0 0 8px;">Delete Niche?</h3>
+            <p id="niche-delete-name" style="color:#667eea; font-weight:600; margin:0 0 16px;"></p>
+            <p style="color:#666; margin:0 0 24px; font-size:14px;">This cannot be undone. Scripts using this niche will keep their generated content.</p>
+            <div style="display:flex; gap:12px; justify-content:center;">
+                <button class="btn btn-secondary" onclick="closeNicheDeleteModal()">Cancel</button>
+                <button class="btn" id="niche-delete-confirm-btn" style="background:#ef4444; color:white;">🗑️ Delete</button>
             </div>
         </div>
     </div>
@@ -1258,6 +1345,184 @@
         }
 
         // Initialize on page load
+        // ─────────────────────────────────────────────────────────────────
+        // NICHES TAB
+        // ─────────────────────────────────────────────────────────────────
+
+        let _editingNicheId = null;   // null = creating, string = editing
+        let _deletingNicheId = null;
+
+        async function loadNichesSettings() {
+            const list = document.getElementById('niches-list');
+            try {
+                const res = await fetch('/api/niches');
+                const data = await res.json();
+                const niches = data.niches || [];
+
+                if (niches.length === 0) {
+                    list.innerHTML = `
+                        <div style="text-align:center; padding:40px; color:#999; border:2px dashed #e0e0e0; border-radius:12px;">
+                            <p style="font-size:40px; margin:0;">🎯</p>
+                            <p style="margin:10px 0 0;">No niches yet. Create your first niche above!</p>
+                        </div>`;
+                    return;
+                }
+
+                list.innerHTML = niches.map(n => `
+                    <div class="niche-card" id="niche-card-${n.id}" style="
+                        background:#f8f9fa; border:2px solid #e0e0e0; border-radius:12px;
+                        padding:20px 24px; margin-bottom:16px; transition:border-color .2s;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+                            <div style="flex:1; min-width:0;">
+                                <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                                    <strong style="font-size:17px; color:#333;">${escapeHtml(n.name)}</strong>
+                                    <span style="background:#667eea20; color:#667eea; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:600;">${escapeHtml(n.language)}</span>
+                                    <span style="color:#999; font-size:12px;">${n.writing_guidelines ? n.writing_guidelines.length.toLocaleString() : 0} chars</span>
+                                </div>
+                                <div style="margin-top:8px; color:#666; font-size:13px; line-height:1.5;">
+                                    ${escapeHtml((n.writing_guidelines || '').substring(0, 140))}${n.writing_guidelines && n.writing_guidelines.length > 140 ? '…' : ''}
+                                </div>
+                            </div>
+                            <div style="display:flex; gap:8px; flex-shrink:0;">
+                                <button class="btn btn-secondary" onclick="showNicheForm('${n.id}')"
+                                    style="padding:8px 14px; font-size:13px;">✏️ Edit</button>
+                                <button class="btn" onclick="confirmDeleteNiche('${n.id}','${escapeHtml(n.name).replace(/'/g,"\\'")}' )"
+                                    style="padding:8px 14px; font-size:13px; background:#fee2e2; color:#991b1b;">🗑️</button>
+                            </div>
+                        </div>
+                    </div>`).join('');
+
+            } catch (e) {
+                list.innerHTML = `<p style="color:#ef4444;">Failed to load niches: ${e.message}</p>`;
+            }
+        }
+
+        function showNicheForm(nicheId) {
+            _editingNicheId = nicheId;
+            const formSection = document.getElementById('niche-form-section');
+            const title = document.getElementById('niche-form-title');
+            const saveBtn = document.getElementById('niche-save-btn');
+
+            document.getElementById('niche-name-input').value = '';
+            document.getElementById('niche-language-input').value = 'English';
+            document.getElementById('niche-guidelines-input').value = '';
+            updateNicheCharCount();
+
+            if (nicheId) {
+                title.textContent = '✏️ Edit Niche';
+                saveBtn.textContent = '💾 Save Changes';
+                // Load existing niche data
+                fetch(`/api/niches/${nicheId}`)
+                    .then(r => r.json())
+                    .then(d => {
+                        const n = d.niche;
+                        document.getElementById('niche-name-input').value = n.name || '';
+                        document.getElementById('niche-language-input').value = n.language || 'English';
+                        document.getElementById('niche-guidelines-input').value = n.writing_guidelines || '';
+                        updateNicheCharCount();
+                    });
+            } else {
+                title.textContent = '➕ Create New Niche';
+                saveBtn.textContent = '➕ Create Niche';
+            }
+
+            formSection.style.display = 'block';
+            formSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function cancelNicheForm() {
+            document.getElementById('niche-form-section').style.display = 'none';
+            _editingNicheId = null;
+        }
+
+        function updateNicheCharCount() {
+            const val = document.getElementById('niche-guidelines-input').value;
+            const el = document.getElementById('niche-char-count');
+            el.textContent = val.length.toLocaleString() + ' chars';
+            el.style.color = val.length < 100 ? '#ef4444' : '#22c55e';
+        }
+
+        async function saveNiche() {
+            const name = document.getElementById('niche-name-input').value.trim();
+            const language = document.getElementById('niche-language-input').value;
+            const guidelines = document.getElementById('niche-guidelines-input').value.trim();
+            const alertEl = document.getElementById('alert-niches');
+
+            if (!name) { showAlert('niches', '⚠️ Niche name is required.', 'error'); return; }
+            if (guidelines.length < 100) { showAlert('niches', '⚠️ Writing guidelines must be at least 100 characters.', 'error'); return; }
+
+            const btn = document.getElementById('niche-save-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<div class="spinner"></div> Saving…';
+
+            try {
+                let res;
+                if (_editingNicheId) {
+                    res = await fetch(`/api/niches/${_editingNicheId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, language, writing_guidelines: guidelines })
+                    });
+                } else {
+                    res = await fetch('/api/niches', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, language, writing_guidelines: guidelines })
+                    });
+                }
+
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.error || 'Save failed');
+
+                showAlert('niches', `✓ Niche "${name}" ${_editingNicheId ? 'updated' : 'created'} successfully!`, 'success');
+                cancelNicheForm();
+                await loadNichesSettings();
+
+            } catch (e) {
+                showAlert('niches', '✗ Error: ' + e.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = _editingNicheId ? '💾 Save Changes' : '➕ Create Niche';
+            }
+        }
+
+        function confirmDeleteNiche(nicheId, nicheName) {
+            _deletingNicheId = nicheId;
+            document.getElementById('niche-delete-name').textContent = nicheName;
+            const modal = document.getElementById('niche-delete-modal');
+            modal.style.display = 'flex';
+
+            document.getElementById('niche-delete-confirm-btn').onclick = async () => {
+                try {
+                    const res = await fetch(`/api/niches/${_deletingNicheId}`, { method: 'DELETE' });
+                    const data = await res.json();
+                    if (!res.ok || !data.success) throw new Error(data.error || 'Delete failed');
+                    closeNicheDeleteModal();
+                    showAlert('niches', '✓ Niche deleted.', 'success');
+                    await loadNichesSettings();
+                } catch (e) {
+                    closeNicheDeleteModal();
+                    showAlert('niches', '✗ ' + e.message, 'error');
+                }
+            };
+        }
+
+        function closeNicheDeleteModal() {
+            document.getElementById('niche-delete-modal').style.display = 'none';
+            _deletingNicheId = null;
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        // ─────────────────────────────────────────────────────────────────
+
         window.addEventListener('DOMContentLoaded', () => {
             // Initialize all event listeners
             initTabSwitching();
@@ -1273,6 +1538,19 @@
             loadFormulas();
             loadVoices();
             loadImageStyles();
+            loadNichesSettings();
+
+            // Close niche delete modal on backdrop click
+            document.getElementById('niche-delete-modal').addEventListener('click', function(e) {
+                if (e.target === this) closeNicheDeleteModal();
+            });
+
+            // Load niches when switching to niches tab
+            document.querySelectorAll('.tab').forEach(tab => {
+                if (tab.dataset.tab === 'niches') {
+                    tab.addEventListener('click', loadNichesSettings);
+                }
+            });
         });
     </script>
 </body>
