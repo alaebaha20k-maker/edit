@@ -262,18 +262,21 @@ class AvatarVideoGenerator:
         clean_script = script[:2000].replace('"', "'").replace('\n', ' ').strip()
 
         prompt = f"""Analyze this video script and identify the MAIN SUBJECT and keywords.
+The script may be in ANY language (French, Arabic, Spanish, etc.) - that's fine, analyze the meaning.
 
 SCRIPT:
 {clean_script}
 
 TASK:
 1. What is the PRIMARY TOPIC? (trading, business, technology, health, finance, marketing, etc.)
-2. List 8-12 visual keywords related to that topic
+2. List 8-12 visual keywords related to that topic IN ENGLISH (for stock video search)
 
 EXAMPLES:
-If trading script → main_subject: "trading", keywords: ["chart", "analysis", "psychology", "risk", "market", "floor", "candlestick", "forex"]
+If trading script (any language) → main_subject: "trading", keywords: ["chart", "analysis", "psychology", "risk", "market", "floor", "candlestick", "forex"]
 If business script → main_subject: "business", keywords: ["meeting", "handshake", "office", "team", "presentation", "growth"]
 If tech script → main_subject: "technology", keywords: ["coding", "servers", "data", "programming", "startup"]
+
+IMPORTANT: Return main_subject and keywords IN ENGLISH always (used for stock video search).
 
 Return ONLY this JSON (no markdown, no formatting):
 {{"main_subject": "topic_here", "keywords": ["keyword1", "keyword2", "keyword3"]}}
@@ -322,25 +325,52 @@ Return ONLY this JSON (no markdown, no formatting):
                 print(f"   ⚠️  Keyword extraction failed: {e}")
                 print(f"   🔄 Using SMART fallback based on script content...")
 
-            # SMART FALLBACK: Analyze script for common topics
+            # SMART FALLBACK: Analyze script for common topics (English + French)
             script_lower = script.lower()
 
-            # Check for trading/finance keywords
-            if any(word in script_lower for word in ['trading', 'trader', 'stock', 'market', 'forex', 'candlestick', 'chart']):
+            # Check for trading/finance keywords (EN + FR)
+            if any(word in script_lower for word in [
+                'trading', 'trader', 'stock', 'market', 'forex', 'candlestick', 'chart',
+                'bourse', 'marchés', 'marché', 'bousier', 'boursier', 'cotation', 'cours',
+                'action', 'actions', 'investissement', 'spéculation', 'trading psychologique'
+            ]):
                 main_subject = 'trading'
                 keywords = ['chart', 'analysis', 'psychology', 'risk', 'market', 'strategy', 'floor', 'candlestick']
-            # Check for business keywords
-            elif any(word in script_lower for word in ['business', 'entrepreneur', 'startup', 'company', 'corporate']):
+            # Check for business keywords (EN + FR)
+            elif any(word in script_lower for word in [
+                'business', 'entrepreneur', 'startup', 'company', 'corporate',
+                'entreprise', 'entreprises', 'affaires', 'commerce', 'dirigeant', 'gestion'
+            ]):
                 main_subject = 'business'
                 keywords = ['meeting', 'handshake', 'office', 'team', 'presentation', 'growth', 'strategy']
-            # Check for technology keywords
-            elif any(word in script_lower for word in ['technology', 'coding', 'programming', 'software', 'computer', 'tech']):
+            # Check for technology keywords (EN + FR)
+            elif any(word in script_lower for word in [
+                'technology', 'coding', 'programming', 'software', 'computer', 'tech',
+                'technologie', 'logiciel', 'informatique', 'programme', 'développement', 'numérique'
+            ]):
                 main_subject = 'technology'
                 keywords = ['coding', 'servers', 'data', 'programming', 'startup', 'computer']
-            # Check for finance keywords
-            elif any(word in script_lower for word in ['finance', 'money', 'investment', 'wealth', 'financial']):
+            # Check for finance keywords (EN + FR)
+            elif any(word in script_lower for word in [
+                'finance', 'money', 'investment', 'wealth', 'financial',
+                'argent', 'richesse', 'patrimoine', 'épargne', 'revenu', 'financier'
+            ]):
                 main_subject = 'finance'
                 keywords = ['money', 'investment', 'wealth', 'planning', 'strategy', 'growth']
+            # Check for health/fitness (EN + FR)
+            elif any(word in script_lower for word in [
+                'health', 'fitness', 'workout', 'exercise',
+                'santé', 'sport', 'exercice', 'musculation', 'régime', 'bien-être'
+            ]):
+                main_subject = 'fitness'
+                keywords = ['workout', 'gym', 'exercise', 'health', 'training', 'sport']
+            # Check for motivation/personal development (EN + FR)
+            elif any(word in script_lower for word in [
+                'motivation', 'success', 'mindset', 'goal',
+                'succès', 'objectif', 'développement personnel', 'confiance', 'réussite'
+            ]):
+                main_subject = 'motivation'
+                keywords = ['success', 'mindset', 'goal', 'achievement', 'winner', 'growth']
             # Default fallback
             else:
                 main_subject = 'professional'
