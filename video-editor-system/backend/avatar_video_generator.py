@@ -615,9 +615,17 @@ If main subject = "business":
 - Stock API will return different videos for each query
 - Main subject + different keywords = different but relevant videos
 
+**🌍 LANGUAGE RULE - CRITICAL:**
+- The script may be in French, Arabic, Spanish, or any other language
+- ALL search_query values MUST be in ENGLISH ONLY
+- Stock video APIs (Pexels, Pixabay) only work with English search terms
+- Example: French script about "psychologie du trading" → query = "trading psychology" (NOT "psychologie trading")
+- Example: Arabic script about business → query = "business meeting" (NOT Arabic words)
+- ALWAYS translate concepts to English for search queries
+
 **IMPORTANT:**
 - ANALYZE the script timeline to match media to content!
-- Search queries: 1-3 words, hyper-specific to script!
+- Search queries: 1-3 words IN ENGLISH, hyper-specific to script!
 - NO GENERIC QUERIES! Match the script topic!
 - Each video MUST be relevant to what audio is saying at that moment!
 - Last segment must end at exactly {audio_duration:.2f} seconds
@@ -655,6 +663,21 @@ Generate the media plan now as valid JSON:
                     if verbose:
                         print(f"   ⚠️  Segment at {seg['start']}s was {seg['duration']}s, capping to {max_allowed}s")
                     seg['duration'] = max_allowed
+
+            # LANGUAGE SAFETY: Strip any non-ASCII characters from search queries
+            # Stock video APIs (Pexels, Pixabay) only work with English/ASCII search terms
+            if seg.get('search_query'):
+                original_query = seg['search_query']
+                # Keep only ASCII printable characters (removes Arabic, Chinese, accented chars, etc.)
+                safe_query = original_query.encode('ascii', errors='ignore').decode('ascii').strip()
+                # If query became empty after stripping (was fully non-English), use main subject
+                if not safe_query:
+                    safe_query = plan.get('main_subject', 'professional')
+                    if verbose:
+                        print(f"   🌍 Non-English query '{original_query}' → replaced with '{safe_query}'")
+                elif safe_query != original_query and verbose:
+                    print(f"   🌍 Sanitized query: '{original_query}' → '{safe_query}'")
+                seg['search_query'] = safe_query
 
         # Calculate actual total duration from segments
         actual_duration = sum(seg['duration'] for seg in segments)
