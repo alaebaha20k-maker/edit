@@ -472,6 +472,18 @@
                 </div>
 
                 <div class="form-section">
+                    <h3>🖼️ Gemini Image API Key (Avatar Auto &amp; Auto Images)
+                        <span id="status-gemini-image" class="api-status not-configured">Not Configured</span>
+                    </h3>
+                    <p>Used for <strong>Gemini 2.5 Flash</strong> image generation in Avatar Auto and Auto Images. Falls back to Director Gemini key if left empty.</p>
+                    <div class="input-group">
+                        <label for="gemini-image-key">Gemini Image API Key (Optional)</label>
+                        <input type="password" id="gemini-image-key" placeholder="AIza... (leave empty to reuse Director/Script key)">
+                        <small>💡 Enables high-quality 1920×1080 image generation via Gemini 2.5 Flash. <a href="https://aistudio.google.com/app/apikey" target="_blank">Get key from Google AI Studio</a></small>
+                    </div>
+                </div>
+
+                <div class="form-section">
                     <h3>🎨 Replicate API Token
                         <span id="status-replicate" class="api-status not-configured">Not Configured</span>
                     </h3>
@@ -741,6 +753,7 @@
             document.getElementById('save-api-keys').addEventListener('click', async () => {
             const gemini = document.getElementById('gemini-key').value;
             const director_gemini = document.getElementById('director-gemini-key').value;
+            const gemini_image = document.getElementById('gemini-image-key').value;
             const replicate = document.getElementById('replicate-token').value;
             const inworld = document.getElementById('inworld-key').value;
             const pexels = document.getElementById('pexels-key').value;
@@ -753,7 +766,7 @@
                 const response = await fetch('/api/settings/api-keys', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ gemini, director_gemini, replicate, inworld, pexels })
+                    body: JSON.stringify({ gemini, director_gemini, gemini_image, replicate, inworld, pexels })
                 });
 
                 const data = await response.json();
@@ -764,6 +777,7 @@
                     // Update status indicators
                     if (gemini) updateStatusIndicator('gemini', true);
                     if (director_gemini) updateStatusIndicator('director-gemini', true);
+                    if (gemini_image) updateStatusIndicator('gemini-image', true);
                     if (replicate) updateStatusIndicator('replicate', true);
                     if (inworld) updateStatusIndicator('inworld', true);
                     if (pexels) updateStatusIndicator('pexels', true);
@@ -771,6 +785,7 @@
                     // Clear input fields
                     document.getElementById('gemini-key').value = '';
                     document.getElementById('director-gemini-key').value = '';
+                    document.getElementById('gemini-image-key').value = '';
                     document.getElementById('replicate-token').value = '';
                     document.getElementById('inworld-key').value = '';
                     document.getElementById('pexels-key').value = '';
@@ -789,7 +804,7 @@
         // Show/Hide Keys (will be initialized in DOMContentLoaded)
         function initShowHideKeys() {
             document.getElementById('show-keys').addEventListener('click', () => {
-                const inputs = ['gemini-key', 'director-gemini-key', 'replicate-token', 'inworld-key', 'pexels-key'];
+                const inputs = ['gemini-key', 'director-gemini-key', 'gemini-image-key', 'replicate-token', 'inworld-key', 'pexels-key'];
                 inputs.forEach(id => {
                     const input = document.getElementById(id);
                     input.type = input.type === 'password' ? 'text' : 'password';

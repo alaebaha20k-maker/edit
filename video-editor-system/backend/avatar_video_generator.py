@@ -45,6 +45,8 @@ class AvatarVideoGenerator:
         script: str = None,
         stock_apis: List[str] = None,
         use_whisper: bool = False,
+        image_style: Dict = None,
+        image_provider: str = "replicate",
         verbose: bool = True
     ) -> Dict:
         """
@@ -57,6 +59,8 @@ class AvatarVideoGenerator:
             script: Optional script for context (for stock video search)
             stock_apis: List of stock API names to search (for stock_videos mode)
             use_whisper: If True, use Whisper STT for timing (slow). If False, use fast Gemini planning (default: False)
+            image_style: Image style dict (id, name, visual_rules, etc.) for AI Director prompt planning
+            image_provider: "replicate" (default) or "gemini" for image generation backend
             verbose: Print progress
 
         Returns:
@@ -114,8 +118,13 @@ class AvatarVideoGenerator:
         # Step 4: Download/generate media based on plan
         if mode == "ai_images":
             if verbose:
-                print("\n🖼️  Step 4: Generating AI images with Replicate...")
-            media_items = self._generate_ai_images(media_plan, script, verbose)
+                print("\n🖼️  Step 4: Planning + Generating AI images...")
+            media_items = self._generate_ai_images(
+                media_plan, script, verbose,
+                image_style=image_style,
+                image_provider=image_provider,
+                audio_duration=audio_duration,
+            )
         else:  # stock_videos
             if verbose:
                 print("\n🎥 Step 4: Downloading stock videos from APIs...")
@@ -794,22 +803,29 @@ Generate the media plan now as valid JSON:
         self,
         media_plan: Dict,
         script: str,
-        verbose: bool = False
+        verbose: bool = False,
+        image_style: Dict = None,
+        image_provider: str = "replicate",
+        audio_duration: float = None,
     ) -> List[Dict]:
         """
-        Generate AI images for media plan using Replicate
+        Generate AI images for avatar video using Gemini Director for prompt planning.
+
+        FORMULA: 1 image per minute of audio.
+        Each image gets a 400+ char high-quality prompt from the AI Director.
+        Supports two image providers: 'replicate' (Flux) or 'gemini' (Gemini 2.5 Flash).
 
         Args:
-            media_plan: Media plan from Gemini
-            script: Script for context
+            media_plan: Media plan from Gemini (segments)
+            script: Full script text for AI Director prompt planning
             verbose: Print progress
+            image_style: Style dict with visual_rules, lighting, composition, etc.
+            image_provider: "replicate" or "gemini"
+            audio_duration: Total audio duration in seconds (for Director planning)
 
         Returns:
             List of generated image paths with metadata
         """
-        from image_generator import ImageGenerator
-
-        generator = ImageGenerator()
         images = []
 
         # Get all ai_image segments with their ORIGINAL indices
@@ -818,39 +834,172 @@ Generate the media plan now as valid JSON:
             if seg['type'] == 'ai_image'
         ]
 
+        if not image_segments:
+            return images
+
+        n_images = len(image_segments)
+
         if verbose:
-            print(f"   Generating {len(image_segments)} AI images...")
+            print(f"   📋 Planning {n_images} high-quality image prompts with Gemini Director...")
 
-        for i, (seg_idx, segment) in enumerate(image_segments):
-            if verbose:
-                print(f"   [{i+1}/{len(image_segments)}] Generating image for: {segment.get('search_query', 'generic')}")
+        # ── Step 1: Use AI Director to plan high-quality prompts ──────────────
+        director_prompts = []  # list of 400+ char prompts
 
-            # Generate image prompt from search query
-            prompt = segment.get('search_query', 'professional background image')
-
-            # Generate image
+        if script and len(script.strip()) > 50:
             try:
-                image_path = generator.generate_image(
-                    prompt=prompt,
-                    output_dir='media_library/avatar_images'
+                from config import Config
+                from auto_images.director_client import DirectorClient
+
+                director_api_key = Config.get_director_gemini_api_key()
+                director = DirectorClient(api_key=director_api_key)
+
+                # Use the specialised avatar planner (1 image per minute)
+                eff_duration = audio_duration if audio_duration else n_images * 60.0
+                style = image_style or {
+                    'id': 'cinematic',
+                    'name': 'Cinematic',
+                    'description': 'Professional cinematic photography',
+                    'visual_rules': ['cinematic lighting', 'sharp focus', 'professional composition'],
+                    'negative_rules': ['blurry', 'low quality', 'text', 'watermark'],
+                    'composition': 'Rule of thirds, dynamic framing',
+                    'lighting': 'Dramatic cinematic lighting',
+                    'color_palette': ['Deep blues', 'Warm golds', 'Rich contrast'],
+                }
+
+                plan = director.plan_avatar_images(
+                    script_text=script,
+                    style=style,
+                    audio_duration_seconds=eff_duration,
+                    verbose=verbose,
                 )
 
+                director_prompts = [scene.image_prompt for scene in plan.scenes]
+
+                if verbose:
+                    print(f"   ✅ Director planned {len(director_prompts)} prompts")
+                    if director_prompts:
+                        print(f"   Sample prompt length: {len(director_prompts[0])} chars")
+
+            except Exception as e:
+                if verbose:
+                    print(f"   ⚠️  Director planning failed: {e}")
+                    print(f"   🔄 Falling back to search-query prompts...")
+                director_prompts = []
+
+        # ── Step 2: Generate images using chosen provider ─────────────────────
+        if verbose:
+            provider_label = "Gemini 2.5 Flash" if image_provider == "gemini" else "Replicate (Flux)"
+            print(f"   🖼️  Generating {n_images} images with {provider_label}...")
+
+        output_dir = 'media_library/avatar_images'
+
+        for i, (seg_idx, segment) in enumerate(image_segments):
+            # Pick prompt: Director-planned (rich) or fallback (search query)
+            if i < len(director_prompts) and director_prompts[i]:
+                prompt = director_prompts[i]
+            else:
+                prompt = segment.get('search_query', 'professional cinematic background')
+
+            if verbose:
+                print(f"   [{i+1}/{n_images}] Generating image ({len(prompt)} chars)...")
+
+            try:
+                if image_provider == "gemini":
+                    image_path = self._generate_image_gemini(prompt, output_dir, i)
+                else:
+                    from image_generator import ImageGenerator
+                    generator = ImageGenerator()
+                    image_path = generator.generate_image(
+                        prompt=prompt,
+                        output_dir=output_dir,
+                    )
+
                 images.append({
-                    'segment_index': seg_idx,  # Use ORIGINAL index from media_plan['segments']
+                    'segment_index': seg_idx,
                     'path': image_path,
                     'prompt': prompt,
                     'duration': segment['duration'],
-                    'start': segment['start']
+                    'start': segment['start'],
                 })
 
                 if verbose:
-                    print(f"   ✅ Image saved: {image_path}")
+                    print(f"   ✅ Saved: {image_path}")
 
             except Exception as e:
                 if verbose:
                     print(f"   ❌ Image generation failed: {e}")
 
         return images
+
+    def _generate_image_gemini(self, prompt: str, output_dir: str, index: int) -> str:
+        """
+        Generate a single image using Gemini 2.5 Flash Image API.
+        Returns path to saved PNG file (1920×1080).
+        """
+        import os as _os
+        from pathlib import Path as _Path
+        import io as _io
+
+        try:
+            from google import genai as _genai
+            from google.genai import types as _types
+        except ImportError:
+            raise ImportError("google-genai not installed. Run: pip install google-genai")
+
+        try:
+            from PIL import Image as _Image
+        except ImportError:
+            raise ImportError("Pillow not installed. Run: pip install Pillow")
+
+        from config import Config
+
+        api_key = Config.get_gemini_image_api_key()
+        if not api_key:
+            raise ValueError("Gemini Image API key not configured. Add it in Settings.")
+
+        client = _genai.Client(api_key=api_key)
+
+        cinematic_prompt = (
+            f"Create a cinematic 16:9 widescreen frame. 1080p target (upscale OK). "
+            f"{prompt}. "
+            f"Style: sharp focus, realistic lighting, high detail, no text, no watermark, no logos."
+        )
+
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-preview-05-20",
+            contents=[cinematic_prompt],
+            config=_types.GenerateContentConfig(
+                response_modalities=["IMAGE", "TEXT"],
+                image_generation_config=_types.ImageGenerationConfig(
+                    number_of_images=1,
+                ),
+            ),
+        )
+
+        # Extract image bytes
+        image_bytes = None
+        for candidate in response.candidates:
+            for part in candidate.content.parts:
+                if hasattr(part, "inline_data") and part.inline_data and part.inline_data.data:
+                    image_bytes = part.inline_data.data
+                    break
+            if image_bytes:
+                break
+
+        if not image_bytes:
+            raise ValueError("No image data returned by Gemini")
+
+        # Upscale to 1920×1080
+        img = _Image.open(_io.BytesIO(image_bytes)).convert("RGB")
+        img = img.resize((1920, 1080), _Image.LANCZOS)
+
+        # Save
+        out_dir = _Path(output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / f"gemini_avatar_{index:03d}.png"
+        img.save(str(out_path), "PNG")
+
+        return str(out_path)
 
     def _download_stock_videos(
         self,

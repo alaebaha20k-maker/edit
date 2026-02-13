@@ -446,6 +446,173 @@ This chunk covers scenes {scenes_generated + 1} to {scenes_generated + chunk_siz
 
         return final_plan
 
+    def plan_avatar_images(
+        self,
+        script_text: str,
+        style: Dict,
+        audio_duration_seconds: float,
+        force_regenerate: bool = False,
+        verbose: bool = True
+    ) -> "AutoImagesPlan":
+        """
+        Plan images for Avatar Auto mode.
+
+        FORMULA: 1 image per minute of audio.
+        Example: 30-min audio → 30 images, each placed for ~10 sec every ~60 sec.
+
+        Args:
+            script_text: Full video script (used to plan relevant visuals)
+            style: Style configuration dict with 'id', 'name', 'visual_rules', etc.
+            audio_duration_seconds: Total audio length in seconds (from ffprobe)
+            force_regenerate: Skip cache
+            verbose: Print progress
+
+        Returns:
+            AutoImagesPlan with 400+ char prompts, one scene per minute
+        """
+        # 1 image per minute (minimum 1)
+        n_images = max(1, round(audio_duration_seconds / 60))
+
+        if verbose:
+            mins = audio_duration_seconds / 60
+            print(f"\n🎬 AVATAR IMAGE PLANNER")
+            print(f"   Audio: {mins:.1f} min → {n_images} images (1 per minute)")
+            print(f"   Style: {style.get('name', 'Cinematic')}")
+
+        # Build a specialised prompt that tells Gemini about the avatar pattern
+        style_name = style.get('name', 'Cinematic')
+        style_description = style.get('description', 'High-quality cinematic style')
+        visual_rules = style.get('visual_rules', [])
+        negative_rules = style.get('negative_rules', [])
+        composition_style = style.get('composition', 'Professional composition')
+        lighting_style = style.get('lighting', 'Dramatic lighting')
+        color_palette = style.get('color_palette', ['Rich colors'])
+
+        visual_rules_text = '\n'.join([f"   - {r}" for r in visual_rules])
+        negative_rules_text = '\n'.join([f"   - {r}" for r in negative_rules])
+        color_palette_text = ', '.join(color_palette)
+        negative_rules_joined = ', '.join(negative_rules)
+
+        minutes_list = '\n'.join(
+            [f"  Minute {i+1}: covers script section {i+1}/{n_images}" for i in range(min(n_images, 10))]
+        )
+        if n_images > 10:
+            minutes_list += f"\n  ... (up to minute {n_images})"
+
+        avatar_prompt = f"""You are an elite AI Video Director planning FULL-QUALITY cinematic images for an AVATAR VIDEO.
+
+CONTEXT:
+- The video alternates between: [50 sec AVATAR talking] → [10 sec BEAUTIFUL IMAGE] → repeat
+- Total audio length: {audio_duration_seconds:.0f} seconds ({audio_duration_seconds/60:.1f} minutes)
+- We need EXACTLY {n_images} images (one per minute of video)
+- Each image is displayed for ~10 seconds at full screen in front of a professional audience
+
+SCRIPT (analyze the FULL content to plan images that match what is being said):
+{script_text}
+
+STYLE BIBLE: {style_name}
+Description: {style_description}
+
+VISUAL RULES (MUST FOLLOW):
+{visual_rules_text}
+
+NEGATIVE RULES (MUST AVOID):
+{negative_rules_text}
+
+Composition: {composition_style}
+Lighting: {lighting_style}
+Color Palette: {color_palette_text}
+
+DISTRIBUTION PLAN:
+{minutes_list}
+
+CRITICAL REQUIREMENTS:
+1. Generate EXACTLY {n_images} scenes
+2. Each scene covers 1 minute of the script (chronological order)
+3. Each "image_prompt" MUST be 400+ CHARACTERS with extreme visual detail
+4. Prompts MUST be in ENGLISH regardless of the script language
+5. EVERY prompt MUST match the {style_name} style exactly
+6. Images will be shown FULL SCREEN - make them STUNNING and CINEMATIC
+
+PROMPT QUALITY STANDARD (400+ chars each, include ALL):
+- SUBJECT: Who/what (precise age, appearance, clothing, expression, body language)
+- SETTING: Exact location (time of day, weather, environment details, background)
+- ACTION: The captured moment (pose, movement, emotion, interaction)
+- CAMERA: Shot type + angle + lens focal length + depth of field
+- LIGHTING: Detailed lighting setup matching "{lighting_style}"
+- COMPOSITION: Framing matching "{composition_style}"
+- STYLE TOKEN: "{style_name}" style
+- COLOR: Colors from palette ({color_palette_text}) with color psychology purpose
+- QUALITY: "professional photography, 8k resolution, sharp focus, ultra-detailed, cinematic"
+- TEXTURE: Surface materials, fabric texture, reflections, atmospheric details
+
+OUTPUT (STRICT JSON - NO MARKDOWN, NO EXPLANATION):
+{{
+  "mode": "auto_images",
+  "style_id": "{style.get('id', 'cinematic')}",
+  "n_images": {n_images},
+  "global_style_bible": {{
+    "style_name": "{style_name}",
+    "visual_rules": {json.dumps(visual_rules)},
+    "negative_rules": {json.dumps(negative_rules)},
+    "composition": "{composition_style}",
+    "lighting": "{lighting_style}",
+    "color_palette": {json.dumps(color_palette)}
+  }},
+  "scenes": [
+    {{
+      "scene_id": 1,
+      "scene_summary": "Brief description of this minute of the video",
+      "narration_focus": "What the script talks about during minute 1",
+      "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
+      "image_prompt": "EXTREMELY DETAILED 400+ CHARACTER PROMPT — must include subject details, setting, action, camera technique, lighting, composition, style tokens, color palette with psychology, professional photography terms, material/texture details, all matching {style_name} style and the content of the script at that minute",
+      "negative_prompt": "low quality, blurry, distorted, pixelated, jpeg artifacts, overexposed, underexposed, bad lighting, poor composition, text, watermarks, logos, {negative_rules_joined}"
+    }}
+    ... (exactly {n_images} scenes, chronological)
+  ]
+}}
+
+OUTPUT ONLY VALID JSON."""
+
+        # Use chunking if > 20 images
+        if n_images > 20:
+            return self._plan_auto_images_chunked(script_text, style, n_images, force_regenerate, verbose)
+
+        # Check cache
+        cache_key = self._get_cache_key(script_text + f"|avatar|{audio_duration_seconds:.0f}", style, n_images)
+        if not force_regenerate:
+            cached = self._load_cached_plan(cache_key)
+            if cached:
+                if verbose:
+                    print(f"   ✅ Loaded from cache ({len(cached.scenes)} scenes)")
+                return cached
+
+        # Generate
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            try:
+                t0 = time.time()
+                response = self.model.generate_content(avatar_prompt)
+                elapsed = time.time() - t0
+                if verbose:
+                    print(f"   ⏱️ Gemini response: {elapsed:.1f}s (attempt {attempt+1})")
+
+                plan_data = self._parse_json_response(response.text)
+                plan = AutoImagesPlan(**plan_data)
+
+                self._save_cached_plan(cache_key, plan)
+                if verbose:
+                    print(f"   ✅ Avatar image plan: {len(plan.scenes)} scenes")
+                return plan
+
+            except Exception as e:
+                if verbose:
+                    print(f"   ❌ Attempt {attempt+1} failed: {e}")
+                if attempt < max_attempts - 1:
+                    time.sleep(1)
+
+        raise ValueError(f"Avatar image planning failed after {max_attempts} attempts")
+
     def plan_auto_images(
         self,
         script_text: str,

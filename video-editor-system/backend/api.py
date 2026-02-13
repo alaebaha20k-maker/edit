@@ -1377,17 +1377,19 @@ def save_api_config():
 
         gemini_key = data.get('gemini_api_key')
         director_gemini_key = data.get('director_gemini_key')
+        gemini_image_key = data.get('gemini_image_key')
         replicate_token = data.get('replicate_api_token')
         inworld_key = data.get('inworld_api_key')
         inworld_secret = data.get('inworld_api_secret')
 
-        if not gemini_key and not director_gemini_key and not replicate_token and not inworld_key and not inworld_secret:
+        if not gemini_key and not director_gemini_key and not gemini_image_key and not replicate_token and not inworld_key and not inworld_secret:
             return jsonify({'error': 'At least one API key must be provided'}), 400
 
         # Save configuration
         Config.save_api_config(
             gemini_key=gemini_key,
             director_gemini_key=director_gemini_key,
+            gemini_image_key=gemini_image_key,
             replicate_token=replicate_token,
             inworld_key=inworld_key,
             inworld_secret=inworld_secret
@@ -1524,6 +1526,7 @@ def save_api_keys():
 
         gemini = data.get('gemini')
         director_gemini = data.get('director_gemini')
+        gemini_image = data.get('gemini_image')
         replicate = data.get('replicate')
         inworld = data.get('inworld')
         inworld_secret = data.get('inworld_secret')
@@ -1534,6 +1537,7 @@ def save_api_keys():
         print("\n🔑 Received API keys:")
         print(f"   Gemini: {'SET (' + str(len(gemini)) + ' chars)' if gemini else 'NOT SET'}")
         print(f"   Director Gemini: {'SET (' + str(len(director_gemini)) + ' chars)' if director_gemini else 'NOT SET'}")
+        print(f"   Gemini Image: {'SET (' + str(len(gemini_image)) + ' chars)' if gemini_image else 'NOT SET'}")
         print(f"   Replicate: {'SET (' + str(len(replicate)) + ' chars)' if replicate else 'NOT SET'}")
         print(f"   Inworld: {'SET (' + str(len(inworld)) + ' chars)' if inworld else 'NOT SET'}")
         print(f"   Inworld Secret: {'SET (' + str(len(inworld_secret)) + ' chars)' if inworld_secret else 'NOT SET'}")
@@ -1544,6 +1548,7 @@ def save_api_keys():
         settings = SettingsManager.save_api_keys(
             gemini=gemini,
             director_gemini=director_gemini,
+            gemini_image=gemini_image,
             replicate=replicate,
             inworld=inworld,
             inworld_secret=inworld_secret,
@@ -3420,6 +3425,8 @@ def avatar_generate():
         stock_apis = data.get('stock_apis', ['pexels'])
         use_whisper = data.get('use_whisper', False)  # Default: fast Gemini mode
         background_music_path = data.get('background_music_path')  # Optional
+        image_provider = data.get('image_provider', 'replicate')  # 'replicate' or 'gemini'
+        image_style = data.get('image_style', None)  # Style dict from frontend
 
         if not avatar_video_path or not audio_path:
             return jsonify({
@@ -3457,6 +3464,8 @@ def avatar_generate():
             script=script,
             stock_apis=stock_apis,
             use_whisper=use_whisper,
+            image_style=image_style,
+            image_provider=image_provider,
             verbose=True
         )
 

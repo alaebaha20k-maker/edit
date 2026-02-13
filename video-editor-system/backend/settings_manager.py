@@ -266,6 +266,7 @@ Output ONLY the JSON array, no extra text."""
 
     @classmethod
     def save_api_keys(cls, gemini: str = None, director_gemini: str = None,
+                     gemini_image: str = None,
                      replicate: str = None, inworld: str = None, inworld_secret: str = None,
                      pexels: str = None, pixabay: str = None) -> Dict:
         """
@@ -274,6 +275,7 @@ Output ONLY the JSON array, no extra text."""
         Args:
             gemini: Gemini API key (for script writing)
             director_gemini: Director Gemini API key (for Auto Images AI)
+            gemini_image: Gemini Image API key (for Gemini 2.5 Flash image generation)
             replicate: Replicate API token
             inworld: Inworld AI API key
             inworld_secret: Inworld AI API secret
@@ -295,6 +297,8 @@ Output ONLY the JSON array, no extra text."""
             settings['api_keys']['gemini'] = gemini
         if director_gemini is not None and director_gemini != '':
             settings['api_keys']['director_gemini'] = director_gemini
+        if gemini_image is not None and gemini_image != '':
+            settings['api_keys']['gemini_image'] = gemini_image
         if replicate is not None and replicate != '':
             settings['api_keys']['replicate'] = replicate
         if inworld is not None and inworld != '':
@@ -315,6 +319,7 @@ Output ONLY the JSON array, no extra text."""
         Config.save_api_config(
             gemini_key=gemini if gemini else None,
             director_gemini_key=director_gemini if director_gemini else None,
+            gemini_image_key=gemini_image if gemini_image else None,
             replicate_token=replicate if replicate else None,
             inworld_key=inworld if inworld else None,
             inworld_secret=inworld_secret if inworld_secret else None

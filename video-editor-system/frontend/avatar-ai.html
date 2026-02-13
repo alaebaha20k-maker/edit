@@ -276,8 +276,8 @@
             <div class="mode-selector">
                 <div class="mode-card" id="modeAiImages" onclick="selectMode('ai_images')">
                     <h3>🖼️ AI Images Auto</h3>
-                    <p>Pattern: 1 min avatar → 5 sec AI image → repeat</p>
-                    <p style="margin-top: 10px;">Uses Replicate for high-quality images</p>
+                    <p>Pattern: 50 sec avatar → 10 sec AI image → repeat</p>
+                    <p style="margin-top: 10px;">1 image per minute • Gemini Director plans high-quality prompts (400+ chars)</p>
                 </div>
 
                 <div class="mode-card" id="modeStockVideos" onclick="selectMode('stock_videos')">
@@ -287,9 +287,49 @@
                 </div>
             </div>
 
+            <!-- AI Images settings (shown only in ai_images mode) -->
+            <div id="aiImagesSettings" style="margin-top: 25px; display: block;">
+                <div style="background: #1e1e2e; border: 1px solid #444; border-radius: 8px; padding: 20px;">
+                    <h3 style="color: #a78bfa; margin: 0 0 15px 0; font-size: 18px;">🖼️ AI Image Settings</h3>
+
+                    <!-- Image Provider -->
+                    <div style="margin-bottom: 20px;">
+                        <label style="color: #ccc; font-weight: 600; display: block; margin-bottom: 10px;">Image Generation Provider</label>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                            <div class="mode-card selected" id="providerReplicate" onclick="selectProvider('replicate')" style="padding: 14px;">
+                                <h3 style="font-size: 15px; margin: 0;">🎨 Replicate (Flux)</h3>
+                                <p style="font-size: 12px; margin: 6px 0 0 0;">Flux Schnell / Flux 1.1 Pro<br>Requires Replicate API token</p>
+                            </div>
+                            <div class="mode-card" id="providerGemini" onclick="selectProvider('gemini')" style="padding: 14px;">
+                                <h3 style="font-size: 15px; margin: 0;">✨ Gemini 2.5 Flash</h3>
+                                <p style="font-size: 12px; margin: 6px 0 0 0;">Google Gemini Image API<br>1920×1080 native output</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Image Style Selector -->
+                    <div style="margin-bottom: 15px;">
+                        <label style="color: #ccc; font-weight: 600; display: block; margin-bottom: 8px;">Image Style (for Gemini Director prompts)</label>
+                        <select id="imageStyleSelect" onchange="onStyleChange()" style="width: 100%; background: #2a2a3e; border: 1px solid #555; color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 14px;">
+                            <option value="">Loading styles...</option>
+                        </select>
+                        <p style="color: #666; font-size: 12px; margin-top: 6px;">Gemini Director will use this style to create 400+ char cinematic prompts for every image.</p>
+                    </div>
+
+                    <!-- Style preview -->
+                    <div id="stylePreview" style="display: none; background: #12122a; border: 1px solid #333; border-radius: 6px; padding: 12px; margin-top: 10px;">
+                        <p style="color: #a78bfa; font-size: 13px; font-weight: 600; margin: 0 0 6px 0;">Selected Style:</p>
+                        <p id="stylePreviewText" style="color: #aaa; font-size: 13px; margin: 0; line-height: 1.5;"></p>
+                    </div>
+                </div>
+            </div>
+
             <div style="margin-top: 20px;">
-                <label style="color: #888;">Optional: Add script for better context (helps AI choose relevant media)</label>
-                <textarea id="scriptInput" placeholder="Paste your script here (optional)..."></textarea>
+                <label style="color: #888; font-weight: 600; display: block; margin-bottom: 8px;">
+                    📝 Script <span style="color: #a78bfa;">(Required for AI Images mode — Gemini Director reads it to plan image prompts)</span>
+                </label>
+                <textarea id="scriptInput" placeholder="Paste your full video script here. Gemini Director will analyze it and create one high-quality cinematic image per minute of audio..." style="min-height: 140px;"></textarea>
+                <p style="color: #555; font-size: 12px; margin-top: 6px;">Example: 30-min audio + script → 30 images, each with a 400+ char prompt matching the style you chose.</p>
             </div>
         </div>
 
@@ -329,9 +369,60 @@
         let avatarPath = null;
         let audioPath = null;
         let selectedMode = 'ai_images';
+        let selectedProvider = 'replicate';
+        let availableStyles = [];
+        let selectedStyle = null;
 
         // Select AI Images mode by default
         document.getElementById('modeAiImages').classList.add('selected');
+
+        // Load styles on page load
+        loadStyles();
+
+        async function loadStyles() {
+            try {
+                const res = await fetch('/api/styles');
+                const data = await res.json();
+                const styles = data.styles || [];
+                availableStyles = styles;
+
+                const sel = document.getElementById('imageStyleSelect');
+                sel.innerHTML = '<option value="">— No style (basic prompts) —</option>';
+                styles.forEach(s => {
+                    const opt = document.createElement('option');
+                    opt.value = s.id;
+                    opt.textContent = s.name + (s.description ? ' — ' + s.description.substring(0, 60) : '');
+                    sel.appendChild(opt);
+                });
+            } catch (e) {
+                console.warn('Could not load styles:', e);
+                document.getElementById('imageStyleSelect').innerHTML =
+                    '<option value="">— Could not load styles —</option>';
+            }
+        }
+
+        function onStyleChange() {
+            const sel = document.getElementById('imageStyleSelect');
+            const styleId = sel.value;
+            selectedStyle = availableStyles.find(s => s.id === styleId) || null;
+
+            const preview = document.getElementById('stylePreview');
+            const previewText = document.getElementById('stylePreviewText');
+
+            if (selectedStyle) {
+                preview.style.display = 'block';
+                const rules = (selectedStyle.visual_rules || []).slice(0, 3).join(' • ');
+                previewText.textContent = `${selectedStyle.description || ''} | Rules: ${rules}`;
+            } else {
+                preview.style.display = 'none';
+            }
+        }
+
+        function selectProvider(provider) {
+            selectedProvider = provider;
+            document.getElementById('providerReplicate').classList.toggle('selected', provider === 'replicate');
+            document.getElementById('providerGemini').classList.toggle('selected', provider === 'gemini');
+        }
 
         function handleAvatarUpload(event) {
             const file = event.target.files[0];
@@ -395,8 +486,10 @@
 
             if (mode === 'ai_images') {
                 document.getElementById('modeAiImages').classList.add('selected');
+                document.getElementById('aiImagesSettings').style.display = 'block';
             } else {
                 document.getElementById('modeStockVideos').classList.add('selected');
+                document.getElementById('aiImagesSettings').style.display = 'none';
             }
         }
 
@@ -425,7 +518,9 @@
                     audio: audioPath,
                     mode: selectedMode,
                     script: script,
-                    stock_apis: ['pexels', 'pixabay']
+                    stock_apis: ['pexels', 'pixabay'],
+                    image_provider: selectedProvider,
+                    image_style: selectedStyle || null,
                 })
             })
             .then(res => res.json())

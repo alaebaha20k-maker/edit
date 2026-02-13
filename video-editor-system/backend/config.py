@@ -59,6 +59,21 @@ class Config:
         return saved.get('director_gemini_api_key') or saved.get('gemini_api_key') or os.getenv('DIRECTOR_GEMINI_API_KEY') or os.getenv('GEMINI_API_KEY', '')
 
     @classmethod
+    def get_gemini_image_api_key(cls):
+        """
+        Get Gemini Image API key for image generation (Gemini 2.5 Flash Image).
+        Falls back to director key, then main Gemini key.
+        """
+        saved = cls._load_saved_config()
+        return (
+            saved.get('gemini_image_api_key')
+            or os.getenv('GEMINI_IMAGE_API_KEY', '')
+            or saved.get('director_gemini_api_key')
+            or saved.get('gemini_api_key')
+            or os.getenv('GEMINI_API_KEY', '')
+        )
+
+    @classmethod
     def get_director_gemini_model(cls):
         """Get Director Gemini model name (same as script generator)"""
         saved = cls._load_saved_config()
@@ -87,7 +102,7 @@ class Config:
     REPLICATE_API_TOKEN = property(lambda self: self.get_replicate_api_token())
 
     @classmethod
-    def save_api_config(cls, gemini_key=None, director_gemini_key=None, replicate_token=None, inworld_key=None, inworld_secret=None):
+    def save_api_config(cls, gemini_key=None, director_gemini_key=None, gemini_image_key=None, replicate_token=None, inworld_key=None, inworld_secret=None):
         """Save API keys to config file"""
         cls.DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -105,6 +120,8 @@ class Config:
             config['gemini_api_key'] = gemini_key
         if director_gemini_key:
             config['director_gemini_api_key'] = director_gemini_key
+        if gemini_image_key:
+            config['gemini_image_api_key'] = gemini_image_key
         if replicate_token:
             config['replicate_api_token'] = replicate_token
         if inworld_key:
