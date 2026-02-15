@@ -522,7 +522,7 @@ class AvatarVideoAssembler:
         if background_music_path and os.path.exists(background_music_path):
             audio_duration = self._get_video_duration(audio_path)
             if verbose:
-                print(f"   🎵 Adding background music at 10% volume...")
+                print(f"   🎵 Adding background music at 8% volume...")
             prepared_music = self._prepare_looped_background_music(
                 background_music_path, audio_duration, verbose
             )
@@ -534,7 +534,7 @@ class AvatarVideoAssembler:
                 '-i', video_path,
                 '-i', audio_path,
                 '-i', prepared_music,
-                '-filter_complex', '[1:a]volume=1.0[voice];[2:a]volume=0.1[music];[voice][music]amix=inputs=2:duration=shortest[aout]',
+                '-filter_complex', '[1:a]volume=1.0[voice];[2:a]volume=0.08[music];[voice][music]amix=inputs=2:duration=shortest[aout]',
                 '-map', '0:v',
                 '-map', '[aout]',
                 '-c:v', 'copy',

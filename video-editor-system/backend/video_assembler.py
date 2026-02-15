@@ -335,14 +335,14 @@ class VideoAssembler:
                     if use_timed_zoom:
                         # Use timed zoom (zoom for specified duration, then hold)
                         zoom_filter = self._get_timed_zoom_filter(voice_duration, video_settings, int(width), int(height), output_fps=30)
-                        video_filter = '{}[v];[1:a]volume=1.0[voice];[2:a]volume=0.1[music];[voice][music]amix=inputs=2:duration=shortest[aout]'.format(zoom_filter)
+                        video_filter = '{}[v];[1:a]volume=1.0[voice];[2:a]volume=0.08[music];[voice][music]amix=inputs=2:duration=shortest[aout]'.format(zoom_filter)
                     elif use_ken_burns:
                         # Traditional Ken Burns (zoom throughout entire duration)
                         total_frames = int(voice_duration * 2)  # fps=2
                         zoom_step = 0.05 / total_frames  # 5% zoom over entire duration
-                        video_filter = 'zoompan=z=\'min(zoom+{:.6f},1.05)\':d=1:s={}x{}[v];[1:a]volume=1.0[voice];[2:a]volume=0.1[music];[voice][music]amix=inputs=2:duration=shortest[aout]'.format(zoom_step, width, height)
+                        video_filter = 'zoompan=z=\'min(zoom+{:.6f},1.05)\':d=1:s={}x{}[v];[1:a]volume=1.0[voice];[2:a]volume=0.08[music];[voice][music]amix=inputs=2:duration=shortest[aout]'.format(zoom_step, width, height)
                     else:
-                        video_filter = '[1:a]volume=1.0[voice];[2:a]volume=0.1[music];[voice][music]amix=inputs=2:duration=shortest[aout]'
+                        video_filter = '[1:a]volume=1.0[voice];[2:a]volume=0.08[music];[voice][music]amix=inputs=2:duration=shortest[aout]'
 
                     cmd = [
                         'ffmpeg', '-y',
@@ -514,7 +514,7 @@ class VideoAssembler:
             video_filters = 'fps=2'
 
         if prepared_music_path:
-            # WITH background music: Mix audio at 10% volume
+            # WITH background music: Mix audio at 8% volume
             cmd = [
                 'ffmpeg', '-y',
                 '-thread_queue_size', '512',
@@ -524,7 +524,7 @@ class VideoAssembler:
                 '-thread_queue_size', '512',
                 '-i', voice_path,
                 '-i', prepared_music_path,
-                '-filter_complex', '[1:a]volume=1.0[voice];[2:a]volume=0.1[music];[voice][music]amix=inputs=2:duration=shortest[aout]',
+                '-filter_complex', '[1:a]volume=1.0[voice];[2:a]volume=0.08[music];[voice][music]amix=inputs=2:duration=shortest[aout]',
                 '-map', '0:v',
                 '-map', '[aout]',
                 '-vf', video_filters,
