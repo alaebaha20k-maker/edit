@@ -460,6 +460,67 @@ async function deleteNiche(nicheId) {
     }
 }
 
+async function editNiche(nicheId) {
+    try {
+        const res = await fetch(`/api/niches/${nicheId}`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to load niche');
+        const n = data.niche;
+
+        document.getElementById('editNicheId').value = n.id;
+        document.getElementById('editNicheName').value = n.name || '';
+        document.getElementById('editNicheLanguage').value = n.language || 'English';
+        document.getElementById('editNicheGuidelines').value = n.writing_guidelines || '';
+        updateEditNicheCharCount();
+
+        const form = document.getElementById('nicheEditForm');
+        form.style.display = 'block';
+        form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (error) {
+        showNotification('❌ Failed to load niche: ' + error.message, 'error');
+    }
+}
+
+function updateEditNicheCharCount() {
+    const val = document.getElementById('editNicheGuidelines').value;
+    const el = document.getElementById('editNicheCharCount');
+    if (el) {
+        el.textContent = val.length.toLocaleString() + ' chars';
+        el.style.color = val.length < 100 ? '#f87171' : '#4ade80';
+    }
+}
+
+async function saveNicheEdit() {
+    const nicheId = document.getElementById('editNicheId').value;
+    const name = document.getElementById('editNicheName').value.trim();
+    const language = document.getElementById('editNicheLanguage').value;
+    const guidelines = document.getElementById('editNicheGuidelines').value.trim();
+
+    if (!name) { showNotification('⚠️ Niche name is required', 'warning'); return; }
+    if (guidelines.length < 100) { showNotification('⚠️ Writing guidelines must be at least 100 characters', 'warning'); return; }
+
+    try {
+        const res = await fetch(`/api/niches/${nicheId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, language, writing_guidelines: guidelines })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Update failed');
+
+        showNotification(`✅ Niche "${name}" updated!`, 'success');
+        cancelNicheEdit();
+        await loadNiches();
+    } catch (error) {
+        showNotification('❌ Failed to update niche: ' + error.message, 'error');
+    }
+}
+
+function cancelNicheEdit() {
+    const form = document.getElementById('nicheEditForm');
+    if (form) form.style.display = 'none';
+}
+
 function renderNichesList(niches) {
     const container = document.getElementById('nichesList');
     if (!container) return;
@@ -473,14 +534,17 @@ function renderNichesList(niches) {
         <h4 style="margin-bottom: 10px;">Existing Niches:</h4>
         ${niches.map(n => `
             <div class="formula-item" style="background: rgba(102, 126, 234, 0.1); padding: 15px; margin: 10px 0; border-radius: 8px; border-left: 4px solid ${appState.selectedNiche === n.id ? '#667eea' : '#ccc'};">
-                <div style="display: flex; justify-content: space-between; align-items: start;">
-                    <div style="flex: 1;">
+                <div style="display: flex; justify-content: space-between; align-items: start; gap: 10px;">
+                    <div style="flex: 1; min-width: 0;">
                         <strong style="color: #667eea;">${n.name}</strong>
                         ${appState.selectedNiche === n.id ? ' <span style="background: #667eea; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">ACTIVE</span>' : ''}
-                        <p style="color: #aaa; margin: 5px 0; font-size: 13px;">Language: ${n.language}</p>
-                        <p style="color: #999; font-size: 12px; margin-top: 8px;">${n.writing_guidelines.substring(0, 150)}${n.writing_guidelines.length > 150 ? '...' : ''}</p>
+                        <p style="color: #aaa; margin: 5px 0; font-size: 13px;">Language: ${n.language} &nbsp;·&nbsp; ${n.writing_guidelines ? n.writing_guidelines.length.toLocaleString() : 0} chars</p>
+                        <p style="color: #999; font-size: 12px; margin-top: 8px;">${(n.writing_guidelines || '').substring(0, 150)}${(n.writing_guidelines || '').length > 150 ? '...' : ''}</p>
                     </div>
-                    <button onclick="deleteNiche('${n.id}')" class="btn-secondary" style="margin-left: 10px;">🗑️</button>
+                    <div style="display:flex; gap:8px; flex-shrink:0;">
+                        <button onclick="editNiche('${n.id}')" class="btn-secondary" style="padding: 6px 12px; font-size: 13px;">✏️ Edit</button>
+                        <button onclick="deleteNiche('${n.id}')" class="btn-secondary" style="padding: 6px 12px; font-size: 13px; background: rgba(239,68,68,0.2); color: #fca5a5;">🗑️</button>
+                    </div>
                 </div>
             </div>
         `).join('')}

@@ -888,6 +888,42 @@
                     <div id="nichesList" style="margin-top: 20px;">
                         <!-- Existing niches will be listed here -->
                     </div>
+
+                    <!-- Edit Niche Inline Form (hidden by default) -->
+                    <div id="nicheEditForm" style="display:none; margin-top:16px; background:rgba(102,126,234,0.08); border:2px solid #667eea; border-radius:10px; padding:20px;">
+                        <h4 style="color:#667eea; margin:0 0 16px;">✏️ Edit Niche</h4>
+                        <input type="hidden" id="editNicheId">
+                        <div class="input-group">
+                            <label style="color:#ccc;">Niche Name</label>
+                            <input type="text" id="editNicheName" class="input-large" placeholder="Niche name">
+                        </div>
+                        <div class="input-group" style="margin-top:10px;">
+                            <label style="color:#ccc;">Language</label>
+                            <select id="editNicheLanguage" class="input-large">
+                                <option value="English">English</option>
+                                <option value="French">French</option>
+                                <option value="Spanish">Spanish</option>
+                                <option value="Arabic">Arabic</option>
+                                <option value="German">German</option>
+                                <option value="Portuguese">Portuguese</option>
+                                <option value="Italian">Italian</option>
+                                <option value="Chinese">Chinese</option>
+                            </select>
+                        </div>
+                        <div class="input-group" style="margin-top:10px;">
+                            <label style="color:#ccc;">
+                                Writing Guidelines
+                                <span id="editNicheCharCount" style="font-weight:400; color:#999; margin-left:8px; font-size:12px;">0 chars</span>
+                            </label>
+                            <textarea id="editNicheGuidelines" rows="12" class="textarea-large"
+                                      oninput="updateEditNicheCharCount()"
+                                      placeholder="Writing guidelines (min 100 characters)..."></textarea>
+                        </div>
+                        <div style="display:flex; gap:10px; margin-top:14px;">
+                            <button onclick="saveNicheEdit()" class="btn-primary">💾 Save Changes</button>
+                            <button onclick="cancelNicheEdit()" class="btn-secondary">✕ Cancel</button>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Image Styles Section -->
