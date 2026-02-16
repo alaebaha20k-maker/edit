@@ -182,6 +182,9 @@ class Config:
     MAX_SCRIPT_LENGTH = 80000     # Maximum: ~60+ min video (Documentary)
     DEFAULT_SCRIPT_LENGTH = 10000 # Default: ~10-12 min video
 
+    # Valid discrete script lengths (used by generate_script() 3-part generator)
+    VALID_SCRIPT_LENGTHS = [30000, 60000, 100000]
+
     # Length tolerance for validation (±3%)
     SCRIPT_LENGTH_TOLERANCE = 0.03
 
