@@ -4860,6 +4860,8 @@ const VOICE_CATALOGUE = {
         { id: 'Ethan',    desc: 'Upbeat · Modern · Tech' },
         { id: 'Ryan',     desc: 'Casual · Relatable · Everyday' },
         { id: 'Logan',    desc: 'Bold · Dynamic · Promo' },
+        { id: 'Blake',    desc: 'Smooth · Cool · Modern' },
+        { id: 'Clive',    desc: 'Deep · Calm · Authoritative' },
     ],
     female: [
         { id: 'Olivia',    desc: 'Elegant · Smooth · Premium' },
