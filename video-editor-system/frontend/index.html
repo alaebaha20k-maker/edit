@@ -212,50 +212,43 @@
                             </div>
 
                             <!-- Voice Selection -->
-                            <div class="input-group">
+                            <div class="input-group" style="grid-column: 1 / -1;">
                                 <label>🎤 Voice Character:</label>
+
+                                <!-- Male / Female toggle -->
+                                <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+                                    <button id="genderBtnMale" onclick="filterVoicesByGender('male')"
+                                        style="flex:1; padding: 7px 0; border-radius: 6px; border: 2px solid #667eea; background: #667eea; color: #fff; font-weight: 600; cursor: pointer; font-size: 0.9em;">
+                                        👨 Male
+                                    </button>
+                                    <button id="genderBtnFemale" onclick="filterVoicesByGender('female')"
+                                        style="flex:1; padding: 7px 0; border-radius: 6px; border: 2px solid #667eea; background: transparent; color: #667eea; font-weight: 600; cursor: pointer; font-size: 0.9em;">
+                                        👩 Female
+                                    </button>
+                                </div>
+
+                                <!-- Voice dropdown + preview button -->
                                 <div style="display: flex; gap: 8px; align-items: center;">
-                                    <select id="voiceId" class="input-medium" style="flex: 1;">
-                                        <option value="Olivia" selected>Olivia - Female (Elegant, Smooth)</option>
-                                        <option value="Dennis">Dennis - Male (Deep, Authoritative)</option>
-                                        <option value="Sarah">Sarah - Female (Warm, Engaging)</option>
-                                        <option value="Mark">Mark - Male (Professional, Clear)</option>
-                                        <option value="Ashley">Ashley - Female (Energetic, Bright)</option>
-                                        <option value="Theodore">Theodore - Male (Warm, Friendly)</option>
-                                        <option value="Elizabeth">Elizabeth - Female (Professional, Clear)</option>
-                                        <option value="Edward">Edward - Male (British, Refined)</option>
-                                        <option value="Wendy">Wendy - Female (Soft, Gentle)</option>
-                                        <option value="Craig">Craig - Male (Strong, Confident)</option>
+                                    <select id="voiceId" class="input-medium" style="flex: 1;" onchange="updateVoiceDescription()">
+                                        <!-- populated by JS -->
                                     </select>
-                                    <button id="previewVoiceBtn" onclick="previewVoice()" title="Preview this voice" style="padding: 8px 12px; background: #667eea; border: none; border-radius: 6px; color: white; cursor: pointer; font-size: 1em; white-space: nowrap; flex-shrink: 0;">
+                                    <button id="previewVoiceBtn" onclick="previewVoice()" title="Preview this voice"
+                                        style="padding: 8px 14px; background: #667eea; border: none; border-radius: 6px; color: white; cursor: pointer; font-size: 0.95em; white-space: nowrap; flex-shrink: 0;">
                                         ▶ Preview
                                     </button>
                                 </div>
-                                <small id="voiceLoadStatus" style="color: #888; display: block; margin-top: 4px;"></small>
+
+                                <!-- Voice description hint -->
+                                <small id="voiceDescription" style="color: #aaa; display: block; margin-top: 5px; font-style: italic;"></small>
+                                <small id="voiceLoadStatus" style="color: #888; display: block; margin-top: 2px;"></small>
                                 <audio id="voicePreviewAudio" style="display:none;"></audio>
                             </div>
 
-                            <!-- Language Selection -->
-                            <div class="input-group">
-                                <label>🌍 Language:</label>
-                                <select id="voiceLanguage" class="input-medium" style="width: 100%;">
-                                    <option value="en-US" selected>🇺🇸 English (United States)</option>
-                                    <option value="en-GB">🇬🇧 English (United Kingdom)</option>
-                                    <option value="es-ES">🇪🇸 Spanish (Spain)</option>
-                                    <option value="es-MX">🇲🇽 Spanish (Mexico)</option>
-                                    <option value="fr-FR">🇫🇷 French (France)</option>
-                                    <option value="de-DE">🇩🇪 German (Germany)</option>
-                                    <option value="it-IT">🇮🇹 Italian (Italy)</option>
-                                    <option value="pt-BR">🇧🇷 Portuguese (Brazil)</option>
-                                    <option value="ja-JP">🇯🇵 Japanese (Japan)</option>
-                                    <option value="ko-KR">🇰🇷 Korean (South Korea)</option>
-                                    <option value="zh-CN">🇨🇳 Chinese (Simplified)</option>
-                                    <option value="ar-SA">🇸🇦 Arabic (Saudi Arabia)</option>
-                                </select>
-                            </div>
+                            <!-- Language Selection — locked to US English -->
+                            <input type="hidden" id="voiceLanguage" value="en-US">
 
                             <!-- Speaking Speed -->
-                            <div class="input-group">
+                            <div class="input-group" style="grid-column: 1 / -1;">
                                 <label>⚡ Speed: <span id="speakingRateDisplay" style="font-weight: bold; color: #667eea;">1.0x</span></label>
                                 <input type="range" id="speakingRate" min="0.5" max="2.0" step="0.1" value="1.0" class="slider" style="width: 100%;">
                                 <div style="display: flex; justify-content: space-between; font-size: 0.85em; color: #888;">

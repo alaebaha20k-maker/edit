@@ -4841,52 +4841,94 @@ console.log('✅ Avatar AI functionality loaded');
 
 // ─── Voice List & Preview ────────────────────────────────────────────────────
 
-async function loadVoiceList() {
-    const voiceSelect = document.getElementById('voiceId');
-    const statusEl = document.getElementById('voiceLoadStatus');
-    if (!voiceSelect) return;
+// Static US-English voice catalogue with descriptions
+// Loaded from API on init; fallback to this if API fails.
+const VOICE_CATALOGUE = {
+    male: [
+        { id: 'Dennis',   desc: 'Deep · Authoritative · News' },
+        { id: 'Mark',     desc: 'Professional · Clear · Corporate' },
+        { id: 'Theodore', desc: 'Warm · Friendly · Storytelling' },
+        { id: 'Craig',    desc: 'Strong · Confident · Documentary' },
+        { id: 'Edward',   desc: 'Refined · Calm · Narration' },
+        { id: 'Timothy',  desc: 'Young · Energetic · Casual' },
+    ],
+    female: [
+        { id: 'Olivia',    desc: 'Elegant · Smooth · Premium' },
+        { id: 'Sarah',     desc: 'Warm · Engaging · Conversational' },
+        { id: 'Ashley',    desc: 'Energetic · Bright · Upbeat' },
+        { id: 'Elizabeth', desc: 'Professional · Clear · Corporate' },
+        { id: 'Wendy',     desc: 'Soft · Gentle · Soothing' },
+    ],
+};
 
-    if (statusEl) statusEl.textContent = 'Loading voices…';
+// Track which gender is currently active
+let _activeGender = 'male';
+// Full voice list fetched from API (keyed by id)
+let _apiVoiceMap = {};
+
+async function loadVoiceList() {
+    const statusEl = document.getElementById('voiceLoadStatus');
 
     try {
         const res = await fetch('/api/list-voices');
         const data = await res.json();
-
-        if (!data.success || !data.voices || data.voices.length === 0) {
-            if (statusEl) statusEl.textContent = 'Could not load voices from API — using defaults.';
-            return;
+        if (data.success && data.voices && data.voices.length > 0) {
+            data.voices.forEach(v => { _apiVoiceMap[v.id] = v; });
         }
+    } catch (_) { /* silent — we fall back to catalogue */ }
 
-        // Remember currently selected voice
-        const current = voiceSelect.value;
+    // Render default gender (male)
+    renderVoiceDropdown('male');
+    if (statusEl) { statusEl.textContent = ''; }
+}
 
-        // Build new options
-        voiceSelect.innerHTML = '';
-        data.voices.forEach(v => {
-            const opt = document.createElement('option');
-            opt.value = v.id;
-            const genderLabel = v.gender === 'MALE' ? 'Male' : v.gender === 'FEMALE' ? 'Female' : '';
-            opt.textContent = genderLabel ? `${v.id} - ${genderLabel}` : v.id;
-            if (v.id === current) opt.selected = true;
-            voiceSelect.appendChild(opt);
-        });
+function renderVoiceDropdown(gender) {
+    _activeGender = gender;
 
-        // Restore selection if still available, otherwise keep first
-        if (!voiceSelect.value) voiceSelect.selectedIndex = 0;
+    const voiceSelect = document.getElementById('voiceId');
+    if (!voiceSelect) return;
 
-        if (statusEl) statusEl.textContent = `${data.voices.length} voices loaded from Inworld API`;
-        setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 3000);
-
-    } catch (err) {
-        if (statusEl) statusEl.textContent = 'Could not load voices — using defaults.';
-        console.warn('loadVoiceList error:', err);
+    // Update toggle button styles
+    const btnMale   = document.getElementById('genderBtnMale');
+    const btnFemale = document.getElementById('genderBtnFemale');
+    if (btnMale && btnFemale) {
+        const activeStyle   = 'flex:1; padding:7px 0; border-radius:6px; border:2px solid #667eea; background:#667eea; color:#fff; font-weight:600; cursor:pointer; font-size:0.9em;';
+        const inactiveStyle = 'flex:1; padding:7px 0; border-radius:6px; border:2px solid #667eea; background:transparent; color:#667eea; font-weight:600; cursor:pointer; font-size:0.9em;';
+        btnMale.style.cssText   = gender === 'male'   ? activeStyle : inactiveStyle;
+        btnFemale.style.cssText = gender === 'female' ? activeStyle : inactiveStyle;
     }
+
+    const voices = VOICE_CATALOGUE[gender] || [];
+    voiceSelect.innerHTML = '';
+    voices.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v.id;
+        opt.textContent = `${v.id}  —  ${v.desc}`;
+        voiceSelect.appendChild(opt);
+    });
+
+    if (voiceSelect.options.length > 0) voiceSelect.selectedIndex = 0;
+    updateVoiceDescription();
+}
+
+function filterVoicesByGender(gender) {
+    renderVoiceDropdown(gender);
+}
+
+function updateVoiceDescription() {
+    const voiceSelect = document.getElementById('voiceId');
+    const descEl = document.getElementById('voiceDescription');
+    if (!voiceSelect || !descEl) return;
+
+    const selected = voiceSelect.value;
+    const list = VOICE_CATALOGUE[_activeGender] || [];
+    const entry = list.find(v => v.id === selected);
+    descEl.textContent = entry ? entry.desc : '';
 }
 
 async function previewVoice() {
     const voiceSelect = document.getElementById('voiceId');
     const modelSelect = document.getElementById('voiceModel');
-    const langSelect = document.getElementById('voiceLanguage');
     const btn = document.getElementById('previewVoiceBtn');
     const audio = document.getElementById('voicePreviewAudio');
     const statusEl = document.getElementById('voiceLoadStatus');
@@ -4895,10 +4937,10 @@ async function previewVoice() {
 
     const voice_id = voiceSelect.value;
     const model_id = modelSelect ? modelSelect.value : 'inworld-tts-1.5-mini';
-    const language = langSelect ? langSelect.value : 'en-US';
+    const language = 'en-US';
 
     btn.disabled = true;
-    btn.textContent = '⏳ Loading…';
+    btn.textContent = '⏳…';
     if (statusEl) statusEl.textContent = `Generating preview for "${voice_id}"…`;
 
     try {
@@ -4915,11 +4957,10 @@ async function previewVoice() {
             return;
         }
 
-        // Play the returned base64 MP3 directly in the browser
         audio.src = `data:audio/mp3;base64,${data.audio_base64}`;
-        audio.style.display = 'block';
+        audio.style.display = 'none';
         audio.play();
-        if (statusEl) statusEl.textContent = `▶ Playing preview: ${voice_id}`;
+        if (statusEl) statusEl.textContent = `▶ Playing: ${voice_id}`;
         audio.onended = () => { if (statusEl) statusEl.textContent = ''; };
 
     } catch (err) {
