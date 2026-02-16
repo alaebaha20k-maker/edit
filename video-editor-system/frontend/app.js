@@ -3354,7 +3354,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Setup voice model description update
+    // Setup voice model description update + reload voices on model change
     const voiceModel = document.getElementById('voiceModel');
     if (voiceModel) {
         voiceModel.addEventListener('change', () => {
@@ -3367,7 +3367,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     descElement.textContent = 'Mini: Good quality, faster generation, lower cost';
                 }
             }
+            loadVoiceList();
         });
+        // Auto-load voices on page init
+        loadVoiceList();
     }
 
     // Setup voice model description update for Audio & Voice section
@@ -4835,3 +4838,96 @@ async function generateAutoAvatar() {
 }
 
 console.log('✅ Avatar AI functionality loaded');
+
+// ─── Voice List & Preview ────────────────────────────────────────────────────
+
+async function loadVoiceList() {
+    const voiceSelect = document.getElementById('voiceId');
+    const statusEl = document.getElementById('voiceLoadStatus');
+    if (!voiceSelect) return;
+
+    if (statusEl) statusEl.textContent = 'Loading voices…';
+
+    try {
+        const res = await fetch('/api/list-voices');
+        const data = await res.json();
+
+        if (!data.success || !data.voices || data.voices.length === 0) {
+            if (statusEl) statusEl.textContent = 'Could not load voices from API — using defaults.';
+            return;
+        }
+
+        // Remember currently selected voice
+        const current = voiceSelect.value;
+
+        // Build new options
+        voiceSelect.innerHTML = '';
+        data.voices.forEach(v => {
+            const opt = document.createElement('option');
+            opt.value = v.id;
+            const genderLabel = v.gender === 'MALE' ? 'Male' : v.gender === 'FEMALE' ? 'Female' : '';
+            opt.textContent = genderLabel ? `${v.id} - ${genderLabel}` : v.id;
+            if (v.id === current) opt.selected = true;
+            voiceSelect.appendChild(opt);
+        });
+
+        // Restore selection if still available, otherwise keep first
+        if (!voiceSelect.value) voiceSelect.selectedIndex = 0;
+
+        if (statusEl) statusEl.textContent = `${data.voices.length} voices loaded from Inworld API`;
+        setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 3000);
+
+    } catch (err) {
+        if (statusEl) statusEl.textContent = 'Could not load voices — using defaults.';
+        console.warn('loadVoiceList error:', err);
+    }
+}
+
+async function previewVoice() {
+    const voiceSelect = document.getElementById('voiceId');
+    const modelSelect = document.getElementById('voiceModel');
+    const langSelect = document.getElementById('voiceLanguage');
+    const btn = document.getElementById('previewVoiceBtn');
+    const audio = document.getElementById('voicePreviewAudio');
+    const statusEl = document.getElementById('voiceLoadStatus');
+
+    if (!voiceSelect || !audio) return;
+
+    const voice_id = voiceSelect.value;
+    const model_id = modelSelect ? modelSelect.value : 'inworld-tts-1.5-mini';
+    const language = langSelect ? langSelect.value : 'en-US';
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Loading…';
+    if (statusEl) statusEl.textContent = `Generating preview for "${voice_id}"…`;
+
+    try {
+        const res = await fetch('/api/preview-voice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ voice_id, model_id, language })
+        });
+        const data = await res.json();
+
+        if (!data.success) {
+            showNotification(`❌ Preview failed: ${data.error}`, 'error');
+            if (statusEl) statusEl.textContent = '';
+            return;
+        }
+
+        // Play the returned base64 MP3 directly in the browser
+        audio.src = `data:audio/mp3;base64,${data.audio_base64}`;
+        audio.style.display = 'block';
+        audio.play();
+        if (statusEl) statusEl.textContent = `▶ Playing preview: ${voice_id}`;
+        audio.onended = () => { if (statusEl) statusEl.textContent = ''; };
+
+    } catch (err) {
+        showNotification('❌ Preview request failed', 'error');
+        if (statusEl) statusEl.textContent = '';
+        console.error('previewVoice error:', err);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '▶ Preview';
+    }
+}

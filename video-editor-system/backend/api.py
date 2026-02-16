@@ -2027,6 +2027,122 @@ def editor_process_route():
         }), 500
 
 
+@app.route('/api/list-voices', methods=['GET'])
+def list_voices_route():
+    """
+    Fetch available English voices from Inworld TTS API.
+    Query param: model_id (optional, for filtering - currently Inworld returns same voices for both models)
+    """
+    import base64
+    import requests as req
+    from config import Config
+
+    try:
+        api_key = Config.get_inworld_api_key()
+        api_secret = Config.get_inworld_api_secret()
+
+        if not api_key or not api_secret:
+            return jsonify({'success': False, 'error': 'Inworld API credentials not configured'}), 400
+
+        auth_string = f"{api_key}:{api_secret}"
+        base64_auth = base64.b64encode(auth_string.encode('ascii')).decode('ascii')
+        headers = {
+            'Authorization': f'Basic {base64_auth}',
+            'Content-Type': 'application/json'
+        }
+
+        response = req.get(
+            'https://api.inworld.ai/tts/v1/voices?filter=language=en',
+            headers=headers,
+            timeout=15
+        )
+
+        if response.status_code != 200:
+            return jsonify({'success': False, 'error': f'Inworld API error: {response.status_code}'}), 500
+
+        data = response.json()
+        voices = data.get('voices', [])
+
+        # Normalize to simple list
+        result = []
+        for v in voices:
+            voice_id = v.get('voiceId') or v.get('name', '')
+            if voice_id:
+                result.append({
+                    'id': voice_id,
+                    'displayName': v.get('displayName') or voice_id,
+                    'gender': (v.get('voiceMetadata') or {}).get('gender', 'UNKNOWN'),
+                })
+
+        return jsonify({'success': True, 'voices': result})
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/preview-voice', methods=['POST'])
+def preview_voice_route():
+    """
+    Generate a short voice preview (~5 seconds) for the selected voice.
+    Request JSON: { voice_id, model_id, language }
+    """
+    import base64 as b64
+    import requests as req
+    from config import Config
+
+    PREVIEW_TEXT = "Hello! This is a preview of how this voice sounds. I hope you enjoy the quality."
+
+    try:
+        data = request.get_json() or {}
+        voice_id = data.get('voice_id', 'Olivia')
+        model_id = data.get('model_id', 'inworld-tts-1.5-mini')
+        language = data.get('language', 'en-US')
+
+        api_key = Config.get_inworld_api_key()
+        api_secret = Config.get_inworld_api_secret()
+
+        if not api_key or not api_secret:
+            return jsonify({'success': False, 'error': 'Inworld API credentials not configured'}), 400
+
+        auth_string = f"{api_key}:{api_secret}"
+        base64_auth = b64.b64encode(auth_string.encode('ascii')).decode('ascii')
+        headers = {
+            'Authorization': f'Basic {base64_auth}',
+            'Content-Type': 'application/json'
+        }
+
+        payload = {
+            'text': PREVIEW_TEXT,
+            'voice_id': voice_id,
+            'audio_config': {
+                'audio_encoding': 'MP3',
+                'speaking_rate': 1.0
+            },
+            'temperature': 1.1,
+            'model_id': model_id
+        }
+
+        response = req.post(
+            'https://api.inworld.ai/tts/v1/voice',
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+
+        if response.status_code != 200:
+            return jsonify({'success': False, 'error': f'Inworld API error: {response.status_code} - {response.text}'}), 500
+
+        response_data = response.json()
+        audio_b64 = response_data.get('audioContent')
+        if not audio_b64:
+            return jsonify({'success': False, 'error': 'No audio returned'}), 500
+
+        return jsonify({'success': True, 'audio_base64': audio_b64, 'voice_id': voice_id})
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/generate-voice', methods=['POST'])
 def generate_voice_route():
     """

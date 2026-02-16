@@ -214,18 +214,25 @@
                             <!-- Voice Selection -->
                             <div class="input-group">
                                 <label>🎤 Voice Character:</label>
-                                <select id="voiceId" class="input-medium" style="width: 100%;">
-                                    <option value="Olivia" selected>Olivia - Female (Elegant, Smooth)</option>
-                                    <option value="Dennis">Dennis - Male (Deep, Authoritative)</option>
-                                    <option value="Sarah">Sarah - Female (Warm, Engaging)</option>
-                                    <option value="Mark">Mark - Male (Professional, Clear)</option>
-                                    <option value="Ashley">Ashley - Female (Energetic, Bright)</option>
-                                    <option value="Theodore">Theodore - Male (Warm, Friendly)</option>
-                                    <option value="Elizabeth">Elizabeth - Female (Professional, Clear)</option>
-                                    <option value="Edward">Edward - Male (British, Refined)</option>
-                                    <option value="Wendy">Wendy - Female (Soft, Gentle)</option>
-                                    <option value="Craig">Craig - Male (Strong, Confident)</option>
-                                </select>
+                                <div style="display: flex; gap: 8px; align-items: center;">
+                                    <select id="voiceId" class="input-medium" style="flex: 1;">
+                                        <option value="Olivia" selected>Olivia - Female (Elegant, Smooth)</option>
+                                        <option value="Dennis">Dennis - Male (Deep, Authoritative)</option>
+                                        <option value="Sarah">Sarah - Female (Warm, Engaging)</option>
+                                        <option value="Mark">Mark - Male (Professional, Clear)</option>
+                                        <option value="Ashley">Ashley - Female (Energetic, Bright)</option>
+                                        <option value="Theodore">Theodore - Male (Warm, Friendly)</option>
+                                        <option value="Elizabeth">Elizabeth - Female (Professional, Clear)</option>
+                                        <option value="Edward">Edward - Male (British, Refined)</option>
+                                        <option value="Wendy">Wendy - Female (Soft, Gentle)</option>
+                                        <option value="Craig">Craig - Male (Strong, Confident)</option>
+                                    </select>
+                                    <button id="previewVoiceBtn" onclick="previewVoice()" title="Preview this voice" style="padding: 8px 12px; background: #667eea; border: none; border-radius: 6px; color: white; cursor: pointer; font-size: 1em; white-space: nowrap; flex-shrink: 0;">
+                                        ▶ Preview
+                                    </button>
+                                </div>
+                                <small id="voiceLoadStatus" style="color: #888; display: block; margin-top: 4px;"></small>
+                                <audio id="voicePreviewAudio" style="display:none;"></audio>
                             </div>
 
                             <!-- Language Selection -->
