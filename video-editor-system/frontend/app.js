@@ -4845,12 +4845,21 @@ console.log('✅ Avatar AI functionality loaded');
 // Loaded from API on init; fallback to this if API fails.
 const VOICE_CATALOGUE = {
     male: [
-        { id: 'Dennis',   desc: 'Deep · Authoritative · News' },
+        { id: 'Dennis',   desc: 'Deep · Authoritative · News anchor' },
         { id: 'Mark',     desc: 'Professional · Clear · Corporate' },
         { id: 'Theodore', desc: 'Warm · Friendly · Storytelling' },
         { id: 'Craig',    desc: 'Strong · Confident · Documentary' },
         { id: 'Edward',   desc: 'Refined · Calm · Narration' },
         { id: 'Timothy',  desc: 'Young · Energetic · Casual' },
+        { id: 'Simon',    desc: 'Smooth · Articulate · Podcast' },
+        { id: 'Oliver',   desc: 'Clear · Engaging · Explainer' },
+        { id: 'Elliott',  desc: 'Rich · Measured · Drama' },
+        { id: 'James',    desc: 'Classic · Trustworthy · Broadcast' },
+        { id: 'Liam',     desc: 'Bright · Conversational · Friendly' },
+        { id: 'Noah',     desc: 'Deep · Calm · Meditation' },
+        { id: 'Ethan',    desc: 'Upbeat · Modern · Tech' },
+        { id: 'Ryan',     desc: 'Casual · Relatable · Everyday' },
+        { id: 'Logan',    desc: 'Bold · Dynamic · Promo' },
     ],
     female: [
         { id: 'Olivia',    desc: 'Elegant · Smooth · Premium' },
