@@ -435,8 +435,8 @@ Return ONLY this JSON (no markdown, no formatting):
             avatar_seg_duration = 60  # 1 minute
             media_seg_duration = 5    # 5 seconds
         else:  # stock_videos
-            avatar_seg_duration = 30  # 30 seconds (perfect balance!)
-            media_seg_duration = 8     # 8 seconds (FIXED: was None, now enforced!)
+            avatar_seg_duration = 50  # 50 seconds avatar
+            media_seg_duration = 10   # 10 seconds stock video
 
         # Build prompt for Gemini (NOW with MAIN SUBJECT + keywords!)
         prompt = self._build_planning_prompt(
@@ -504,29 +504,36 @@ Return ONLY this JSON (no markdown, no formatting):
         # Calculate characters per second (rough estimate for timing)
         chars_per_second = len(script) / audio_duration if script and audio_duration > 0 else 0
 
-        # Create timing-based script chunks (every 30 seconds)
+        # Create timing-based script chunks aligned to stock video segments
+        # Each cycle = avatar_seg_duration + media_seg_duration; stock video appears at the end of each cycle
+        cycle_duration = avatar_seg_duration + media_seg_duration  # e.g. 60s per cycle
         script_chunks = []
         if script and chars_per_second > 0:
             current_time = 0
-            chunk_interval = 30  # Analyze script every 30 seconds
             while current_time < audio_duration - last_2_min_seconds:
-                start_char = int(current_time * chars_per_second)
-                end_char = int((current_time + chunk_interval) * chars_per_second)
+                # The stock video in this cycle appears at current_time + avatar_seg_duration
+                stock_start = current_time + avatar_seg_duration
+                stock_end = stock_start + media_seg_duration
+                # Extract script text around the stock video time (±15s window)
+                window_start = max(0, stock_start - 15)
+                window_end = min(audio_duration, stock_end + 15)
+                start_char = int(window_start * chars_per_second)
+                end_char = int(window_end * chars_per_second)
                 chunk_text = script[start_char:end_char] if start_char < len(script) else ""
                 if chunk_text:
                     script_chunks.append({
-                        'time_start': current_time,
-                        'time_end': current_time + chunk_interval,
-                        'text': chunk_text[:150]  # First 150 chars for context
+                        'time_start': stock_start,
+                        'time_end': stock_end,
+                        'text': chunk_text[:200]  # Context around the stock video moment
                     })
-                current_time += chunk_interval
+                current_time += cycle_duration
 
-        # Build script timeline for Gemini
+        # Build script timeline for Gemini — one entry per stock video slot
         script_timeline = ""
         if script_chunks:
-            script_timeline = "**SCRIPT TIMELINE (what audio says at each time):**\n"
-            for chunk in script_chunks[:10]:  # Show first 10 chunks
-                script_timeline += f"[{chunk['time_start']:.0f}s-{chunk['time_end']:.0f}s]: \"{chunk['text']}...\"\n"
+            script_timeline = "**SCRIPT TIMELINE — what is being said at each stock video moment:**\n"
+            for chunk in script_chunks[:30]:  # Up to 30 stock video slots
+                script_timeline += f"[Stock video at {chunk['time_start']:.0f}s]: \"{chunk['text']}...\"\n"
             script_timeline += "\n"
 
         # Build keywords section with MAIN SUBJECT (CRITICAL!)
@@ -683,7 +690,7 @@ Generate the media plan now as valid JSON:
         # CRITICAL: Enforce maximum duration for stock videos (NEVER more than 10 seconds!)
         for seg in segments:
             if seg['type'] in ['stock_video', 'ai_image']:
-                max_allowed = 10 if seg['type'] == 'stock_video' else 5
+                max_allowed = 10 if seg['type'] == 'stock_video' else 5  # stock=10s, ai_image=5s
                 if seg['duration'] > max_allowed:
                     if verbose:
                         print(f"   ⚠️  Segment at {seg['start']}s was {seg['duration']}s, capping to {max_allowed}s")

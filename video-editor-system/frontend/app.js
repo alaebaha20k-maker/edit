@@ -4447,7 +4447,11 @@ function checkAvatarReadyToGenerate() {
 
 // Generate avatar video
 async function generateAvatarVideo() {
-    const script = document.getElementById('avatarScriptInput').value;
+    const avatarScriptEl = document.getElementById('avatarScriptInput');
+    const script = (avatarScriptEl ? avatarScriptEl.value : '') ||
+                   window.videoData.script ||
+                   appState.generatedScript ||
+                   document.getElementById('scriptInput')?.value || '';
 
     // Disable button and show progress
     document.getElementById('avatarGenerateBtn').disabled = true;

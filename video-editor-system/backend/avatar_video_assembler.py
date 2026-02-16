@@ -429,7 +429,10 @@ class AvatarVideoAssembler:
             '-f', 'concat',
             '-safe', '0',
             '-i', concat_file,
-            '-c', 'copy',  # Stream copy for speed
+            '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
+            '-r', '25',
+            '-pix_fmt', 'yuv420p',
+            '-an',  # No audio at this stage
             output_path
         ]
 
@@ -466,6 +469,16 @@ class AvatarVideoAssembler:
 
         # Prepare background music if provided
         prepared_music = None
+        if background_music_path:
+            # Try to resolve path if relative
+            if not os.path.isabs(background_music_path):
+                # Try relative to cwd
+                candidate = os.path.join(os.getcwd(), background_music_path)
+                if os.path.exists(candidate):
+                    background_music_path = candidate
+            if verbose:
+                exists = os.path.exists(background_music_path)
+                print(f"   🎵 Background music path: {background_music_path} (exists={exists})")
         if background_music_path and os.path.exists(background_music_path):
             audio_duration = self._get_video_duration(audio_path)
             if verbose:
@@ -491,14 +504,15 @@ class AvatarVideoAssembler:
                 output_path
             ]
         else:
-            # NO background music
+            # NO background music — stream-copy audio (no re-encode, ~10x faster)
             cmd = [
                 'ffmpeg', '-y',
                 '-i', video_path,
                 '-i', audio_path,
+                '-map', '0:v',
+                '-map', '1:a',
                 '-c:v', 'copy',
-                '-c:a', 'aac',
-                '-b:a', '192k',
+                '-c:a', 'copy',
                 '-shortest',   # Trim output to audio length — fixes duration mismatch
                 output_path
             ]
