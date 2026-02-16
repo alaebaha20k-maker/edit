@@ -297,20 +297,26 @@ Return ONLY this JSON (no markdown, no formatting):
                 prompt,
                 generation_config=genai.types.GenerationConfig(
                     temperature=0.2,  # Very low temp for consistent output
-                    max_output_tokens=300,
-                    response_mime_type="application/json"
+                    max_output_tokens=300
+                    # NOTE: response_mime_type removed — causes empty body on gemini-2.5-flash
                 )
             )
 
             # Try to parse JSON response
-            response_text = response.text.strip()
+            response_text = response.text.strip() if response.text else ''
+
+            if not response_text:
+                raise ValueError("Empty response from Gemini")
 
             # Remove markdown code blocks if present
-            if response_text.startswith('```'):
-                # Extract content between ```json and ```
-                lines = response_text.split('\n')
-                response_text = '\n'.join(lines[1:-1]) if len(lines) > 2 else response_text
+            if '```' in response_text:
                 response_text = response_text.replace('```json', '').replace('```', '').strip()
+
+            # Extract JSON object if surrounded by extra text
+            start = response_text.find('{')
+            end = response_text.rfind('}')
+            if start != -1 and end != -1:
+                response_text = response_text[start:end+1]
 
             result = json.loads(response_text)
             main_subject = result.get('main_subject', '').lower().strip()

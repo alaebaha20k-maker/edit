@@ -5,6 +5,7 @@ Searches and downloads stock videos from multiple APIs with FAST parallel downlo
 """
 
 import os
+import random
 import requests
 import time
 from typing import List, Dict, Optional
@@ -122,29 +123,24 @@ class StockVideoDownloader:
         if not data.get('videos'):
             raise Exception(f"No videos found on Pexels for: {query}")
 
-        # Find suitable video
+        # Collect ALL suitable candidates then pick randomly (prevents same clip every run)
+        candidates = []
         for video in data['videos']:
             duration = video.get('duration', 0)
-
-            # Check if duration meets requirement
             if duration >= min_duration:
-                # Get best quality video file
                 video_files = video.get('video_files', [])
-
-                # Prefer HD quality
                 hd_files = [f for f in video_files if f.get('quality') in ['hd', 'sd']]
                 if hd_files:
-                    video_file = hd_files[0]
+                    candidates.append((video['id'], hd_files[0]['link']))
                 elif video_files:
-                    video_file = video_files[0]
-                else:
-                    continue
+                    candidates.append((video['id'], video_files[0]['link']))
 
-                # Download video
-                video_url = video_file['link']
-                return self._download_video(video_url, output_dir, f"pexels_{video['id']}")
+        if not candidates:
+            raise Exception(f"No suitable video found on Pexels (min duration: {min_duration}s)")
 
-        raise Exception(f"No suitable video found on Pexels (min duration: {min_duration}s)")
+        # Random pick so each generation uses different clips
+        video_id, video_url = random.choice(candidates)
+        return self._download_video(video_url, output_dir, f"pexels_{video_id}")
 
     def _search_pixabay(
         self,
@@ -184,26 +180,23 @@ class StockVideoDownloader:
         if not data.get('hits'):
             raise Exception(f"No videos found on Pixabay for: {query}")
 
-        # Find suitable video
+        # Collect ALL suitable candidates then pick randomly (prevents same clip every run)
+        candidates = []
         for video in data['hits']:
             duration = video.get('duration', 0)
-
-            # Check if duration meets requirement
             if duration >= min_duration:
-                # Get video files
                 videos_data = video.get('videos', {})
-
-                # Try to get medium or large quality
-                video_url = None
                 for quality in ['medium', 'large', 'small']:
                     if quality in videos_data:
-                        video_url = videos_data[quality]['url']
+                        candidates.append((video['id'], videos_data[quality]['url']))
                         break
 
-                if video_url:
-                    return self._download_video(video_url, output_dir, f"pixabay_{video['id']}")
+        if not candidates:
+            raise Exception(f"No suitable video found on Pixabay (min duration: {min_duration}s)")
 
-        raise Exception(f"No suitable video found on Pixabay (min duration: {min_duration}s)")
+        # Random pick so each generation uses different clips
+        video_id, video_url = random.choice(candidates)
+        return self._download_video(video_url, output_dir, f"pixabay_{video_id}")
 
     def _download_video(
         self,
