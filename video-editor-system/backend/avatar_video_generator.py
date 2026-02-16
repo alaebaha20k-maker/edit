@@ -6,7 +6,9 @@ Creates videos with avatar loops + AI images or stock videos
 
 import os
 import time
+import random
 import google.generativeai as genai
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Tuple
 from config import Config
 from whisper_stt import WhisperSTT
@@ -453,14 +455,22 @@ Return ONLY this JSON (no markdown, no formatting):
             prompt,
             generation_config=genai.types.GenerationConfig(
                 temperature=0.7,
-                max_output_tokens=8192,
-                response_mime_type="application/json"
+                max_output_tokens=8192
+                # response_mime_type removed — causes empty body on gemini-2.5-flash
             )
         )
 
         # Parse response
         try:
-            plan = json.loads(response.text)
+            response_text = response.text.strip() if response.text else ''
+            if not response_text:
+                raise ValueError("Empty response from Gemini")
+            # Extract JSON object if surrounded by extra text
+            start = response_text.find('{')
+            end = response_text.rfind('}')
+            if start != -1 and end != -1:
+                response_text = response_text[start:end+1]
+            plan = json.loads(response_text)
         except:
             # Fallback: create simple plan
             plan = self._create_fallback_plan(
@@ -1043,48 +1053,53 @@ Generate the media plan now as valid JSON:
             print(f"   Downloading {len(video_segments)} stock videos...")
             print(f"   🔒 ENSURING: Each video will be DIFFERENT (no repeats!)")
 
-        for i, (seg_idx, segment) in enumerate(video_segments):
+        # Build unique-query list first (sequential, fast)
+        tasks = []
+        for seg_idx, segment in video_segments:
             query = segment.get('search_query', 'generic')
-
-            # CRITICAL: If query was already used, modify it to get DIFFERENT video
             original_query = query
             suffix = 1
             while query in used_queries:
-                query = f"{original_query} {suffix}"  # Add number to make it unique
+                query = f"{original_query} {suffix}"
                 suffix += 1
-                if verbose and suffix == 2:
-                    print(f"   ⚠️  Query '{original_query}' already used, trying '{query}'")
+            used_queries.add(query)
+            tasks.append((seg_idx, segment, query))
 
-            used_queries.add(query)  # Mark this query as used
+        if verbose:
+            print(f"   Downloading {len(tasks)} stock videos in parallel (4 workers)...")
 
-            if verbose:
-                print(f"   [{i+1}/{len(video_segments)}] Searching: {query}")
-
-            # Search and download
+        def _download_one(args):
+            seg_idx, segment, query = args
             try:
                 video_path = downloader.search_and_download(
                     query=query,
                     min_duration=segment['duration'],
                     output_dir='media_library/avatar_videos'
                 )
-
-                videos.append({
-                    'segment_index': seg_idx,  # Use ORIGINAL index from media_plan['segments']
+                return {
+                    'segment_index': seg_idx,
                     'path': video_path,
-                    'query': query,  # Use the actual query (may be modified for uniqueness)
+                    'query': query,
                     'duration': segment['duration'],
                     'start': segment['start']
-                })
-
-                if verbose:
-                    print(f"   ✅ Video saved: {video_path}")
-
+                }
             except Exception as e:
                 if verbose:
-                    print(f"   ❌ Video download failed: {e}")
+                    print(f"   ❌ Download failed for '{query}': {e}")
+                return None
+
+        # Parallel downloads — 4 concurrent API calls
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = {pool.submit(_download_one, t): t for t in tasks}
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    videos.append(result)
+                    if verbose:
+                        print(f"   ✅ [{len(videos)}/{len(tasks)}] {result['query']}")
 
         if verbose:
-            print(f"\n   ✅ Downloaded {len(videos)} DIFFERENT videos (guaranteed no duplicates!)")
+            print(f"\n   ✅ Downloaded {len(videos)} DIFFERENT videos in parallel!")
 
         return videos
 

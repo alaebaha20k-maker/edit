@@ -6,8 +6,10 @@ Assembles final video with avatar loops + media + audio using FFmpeg ultra-fast
 
 import os
 import json
+import math
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict
 from datetime import datetime
 
@@ -115,26 +117,21 @@ class AvatarVideoAssembler:
             print(f"🎬 ASSEMBLING AVATAR VIDEO")
             print(f"{'='*70}\n")
 
-        # Step 1: Create avatar loops for all avatar segments
+        # Steps 1 & 2 are independent — run them in parallel to save time
         if verbose:
-            print("📹 Step 1: Creating avatar loops...")
+            print("📹 Steps 1+2 (parallel): Avatar loops + media clips...")
 
-        avatar_clips = self._create_avatar_loops(
-            avatar_video_path=avatar_video_path,
-            media_plan=media_plan,
-            verbose=verbose
-        )
-
-        # Step 2: Prepare media items (images/videos)
-        if verbose:
-            print(f"\n🖼️  Step 2: Preparing {mode}...")
-
-        media_clips = self._prepare_media_clips(
-            media_items=media_items,
-            media_plan=media_plan,
-            mode=mode,
-            verbose=verbose
-        )
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            future_avatar = pool.submit(
+                self._create_avatar_loops,
+                avatar_video_path, media_plan, verbose
+            )
+            future_media = pool.submit(
+                self._prepare_media_clips,
+                media_items, media_plan, mode, verbose
+            )
+            avatar_clips = future_avatar.result()
+            media_clips  = future_media.result()
 
         # Step 3: Create concat list
         if verbose:
@@ -235,36 +232,15 @@ class AvatarVideoAssembler:
         Returns:
             str: Path to looped video
         """
-        # Get avatar duration
+        # Use stream_loop for avatar looping - avoids non-monotonic DTS entirely.
+        # stream_loop properly increments timestamps across loops unlike concat+copy.
         cmd = [
-            'ffprobe',
-            '-v', 'error',
-            '-show_entries', 'format=duration',
-            '-of', 'default=noprint_wrappers=1:nokey=1',
-            avatar_video_path
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        avatar_duration = float(result.stdout.strip())
-
-        # Calculate number of loops
-        import math
-        num_loops = math.ceil(target_duration / avatar_duration)
-
-        # Create concat file for ultra-fast copy
-        concat_file = output_path.replace('.mp4', '_concat.txt')
-        with open(concat_file, 'w') as f:
-            for _ in range(num_loops):
-                f.write(f"file '{os.path.abspath(avatar_video_path)}'\n")
-
-        # Use concat demuxer with COPY codec (ultra-fast!)
-        cmd = [
-            'ffmpeg',
-            '-y',
-            '-f', 'concat',
-            '-safe', '0',
-            '-i', concat_file,
-            '-t', str(target_duration),  # Exact duration
-            '-c', 'copy',  # FAST COPY - no re-encoding!
+            'ffmpeg', '-y',
+            '-stream_loop', '-1',           # Loop forever
+            '-i', avatar_video_path,
+            '-t', str(target_duration),     # Stop at exact duration
+            '-c', 'copy',                   # No re-encode (fast)
+            '-avoid_negative_ts', 'make_zero',
             output_path
         ]
 
@@ -272,9 +248,6 @@ class AvatarVideoAssembler:
             cmd.extend(['-loglevel', 'error'])
 
         subprocess.run(cmd, check=True)
-
-        # Clean up concat file
-        os.remove(concat_file)
 
         return output_path
 
@@ -305,41 +278,29 @@ class AvatarVideoAssembler:
             if seg['type'] in ['ai_image', 'stock_video']
         }
 
-        for item in media_items:
+        def _process_one(item):
             seg_idx = item.get('segment_index')
-
             if seg_idx not in media_segments:
-                continue
-
+                return None, None
             segment = media_segments[seg_idx]
             target_duration = segment['duration']
-
             if mode == "ai_images":
-                # Convert image to video
-                if verbose:
-                    print(f"   Converting image to {target_duration}s video...")
+                out = os.path.join(self.temp_dir, f"image_{seg_idx}.mp4")
+                clip = self._image_to_video(item['path'], target_duration, out, verbose=False)
+            else:
+                out = os.path.join(self.temp_dir, f"stock_{seg_idx}.mp4")
+                clip = self._prepare_stock_video(item['path'], target_duration, out, verbose=False)
+            return seg_idx, clip
 
-                output_path = os.path.join(self.temp_dir, f"image_{seg_idx}.mp4")
-                clip_path = self._image_to_video(
-                    image_path=item['path'],
-                    duration=target_duration,
-                    output_path=output_path,
-                    verbose=verbose
-                )
-            else:  # stock_videos
-                # Trim or use video as-is
-                if verbose:
-                    print(f"   Preparing {target_duration}s stock video...")
-
-                output_path = os.path.join(self.temp_dir, f"stock_{seg_idx}.mp4")
-                clip_path = self._prepare_stock_video(
-                    video_path=item['path'],
-                    target_duration=target_duration,
-                    output_path=output_path,
-                    verbose=verbose
-                )
-
-            media_clips[seg_idx] = clip_path
+        # Run all clip preparations in parallel (4 workers)
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = [pool.submit(_process_one, item) for item in media_items]
+            for future in as_completed(futures):
+                seg_idx, clip_path = future.result()
+                if seg_idx is not None:
+                    media_clips[seg_idx] = clip_path
+                    if verbose:
+                        print(f"   ✅ Clip ready: segment {seg_idx}")
 
         return media_clips
 
@@ -352,20 +313,20 @@ class AvatarVideoAssembler:
     ) -> str:
         """Convert image to video with duration"""
 
+        # Same resolution/fps as stock clips for consistent concat
         cmd = [
-            'ffmpeg',
-            '-y',
+            'ffmpeg', '-y',
             '-loop', '1',
             '-i', image_path,
             '-t', str(duration),
             '-c:v', 'libx264',
             '-preset', 'ultrafast',
             '-tune', 'stillimage',
-            '-crf', '28',
-            '-r', '30',
-            '-s', '1920x1080',
+            '-crf', '23',
+            '-r', '25',
+            '-vf', 'scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720',
             '-pix_fmt', 'yuv420p',
-            '-vf', 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080',
+            '-an',
             output_path
         ]
 
@@ -405,37 +366,23 @@ class AvatarVideoAssembler:
         # Trim duration
         trim_duration = min(duration, target_duration)
 
-        # Check if video is already h264 and 1920x1080 (can use copy)
-        is_h264 = codec == 'h264'
-        is_1080p = (width == 1920 and height == 1080)
-
-        if is_h264 and is_1080p:
-            # FAST: Use copy codec (no re-encoding!)
-            cmd = [
-                'ffmpeg',
-                '-y',
-                '-i', video_path,
-                '-t', str(trim_duration),
-                '-c', 'copy',  # FAST COPY
-                output_path
-            ]
-        else:
-            # SLOW: Must re-encode to standardize
-            cmd = [
-                'ffmpeg',
-                '-y',
-                '-i', video_path,
-                '-t', str(trim_duration),
-                '-c:v', 'libx264',
-                '-preset', 'ultrafast',
-                '-crf', '28',
-                '-r', '30',
-                '-s', '1920x1080',
-                '-vf', 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080',
-                '-c:a', 'aac',
-                '-b:a', '192k',
-                output_path
-            ]
+        # Always re-encode to 1280x720 25fps h264 — guarantees consistent
+        # timebase/framerate so the final concat never gets non-monotonic DTS.
+        # ultrafast preset keeps this fast while fixing all format mismatches.
+        # No audio stream needed for stock clips (audio is added in final step).
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', video_path,
+            '-t', str(trim_duration),
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',
+            '-crf', '23',
+            '-r', '25',
+            '-vf', 'scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720',
+            '-pix_fmt', 'yuv420p',
+            '-an',   # No audio — audio added in final step
+            output_path
+        ]
 
         if not verbose:
             cmd.extend(['-loglevel', 'error'])
@@ -528,7 +475,7 @@ class AvatarVideoAssembler:
             )
 
         if prepared_music:
-            # WITH background music: mix voice at 100% + music at 10%
+            # WITH background music: mix voice at 100% + music at 8%
             cmd = [
                 'ffmpeg', '-y',
                 '-i', video_path,
@@ -540,18 +487,19 @@ class AvatarVideoAssembler:
                 '-c:v', 'copy',
                 '-c:a', 'aac',
                 '-b:a', '192k',
+                '-shortest',   # Trim output to audio length — fixes duration mismatch
                 output_path
             ]
         else:
             # NO background music
             cmd = [
-                'ffmpeg',
-                '-y',
+                'ffmpeg', '-y',
                 '-i', video_path,
                 '-i', audio_path,
-                '-c:v', 'copy',  # Copy video (no re-encode)
+                '-c:v', 'copy',
                 '-c:a', 'aac',
                 '-b:a', '192k',
+                '-shortest',   # Trim output to audio length — fixes duration mismatch
                 output_path
             ]
 
