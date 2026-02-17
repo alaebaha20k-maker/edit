@@ -987,9 +987,8 @@ OUTPUT — valid JSON only, no markdown:
 
     def _generate_image_gemini(self, prompt: str, output_dir: str, index: int) -> str:
         """
-        Generate a single image using Gemini Imagen 3 API.
-        Uses imagen-3.0-generate-002 (primary) with fallback to gemini-2.0-flash.
-        Returns path to saved PNG file (1920×1080).
+        Generate a single image using Gemini 2.5 Flash image generation.
+        Returns path to saved PNG file (1920x1080).
         """
         from pathlib import Path as _Path
         import io as _io
@@ -1009,61 +1008,53 @@ OUTPUT — valid JSON only, no markdown:
 
         api_key = Config.get_gemini_image_api_key()
         if not api_key:
-            raise ValueError("Gemini Imagen 3 API key not configured. Add it in Settings under 'Gemini Imagen 3 API Key'.")
+            # Fallback to main Gemini key
+            api_key = Config.get_gemini_api_key()
+        if not api_key:
+            raise ValueError("Gemini API key not configured. Add it in Settings.")
 
         client = _genai.Client(api_key=api_key)
 
         cinematic_prompt = (
-            f"Cinematic 16:9 widescreen photograph, photorealistic, 1080p high detail. "
+            f"Create a cinematic 16:9 widescreen frame. 1080p target. "
             f"{prompt}. "
-            f"Sharp focus, professional lighting, no text, no watermark, no logos."
+            f"Style: sharp focus, realistic lighting, high detail, no text, no watermark, no logos."
         )
 
         image_bytes = None
 
-        # Primary: Try Imagen 3 (best quality)
-        try:
-            response = client.models.generate_images(
-                model="imagen-3.0-generate-002",
-                prompt=cinematic_prompt,
-                config=_types.GenerateImagesConfig(
+        # Primary: Gemini 2.5 Flash with image generation
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-preview-05-20",
+            contents=[cinematic_prompt],
+            config=_types.GenerateContentConfig(
+                response_modalities=["IMAGE", "TEXT"],
+                image_generation_config=_types.ImageGenerationConfig(
                     number_of_images=1,
-                    aspect_ratio="16:9",
                 ),
-            )
-            if response.generated_images:
-                image_bytes = response.generated_images[0].image.image_bytes
-        except Exception as _imagen_err:
-            # Fallback: Use gemini-2.0-flash-preview-image-generation
-            try:
-                response = client.models.generate_content(
-                    model="gemini-2.0-flash-preview-image-generation",
-                    contents=[cinematic_prompt],
-                    config=_types.GenerateContentConfig(
-                        response_modalities=["IMAGE", "TEXT"],
-                    ),
-                )
-                for candidate in response.candidates:
-                    for part in candidate.content.parts:
-                        if hasattr(part, "inline_data") and part.inline_data and part.inline_data.data:
-                            image_bytes = part.inline_data.data
-                            break
-                    if image_bytes:
-                        break
-            except Exception:
-                raise ValueError(f"Imagen 3 failed: {_imagen_err}. Fallback also failed.")
+            ),
+        )
+
+        for candidate in response.candidates:
+            for part in candidate.content.parts:
+                if hasattr(part, "inline_data") and part.inline_data and part.inline_data.data:
+                    image_bytes = part.inline_data.data
+                    break
+            if image_bytes:
+                break
 
         if not image_bytes:
-            raise ValueError("No image data returned by Gemini Imagen 3")
+            raise ValueError("No image data returned by Gemini 2.5 Flash")
 
-        # Upscale to 1920×1080
+        # Upscale to 1920x1080
         img = _Image.open(_io.BytesIO(image_bytes)).convert("RGB")
-        img = img.resize((1920, 1080), _Image.LANCZOS)
+        if img.size != (1920, 1080):
+            img = img.resize((1920, 1080), _Image.LANCZOS)
 
         # Save
         out_dir = _Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / f"imagen3_avatar_{index:03d}.png"
+        out_path = out_dir / f"gemini_flash_avatar_{index:03d}.png"
         img.save(str(out_path), "PNG")
 
         return str(out_path)

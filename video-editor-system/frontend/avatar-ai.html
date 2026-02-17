@@ -292,28 +292,36 @@
                 <div style="background: #1e1e2e; border: 1px solid #444; border-radius: 8px; padding: 20px;">
                     <h3 style="color: #a78bfa; margin: 0 0 15px 0; font-size: 18px;">🖼️ AI Image Settings</h3>
 
-                    <!-- Image Provider -->
+                    <!-- Image Style Selector -->
                     <div style="margin-bottom: 20px;">
-                        <label style="color: #ccc; font-weight: 600; display: block; margin-bottom: 10px;">Image Generation Provider</label>
+                        <label style="color: #ccc; font-weight: 600; display: block; margin-bottom: 10px;">Image Style</label>
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                            <div class="mode-card selected" id="providerReplicate" onclick="selectProvider('replicate')" style="padding: 14px;">
-                                <h3 style="font-size: 15px; margin: 0;">🎨 Replicate (Flux)</h3>
-                                <p style="font-size: 12px; margin: 6px 0 0 0;">Flux Schnell / Flux 1.1 Pro<br>Requires Replicate API token</p>
+                            <div class="mode-card selected" id="styleCinematic" onclick="selectStyle('cinematic')" style="padding: 14px;">
+                                <h3 style="font-size: 15px; margin: 0;">🎬 Cinematic</h3>
+                                <p style="font-size: 12px; margin: 6px 0 0 0;">Film-quality visuals with dramatic lighting and composition</p>
                             </div>
-                            <div class="mode-card" id="providerGemini" onclick="selectProvider('gemini')" style="padding: 14px;">
-                                <h3 style="font-size: 15px; margin: 0;">✨ Gemini Imagen 3</h3>
-                                <p style="font-size: 12px; margin: 6px 0 0 0;">Google Imagen 3 Image API<br>1920×1080 cinematic output</p>
+                            <div class="mode-card" id="stylePhotorealistic" onclick="selectStyle('photorealistic')" style="padding: 14px;">
+                                <h3 style="font-size: 15px; margin: 0;">📷 Photorealistic</h3>
+                                <p style="font-size: 12px; margin: 6px 0 0 0;">Ultra-realistic photography with natural lighting</p>
+                            </div>
+                            <div class="mode-card" id="styleArtistic" onclick="selectStyle('artistic')" style="padding: 14px;">
+                                <h3 style="font-size: 15px; margin: 0;">🎨 Artistic</h3>
+                                <p style="font-size: 12px; margin: 6px 0 0 0;">Creative artistic interpretation with painterly quality</p>
+                            </div>
+                            <div class="mode-card" id="styleAnimated" onclick="selectStyle('animated')" style="padding: 14px;">
+                                <h3 style="font-size: 15px; margin: 0;">🎭 Animated</h3>
+                                <p style="font-size: 12px; margin: 6px 0 0 0;">Clean animated style with vibrant colors</p>
                             </div>
                         </div>
+                        <p style="color: #666; font-size: 12px; margin-top: 8px;">Gemini Director will use this style to create 400+ char prompts for every image.</p>
                     </div>
 
-                    <!-- Image Style Selector -->
-                    <div style="margin-bottom: 15px;">
-                        <label style="color: #ccc; font-weight: 600; display: block; margin-bottom: 8px;">Image Style (for Gemini Director prompts)</label>
-                        <select id="imageStyleSelect" onchange="onStyleChange()" style="width: 100%; background: #2a2a3e; border: 1px solid #555; color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 14px;">
-                            <option value="">Loading styles...</option>
+                    <!-- Custom styles dropdown (loaded from API) -->
+                    <div id="customStylesSection" style="margin-bottom: 15px; display: none;">
+                        <label style="color: #ccc; font-weight: 600; display: block; margin-bottom: 8px;">Or choose a custom style</label>
+                        <select id="imageStyleSelect" onchange="onCustomStyleChange()" style="width: 100%; background: #2a2a3e; border: 1px solid #555; color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 14px;">
+                            <option value="">— Use selected style above —</option>
                         </select>
-                        <p style="color: #666; font-size: 12px; margin-top: 6px;">Gemini Director will use this style to create 400+ char cinematic prompts for every image.</p>
                     </div>
 
                     <!-- Style preview -->
@@ -369,59 +377,139 @@
         let avatarPath = null;
         let audioPath = null;
         let selectedMode = 'ai_images';
-        let selectedProvider = 'replicate';
+        let selectedProvider = 'gemini';
         let availableStyles = [];
         let selectedStyle = null;
+        let selectedStyleId = 'cinematic';
+
+        // Built-in styles (matching backend AutoImagesStyleManager defaults)
+        const BUILTIN_STYLES = {
+            cinematic: {
+                id: 'cinematic',
+                name: 'Cinematic',
+                description: 'Cinematic film-quality visuals with dramatic lighting and composition',
+                visual_rules: ['Cinematic composition with rule of thirds', 'Film-quality lighting and shadows', 'Dramatic depth of field', 'Professional color grading', 'High production value aesthetic'],
+                negative_rules: ['Low quality, blurry, distorted', 'Amateur photography', 'Flat lighting', 'Poor composition'],
+                composition: 'Wide cinematic shots with professional framing, dramatic angles',
+                lighting: 'Dramatic cinematic lighting with contrast and mood',
+                color_palette: ['Deep blues', 'Rich golds', 'Dramatic shadows', 'Warm highlights']
+            },
+            photorealistic: {
+                id: 'photorealistic',
+                name: 'Photorealistic',
+                description: 'Ultra-realistic photography-style images',
+                visual_rules: ['Photorealistic details and textures', 'Natural lighting and shadows', 'Authentic camera perspective', 'Real-world materials and surfaces', 'Professional photography quality'],
+                negative_rules: ['Cartoon, animated, illustrated', 'Artificial or fake looking', 'Oversaturated colors', 'Unrealistic proportions'],
+                composition: 'Natural photography composition, authentic camera angles',
+                lighting: 'Natural daylight or studio lighting, realistic shadows',
+                color_palette: ['Natural tones', 'Realistic colors', 'Authentic skin tones', 'True-to-life hues']
+            },
+            artistic: {
+                id: 'artistic',
+                name: 'Artistic',
+                description: 'Creative artistic interpretation with painterly quality',
+                visual_rules: ['Artistic interpretation and style', 'Painterly brushwork and textures', 'Creative color choices', 'Expressive composition', 'Fine art aesthetic'],
+                negative_rules: ['Photorealistic', 'Generic or boring', 'Overly technical', 'Sterile composition'],
+                composition: 'Creative and expressive framing, artistic perspective',
+                lighting: 'Dramatic artistic lighting, creative shadows and highlights',
+                color_palette: ['Bold colors', 'Artistic contrasts', 'Creative hues', 'Expressive tones']
+            },
+            animated: {
+                id: 'animated',
+                name: 'Animated',
+                description: 'Clean animated style with vibrant colors',
+                visual_rules: ['Clean 3D animation style', 'Vibrant and appealing colors', 'Smooth surfaces and textures', 'Professional animation quality', 'Stylized but polished look'],
+                negative_rules: ['Photorealistic', 'Rough or unfinished', 'Muddy colors', 'Low-quality rendering'],
+                composition: 'Clean animated framing, balanced and appealing',
+                lighting: 'Bright and clear animated lighting, vibrant atmosphere',
+                color_palette: ['Vibrant colors', 'Clean tones', 'Bright highlights', 'Rich saturation']
+            }
+        };
 
         // Select AI Images mode by default
         document.getElementById('modeAiImages').classList.add('selected');
 
-        // Load styles on page load
-        loadStyles();
+        // Set default style
+        selectedStyle = BUILTIN_STYLES.cinematic;
 
-        async function loadStyles() {
+        // Load custom styles on page load
+        loadCustomStyles();
+
+        async function loadCustomStyles() {
             try {
-                const res = await fetch('/api/styles');
+                const res = await fetch('/api/auto-images/styles');
                 const data = await res.json();
-                const styles = data.styles || [];
+                const styles = (data.styles || []).filter(s => s.custom);
                 availableStyles = styles;
 
-                const sel = document.getElementById('imageStyleSelect');
-                sel.innerHTML = '<option value="">— No style (basic prompts) —</option>';
-                styles.forEach(s => {
-                    const opt = document.createElement('option');
-                    opt.value = s.id;
-                    opt.textContent = s.name + (s.description ? ' — ' + s.description.substring(0, 60) : '');
-                    sel.appendChild(opt);
-                });
+                if (styles.length > 0) {
+                    const sel = document.getElementById('imageStyleSelect');
+                    sel.innerHTML = '<option value="">— Use selected style above —</option>';
+                    styles.forEach(s => {
+                        const opt = document.createElement('option');
+                        opt.value = s.id;
+                        opt.textContent = s.name + (s.description ? ' — ' + s.description.substring(0, 60) : '');
+                        sel.appendChild(opt);
+                    });
+                    document.getElementById('customStylesSection').style.display = 'block';
+                }
             } catch (e) {
-                console.warn('Could not load styles:', e);
-                document.getElementById('imageStyleSelect').innerHTML =
-                    '<option value="">— Could not load styles —</option>';
+                console.warn('Could not load custom styles:', e);
             }
         }
 
-        function onStyleChange() {
+        function selectStyle(styleId) {
+            selectedStyleId = styleId;
+
+            // Update card selection visuals
+            document.getElementById('styleCinematic').classList.toggle('selected', styleId === 'cinematic');
+            document.getElementById('stylePhotorealistic').classList.toggle('selected', styleId === 'photorealistic');
+            document.getElementById('styleArtistic').classList.toggle('selected', styleId === 'artistic');
+            document.getElementById('styleAnimated').classList.toggle('selected', styleId === 'animated');
+
+            // Set the style object
+            selectedStyle = BUILTIN_STYLES[styleId] || null;
+
+            // Clear custom dropdown if any
+            const sel = document.getElementById('imageStyleSelect');
+            if (sel) sel.value = '';
+
+            // Update preview
+            updateStylePreview();
+        }
+
+        function onCustomStyleChange() {
             const sel = document.getElementById('imageStyleSelect');
             const styleId = sel.value;
-            selectedStyle = availableStyles.find(s => s.id === styleId) || null;
 
+            if (styleId) {
+                selectedStyle = availableStyles.find(s => s.id === styleId) || null;
+                selectedStyleId = styleId;
+
+                // Deselect all built-in cards
+                document.getElementById('styleCinematic').classList.remove('selected');
+                document.getElementById('stylePhotorealistic').classList.remove('selected');
+                document.getElementById('styleArtistic').classList.remove('selected');
+                document.getElementById('styleAnimated').classList.remove('selected');
+            } else {
+                // Revert to built-in selection
+                selectStyle(selectedStyleId in BUILTIN_STYLES ? selectedStyleId : 'cinematic');
+            }
+
+            updateStylePreview();
+        }
+
+        function updateStylePreview() {
             const preview = document.getElementById('stylePreview');
             const previewText = document.getElementById('stylePreviewText');
 
             if (selectedStyle) {
                 preview.style.display = 'block';
-                const rules = (selectedStyle.visual_rules || []).slice(0, 3).join(' • ');
-                previewText.textContent = `${selectedStyle.description || ''} | Rules: ${rules}`;
+                const rules = (selectedStyle.visual_rules || []).slice(0, 3).join(' | ');
+                previewText.textContent = `${selectedStyle.description || ''} | ${rules}`;
             } else {
                 preview.style.display = 'none';
             }
-        }
-
-        function selectProvider(provider) {
-            selectedProvider = provider;
-            document.getElementById('providerReplicate').classList.toggle('selected', provider === 'replicate');
-            document.getElementById('providerGemini').classList.toggle('selected', provider === 'gemini');
         }
 
         function handleAvatarUpload(event) {
@@ -519,7 +607,7 @@
                     mode: selectedMode,
                     script: script,
                     stock_apis: ['pexels', 'pixabay'],
-                    image_provider: selectedProvider,
+                    image_provider: 'gemini',
                     image_style: selectedStyle || null,
                 })
             })
