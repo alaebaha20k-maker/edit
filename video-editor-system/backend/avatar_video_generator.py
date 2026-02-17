@@ -942,7 +942,7 @@ OUTPUT — valid JSON only, no markdown:
 
         # ── Step 2: Generate images using chosen provider ─────────────────────
         if verbose:
-            provider_label = "Gemini 2.5 Flash" if image_provider == "gemini" else "Replicate (Flux)"
+            provider_label = "Gemini Imagen 3" if image_provider == "gemini" else "Replicate (Flux)"
             print(f"   🖼️  Generating {n_images} images with {provider_label}...")
 
         output_dir = 'media_library/avatar_images'
@@ -987,10 +987,10 @@ OUTPUT — valid JSON only, no markdown:
 
     def _generate_image_gemini(self, prompt: str, output_dir: str, index: int) -> str:
         """
-        Generate a single image using Gemini 2.5 Flash Image API.
+        Generate a single image using Gemini Imagen 3 API.
+        Uses imagen-3.0-generate-002 (primary) with fallback to gemini-2.0-flash.
         Returns path to saved PNG file (1920×1080).
         """
-        import os as _os
         from pathlib import Path as _Path
         import io as _io
 
@@ -1009,39 +1009,52 @@ OUTPUT — valid JSON only, no markdown:
 
         api_key = Config.get_gemini_image_api_key()
         if not api_key:
-            raise ValueError("Gemini Image API key not configured. Add it in Settings.")
+            raise ValueError("Gemini Imagen 3 API key not configured. Add it in Settings under 'Gemini Imagen 3 API Key'.")
 
         client = _genai.Client(api_key=api_key)
 
         cinematic_prompt = (
-            f"Create a cinematic 16:9 widescreen frame. 1080p target (upscale OK). "
+            f"Cinematic 16:9 widescreen photograph, photorealistic, 1080p high detail. "
             f"{prompt}. "
-            f"Style: sharp focus, realistic lighting, high detail, no text, no watermark, no logos."
+            f"Sharp focus, professional lighting, no text, no watermark, no logos."
         )
 
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-preview-05-20",
-            contents=[cinematic_prompt],
-            config=_types.GenerateContentConfig(
-                response_modalities=["IMAGE", "TEXT"],
-                image_generation_config=_types.ImageGenerationConfig(
-                    number_of_images=1,
-                ),
-            ),
-        )
-
-        # Extract image bytes
         image_bytes = None
-        for candidate in response.candidates:
-            for part in candidate.content.parts:
-                if hasattr(part, "inline_data") and part.inline_data and part.inline_data.data:
-                    image_bytes = part.inline_data.data
-                    break
-            if image_bytes:
-                break
+
+        # Primary: Try Imagen 3 (best quality)
+        try:
+            response = client.models.generate_images(
+                model="imagen-3.0-generate-002",
+                prompt=cinematic_prompt,
+                config=_types.GenerateImagesConfig(
+                    number_of_images=1,
+                    aspect_ratio="16:9",
+                ),
+            )
+            if response.generated_images:
+                image_bytes = response.generated_images[0].image.image_bytes
+        except Exception as _imagen_err:
+            # Fallback: Use gemini-2.0-flash-preview-image-generation
+            try:
+                response = client.models.generate_content(
+                    model="gemini-2.0-flash-preview-image-generation",
+                    contents=[cinematic_prompt],
+                    config=_types.GenerateContentConfig(
+                        response_modalities=["IMAGE", "TEXT"],
+                    ),
+                )
+                for candidate in response.candidates:
+                    for part in candidate.content.parts:
+                        if hasattr(part, "inline_data") and part.inline_data and part.inline_data.data:
+                            image_bytes = part.inline_data.data
+                            break
+                    if image_bytes:
+                        break
+            except Exception:
+                raise ValueError(f"Imagen 3 failed: {_imagen_err}. Fallback also failed.")
 
         if not image_bytes:
-            raise ValueError("No image data returned by Gemini")
+            raise ValueError("No image data returned by Gemini Imagen 3")
 
         # Upscale to 1920×1080
         img = _Image.open(_io.BytesIO(image_bytes)).convert("RGB")
@@ -1050,7 +1063,7 @@ OUTPUT — valid JSON only, no markdown:
         # Save
         out_dir = _Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / f"gemini_avatar_{index:03d}.png"
+        out_path = out_dir / f"imagen3_avatar_{index:03d}.png"
         img.save(str(out_path), "PNG")
 
         return str(out_path)

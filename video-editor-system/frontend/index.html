@@ -805,6 +805,15 @@
                     </div>
 
                     <div class="input-group">
+                        <label>Gemini Imagen 3 API Key (Optional - AI image generation in Avatar Auto Mix)</label>
+                        <div class="password-input">
+                            <input type="password" id="geminiImageKey" placeholder="AIza... (for Gemini Imagen 3 image generation)" class="input-large">
+                            <button onclick="togglePassword('geminiImageKey')" class="btn-toggle">👁️</button>
+                        </div>
+                        <span class="hint">🖼️ Powers AI image generation in <strong>Auto Avatar Mix</strong>. Uses Gemini Imagen 3 to create cinematic 1920×1080 images. Falls back to Director key if empty. <a href="https://aistudio.google.com/app/apikey" target="_blank">Get key from Google AI Studio</a></span>
+                    </div>
+
+                    <div class="input-group">
                         <label>Replicate API Token (Required for AI images)</label>
                         <div class="password-input">
                             <input type="password" id="replicateKey" placeholder="Enter Replicate token..." class="input-large">

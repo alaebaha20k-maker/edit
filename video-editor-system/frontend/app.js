@@ -241,6 +241,7 @@ const loadSettings = () => {
             if (settings.api_keys) {
                 const geminiKey = document.getElementById('geminiKey');
                 const directorGeminiKey = document.getElementById('directorGeminiKey');
+                const geminiImageKey = document.getElementById('geminiImageKey');
                 const replicateKey = document.getElementById('replicateKey');
                 const inworldKey = document.getElementById('inworldKey');
                 const inworldSecret = document.getElementById('inworldSecret');
@@ -250,6 +251,7 @@ const loadSettings = () => {
 
                 if (geminiKey) geminiKey.value = settings.api_keys.gemini || '';
                 if (directorGeminiKey) directorGeminiKey.value = settings.api_keys.director_gemini || '';
+                if (geminiImageKey) geminiImageKey.value = settings.api_keys.gemini_image || '';
                 if (replicateKey) replicateKey.value = settings.api_keys.replicate || '';
                 if (inworldKey) inworldKey.value = settings.api_keys.inworld || '';
                 if (inworldSecret) inworldSecret.value = settings.api_keys.inworld_secret || '';
@@ -292,6 +294,7 @@ const saveSettings = async () => {
             api_keys: {
                 gemini: document.getElementById('geminiKey')?.value || '',
                 director_gemini: document.getElementById('directorGeminiKey')?.value || '',
+                gemini_image: document.getElementById('geminiImageKey')?.value || '',
                 replicate: document.getElementById('replicateKey')?.value || '',
                 inworld: document.getElementById('inworldKey')?.value || '',
                 inworld_secret: document.getElementById('inworldSecret')?.value || '',
@@ -316,6 +319,7 @@ const saveSettings = async () => {
                 body: JSON.stringify({
                     gemini: settings.api_keys.gemini,
                     director_gemini: settings.api_keys.director_gemini,
+                    gemini_image: settings.api_keys.gemini_image,
                     replicate: settings.api_keys.replicate,
                     inworld: settings.api_keys.inworld,
                     inworld_secret: settings.api_keys.inworld_secret,
