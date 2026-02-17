@@ -250,91 +250,111 @@ class AvatarVideoGenerator:
         verbose: bool = False
     ) -> Dict:
         """
-        SUPER SMART: Extract MAIN SUBJECT + keywords from script using Gemini
-        Ensures EVERY search query includes the main subject!
+        Extract COMPLETE compound search queries from script using Gemini.
+        Returns ready-to-use queries like "trading psychology" not just "psychology".
 
         Args:
             script: Full script text
             verbose: Print progress
 
         Returns:
-            Dict with 'main_subject' and 'keywords' list
+            Dict with 'main_subject' and 'search_queries' list of compound strings
         """
         if not script or len(script.strip()) < 50:
             return {
                 'main_subject': 'business',
-                'keywords': ['professional', 'office', 'meeting']
+                'search_queries': [
+                    'business meeting professional', 'office team collaboration',
+                    'business strategy planning', 'corporate presentation growth',
+                    'business success achievement', 'professional workspace',
+                ]
             }
 
         if verbose:
-            print("\n🧠 ANALYZING SCRIPT: Extracting MAIN SUBJECT + keywords with Gemini...")
+            print("\n🧠 ANALYZING SCRIPT: Extracting compound search queries with Gemini...")
 
-        # Clean script for safe inclusion in prompt
-        clean_script = script[:2000].replace('"', "'").replace('\n', ' ').strip()
+        # Safe script snippet — only keep ASCII to avoid JSON issues in the prompt
+        safe_script = script[:1500].encode('ascii', errors='replace').decode('ascii')
+        safe_script = safe_script.replace('\\', ' ').replace('"', ' ').replace('\n', ' ').strip()
 
-        prompt = f"""Analyze this video script and identify the MAIN SUBJECT and keywords.
-The script may be in ANY language (French, Arabic, Spanish, etc.) - that's fine, analyze the meaning.
+        prompt = f"""You are a video search expert. Analyze this script and generate specific stock video search queries.
 
-SCRIPT:
-{clean_script}
+SCRIPT (first 1500 chars):
+{safe_script}
 
-TASK:
-1. What is the PRIMARY TOPIC? (trading, business, technology, health, finance, marketing, etc.)
-2. List 8-12 visual keywords related to that topic IN ENGLISH (for stock video search)
+YOUR JOB:
+1. Identify the MAIN TOPIC (e.g. "trading", "health", "technology", "business")
+2. Generate 20 COMPLETE search queries (2-4 words each) that would find relevant stock videos
+
+RULES FOR QUERIES:
+- EVERY query must include the main topic word (e.g. if topic=trading, write "trading chart" not just "chart")
+- Be specific and visual: "trading chart candlestick" not "trading"
+- Vary them creatively: covers different aspects of the topic
+- ALL IN ENGLISH (translate from any language)
+- Think like a filmmaker: what B-roll would match each part of this video?
 
 EXAMPLES:
-If trading script (any language) → main_subject: "trading", keywords: ["chart", "analysis", "psychology", "risk", "market", "floor", "candlestick", "forex"]
-If business script → main_subject: "business", keywords: ["meeting", "handshake", "office", "team", "presentation", "growth"]
-If tech script → main_subject: "technology", keywords: ["coding", "servers", "data", "programming", "startup"]
+Topic=trading: ["trading chart analysis", "stock market floor", "forex candlestick chart", "trading psychology mindset", "stock market crash", "trading profit growth", "financial market data", "trading strategy planning", "cryptocurrency trading", "stock price movement", "trading risk management", "market volatility chart", "trading computer screen", "wall street finance", "investment portfolio growth"]
+Topic=health: ["healthy food nutrition", "gym workout training", "mental health wellness", "medical doctor hospital", "fitness exercise body", "healthy lifestyle running", "nutrition diet balance", "yoga meditation calm"]
 
-IMPORTANT: Return main_subject and keywords IN ENGLISH always (used for stock video search).
-
-Return ONLY this JSON (no markdown, no formatting):
-{{"main_subject": "topic_here", "keywords": ["keyword1", "keyword2", "keyword3"]}}
-"""
+CRITICAL: Return ONLY valid JSON with no extra text, no markdown:
+{{"main_subject": "topic_name", "search_queries": ["query1", "query2", "query3", "...20 total"]}}"""
 
         try:
             model = genai.GenerativeModel('gemini-2.5-flash')
             response = model.generate_content(
                 prompt,
                 generation_config=genai.types.GenerationConfig(
-                    temperature=0.2,  # Very low temp for consistent output
-                    max_output_tokens=300
-                    # NOTE: response_mime_type removed — causes empty body on gemini-2.5-flash
+                    temperature=0.4,
+                    max_output_tokens=600
                 )
             )
 
-            # Try to parse JSON response
             response_text = response.text.strip() if response.text else ''
-
             if not response_text:
                 raise ValueError("Empty response from Gemini")
 
-            # Remove markdown code blocks if present
+            # Strip markdown fences
             if '```' in response_text:
                 response_text = response_text.replace('```json', '').replace('```', '').strip()
 
-            # Extract JSON object if surrounded by extra text
+            # Extract first valid JSON object
             start = response_text.find('{')
             end = response_text.rfind('}')
-            if start != -1 and end != -1:
-                response_text = response_text[start:end+1]
+            if start == -1 or end == -1:
+                raise ValueError("No JSON object in response")
+            json_str = response_text[start:end+1]
 
-            result = json.loads(response_text)
+            # Fix common Gemini JSON issues: trailing commas, unescaped chars
+            import re as _re
+            json_str = _re.sub(r',\s*([\]}])', r'\1', json_str)  # remove trailing commas
+
+            result = json.loads(json_str)
             main_subject = result.get('main_subject', '').lower().strip()
-            keywords = result.get('keywords', [])[:12]  # Max 12 keywords
+            search_queries = result.get('search_queries', [])
 
-            # Validate we got something useful
-            if not main_subject or len(main_subject) == 0:
+            if not main_subject:
                 raise ValueError("Empty main subject")
+            if not search_queries:
+                raise ValueError("Empty search queries")
+
+            # Filter: keep only ASCII, non-empty, max 50 chars
+            clean_queries = []
+            for q in search_queries[:20]:
+                safe_q = str(q).encode('ascii', errors='ignore').decode('ascii').strip()
+                if safe_q and len(safe_q) <= 50:
+                    clean_queries.append(safe_q)
+
+            if len(clean_queries) < 5:
+                raise ValueError(f"Too few valid queries: {len(clean_queries)}")
 
             if verbose:
                 print(f"   ✅ MAIN SUBJECT: '{main_subject}'")
-                print(f"   ✅ Extracted {len(keywords)} keywords: {', '.join(keywords[:8])}")
+                print(f"   ✅ {len(clean_queries)} search queries: {', '.join(clean_queries[:6])}...")
 
             return {
                 'main_subject': main_subject,
-                'keywords': keywords
+                'search_queries': clean_queries
             }
 
         except Exception as e:
@@ -342,64 +362,101 @@ Return ONLY this JSON (no markdown, no formatting):
                 print(f"   ⚠️  Keyword extraction failed: {e}")
                 print(f"   🔄 Using SMART fallback based on script content...")
 
-            # SMART FALLBACK: Analyze script for common topics (English + French)
+            # SMART FALLBACK with compound queries
             script_lower = script.lower()
 
-            # Check for trading/finance keywords (EN + FR)
-            if any(word in script_lower for word in [
-                'trading', 'trader', 'stock', 'market', 'forex', 'candlestick', 'chart',
-                'bourse', 'marchés', 'marché', 'bousier', 'boursier', 'cotation', 'cours',
-                'action', 'actions', 'investissement', 'spéculation', 'trading psychologique'
+            if any(w in script_lower for w in [
+                'trading', 'trader', 'stock', 'forex', 'candlestick', 'chart',
+                'bourse', 'marchés', 'boursier', 'cotation', 'investissement'
             ]):
                 main_subject = 'trading'
-                keywords = ['chart', 'analysis', 'psychology', 'risk', 'market', 'strategy', 'floor', 'candlestick']
-            # Check for business keywords (EN + FR)
-            elif any(word in script_lower for word in [
-                'business', 'entrepreneur', 'startup', 'company', 'corporate',
-                'entreprise', 'entreprises', 'affaires', 'commerce', 'dirigeant', 'gestion'
+                search_queries = [
+                    'trading chart analysis', 'stock market floor', 'forex candlestick chart',
+                    'trading psychology mindset', 'stock market crash', 'trading profit growth',
+                    'financial market data', 'trading strategy planning', 'stock price movement',
+                    'trading risk management', 'market volatility', 'trading computer screen',
+                    'wall street finance', 'investment portfolio', 'trading win success',
+                    'trading loss recovery', 'cryptocurrency bitcoin', 'stock exchange board',
+                    'trading discipline focus', 'financial analysis report'
+                ]
+            elif any(w in script_lower for w in [
+                'business', 'entrepreneur', 'startup', 'company',
+                'entreprise', 'affaires', 'commerce', 'gestion'
             ]):
                 main_subject = 'business'
-                keywords = ['meeting', 'handshake', 'office', 'team', 'presentation', 'growth', 'strategy']
-            # Check for technology keywords (EN + FR)
-            elif any(word in script_lower for word in [
-                'technology', 'coding', 'programming', 'software', 'computer', 'tech',
-                'technologie', 'logiciel', 'informatique', 'programme', 'développement', 'numérique'
+                search_queries = [
+                    'business meeting professional', 'office team collaboration',
+                    'business strategy planning', 'corporate presentation growth',
+                    'business handshake deal', 'startup office creative',
+                    'business success achievement', 'professional workspace laptop',
+                    'business graph revenue growth', 'company leadership team',
+                    'business negotiation contract', 'entrepreneur working computer',
+                    'business innovation technology', 'corporate finance investment',
+                    'business networking event'
+                ]
+            elif any(w in script_lower for w in [
+                'technology', 'coding', 'programming', 'software', 'tech',
+                'technologie', 'logiciel', 'informatique', 'numérique'
             ]):
                 main_subject = 'technology'
-                keywords = ['coding', 'servers', 'data', 'programming', 'startup', 'computer']
-            # Check for finance keywords (EN + FR)
-            elif any(word in script_lower for word in [
-                'finance', 'money', 'investment', 'wealth', 'financial',
-                'argent', 'richesse', 'patrimoine', 'épargne', 'revenu', 'financier'
+                search_queries = [
+                    'technology coding computer', 'software development programming',
+                    'technology server data center', 'artificial intelligence robot',
+                    'technology smartphone app', 'cybersecurity digital protection',
+                    'technology innovation lab', 'computer network connection',
+                    'technology startup office', 'digital transformation cloud'
+                ]
+            elif any(w in script_lower for w in [
+                'finance', 'money', 'investment', 'wealth',
+                'argent', 'richesse', 'épargne', 'financier'
             ]):
                 main_subject = 'finance'
-                keywords = ['money', 'investment', 'wealth', 'planning', 'strategy', 'growth']
-            # Check for health/fitness (EN + FR)
-            elif any(word in script_lower for word in [
+                search_queries = [
+                    'finance money investment', 'financial wealth planning',
+                    'money saving bank', 'financial growth chart',
+                    'investment portfolio stocks', 'finance strategy analysis',
+                    'money cash business', 'financial freedom success',
+                    'bank finance economy', 'wealth management advisor'
+                ]
+            elif any(w in script_lower for w in [
                 'health', 'fitness', 'workout', 'exercise',
-                'santé', 'sport', 'exercice', 'musculation', 'régime', 'bien-être'
+                'santé', 'sport', 'musculation', 'bien-être'
             ]):
                 main_subject = 'fitness'
-                keywords = ['workout', 'gym', 'exercise', 'health', 'training', 'sport']
-            # Check for motivation/personal development (EN + FR)
-            elif any(word in script_lower for word in [
+                search_queries = [
+                    'fitness workout gym training', 'health exercise body',
+                    'fitness running outdoor', 'gym weightlifting strength',
+                    'healthy lifestyle nutrition', 'fitness motivation success',
+                    'health meditation wellness', 'fitness challenge endurance',
+                    'sport athletic performance', 'healthy food diet'
+                ]
+            elif any(w in script_lower for w in [
                 'motivation', 'success', 'mindset', 'goal',
-                'succès', 'objectif', 'développement personnel', 'confiance', 'réussite'
+                'succès', 'objectif', 'confiance', 'réussite'
             ]):
                 main_subject = 'motivation'
-                keywords = ['success', 'mindset', 'goal', 'achievement', 'winner', 'growth']
-            # Default fallback
+                search_queries = [
+                    'motivation success achievement', 'mindset growth positive',
+                    'success goal reaching', 'motivation winner champion',
+                    'personal development growth', 'success business professional',
+                    'motivation running marathon', 'achievement celebration reward',
+                    'goal setting planning future', 'success story inspiration'
+                ]
             else:
                 main_subject = 'professional'
-                keywords = ['work', 'business', 'office', 'meeting', 'success', 'growth', 'strategy']
+                search_queries = [
+                    'professional work office', 'business success growth',
+                    'professional team meeting', 'work achievement goal',
+                    'professional development learning', 'office productivity focus'
+                ]
 
             if verbose:
                 print(f"   ✅ SMART FALLBACK: '{main_subject}'")
-                print(f"   ✅ Keywords: {', '.join(keywords)}")
+                print(f"   ✅ Queries: {', '.join(search_queries[:4])}...")
 
             return {
                 'main_subject': main_subject,
-                'keywords': keywords
+                'search_queries': search_queries
             }
 
     def _plan_media_sequence(
@@ -424,10 +481,10 @@ Return ONLY this JSON (no markdown, no formatting):
         Returns:
             Dict with media plan
         """
-        # STEP 1: Extract MAIN SUBJECT + keywords from script (SMART!)
+        # STEP 1: Extract compound search queries from script
         keyword_data = self._extract_principal_keywords(script, verbose) if script else {
             'main_subject': 'professional',
-            'keywords': []
+            'search_queries': ['professional business meeting', 'office work success']
         }
 
         # Determine segment pattern based on mode
@@ -465,20 +522,29 @@ Return ONLY this JSON (no markdown, no formatting):
             response_text = response.text.strip() if response.text else ''
             if not response_text:
                 raise ValueError("Empty response from Gemini")
+            # Strip markdown fences
+            if '```' in response_text:
+                response_text = response_text.replace('```json', '').replace('```', '').strip()
             # Extract JSON object if surrounded by extra text
             start = response_text.find('{')
             end = response_text.rfind('}')
             if start != -1 and end != -1:
                 response_text = response_text[start:end+1]
+            # Fix trailing commas (common Gemini JSON issue)
+            import re as _re2
+            response_text = _re2.sub(r',\s*([\]}])', r'\1', response_text)
             plan = json.loads(response_text)
-        except:
-            # Fallback: create simple plan
+        except Exception as _plan_ex:
+            if verbose:
+                print(f"   ⚠️  Plan parse failed: {_plan_ex}, using fallback")
+            # Fallback: create simple plan with real compound queries
             plan = self._create_fallback_plan(
                 audio_duration=audio_duration,
                 avatar_duration=avatar_duration,
                 mode=mode,
                 avatar_seg_duration=avatar_seg_duration,
-                media_seg_duration=media_seg_duration
+                media_seg_duration=media_seg_duration,
+                keyword_data=keyword_data
             )
 
         # CRITICAL: Validate and fix total duration
@@ -496,176 +562,75 @@ Return ONLY this JSON (no markdown, no formatting):
         script: str = None,
         keyword_data: Dict = None
     ) -> str:
-        """Build prompt for Gemini media planning with MAIN SUBJECT + keywords"""
+        """Build Gemini media planning prompt using pre-extracted compound search queries."""
 
         last_2_min_seconds = 120
+        cycle_duration = avatar_seg_duration + media_seg_duration
 
-        # CRITICAL: Analyze script by timing to plan WHAT media to show WHEN
-        # Calculate characters per second (rough estimate for timing)
+        # --- Script timeline aligned to stock video slot times ---
         chars_per_second = len(script) / audio_duration if script and audio_duration > 0 else 0
-
-        # Create timing-based script chunks aligned to stock video segments
-        # Each cycle = avatar_seg_duration + media_seg_duration; stock video appears at the end of each cycle
-        cycle_duration = avatar_seg_duration + media_seg_duration  # e.g. 60s per cycle
         script_chunks = []
         if script and chars_per_second > 0:
             current_time = 0
             while current_time < audio_duration - last_2_min_seconds:
-                # The stock video in this cycle appears at current_time + avatar_seg_duration
                 stock_start = current_time + avatar_seg_duration
-                stock_end = stock_start + media_seg_duration
-                # Extract script text around the stock video time (±15s window)
-                window_start = max(0, stock_start - 15)
-                window_end = min(audio_duration, stock_end + 15)
+                window_start = max(0, stock_start - 10)
+                window_end = min(audio_duration, stock_start + 20)
                 start_char = int(window_start * chars_per_second)
                 end_char = int(window_end * chars_per_second)
                 chunk_text = script[start_char:end_char] if start_char < len(script) else ""
+                # Keep only ASCII for safe inclusion
+                chunk_text = chunk_text.encode('ascii', errors='replace').decode('ascii').replace('"', "'")
                 if chunk_text:
-                    script_chunks.append({
-                        'time_start': stock_start,
-                        'time_end': stock_end,
-                        'text': chunk_text[:200]  # Context around the stock video moment
-                    })
+                    script_chunks.append({'time': stock_start, 'text': chunk_text[:180]})
                 current_time += cycle_duration
 
-        # Build script timeline for Gemini — one entry per stock video slot
         script_timeline = ""
         if script_chunks:
-            script_timeline = "**SCRIPT TIMELINE — what is being said at each stock video moment:**\n"
-            for chunk in script_chunks[:30]:  # Up to 30 stock video slots
-                script_timeline += f"[Stock video at {chunk['time_start']:.0f}s]: \"{chunk['text']}...\"\n"
+            script_timeline = "SCRIPT CONTEXT PER STOCK VIDEO SLOT:\n"
+            for chunk in script_chunks[:30]:
+                script_timeline += f"  [{chunk['time']:.0f}s]: \"{chunk['text']}...\"\n"
             script_timeline += "\n"
 
-        # Build keywords section with MAIN SUBJECT (CRITICAL!)
-        keywords_section = ""
-        if keyword_data and keyword_data.get('main_subject'):
-            main_subject = keyword_data.get('main_subject', 'professional')
-            keywords = keyword_data.get('keywords', [])
+        # --- Pre-built search queries from keyword extraction ---
+        main_subject = keyword_data.get('main_subject', 'professional') if keyword_data else 'professional'
+        search_queries = keyword_data.get('search_queries', []) if keyword_data else []
+        queries_list = '\n'.join(f'  - "{q}"' for q in search_queries)
 
-            keywords_section = f"""**🎯 MAIN SUBJECT: {main_subject.upper()}**
+        # Number of stock video slots expected
+        num_slots = int((audio_duration - last_2_min_seconds) / cycle_duration)
 
-**📋 SPECIFIC KEYWORDS (concepts within this subject):**
-{', '.join(keywords) if keywords else 'general concepts'}
+        prompt = f"""You are an AI video editor. Assign stock video search queries to a media plan.
 
-**🔒 CRITICAL RULE - ALWAYS USE MAIN SUBJECT:**
-EVERY search query MUST start with the main subject "{main_subject}"!
+AUDIO: {audio_duration:.1f}s ({audio_duration/60:.1f} min)
+PATTERN: {avatar_seg_duration}s avatar → {media_seg_duration}s stock video → repeat until last {last_2_min_seconds}s
+LAST {last_2_min_seconds}s: avatar only (no stock videos)
+EXPECTED STOCK VIDEO SLOTS: ~{num_slots}
 
-**QUERY FORMAT:**
-"{main_subject}" + [specific keyword]
+APPROVED SEARCH QUERIES (use ONLY these, or close variations):
+{queries_list}
 
-**EXAMPLES:**
-If main subject = "{main_subject}" and keywords = {keywords[:4] if keywords else ['concept1', 'concept2']}:
-- Video 1: "{main_subject} {keywords[0] if keywords else 'concept'}"
-- Video 2: "{main_subject} {keywords[1] if keywords else 'topic'}"
-- Video 3: "{main_subject} {keywords[2] if keywords and len(keywords) > 2 else 'scene'}"
-- Video 4: "{main_subject} {keywords[3] if keywords and len(keywords) > 3 else 'visual'}"
+{script_timeline}
+ASSIGNMENT RULES:
+1. For each stock video slot, pick the query from the approved list that BEST matches what the script says at that time
+2. You CAN reuse the same query multiple times if it fits different moments
+3. You CANNOT use generic words like "business" alone — must be compound (2-3 words)
+4. ALL queries must be in ENGLISH
+5. Total duration must equal exactly {audio_duration:.1f}s
+6. Last segment must be avatar filling up to {audio_duration:.1f}s
 
-**WHY THIS MATTERS:**
-- If video is about TRADING, we need "trading chart" NOT just "chart"
-- If video is about TRADING, we need "trading analysis" NOT just "analysis"
-- If video is about BUSINESS, we need "business meeting" NOT just "meeting"
-- ALWAYS include the main subject to ensure relevance!
-
-**CREATIVE VARIATIONS (still using main subject):**
-- "{main_subject} data" → "{main_subject} analysis" → "{main_subject} graph"
-- "{main_subject} strategy" → "{main_subject} planning" → "{main_subject} tactics"
-- All different videos, all relevant to {main_subject}!
-
-"""
-
-        prompt = f"""You are a SUPER INTELLIGENT AI video planner. Create a media sequence plan.
-
-**TASK:** Plan a video with avatar loops and {"AI images" if mode == "ai_images" else "stock videos"}.
-
-**INPUT:**
-- Audio duration: {audio_duration:.2f} seconds ({audio_duration/60:.2f} minutes)
-- Avatar video duration: {avatar_duration:.2f} seconds
-- Mode: {mode}
-
-{keywords_section}{script_timeline}
-
-**RULES:**
-1. Pattern: {avatar_seg_duration} sec avatar → {media_seg_duration if media_seg_duration else "EXACTLY 8"} sec {"AI image" if mode == "ai_images" else "stock video"} → repeat
-2. Last {last_2_min_seconds} seconds: FULL avatar (to match exact audio length)
-3. Total duration MUST exactly match audio duration: {audio_duration:.2f} seconds
-4. {"AI images are EXACTLY 5 seconds each" if mode == "ai_images" else f"Stock videos are EXACTLY {media_seg_duration if media_seg_duration else 8} seconds (NO LONGER!)"}
-5. USE PRINCIPAL KEYWORDS: Build search queries from the principal keywords above!
-6. CREATIVE VARIATIONS: You can reuse keywords but make variations (different phrasing)
-7. Each video will be DIFFERENT because stock API returns different results
-8. Match keywords to what the script is saying at that time!
-
-**OUTPUT JSON FORMAT:**
+OUTPUT — valid JSON only, no markdown:
 {{
-  "total_duration": {audio_duration},
+  "total_duration": {audio_duration:.1f},
+  "main_subject": "{main_subject}",
   "segments": [
-    {{
-      "type": "avatar",
-      "start": 0,
-      "duration": {avatar_seg_duration},
-      "search_query": null
-    }},
-    {{
-      "type": "{"ai_image" if mode == "ai_images" else "stock_video"}",
-      "start": {avatar_seg_duration},
-      "duration": {media_seg_duration if media_seg_duration else "5 or 10"},
-      "search_query": "business meeting"
-    }},
-    ...
+    {{"type": "avatar", "start": 0, "duration": {avatar_seg_duration}, "search_query": null}},
+    {{"type": "{"ai_image" if mode == "ai_images" else "stock_video"}", "start": {avatar_seg_duration}, "duration": {media_seg_duration}, "search_query": "{search_queries[0] if search_queries else main_subject + ' analysis'}"}},
+    {{"type": "avatar", "start": {avatar_seg_duration + media_seg_duration}, "duration": {avatar_seg_duration}, "search_query": null}},
+    ... (continue pattern until {audio_duration:.1f}s, last 2 min = avatar only)
   ]
 }}
-
-**🔒 CRITICAL - SEARCH QUERY GENERATION RULES:**
-
-**MANDATORY FORMAT:**
-Every search query MUST follow this pattern:
-"[MAIN SUBJECT]" + "[SPECIFIC KEYWORD]"
-
-**STEP-BY-STEP PROCESS:**
-1. Look at what time the video segment starts
-2. Check the script timeline - what's being discussed at that time?
-3. Pick a specific keyword from the list that matches that moment
-4. ALWAYS combine: MAIN SUBJECT + that keyword
-5. Example: Main subject="trading", scene is about "analysis" → query = "trading analysis"
-
-**MANDATORY EXAMPLES:**
-If main subject = "trading":
-- Scene about charts → "trading chart" (NOT just "chart")
-- Scene about analysis → "trading analysis" (NOT just "analysis")
-- Scene about psychology → "trading psychology" (NOT just "psychology")
-- Scene about risk → "trading risk" (NOT just "risk")
-- Scene about strategies → "trading strategy" (NOT just "strategy")
-
-If main subject = "business":
-- Scene about meetings → "business meeting" (NOT just "meeting")
-- Scene about growth → "business growth" (NOT just "growth")
-- Scene about strategy → "business strategy" (NOT just "strategy")
-
-**ABSOLUTE REQUIREMENTS:**
-- EVERY query MUST start with the main subject
-- No exceptions - even if keyword seems clear, include main subject
-- This ensures ALL videos are relevant to the main topic
-- Stock API will return different videos for each query
-- Main subject + different keywords = different but relevant videos
-
-**🌍 LANGUAGE RULE - CRITICAL:**
-- The script may be in French, Arabic, Spanish, or any other language
-- ALL search_query values MUST be in ENGLISH ONLY
-- Stock video APIs (Pexels, Pixabay) only work with English search terms
-- Example: French script about "psychologie du trading" → query = "trading psychology" (NOT "psychologie trading")
-- Example: Arabic script about business → query = "business meeting" (NOT Arabic words)
-- ALWAYS translate concepts to English for search queries
-
-**IMPORTANT:**
-- ANALYZE the script timeline to match media to content!
-- Search queries: 1-3 words IN ENGLISH, hyper-specific to script!
-- NO GENERIC QUERIES! Match the script topic!
-- Each video MUST be relevant to what audio is saying at that moment!
-- Last segment must end at exactly {audio_duration:.2f} seconds
-- Last {last_2_min_seconds} seconds = continuous avatar
-
-Generate the media plan now as valid JSON:
 """
-
         return prompt
 
     def _validate_and_fix_duration(
@@ -764,14 +729,26 @@ Generate the media plan now as valid JSON:
         avatar_duration: float,
         mode: str,
         avatar_seg_duration: int,
-        media_seg_duration: int
+        media_seg_duration: int,
+        keyword_data: Dict = None
     ) -> Dict:
-        """Create fallback plan if Gemini fails"""
+        """Create fallback plan if Gemini fails — uses real compound queries"""
+
+        # Get pre-built queries from keyword extraction
+        search_queries = []
+        if keyword_data:
+            search_queries = keyword_data.get('search_queries', [])
+        if not search_queries:
+            main_subject = (keyword_data or {}).get('main_subject', 'professional')
+            search_queries = [f'{main_subject} analysis', f'{main_subject} strategy',
+                              f'{main_subject} data visualization', f'{main_subject} work',
+                              f'{main_subject} planning', f'{main_subject} success']
 
         segments = []
         current_time = 0
         last_2_min = 120
         end_of_pattern = audio_duration - last_2_min
+        query_idx = 0
 
         # Pattern section
         while current_time < end_of_pattern:
@@ -786,11 +763,13 @@ Generate the media plan now as valid JSON:
             # Media segment (if there's room)
             if current_time < end_of_pattern:
                 duration = media_seg_duration if media_seg_duration else 5
+                query = search_queries[query_idx % len(search_queries)]
+                query_idx += 1
                 segments.append({
                     'type': 'ai_image' if mode == 'ai_images' else 'stock_video',
                     'start': current_time,
                     'duration': duration,
-                    'search_query': 'generic'
+                    'search_query': query
                 })
                 current_time += duration
 
@@ -1048,7 +1027,10 @@ Generate the media plan now as valid JSON:
 
         downloader = StockVideoDownloader(apis=stock_apis or ['pexels'])
         videos = []
-        used_queries = set()  # CRITICAL: Track used queries to prevent duplicates!
+        # Thread-safe tracking of used video IDs across all downloads
+        import threading
+        used_video_ids = set()
+        used_ids_lock = threading.Lock()
 
         # Get all stock_video segments with their ORIGINAL indices
         video_segments = [
@@ -1057,20 +1039,9 @@ Generate the media plan now as valid JSON:
         ]
 
         if verbose:
-            print(f"   Downloading {len(video_segments)} stock videos...")
-            print(f"   🔒 ENSURING: Each video will be DIFFERENT (no repeats!)")
+            print(f"   Downloading {len(video_segments)} stock videos (no duplicates!)...")
 
-        # Build unique-query list first (sequential, fast)
-        tasks = []
-        for seg_idx, segment in video_segments:
-            query = segment.get('search_query', 'generic')
-            original_query = query
-            suffix = 1
-            while query in used_queries:
-                query = f"{original_query} {suffix}"
-                suffix += 1
-            used_queries.add(query)
-            tasks.append((seg_idx, segment, query))
+        tasks = [(seg_idx, segment, segment.get('search_query', 'professional')) for seg_idx, segment in video_segments]
 
         if verbose:
             print(f"   Downloading {len(tasks)} stock videos in parallel (4 workers)...")
@@ -1078,15 +1049,21 @@ Generate the media plan now as valid JSON:
         def _download_one(args):
             seg_idx, segment, query = args
             try:
-                video_path = downloader.search_and_download(
+                with used_ids_lock:
+                    snapshot = set(used_video_ids)
+                path, vid_id = downloader.search_and_download(
                     query=query,
                     min_duration=segment['duration'],
-                    output_dir='media_library/avatar_videos'
+                    output_dir='media_library/avatar_videos',
+                    exclude_ids=snapshot
                 )
+                with used_ids_lock:
+                    used_video_ids.add(vid_id)
                 return {
                     'segment_index': seg_idx,
-                    'path': video_path,
+                    'path': path,
                     'query': query,
+                    'video_id': vid_id,
                     'duration': segment['duration'],
                     'start': segment['start']
                 }
@@ -1103,7 +1080,7 @@ Generate the media plan now as valid JSON:
                 if result:
                     videos.append(result)
                     if verbose:
-                        print(f"   ✅ [{len(videos)}/{len(tasks)}] {result['query']}")
+                        print(f"   ✅ [{len(videos)}/{len(tasks)}] {result['query']} → {result['video_id']}")
 
         if verbose:
             print(f"\n   ✅ Downloaded {len(videos)} DIFFERENT videos in parallel!")
