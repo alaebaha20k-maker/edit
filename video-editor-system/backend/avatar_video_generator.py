@@ -273,44 +273,47 @@ class AvatarVideoGenerator:
         if verbose:
             print("\n🧠 ANALYZING SCRIPT: Extracting compound search queries with Gemini...")
 
-        # Use MORE of the script (up to 4000 chars) — 1500 was only 5% for a 30k script
-        # Sample start, middle, and end to capture all topics across the video
+        # Keep original multilingual text — Gemini handles any language natively.
+        # Only escape chars that would break the prompt string, NOT the content.
         script_len = len(script)
         parts = []
         if script_len <= 4000:
             parts.append(script)
         else:
-            # First 1500 + middle 1500 + last 1000 = 4000 chars total coverage
             parts.append(script[:1500])
             mid = script_len // 2
             parts.append(script[mid-750:mid+750])
             parts.append(script[-1000:])
         raw_snippet = ' ... '.join(parts)
-        safe_script = raw_snippet.encode('ascii', errors='replace').decode('ascii')
-        safe_script = safe_script.replace('\\', ' ').replace('"', ' ').replace('\n', ' ').strip()
+        # Only escape backslashes and strip excessive whitespace — keep all languages intact
+        safe_script = raw_snippet.replace('\\', ' ').replace('\n', ' ').replace('\r', ' ')
+        # Collapse multiple spaces
+        import re as _re_ws
+        safe_script = _re_ws.sub(r'\s+', safe_script).strip()
 
         prompt = f"""You are a video search expert. Analyze this script and generate specific stock video search queries.
+The script may be in French, Arabic, English, or any language — understand the meaning and translate to English queries.
 
-SCRIPT (sampled from full text):
+SCRIPT:
 {safe_script}
 
 YOUR JOB:
-1. Identify the MAIN TOPIC (e.g. "trading", "health", "technology", "business")
-2. Generate 20 COMPLETE search queries (2-4 words each) that would find relevant stock videos
+1. Identify the MAIN TOPIC of this script (e.g. "trading", "health", "technology", "business")
+2. Generate 20 COMPLETE search queries (2-4 words each) for stock video search
 
-RULES FOR QUERIES:
-- EVERY query must include the main topic word (e.g. if topic=trading, write "trading chart" not just "chart")
-- Be specific and visual: "trading chart candlestick" not "trading"
-- Vary them creatively: covers different aspects of the topic
-- ALL IN ENGLISH (translate from any language)
-- Think like a filmmaker: what B-roll would match each part of this video?
+RULES:
+- EVERY query must include the main topic word (if topic=trading, write "trading chart" not just "chart")
+- Be specific and visual: "trading chart candlestick" not just "trading"
+- Vary creatively across different aspects of the topic
+- ALL queries IN ENGLISH (translate from any language)
+- Think like a filmmaker: what B-roll footage would match each part?
 
 EXAMPLES:
 Topic=trading: ["trading chart analysis", "stock market floor", "forex candlestick chart", "trading psychology mindset", "stock market crash", "trading profit growth", "financial market data", "trading strategy planning", "cryptocurrency trading", "stock price movement", "trading risk management", "market volatility chart", "trading computer screen", "wall street finance", "investment portfolio growth"]
 Topic=health: ["healthy food nutrition", "gym workout training", "mental health wellness", "medical doctor hospital", "fitness exercise body", "healthy lifestyle running", "nutrition diet balance", "yoga meditation calm"]
 
-CRITICAL: Return ONLY valid JSON with no extra text, no markdown:
-{{"main_subject": "topic_name", "search_queries": ["query1", "query2", "query3", "...20 total"]}}"""
+Return ONLY this JSON, nothing else:
+{{"main_subject": "topic", "search_queries": ["query1", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "query10", "query11", "query12", "query13", "query14", "query15", "query16", "query17", "query18", "query19", "query20"]}}"""
 
         try:
             model = genai.GenerativeModel('gemini-2.5-flash')
@@ -322,9 +325,22 @@ CRITICAL: Return ONLY valid JSON with no extra text, no markdown:
                 )
             )
 
-            response_text = response.text.strip() if response.text else ''
+            # Safe text extraction — response.text can raise on blocked content
+            response_text = ''
+            try:
+                response_text = response.text.strip() if response.text else ''
+            except (ValueError, AttributeError):
+                # Try alternate path for blocked/partial responses
+                try:
+                    response_text = response.candidates[0].content.parts[0].text.strip()
+                except Exception:
+                    pass
+
             if not response_text:
                 raise ValueError("Empty response from Gemini")
+
+            if verbose:
+                print(f"   📝 Gemini raw response (first 200 chars): {response_text[:200]}")
 
             # Strip markdown fences
             if '```' in response_text:
@@ -334,12 +350,13 @@ CRITICAL: Return ONLY valid JSON with no extra text, no markdown:
             start = response_text.find('{')
             end = response_text.rfind('}')
             if start == -1 or end == -1:
-                raise ValueError("No JSON object in response")
+                raise ValueError(f"No JSON in response. Got: {response_text[:150]}")
             json_str = response_text[start:end+1]
 
-            # Fix common Gemini JSON issues: trailing commas, unescaped chars
+            # Fix common Gemini JSON issues
             import re as _re
-            json_str = _re.sub(r',\s*([\]}])', r'\1', json_str)  # remove trailing commas
+            json_str = _re.sub(r',\s*([\]}])', r'\1', json_str)  # trailing commas
+            json_str = _re.sub(r'[\x00-\x1f]', ' ', json_str)   # control chars
 
             result = json.loads(json_str)
             main_subject = result.get('main_subject', '').lower().strip()
@@ -350,14 +367,14 @@ CRITICAL: Return ONLY valid JSON with no extra text, no markdown:
             if not search_queries:
                 raise ValueError("Empty search queries")
 
-            # Filter: keep only ASCII, non-empty, max 50 chars
+            # Filter output queries: keep only ASCII for stock API search
             clean_queries = []
             for q in search_queries[:20]:
                 safe_q = str(q).encode('ascii', errors='ignore').decode('ascii').strip()
                 if safe_q and len(safe_q) <= 50:
                     clean_queries.append(safe_q)
 
-            if len(clean_queries) < 5:
+            if len(clean_queries) < 3:
                 raise ValueError(f"Too few valid queries: {len(clean_queries)}")
 
             if verbose:
