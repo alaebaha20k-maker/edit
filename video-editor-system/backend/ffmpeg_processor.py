@@ -327,6 +327,8 @@ class FFmpegProcessor:
                 '-safe', '0',
                 '-i', concat_file,
                 '-c', 'copy',
+                '-bsf:v', 'h264_mp4toannexb',
+                '-movflags', '+faststart',
                 output_path
             ]
 
@@ -464,6 +466,7 @@ class FFmpegProcessor:
         if not audio_duration:
             cmd.append('-shortest')
 
+        cmd.extend(['-movflags', '+faststart'])
         cmd.append(output_path)
 
         if self.verbose:

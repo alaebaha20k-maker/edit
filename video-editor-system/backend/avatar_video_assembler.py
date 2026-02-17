@@ -240,6 +240,8 @@ class AvatarVideoAssembler:
         # Re-encode avatar to 1920x1080 25fps — matches stock clips exactly.
         # stream_loop loops the input; re-encode ensures consistent timebase,
         # resolution and framerate across ALL clips for clean concat.
+        # Force video_track_timescale=12800 so all segments share the same
+        # timebase — eliminates non-monotonic DTS and bitstream filter warnings.
         cmd = [
             'ffmpeg', '-y',
             '-stream_loop', '-1',
@@ -251,7 +253,9 @@ class AvatarVideoAssembler:
             '-r', '25',
             '-vf', 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080',
             '-pix_fmt', 'yuv420p',
+            '-video_track_timescale', '12800',
             '-an',
+            '-movflags', '+faststart',
             output_path
         ]
 
@@ -322,9 +326,11 @@ class AvatarVideoAssembler:
         output_path: str,
         verbose: bool = False
     ) -> str:
-        """Convert image to video with duration"""
+        """Convert image to video with duration — matches avatar/stock clip format exactly"""
 
-        # Same resolution/fps as stock clips for consistent concat
+        # Same resolution/fps/timescale as stock clips for consistent concat.
+        # video_track_timescale=12800 ensures all segments share identical
+        # timebase so the final concat uses clean stream copy with zero warnings.
         cmd = [
             'ffmpeg', '-y',
             '-loop', '1',
@@ -337,7 +343,9 @@ class AvatarVideoAssembler:
             '-r', '25',
             '-vf', 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080',
             '-pix_fmt', 'yuv420p',
+            '-video_track_timescale', '12800',
             '-an',
+            '-movflags', '+faststart',
             output_path
         ]
 
@@ -377,6 +385,7 @@ class AvatarVideoAssembler:
         # Always re-encode to 1920x1080 25fps h264 — guarantees consistent
         # timebase/framerate so the final concat never gets non-monotonic DTS.
         # ultrafast preset keeps this fast while fixing all format mismatches.
+        # Force video_track_timescale=12800 to match avatar clips exactly.
         cmd = [
             'ffmpeg', '-y',
             '-i', video_path,
@@ -387,7 +396,9 @@ class AvatarVideoAssembler:
             '-r', '25',
             '-vf', 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080',
             '-pix_fmt', 'yuv420p',
+            '-video_track_timescale', '12800',
             '-an',
+            '-movflags', '+faststart',
             output_path
         ]
 
@@ -426,12 +437,14 @@ class AvatarVideoAssembler:
         return concat_file
 
     def _concatenate_clips(self, concat_file: str, verbose: bool = False) -> str:
-        """Concatenate all clips"""
+        """Concatenate all clips — ultra fast stream copy with explicit bitstream filter"""
 
         output_path = os.path.join(self.temp_dir, "concatenated.mp4")
 
         # All clips are already 1920x1080/25fps/h264/yuv420p from prep step
-        # so concat can stream-copy — ultra fast, no quality loss
+        # so concat can stream-copy — ultra fast, no quality loss.
+        # Explicit -bsf:v h264_mp4toannexb avoids per-segment auto-detection
+        # overhead that prints warnings and adds ~0.5s per segment.
         cmd = [
             'ffmpeg',
             '-y',
@@ -439,7 +452,9 @@ class AvatarVideoAssembler:
             '-safe', '0',
             '-i', concat_file,
             '-c', 'copy',
+            '-bsf:v', 'h264_mp4toannexb',
             '-an',
+            '-movflags', '+faststart',
             output_path
         ]
 
@@ -507,7 +522,8 @@ class AvatarVideoAssembler:
                 '-c:v', 'copy',
                 '-c:a', 'aac',
                 '-b:a', '192k',
-                '-shortest',   # Trim output to audio length — fixes duration mismatch
+                '-shortest',
+                '-movflags', '+faststart',
                 output_path
             ]
         else:
@@ -520,7 +536,8 @@ class AvatarVideoAssembler:
                 '-map', '1:a',
                 '-c:v', 'copy',
                 '-c:a', 'copy',
-                '-shortest',   # Trim output to audio length — fixes duration mismatch
+                '-shortest',
+                '-movflags', '+faststart',
                 output_path
             ]
 

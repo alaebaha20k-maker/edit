@@ -291,7 +291,8 @@ class AvatarVideoGenerator:
         import re as _re_ws
         safe_script = _re_ws.sub(r'\s+', safe_script).strip()
 
-        prompt = f"""You are a video search expert. Analyze this script and generate specific stock video search queries.
+        prompt = f"""You are a professional stock video researcher for a B-roll editor.
+Analyze this script and generate PRECISE, SCENE-SPECIFIC stock video search queries.
 The script may be in French, Arabic, English, or any language — understand the meaning and translate to English queries.
 
 SCRIPT:
@@ -299,18 +300,30 @@ SCRIPT:
 
 YOUR JOB:
 1. Identify the MAIN TOPIC of this script (e.g. "trading", "health", "technology", "business")
-2. Generate 20 COMPLETE search queries (2-4 words each) for stock video search
+2. For each part of the script, think about what VISUAL SCENE would match on screen
+3. Generate 20 search queries that are VISUALLY SPECIFIC to what the script describes
 
-RULES:
-- EVERY query must include the main topic word (if topic=trading, write "trading chart" not just "chart")
-- Be specific and visual: "trading chart candlestick" not just "trading"
-- Vary creatively across different aspects of the topic
+FOR EACH QUERY, think about these 5 DIMENSIONS:
+- Main subject: What is the primary object/person shown? (e.g. "trader", "chart", "laptop")
+- Action: What is happening? (e.g. "analyzing", "typing", "running")
+- Environment: Where is the scene? (e.g. "office", "trading floor", "gym")
+- Camera style: What angle/shot? (e.g. "close-up", "aerial", "wide shot")
+- Mood/Time: What feeling/time? (e.g. "dramatic", "sunrise", "night city")
+
+CRITICAL RULES:
+- EVERY query must be a VISUAL SCENE description, NOT an abstract concept
+- BAD: "trading psychology" (you can't film psychology!)
+- GOOD: "stressed trader watching red charts" or "man thinking at desk screens"
+- BAD: "risk management" (abstract concept!)
+- GOOD: "trader analyzing multiple monitors" or "financial charts red arrows"
+- EVERY query must describe something a CAMERA can actually film
+- Include the main topic context in each query so results stay relevant
 - ALL queries IN ENGLISH (translate from any language)
-- Think like a filmmaker: what B-roll footage would match each part?
+- Each query should be 3-5 words, visually descriptive
 
 EXAMPLES:
-Topic=trading: ["trading chart analysis", "stock market floor", "forex candlestick chart", "trading psychology mindset", "stock market crash", "trading profit growth", "financial market data", "trading strategy planning", "cryptocurrency trading", "stock price movement", "trading risk management", "market volatility chart", "trading computer screen", "wall street finance", "investment portfolio growth"]
-Topic=health: ["healthy food nutrition", "gym workout training", "mental health wellness", "medical doctor hospital", "fitness exercise body", "healthy lifestyle running", "nutrition diet balance", "yoga meditation calm"]
+Topic=trading: ["trader watching multiple screens", "candlestick chart close up", "stock market trading floor", "man analyzing financial data", "stock price green arrows up", "worried trader red charts", "wall street building exterior", "typing on trading platform", "money growth chart animation", "cryptocurrency bitcoin screen", "office desk multiple monitors", "stock exchange big screen", "trader celebrating profit", "market crash red numbers", "financial newspaper coffee desk"]
+Topic=fitness: ["athlete running sunrise road", "gym weightlifting close up", "woman yoga mat morning", "healthy meal preparation kitchen", "personal trainer coaching gym", "runner crossing finish line", "swimming pool underwater shot", "stretching exercise park outdoor"]
 
 Return ONLY this JSON, nothing else:
 {{"main_subject": "topic", "search_queries": ["query1", "query2", "query3", "query4", "query5", "query6", "query7", "query8", "query9", "query10", "query11", "query12", "query13", "query14", "query15", "query16", "query17", "query18", "query19", "query20"]}}"""
@@ -400,13 +413,16 @@ Return ONLY this JSON, nothing else:
             ]):
                 main_subject = 'trading'
                 search_queries = [
-                    'trading chart analysis', 'stock market floor', 'forex candlestick chart',
-                    'trading psychology mindset', 'stock market crash', 'trading profit growth',
-                    'financial market data', 'trading strategy planning', 'stock price movement',
-                    'trading risk management', 'market volatility', 'trading computer screen',
-                    'wall street finance', 'investment portfolio', 'trading win success',
-                    'trading loss recovery', 'cryptocurrency bitcoin', 'stock exchange board',
-                    'trading discipline focus', 'financial analysis report'
+                    'trader watching multiple screens', 'candlestick chart close up',
+                    'stock market trading floor', 'man analyzing financial data',
+                    'stock price green arrows up', 'worried trader red charts',
+                    'wall street building exterior', 'typing on trading platform',
+                    'cryptocurrency bitcoin screen', 'office desk multiple monitors',
+                    'stock exchange big screen', 'trader celebrating profit',
+                    'market crash red numbers', 'financial newspaper coffee desk',
+                    'laptop stock chart graph', 'person counting money cash',
+                    'city skyline night financial', 'hands typing keyboard trading',
+                    'chart going up green', 'stressed man computer screen'
                 ]
             elif any(w in script_lower for w in [
                 'business', 'entrepreneur', 'startup', 'company',
@@ -414,14 +430,14 @@ Return ONLY this JSON, nothing else:
             ]):
                 main_subject = 'business'
                 search_queries = [
-                    'business meeting professional', 'office team collaboration',
-                    'business strategy planning', 'corporate presentation growth',
-                    'business handshake deal', 'startup office creative',
-                    'business success achievement', 'professional workspace laptop',
-                    'business graph revenue growth', 'company leadership team',
-                    'business negotiation contract', 'entrepreneur working computer',
-                    'business innovation technology', 'corporate finance investment',
-                    'business networking event'
+                    'business team meeting office', 'handshake deal close up',
+                    'entrepreneur working laptop cafe', 'office building exterior modern',
+                    'presentation screen conference room', 'typing laptop coffee desk',
+                    'team brainstorming whiteboard', 'manager leading team meeting',
+                    'startup office open space', 'signing contract pen paper',
+                    'growth chart screen presentation', 'walking into office building',
+                    'phone call business suit', 'team celebrating success office',
+                    'desk workspace organized laptop'
                 ]
             elif any(w in script_lower for w in [
                 'technology', 'coding', 'programming', 'software', 'tech',
@@ -429,11 +445,12 @@ Return ONLY this JSON, nothing else:
             ]):
                 main_subject = 'technology'
                 search_queries = [
-                    'technology coding computer', 'software development programming',
-                    'technology server data center', 'artificial intelligence robot',
-                    'technology smartphone app', 'cybersecurity digital protection',
-                    'technology innovation lab', 'computer network connection',
-                    'technology startup office', 'digital transformation cloud'
+                    'programmer typing code screen', 'server room data center',
+                    'robot arm factory automation', 'smartphone app close up',
+                    'circuit board close up macro', 'person using vr headset',
+                    'laptop coding dark room', 'network cables server rack',
+                    'tech startup team working', 'drone flying aerial shot',
+                    'digital screen data flowing', 'hands assembling electronics'
                 ]
             elif any(w in script_lower for w in [
                 'finance', 'money', 'investment', 'wealth',
@@ -441,11 +458,12 @@ Return ONLY this JSON, nothing else:
             ]):
                 main_subject = 'finance'
                 search_queries = [
-                    'finance money investment', 'financial wealth planning',
-                    'money saving bank', 'financial growth chart',
-                    'investment portfolio stocks', 'finance strategy analysis',
-                    'money cash business', 'financial freedom success',
-                    'bank finance economy', 'wealth management advisor'
+                    'counting money cash hands', 'bank building exterior modern',
+                    'gold coins pile close up', 'credit card payment terminal',
+                    'financial advisor meeting client', 'stock chart laptop screen',
+                    'piggy bank saving coins', 'wallet money bills close up',
+                    'real estate house keys', 'calculator pen financial documents',
+                    'atm machine withdrawing cash', 'luxury car wealth lifestyle'
                 ]
             elif any(w in script_lower for w in [
                 'health', 'fitness', 'workout', 'exercise',
@@ -453,11 +471,12 @@ Return ONLY this JSON, nothing else:
             ]):
                 main_subject = 'fitness'
                 search_queries = [
-                    'fitness workout gym training', 'health exercise body',
-                    'fitness running outdoor', 'gym weightlifting strength',
-                    'healthy lifestyle nutrition', 'fitness motivation success',
-                    'health meditation wellness', 'fitness challenge endurance',
-                    'sport athletic performance', 'healthy food diet'
+                    'athlete running sunrise road', 'gym weightlifting close up',
+                    'woman yoga mat morning', 'healthy meal prep kitchen',
+                    'personal trainer coaching gym', 'runner crossing finish line',
+                    'swimming pool underwater shot', 'stretching exercise park outdoor',
+                    'jumping rope workout intense', 'protein shake smoothie blender',
+                    'group fitness class energy', 'measuring tape body fitness'
                 ]
             elif any(w in script_lower for w in [
                 'motivation', 'success', 'mindset', 'goal',
@@ -465,18 +484,19 @@ Return ONLY this JSON, nothing else:
             ]):
                 main_subject = 'motivation'
                 search_queries = [
-                    'motivation success achievement', 'mindset growth positive',
-                    'success goal reaching', 'motivation winner champion',
-                    'personal development growth', 'success business professional',
-                    'motivation running marathon', 'achievement celebration reward',
-                    'goal setting planning future', 'success story inspiration'
+                    'person standing mountain top', 'runner crossing finish line',
+                    'sunrise over city skyline', 'climbing stairs determination',
+                    'writing goals notebook pen', 'team high five celebration',
+                    'person meditating peaceful nature', 'athlete training hard gym',
+                    'graduation ceremony cap throw', 'walking forward road horizon',
+                    'boxing punching bag intense', 'person reading book library'
                 ]
             else:
                 main_subject = 'professional'
                 search_queries = [
-                    'professional work office', 'business success growth',
-                    'professional team meeting', 'work achievement goal',
-                    'professional development learning', 'office productivity focus'
+                    'person working laptop office', 'team meeting conference room',
+                    'typing keyboard close up', 'city skyline timelapse day',
+                    'professional handshake business', 'office building glass modern'
                 ]
 
             if verbose:
@@ -628,7 +648,8 @@ Return ONLY this JSON, nothing else:
         # Number of stock video slots expected
         num_slots = int((audio_duration - last_2_min_seconds) / cycle_duration)
 
-        prompt = f"""You are an AI video editor. Assign stock video search queries to a media plan.
+        prompt = f"""You are a professional video editor assigning B-roll footage to a media plan.
+Your job: pick the MOST VISUALLY RELEVANT stock video query for each slot based on what the script says AT THAT MOMENT.
 
 AUDIO: {audio_duration:.1f}s ({audio_duration/60:.1f} min)
 PATTERN: {avatar_seg_duration}s avatar → {media_seg_duration}s stock video → repeat until last {last_2_min_seconds}s
@@ -640,12 +661,15 @@ APPROVED SEARCH QUERIES (use ONLY these, or close variations):
 
 {script_timeline}
 ASSIGNMENT RULES:
-1. For each stock video slot, pick the query from the approved list that BEST matches what the script says at that time
-2. You CAN reuse the same query multiple times if it fits different moments
-3. You CANNOT use generic words like "business" alone — must be compound (2-3 words)
-4. ALL queries must be in ENGLISH
-5. Total duration must equal exactly {audio_duration:.1f}s
-6. Last segment must be avatar filling up to {audio_duration:.1f}s
+1. READ the script context for each time slot carefully
+2. Pick the query that BEST ILLUSTRATES what is being said at that exact moment
+3. If the script talks about "losing money" → pick a query with "red charts" or "loss", NOT "profit growth"
+4. If the script talks about "working hard" → pick "typing at desk" or "office work", NOT "celebration"
+5. The video must MAKE SENSE when shown alongside the narration
+6. You CAN reuse queries if they fit multiple moments
+7. ALL queries must be in ENGLISH, 3-5 words, visually specific
+8. Total duration must equal exactly {audio_duration:.1f}s
+9. Last segment must be avatar filling up to {audio_duration:.1f}s
 
 OUTPUT — valid JSON only, no markdown:
 {{
