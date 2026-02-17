@@ -237,15 +237,21 @@ class AvatarVideoAssembler:
         Returns:
             str: Path to looped video
         """
-        # Use stream_loop for avatar looping - avoids non-monotonic DTS entirely.
-        # stream_loop properly increments timestamps across loops unlike concat+copy.
+        # Re-encode avatar to 1920x1080 25fps — matches stock clips exactly.
+        # stream_loop loops the input; re-encode ensures consistent timebase,
+        # resolution and framerate across ALL clips for clean concat.
         cmd = [
             'ffmpeg', '-y',
-            '-stream_loop', '-1',           # Loop forever
+            '-stream_loop', '-1',
             '-i', avatar_video_path,
-            '-t', str(target_duration),     # Stop at exact duration
-            '-c', 'copy',                   # No re-encode (fast)
-            '-avoid_negative_ts', 'make_zero',
+            '-t', str(target_duration),
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',
+            '-crf', '23',
+            '-r', '25',
+            '-vf', 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080',
+            '-pix_fmt', 'yuv420p',
+            '-an',
             output_path
         ]
 
@@ -329,7 +335,7 @@ class AvatarVideoAssembler:
             '-tune', 'stillimage',
             '-crf', '23',
             '-r', '25',
-            '-vf', 'scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720',
+            '-vf', 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080',
             '-pix_fmt', 'yuv420p',
             '-an',
             output_path
@@ -349,9 +355,9 @@ class AvatarVideoAssembler:
         output_path: str,
         verbose: bool = False
     ) -> str:
-        """Prepare stock video (trim with FAST COPY when possible)"""
+        """Prepare stock video — re-encode to 1920x1080 25fps h264"""
 
-        # Get video duration and codec info
+        # Get video duration
         probe_cmd = [
             'ffprobe',
             '-v', 'error',
@@ -364,17 +370,13 @@ class AvatarVideoAssembler:
         info = json.loads(result.stdout)
 
         duration = float(info['format']['duration'])
-        codec = info['streams'][0].get('codec_name', '')
-        width = info['streams'][0].get('width', 0)
-        height = info['streams'][0].get('height', 0)
 
         # Trim duration
         trim_duration = min(duration, target_duration)
 
-        # Always re-encode to 1280x720 25fps h264 — guarantees consistent
+        # Always re-encode to 1920x1080 25fps h264 — guarantees consistent
         # timebase/framerate so the final concat never gets non-monotonic DTS.
         # ultrafast preset keeps this fast while fixing all format mismatches.
-        # No audio stream needed for stock clips (audio is added in final step).
         cmd = [
             'ffmpeg', '-y',
             '-i', video_path,
@@ -383,9 +385,9 @@ class AvatarVideoAssembler:
             '-preset', 'ultrafast',
             '-crf', '23',
             '-r', '25',
-            '-vf', 'scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720',
+            '-vf', 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080',
             '-pix_fmt', 'yuv420p',
-            '-an',   # No audio — audio added in final step
+            '-an',
             output_path
         ]
 
@@ -428,16 +430,16 @@ class AvatarVideoAssembler:
 
         output_path = os.path.join(self.temp_dir, "concatenated.mp4")
 
+        # All clips are already 1920x1080/25fps/h264/yuv420p from prep step
+        # so concat can stream-copy — ultra fast, no quality loss
         cmd = [
             'ffmpeg',
             '-y',
             '-f', 'concat',
             '-safe', '0',
             '-i', concat_file,
-            '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
-            '-r', '25',
-            '-pix_fmt', 'yuv420p',
-            '-an',  # No audio at this stage
+            '-c', 'copy',
+            '-an',
             output_path
         ]
 
