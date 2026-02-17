@@ -451,27 +451,34 @@ This chunk covers scenes {scenes_generated + 1} to {scenes_generated + chunk_siz
         script_text: str,
         style: Dict,
         audio_duration_seconds: float,
+        n_images_override: int = None,
         force_regenerate: bool = False,
         verbose: bool = True
     ) -> "AutoImagesPlan":
         """
         Plan images for Avatar Auto mode.
 
-        FORMULA: 1 image per minute of audio.
-        Example: 30-min audio → 30 images, each placed for ~10 sec every ~60 sec.
+        FORMULA: 1 image per minute of audio, last 2 minutes = avatar only (no images).
+        Example: 33-min audio → (33-2) = 31 images; cycle = 60s avatar + 10s image.
 
         Args:
             script_text: Full video script (used to plan relevant visuals)
             style: Style configuration dict with 'id', 'name', 'visual_rules', etc.
             audio_duration_seconds: Total audio length in seconds (from ffprobe)
+            n_images_override: If provided, use this count instead of auto-calculating
             force_regenerate: Skip cache
             verbose: Print progress
 
         Returns:
             AutoImagesPlan with 400+ char prompts, one scene per minute
         """
-        # 1 image per minute (minimum 1)
-        n_images = max(1, round(audio_duration_seconds / 60))
+        # Use override count if provided (from actual media plan segments), else auto-calculate
+        # Formula: 1 image per minute, last 2 minutes = no images
+        if n_images_override is not None:
+            n_images = max(1, n_images_override)
+        else:
+            usable_seconds = max(0, audio_duration_seconds - 120)  # subtract last 2 min
+            n_images = max(1, round(usable_seconds / 60))
 
         if verbose:
             mins = audio_duration_seconds / 60

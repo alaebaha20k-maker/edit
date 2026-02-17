@@ -539,7 +539,7 @@ Return ONLY this JSON, nothing else:
         # Determine segment pattern based on mode
         if mode == "ai_images":
             avatar_seg_duration = 60  # 1 minute
-            media_seg_duration = 5    # 5 seconds
+            media_seg_duration = 10   # 10 seconds per image
         else:  # stock_videos
             avatar_seg_duration = 50  # 50 seconds avatar
             media_seg_duration = 10   # 10 seconds stock video
@@ -704,10 +704,10 @@ OUTPUT — valid JSON only, no markdown:
         """
         segments = plan.get('segments', [])
 
-        # CRITICAL: Enforce maximum duration for stock videos (NEVER more than 10 seconds!)
+        # CRITICAL: Enforce maximum duration for media segments
         for seg in segments:
             if seg['type'] in ['stock_video', 'ai_image']:
-                max_allowed = 10 if seg['type'] == 'stock_video' else 5  # stock=10s, ai_image=5s
+                max_allowed = 10  # both stock videos and ai_images max 10s
                 if seg['duration'] > max_allowed:
                     if verbose:
                         print(f"   ⚠️  Segment at {seg['start']}s was {seg['duration']}s, capping to {max_allowed}s")
@@ -924,6 +924,7 @@ OUTPUT — valid JSON only, no markdown:
                     script_text=script,
                     style=style,
                     audio_duration_seconds=eff_duration,
+                    n_images_override=n_images,  # pass actual count from media plan
                     verbose=verbose,
                 )
 

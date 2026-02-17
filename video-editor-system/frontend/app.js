@@ -1749,7 +1749,12 @@ function toggleMediaSection(type) {
     } else if (type === 'autoavatar') {
         const checked = document.getElementById('useAutoAvatar')?.checked;
         const section = document.getElementById('autoAvatarSection');
-        if (section) section.style.display = checked ? 'block' : 'none';
+        if (section) {
+            section.style.display = checked ? 'block' : 'none';
+            if (checked) {
+                loadAutoImageStyles(); // Load styles (including custom) when section opens
+            }
+        }
     }
 }
 
@@ -2035,27 +2040,39 @@ function updateMediaSelectionButtons() {
 
 let autoImagesTimeline = null;
 
-// Load and populate style selector
+// Cache all loaded styles for full-object lookup
+window._cachedAutoImageStyles = [];
+
+// Load and populate style selector(s)
 async function loadAutoImageStyles() {
     try {
         const response = await fetch('/api/auto-images/styles');
         const data = await response.json();
 
         if (data.success && data.styles) {
-            const styleSelect = document.getElementById('autoImageStyle');
-            if (styleSelect) {
-                styleSelect.innerHTML = '';
-                data.styles.forEach(style => {
-                    const option = document.createElement('option');
-                    option.value = style.id;
-                    const icon = style.id === 'cinematic' ? '🎬' :
-                                 style.id === 'photorealistic' ? '📷' :
-                                 style.id === 'artistic' ? '🎨' :
-                                 style.id === 'animated' ? '🎭' : '✨';
-                    option.textContent = `${icon} ${style.name}`;
-                    styleSelect.appendChild(option);
-                });
-            }
+            // Cache the full style objects
+            window._cachedAutoImageStyles = data.styles;
+
+            // Populate both dropdowns: Auto Images AI and Auto Avatar Mix
+            ['autoImageStyle', 'autoAvatarImageStyle'].forEach(selectId => {
+                const styleSelect = document.getElementById(selectId);
+                if (styleSelect) {
+                    const currentVal = styleSelect.value;
+                    styleSelect.innerHTML = '';
+                    data.styles.forEach(style => {
+                        const option = document.createElement('option');
+                        option.value = style.id;
+                        const icon = style.id === 'cinematic' ? '🎬' :
+                                     style.id === 'photorealistic' ? '📷' :
+                                     style.id === 'artistic' ? '🎨' :
+                                     style.id === 'animated' ? '🎭' : '✨';
+                        option.textContent = `${icon} ${style.name}`;
+                        styleSelect.appendChild(option);
+                    });
+                    // Restore previous selection if still available
+                    if (currentVal) styleSelect.value = currentVal;
+                }
+            });
         }
     } catch (error) {
         console.error('Error loading styles:', error);
@@ -3376,6 +3393,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Auto-load voices on page init
         loadVoiceList();
     }
+
+    // Pre-load image styles so both Auto Images and Auto Avatar dropdowns are ready
+    loadAutoImageStyles();
 
     // Setup voice model description update for Audio & Voice section
     const voiceSelectModel = document.getElementById('voiceSelectModel');
@@ -4779,7 +4799,9 @@ async function generateAutoAvatar() {
         return;
     }
 
-    const imageStyle = document.getElementById('autoAvatarImageStyle')?.value || 'cinematic';
+    const imageStyleId = document.getElementById('autoAvatarImageStyle')?.value || 'cinematic';
+    // Resolve full style object from cache (so Gemini Director gets visual_rules, lighting, etc.)
+    const imageStyleObj = (window._cachedAutoImageStyles || []).find(s => s.id === imageStyleId) || { id: imageStyleId, name: imageStyleId };
 
     // Get timing method
     const useWhisper = document.getElementById('autoAvatarUseWhisper')?.checked || false;
@@ -4806,7 +4828,7 @@ async function generateAutoAvatar() {
                 background_music: backgroundMusic, // Include background music
                 mode: 'ai_images',
                 script: script,
-                image_style: imageStyle,
+                image_style: imageStyleObj,
                 use_whisper: useWhisper  // NEW: timing method (default: false = fast Gemini)
                 // No media_count - Gemini calculates automatically!
             })

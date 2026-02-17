@@ -3563,7 +3563,18 @@ def avatar_generate():
         use_whisper = data.get('use_whisper', False)  # Default: fast Gemini mode
         background_music_path = data.get('background_music_path')  # Optional
         image_provider = data.get('image_provider', 'replicate')  # 'replicate' or 'gemini'
-        image_style = data.get('image_style', None)  # Style dict from frontend
+        image_style = data.get('image_style', None)  # Style dict (or string ID) from frontend
+
+        # Resolve string style ID to full style dict (backwards compat)
+        if isinstance(image_style, str):
+            try:
+                from auto_images_style_manager import AutoImagesStyleManager
+                style_mgr = AutoImagesStyleManager()
+                resolved = style_mgr.get_style(image_style)
+                if resolved:
+                    image_style = resolved
+            except Exception:
+                pass
 
         if not avatar_video_path or not audio_path:
             return jsonify({
