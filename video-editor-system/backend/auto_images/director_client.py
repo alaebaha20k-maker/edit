@@ -509,7 +509,7 @@ This chunk covers scenes {scenes_generated + 1} to {scenes_generated + chunk_siz
         avatar_prompt = f"""You are an elite AI Video Director planning FULL-QUALITY cinematic images for an AVATAR VIDEO.
 
 CONTEXT:
-- The video alternates between: [50 sec AVATAR talking] → [10 sec BEAUTIFUL IMAGE] → repeat
+- The video alternates between: [60 sec AVATAR talking] → [10 sec BEAUTIFUL IMAGE] → repeat
 - Total audio length: {audio_duration_seconds:.0f} seconds ({audio_duration_seconds/60:.1f} minutes)
 - We need EXACTLY {n_images} images (one per minute of video)
 - Each image is displayed for ~10 seconds at full screen in front of a professional audience

@@ -289,7 +289,7 @@ class AvatarVideoGenerator:
         safe_script = raw_snippet.replace('\\', ' ').replace('\n', ' ').replace('\r', ' ')
         # Collapse multiple spaces
         import re as _re_ws
-        safe_script = _re_ws.sub(r'\s+', safe_script).strip()
+        safe_script = _re_ws.sub(r'\s+', ' ', safe_script).strip()
 
         prompt = f"""You are a professional stock video researcher for a B-roll editor.
 Analyze this script and generate PRECISE, SCENE-SPECIFIC stock video search queries.
@@ -755,18 +755,19 @@ OUTPUT — valid JSON only, no markdown:
             last_segment = segments[-1]
             if last_segment['type'] == 'avatar':
                 # Extend or shorten last avatar segment
-                last_segment['duration'] += difference
+                last_segment['duration'] = max(1.0, last_segment['duration'] + difference)
                 if verbose:
                     print(f"   ✅ Last avatar segment adjusted to {last_segment['duration']:.2f}s")
             else:
-                # Add a final avatar segment to fill the gap
-                last_start = segments[-1]['start'] + segments[-1]['duration']
-                segments.append({
-                    'type': 'avatar',
-                    'start': last_start,
-                    'duration': difference,
-                    'search_query': None
-                })
+                # Add a final avatar segment to fill the gap (only if positive)
+                if difference > 1.0:
+                    last_start = segments[-1]['start'] + segments[-1]['duration']
+                    segments.append({
+                        'type': 'avatar',
+                        'start': last_start,
+                        'duration': difference,
+                        'search_query': None
+                    })
                 if verbose:
                     print(f"   ✅ Added final avatar segment: {difference:.2f}s")
 
