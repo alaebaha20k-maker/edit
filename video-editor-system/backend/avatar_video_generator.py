@@ -273,13 +273,25 @@ class AvatarVideoGenerator:
         if verbose:
             print("\n🧠 ANALYZING SCRIPT: Extracting compound search queries with Gemini...")
 
-        # Safe script snippet — only keep ASCII to avoid JSON issues in the prompt
-        safe_script = script[:1500].encode('ascii', errors='replace').decode('ascii')
+        # Use MORE of the script (up to 4000 chars) — 1500 was only 5% for a 30k script
+        # Sample start, middle, and end to capture all topics across the video
+        script_len = len(script)
+        parts = []
+        if script_len <= 4000:
+            parts.append(script)
+        else:
+            # First 1500 + middle 1500 + last 1000 = 4000 chars total coverage
+            parts.append(script[:1500])
+            mid = script_len // 2
+            parts.append(script[mid-750:mid+750])
+            parts.append(script[-1000:])
+        raw_snippet = ' ... '.join(parts)
+        safe_script = raw_snippet.encode('ascii', errors='replace').decode('ascii')
         safe_script = safe_script.replace('\\', ' ').replace('"', ' ').replace('\n', ' ').strip()
 
         prompt = f"""You are a video search expert. Analyze this script and generate specific stock video search queries.
 
-SCRIPT (first 1500 chars):
+SCRIPT (sampled from full text):
 {safe_script}
 
 YOUR JOB:
@@ -305,8 +317,8 @@ CRITICAL: Return ONLY valid JSON with no extra text, no markdown:
             response = model.generate_content(
                 prompt,
                 generation_config=genai.types.GenerationConfig(
-                    temperature=0.4,
-                    max_output_tokens=600
+                    temperature=0.3,
+                    max_output_tokens=1000
                 )
             )
 
@@ -506,14 +518,13 @@ CRITICAL: Return ONLY valid JSON with no extra text, no markdown:
             keyword_data=keyword_data  # NEW: Pass main subject + keywords!
         )
 
-        # Call Gemini
+        # Call Gemini — low temperature for consistent plan adherence
         model = genai.GenerativeModel('gemini-2.5-flash')
         response = model.generate_content(
             prompt,
             generation_config=genai.types.GenerationConfig(
-                temperature=0.7,
+                temperature=0.3,
                 max_output_tokens=8192
-                # response_mime_type removed — causes empty body on gemini-2.5-flash
             )
         )
 
@@ -1053,7 +1064,7 @@ OUTPUT — valid JSON only, no markdown:
                     snapshot = set(used_video_ids)
                 path, vid_id = downloader.search_and_download(
                     query=query,
-                    min_duration=segment['duration'],
+                    min_duration=3,  # Accept 3s+ clips — we re-encode to exact target anyway
                     output_dir='media_library/avatar_videos',
                     exclude_ids=snapshot
                 )

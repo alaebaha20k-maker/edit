@@ -47,7 +47,12 @@ class AvatarVideoAssembler:
             '-of', 'default=noprint_wrappers=1:nokey=1', music_path
         ]
         result = subprocess.run(cmd, capture_output=True, text=True)
-        music_duration = float(result.stdout.strip())
+        raw = result.stdout.strip()
+        if not raw:
+            if verbose:
+                print(f"   ⚠️  Cannot read music duration (ffprobe empty), skipping background music")
+            return None
+        music_duration = float(raw)
 
         if verbose:
             print(f"\n🎵 Background music: {music_duration:.1f}s (target: {target_duration:.1f}s)")
@@ -429,7 +434,7 @@ class AvatarVideoAssembler:
             '-f', 'concat',
             '-safe', '0',
             '-i', concat_file,
-            '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18',
+            '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
             '-r', '25',
             '-pix_fmt', 'yuv420p',
             '-an',  # No audio at this stage
@@ -494,7 +499,7 @@ class AvatarVideoAssembler:
                 '-i', video_path,
                 '-i', audio_path,
                 '-i', prepared_music,
-                '-filter_complex', '[1:a]volume=1.0[voice];[2:a]volume=0.08[music];[voice][music]amix=inputs=2:duration=shortest[aout]',
+                '-filter_complex', '[1:a]volume=1.0[voice];[2:a]volume=0.08[music];[voice][music]amix=inputs=2:duration=first[aout]',
                 '-map', '0:v',
                 '-map', '[aout]',
                 '-c:v', 'copy',

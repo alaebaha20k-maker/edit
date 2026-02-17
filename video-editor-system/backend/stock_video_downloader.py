@@ -74,93 +74,86 @@ class StockVideoDownloader:
         if exclude_ids is None:
             exclude_ids = set()
 
-        # Try each API in order
+        # Collect candidates from ALL APIs first, then pick best
+        all_candidates = []  # list of (vid_id, video_url, api_name)
+
         for api in self.apis:
             try:
                 if api == 'pexels':
-                    return self._search_pexels(query, min_duration, output_dir, exclude_ids)
+                    cands = self._collect_pexels_candidates(query, min_duration, exclude_ids)
+                    all_candidates.extend(cands)
                 elif api == 'pixabay':
-                    return self._search_pixabay(query, min_duration, output_dir, exclude_ids)
-                else:
-                    print(f"⚠️  Unknown API: {api}")
+                    cands = self._collect_pixabay_candidates(query, min_duration, exclude_ids)
+                    all_candidates.extend(cands)
             except Exception as e:
-                print(f"⚠️  {api.capitalize()} failed for '{query}': {e}")
+                print(f"⚠️  {api.capitalize()} search failed for '{query}': {e}")
                 continue
 
-        raise Exception(f"No stock video found for query: {query}")
+        if not all_candidates:
+            raise Exception(f"No stock video found for query: {query}")
 
-    def _search_pexels(
+        # Random pick from combined pool — maximum variety across APIs
+        vid_id, video_url, api_name = random.choice(all_candidates)
+        path = self._download_video(video_url, output_dir, vid_id)
+        return path, vid_id
+
+    def _collect_pexels_candidates(
         self,
         query: str,
         min_duration: float,
-        output_dir: str,
         exclude_ids: set = None
-    ) -> tuple:
-        """Search and download from Pexels, skipping already-used video IDs."""
+    ) -> list:
+        """Collect video candidates from Pexels (no download). Returns list of (vid_id, url, 'pexels')."""
         pexels_api_key = self._get_pexels_key()
         if not pexels_api_key:
-            raise Exception("PEXELS_API_KEY not set in environment")
+            raise Exception("PEXELS_API_KEY not set")
 
         if exclude_ids is None:
             exclude_ids = set()
 
         url = "https://api.pexels.com/videos/search"
         headers = {"Authorization": pexels_api_key}
+        # Use min_duration 3s (we re-encode to exact target anyway) for wider results
         params = {"query": query, "per_page": 15, "orientation": "landscape"}
 
-        response = requests.get(url, headers=headers, params=params)
+        response = requests.get(url, headers=headers, params=params, timeout=15)
         response.raise_for_status()
         data = response.json()
 
         if not data.get('videos'):
-            raise Exception(f"No videos found on Pexels for: {query}")
+            return []
 
-        # Collect suitable candidates, skipping excluded IDs
         candidates = []
         for video in data['videos']:
             vid_id = f"pexels_{video['id']}"
             if vid_id in exclude_ids:
                 continue
             duration = video.get('duration', 0)
-            if duration >= min_duration:
+            # Accept videos >= 3s — we trim/pad to exact target in _prepare_stock_video
+            if duration >= 3:
                 video_files = video.get('video_files', [])
-                hd_files = [f for f in video_files if f.get('quality') in ['hd', 'sd']]
+                # Prefer HD, then SD, then any
+                hd_files = [f for f in video_files if f.get('quality') == 'hd' and f.get('width', 0) >= 1280]
+                sd_files = [f for f in video_files if f.get('quality') in ['hd', 'sd']]
                 if hd_files:
-                    candidates.append((vid_id, hd_files[0]['link']))
+                    candidates.append((vid_id, hd_files[0]['link'], 'pexels'))
+                elif sd_files:
+                    candidates.append((vid_id, sd_files[0]['link'], 'pexels'))
                 elif video_files:
-                    candidates.append((vid_id, video_files[0]['link']))
+                    candidates.append((vid_id, video_files[0]['link'], 'pexels'))
 
-        # If all results excluded, fall back to any candidate ignoring exclusion
-        if not candidates:
-            for video in data['videos']:
-                vid_id = f"pexels_{video['id']}"
-                duration = video.get('duration', 0)
-                if duration >= min_duration:
-                    video_files = video.get('video_files', [])
-                    hd_files = [f for f in video_files if f.get('quality') in ['hd', 'sd']]
-                    if hd_files:
-                        candidates.append((vid_id, hd_files[0]['link']))
-                    elif video_files:
-                        candidates.append((vid_id, video_files[0]['link']))
+        return candidates
 
-        if not candidates:
-            raise Exception(f"No suitable video found on Pexels (min duration: {min_duration}s)")
-
-        video_id, video_url = random.choice(candidates)
-        path = self._download_video(video_url, output_dir, video_id)
-        return path, video_id
-
-    def _search_pixabay(
+    def _collect_pixabay_candidates(
         self,
         query: str,
         min_duration: float,
-        output_dir: str,
         exclude_ids: set = None
-    ) -> tuple:
-        """Search and download from Pixabay, skipping already-used video IDs."""
+    ) -> list:
+        """Collect video candidates from Pixabay (no download). Returns list of (vid_id, url, 'pixabay')."""
         pixabay_api_key = self._get_pixabay_key()
         if not pixabay_api_key:
-            raise Exception("PIXABAY_API_KEY not set in environment")
+            raise Exception("PIXABAY_API_KEY not set")
 
         if exclude_ids is None:
             exclude_ids = set()
@@ -168,38 +161,27 @@ class StockVideoDownloader:
         url = "https://pixabay.com/api/videos/"
         params = {"key": pixabay_api_key, "q": query, "per_page": 15, "video_type": "all"}
 
-        response = requests.get(url, params=params)
+        response = requests.get(url, params=params, timeout=15)
         response.raise_for_status()
         data = response.json()
 
         if not data.get('hits'):
-            raise Exception(f"No videos found on Pixabay for: {query}")
+            return []
 
-        def _get_candidates(skip_excluded: bool):
-            cands = []
-            for video in data['hits']:
-                vid_id = f"pixabay_{video['id']}"
-                if skip_excluded and vid_id in exclude_ids:
-                    continue
-                duration = video.get('duration', 0)
-                if duration >= min_duration:
-                    videos_data = video.get('videos', {})
-                    for quality in ['medium', 'large', 'small']:
-                        if quality in videos_data:
-                            cands.append((vid_id, videos_data[quality]['url']))
-                            break
-            return cands
+        candidates = []
+        for video in data['hits']:
+            vid_id = f"pixabay_{video['id']}"
+            if vid_id in exclude_ids:
+                continue
+            duration = video.get('duration', 0)
+            if duration >= 3:
+                videos_data = video.get('videos', {})
+                for quality in ['medium', 'large', 'small']:
+                    if quality in videos_data and videos_data[quality].get('url'):
+                        candidates.append((vid_id, videos_data[quality]['url'], 'pixabay'))
+                        break
 
-        candidates = _get_candidates(skip_excluded=True)
-        if not candidates:
-            candidates = _get_candidates(skip_excluded=False)  # fallback ignoring exclusion
-
-        if not candidates:
-            raise Exception(f"No suitable video found on Pixabay (min duration: {min_duration}s)")
-
-        video_id, video_url = random.choice(candidates)
-        path = self._download_video(video_url, output_dir, video_id)
-        return path, video_id
+        return candidates
 
     def _download_video(
         self,
