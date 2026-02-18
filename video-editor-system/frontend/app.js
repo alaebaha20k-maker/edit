@@ -4829,7 +4829,8 @@ async function generateAutoAvatar() {
                 mode: 'ai_images',
                 script: script,
                 image_style: imageStyleObj,
-                use_whisper: useWhisper  // NEW: timing method (default: false = fast Gemini)
+                image_provider: 'gemini',
+                use_whisper: useWhisper  // timing method (default: false = fast Gemini)
                 // No media_count - Gemini calculates automatically!
             })
         });

@@ -3562,7 +3562,7 @@ def avatar_generate():
         stock_apis = data.get('stock_apis', ['pexels'])
         use_whisper = data.get('use_whisper', False)  # Default: fast Gemini mode
         background_music_path = data.get('background_music_path')  # Optional
-        image_provider = data.get('image_provider', 'replicate')  # 'replicate' or 'gemini'
+        image_provider = data.get('image_provider', 'gemini')  # 'replicate' or 'gemini'
         image_style = data.get('image_style', None)  # Style dict (or string ID) from frontend
 
         # Resolve string style ID to full style dict (backwards compat)

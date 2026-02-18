@@ -594,7 +594,7 @@
             document.getElementById('progress').classList.add('active');
             document.getElementById('result').classList.remove('active');
 
-            updateProgress(10, 'Analyzing audio with Whisper...');
+            updateProgress(10, 'Starting generation...');
 
             fetch('/api/avatar/generate', {
                 method: 'POST',
