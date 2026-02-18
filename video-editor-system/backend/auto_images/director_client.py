@@ -527,6 +527,12 @@ This chunk covers scenes {scenes_generated + 1} to {scenes_generated + chunk_siz
                             print(f"      🔧 Got {actual_scenes}/{chunk_size} scenes, adjusting...")
                         plan_data['n_images'] = actual_scenes
 
+                    # Renumber scene IDs to 1..N for this chunk before validation.
+                    # The LLM outputs global IDs (e.g. [16, 17]) but the validator
+                    # requires sequential IDs starting from 1.
+                    for i, scene in enumerate(plan_data.get('scenes', []), start=1):
+                        scene['scene_id'] = i
+
                     # Validate chunk
                     chunk_plan = AutoImagesPlan(**plan_data)
 
