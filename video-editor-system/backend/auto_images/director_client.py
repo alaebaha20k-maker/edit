@@ -39,7 +39,7 @@ class DirectorClient:
                 "temperature": 0.7,
                 "top_p": 0.95,
                 "top_k": 40,
-                "max_output_tokens": 8192,
+                "max_output_tokens": 32768,
             }
         )
 
@@ -305,8 +305,106 @@ OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.
 """
         return prompt
 
-    def _parse_json_response(self, response_text: str) -> Dict:
-        """Parse JSON from Gemini response, handling markdown fences"""
+    @staticmethod
+    def _repair_truncated_json(json_str: str) -> str:
+        """
+        Attempt to repair truncated JSON from Gemini (e.g., when max_output_tokens is hit).
+        Closes open strings, removes the last incomplete element, and closes brackets.
+        """
+        try:
+            json.loads(json_str)
+            return json_str
+        except json.JSONDecodeError:
+            pass
+
+        import re as _re
+
+        # Fix common Gemini JSON issues first
+        json_str = _re.sub(r',\s*([\]}])', r'\1', json_str)  # trailing commas
+        json_str = _re.sub(r'[\x00-\x1f]', ' ', json_str)   # control chars
+
+        # Track state through the JSON string
+        in_string = False
+        escape_next = False
+        stack = []
+        last_good = 0
+
+        for i, ch in enumerate(json_str):
+            if escape_next:
+                escape_next = False
+                continue
+            if ch == '\\' and in_string:
+                escape_next = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch in '{[':
+                stack.append(ch)
+            elif ch == '}':
+                if stack and stack[-1] == '{':
+                    stack.pop()
+                    last_good = i + 1
+            elif ch == ']':
+                if stack and stack[-1] == '[':
+                    stack.pop()
+                    last_good = i + 1
+            elif ch == ',':
+                last_good = i
+
+        if not stack and not in_string:
+            return json_str
+
+        # Truncate to last structurally valid point
+        if in_string and last_good > 0:
+            json_str = json_str[:last_good]
+        elif in_string:
+            json_str = json_str.rstrip()
+            last_quote = json_str.rfind('"')
+            if last_quote > 0:
+                json_str = json_str[:last_quote + 1]
+
+        # Recount stack after truncation
+        in_string = False
+        escape_next = False
+        stack = []
+        for ch in json_str:
+            if escape_next:
+                escape_next = False
+                continue
+            if ch == '\\' and in_string:
+                escape_next = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch in '{[':
+                stack.append(ch)
+            elif ch == '}' and stack and stack[-1] == '{':
+                stack.pop()
+            elif ch == ']' and stack and stack[-1] == '[':
+                stack.pop()
+
+        # Remove trailing comma
+        json_str = json_str.rstrip()
+        if json_str.endswith(','):
+            json_str = json_str[:-1]
+
+        # Close all open brackets in reverse order
+        for bracket in reversed(stack):
+            if bracket == '{':
+                json_str += '}'
+            elif bracket == '[':
+                json_str += ']'
+
+        return json_str
+
+    def _parse_json_response(self, response_text: str, verbose: bool = False) -> Dict:
+        """Parse JSON from Gemini response, handling markdown fences and truncation"""
         # Remove markdown code fences if present
         text = response_text.strip()
         if text.startswith('```'):
@@ -319,8 +417,28 @@ OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.
                 lines = lines[:-1]
             text = '\n'.join(lines)
 
-        # Parse JSON
-        return json.loads(text)
+        # Try direct parse first
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        # Extract JSON object if surrounded by extra text
+        start = text.find('{')
+        if start != -1:
+            text = text[start:]
+
+        # Try parse again
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+
+        # Attempt repair of truncated JSON
+        if verbose:
+            print(f"      🔧 Attempting JSON repair on truncated response...")
+        repaired = self._repair_truncated_json(text)
+        return json.loads(repaired)
 
     def _plan_auto_images_chunked(
         self,
@@ -334,7 +452,7 @@ OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.
         Plan auto-images using chunking strategy for large n_images
         Splits into chunks of 20 to avoid rate limits and large responses
         """
-        CHUNK_SIZE = 20
+        CHUNK_SIZE = 15
         chunks_needed = (n_images + CHUNK_SIZE - 1) // CHUNK_SIZE  # Ceiling division
 
         if verbose:
@@ -391,8 +509,23 @@ This chunk covers scenes {scenes_generated + 1} to {scenes_generated + chunk_siz
                     if verbose:
                         print(f"      ⏱️ Generation: {elapsed:.1f}s (attempt {attempt + 1})")
 
-                    # Parse JSON
-                    plan_data = self._parse_json_response(response_text)
+                    # Check for truncation
+                    try:
+                        finish_reason = response.candidates[0].finish_reason
+                        if finish_reason and finish_reason != 1 and verbose:
+                            print(f"      ⚠️  Chunk response truncated (finish_reason={finish_reason})")
+                    except (IndexError, AttributeError):
+                        pass
+
+                    # Parse JSON (with repair if truncated)
+                    plan_data = self._parse_json_response(response_text, verbose=verbose)
+
+                    # Adjust n_images if repair dropped some scenes
+                    actual_scenes = len(plan_data.get('scenes', []))
+                    if actual_scenes != chunk_size and actual_scenes > 0:
+                        if verbose:
+                            print(f"      🔧 Got {actual_scenes}/{chunk_size} scenes, adjusting...")
+                        plan_data['n_images'] = actual_scenes
 
                     # Validate chunk
                     chunk_plan = AutoImagesPlan(**plan_data)
@@ -422,11 +555,20 @@ This chunk covers scenes {scenes_generated + 1} to {scenes_generated + chunk_siz
         if verbose:
             print(f"\n   ✅ All chunks complete: {len(all_scenes)} total scenes")
 
-        # Create final plan
+        # Create final plan (use actual scene count in case truncation dropped some)
+        actual_total = len(all_scenes)
+
+        # Renumber scene IDs sequentially (chunks may have arbitrary IDs)
+        scenes_data = []
+        for idx, scene in enumerate(all_scenes, start=1):
+            sd = scene.model_dump()
+            sd['scene_id'] = idx
+            scenes_data.append(sd)
+
         final_plan_data = {
             "mode": "auto_images",
             "style_id": style.get('id', 'cinematic'),
-            "n_images": n_images,
+            "n_images": actual_total,
             "global_style_bible": {
                 "style_name": style.get('name', 'Cinematic'),
                 "visual_rules": style.get('visual_rules', []),
@@ -435,7 +577,7 @@ This chunk covers scenes {scenes_generated + 1} to {scenes_generated + chunk_siz
                 "lighting": style.get('lighting', 'Dramatic lighting'),
                 "color_palette": style.get('color_palette', ['Rich colors'])
             },
-            "scenes": [scene.model_dump() for scene in all_scenes]
+            "scenes": scenes_data
         }
 
         final_plan = AutoImagesPlan(**final_plan_data)
@@ -581,8 +723,9 @@ OUTPUT (STRICT JSON - NO MARKDOWN, NO EXPLANATION):
 
 OUTPUT ONLY VALID JSON."""
 
-        # Use chunking if > 20 images
-        if n_images > 20:
+        # Use chunking if > 15 images (lowered from 20 to avoid truncation
+        # with 400+ char prompts per scene)
+        if n_images > 15:
             return self._plan_auto_images_chunked(script_text, style, n_images, force_regenerate, verbose)
 
         # Check cache
@@ -604,7 +747,27 @@ OUTPUT ONLY VALID JSON."""
                 if verbose:
                     print(f"   ⏱️ Gemini response: {elapsed:.1f}s (attempt {attempt+1})")
 
-                plan_data = self._parse_json_response(response.text)
+                # Check for truncation
+                was_truncated = False
+                try:
+                    finish_reason = response.candidates[0].finish_reason
+                    if finish_reason and finish_reason != 1:  # 1 = STOP
+                        was_truncated = True
+                        if verbose:
+                            print(f"   ⚠️  Response truncated (finish_reason={finish_reason})")
+                except (IndexError, AttributeError):
+                    pass
+
+                plan_data = self._parse_json_response(response.text, verbose=verbose)
+
+                # If truncated, the repaired JSON may have fewer scenes
+                # Adjust n_images to match actual scene count
+                actual_scenes = len(plan_data.get('scenes', []))
+                if was_truncated and actual_scenes > 0 and actual_scenes != n_images:
+                    if verbose:
+                        print(f"   🔧 Truncated response had {actual_scenes}/{n_images} scenes, adjusting plan...")
+                    plan_data['n_images'] = actual_scenes
+
                 plan = AutoImagesPlan(**plan_data)
 
                 self._save_cached_plan(cache_key, plan)
@@ -656,10 +819,10 @@ OUTPUT ONLY VALID JSON."""
             if scene_timing_hints:
                 print(f"   🎤 Using Whisper timestamps for perfect scene timing")
 
-        # Use chunking strategy for large n_images (> 20)
-        if n_images > 20:
+        # Use chunking strategy for large n_images (> 15)
+        if n_images > 15:
             if verbose:
-                print(f"   📦 Using chunking strategy (n_images > 20)")
+                print(f"   📦 Using chunking strategy (n_images > 15)")
             return self._plan_auto_images_chunked(script_text, style, n_images, force_regenerate, verbose)
 
         # Check cache
@@ -695,9 +858,17 @@ OUTPUT ONLY VALID JSON."""
                 if verbose:
                     print(f"   ⏱️ Generation: {elapsed:.1f}s (attempt {attempt + 1})")
 
-                # Parse JSON
+                # Check for truncation
                 try:
-                    plan_data = self._parse_json_response(response_text)
+                    finish_reason = response.candidates[0].finish_reason
+                    if finish_reason and finish_reason != 1 and verbose:
+                        print(f"   ⚠️  Response truncated (finish_reason={finish_reason})")
+                except (IndexError, AttributeError):
+                    pass
+
+                # Parse JSON (with repair for truncated responses)
+                try:
+                    plan_data = self._parse_json_response(response_text, verbose=verbose)
                 except json.JSONDecodeError as e:
                     if verbose:
                         print(f"   ❌ JSON parse error: {e}")

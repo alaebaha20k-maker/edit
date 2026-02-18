@@ -7,6 +7,7 @@ Creates videos with avatar loops + AI images or stock videos
 import os
 import time
 import random
+import re
 import google.generativeai as genai
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Tuple
@@ -288,8 +289,7 @@ class AvatarVideoGenerator:
         # Only escape backslashes and strip excessive whitespace — keep all languages intact
         safe_script = raw_snippet.replace('\\', ' ').replace('\n', ' ').replace('\r', ' ')
         # Collapse multiple spaces
-        import re as _re_ws
-        safe_script = _re_ws.sub(r'\s+', ' ', safe_script).strip()
+        safe_script = re.sub(r'\s+', ' ', safe_script).strip()
 
         prompt = f"""You are a professional stock video researcher for a B-roll editor.
 Analyze this script and generate PRECISE, SCENE-SPECIFIC stock video search queries.
@@ -334,9 +334,21 @@ Return ONLY this JSON, nothing else:
                 prompt,
                 generation_config=genai.types.GenerationConfig(
                     temperature=0.3,
-                    max_output_tokens=1000
+                    max_output_tokens=2048
                 )
             )
+
+            # Check for truncation via finish_reason
+            was_truncated = False
+            try:
+                finish_reason = response.candidates[0].finish_reason
+                # finish_reason == 2 means MAX_TOKENS (truncated)
+                if finish_reason and finish_reason != 1:  # 1 = STOP (normal)
+                    was_truncated = True
+                    if verbose:
+                        print(f"   ⚠️  Response was truncated (finish_reason={finish_reason})")
+            except (IndexError, AttributeError):
+                pass
 
             # Safe text extraction — response.text can raise on blocked content
             response_text = ''
@@ -363,15 +375,30 @@ Return ONLY this JSON, nothing else:
             start = response_text.find('{')
             end = response_text.rfind('}')
             if start == -1 or end == -1:
-                raise ValueError(f"No JSON in response. Got: {response_text[:150]}")
-            json_str = response_text[start:end+1]
+                # Response was likely truncated — try to repair
+                if start != -1:
+                    json_str = response_text[start:]
+                    json_str = self._repair_truncated_json(json_str)
+                    if verbose:
+                        print(f"   🔧 Attempting to repair truncated JSON...")
+                else:
+                    raise ValueError(f"No JSON in response. Got: {response_text[:150]}")
+            else:
+                json_str = response_text[start:end+1]
 
             # Fix common Gemini JSON issues
-            import re as _re
-            json_str = _re.sub(r',\s*([\]}])', r'\1', json_str)  # trailing commas
-            json_str = _re.sub(r'[\x00-\x1f]', ' ', json_str)   # control chars
+            json_str = re.sub(r',\s*([\]}])', r'\1', json_str)  # trailing commas
+            json_str = re.sub(r'[\x00-\x1f]', ' ', json_str)   # control chars
 
-            result = json.loads(json_str)
+            # Try parsing, with repair fallback
+            try:
+                result = json.loads(json_str)
+            except json.JSONDecodeError:
+                # Try repairing the JSON
+                repaired = self._repair_truncated_json(json_str)
+                if verbose:
+                    print(f"   🔧 JSON parse failed, attempting repair...")
+                result = json.loads(repaired)
             main_subject = result.get('main_subject', '').lower().strip()
             search_queries = result.get('search_queries', [])
 
@@ -508,6 +535,103 @@ Return ONLY this JSON, nothing else:
                 'search_queries': search_queries
             }
 
+    @staticmethod
+    def _repair_truncated_json(json_str: str) -> str:
+        """
+        Attempt to repair truncated JSON from Gemini (e.g., when max_output_tokens is hit).
+        Closes open strings, removes the last incomplete element, and closes brackets.
+        """
+        # If it already parses, return as-is
+        try:
+            json.loads(json_str)
+            return json_str
+        except json.JSONDecodeError:
+            pass
+
+        # Track state through the JSON string
+        in_string = False
+        escape_next = False
+        stack = []       # tracks open { and [
+        last_good = 0    # position after last structurally complete point
+
+        for i, ch in enumerate(json_str):
+            if escape_next:
+                escape_next = False
+                continue
+            if ch == '\\' and in_string:
+                escape_next = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            # Outside strings
+            if ch in '{[':
+                stack.append(ch)
+            elif ch == '}':
+                if stack and stack[-1] == '{':
+                    stack.pop()
+                    last_good = i + 1
+            elif ch == ']':
+                if stack and stack[-1] == '[':
+                    stack.pop()
+                    last_good = i + 1
+            elif ch == ',':
+                last_good = i
+
+        # If nothing is open, return as-is
+        if not stack and not in_string:
+            return json_str
+
+        # Truncate to last structurally valid point
+        if in_string and last_good > 0:
+            json_str = json_str[:last_good]
+        elif in_string:
+            # Close the open string and strip incomplete content
+            json_str = json_str.rstrip()
+            # Find and close at the last complete quoted string
+            last_quote = json_str.rfind('"')
+            if last_quote > 0:
+                json_str = json_str[:last_quote + 1]
+
+        # Recount stack after truncation
+        in_string = False
+        escape_next = False
+        stack = []
+        for ch in json_str:
+            if escape_next:
+                escape_next = False
+                continue
+            if ch == '\\' and in_string:
+                escape_next = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch in '{[':
+                stack.append(ch)
+            elif ch == '}' and stack and stack[-1] == '{':
+                stack.pop()
+            elif ch == ']' and stack and stack[-1] == '[':
+                stack.pop()
+
+        # Remove trailing comma
+        json_str = json_str.rstrip()
+        if json_str.endswith(','):
+            json_str = json_str[:-1]
+
+        # Close all open brackets in reverse order
+        for bracket in reversed(stack):
+            if bracket == '{':
+                json_str += '}'
+            elif bracket == '[':
+                json_str += ']'
+
+        return json_str
+
     def _plan_media_sequence(
         self,
         audio_duration: float,
@@ -579,8 +703,7 @@ Return ONLY this JSON, nothing else:
             if start != -1 and end != -1:
                 response_text = response_text[start:end+1]
             # Fix trailing commas (common Gemini JSON issue)
-            import re as _re2
-            response_text = _re2.sub(r',\s*([\]}])', r'\1', response_text)
+            response_text = re.sub(r',\s*([\]}])', r'\1', response_text)
             plan = json.loads(response_text)
         except Exception as _plan_ex:
             if verbose:
