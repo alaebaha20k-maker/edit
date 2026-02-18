@@ -41,7 +41,7 @@ except ImportError:
 # ─────────────────────────────────────────────────────────────────────────────
 # Constants
 # ─────────────────────────────────────────────────────────────────────────────
-MODEL_ID = "gemini-2.5-flash-preview-05-20"   # Gemini Flash with image output
+MODEL_ID = "imagen-3.0-generate-002"          # Imagen 3 (primary); fallback: gemini-2.0-flash-exp-image-generation
 TARGET_ASPECT = "16:9"
 NATIVE_W, NATIVE_H = 1344, 768          # what the model actually returns
 OUTPUT_W, OUTPUT_H = 1920, 1080         # target resolution
@@ -77,26 +77,36 @@ def _generate_one_blocking(client: "genai.Client", prompt: str, out_path: Path) 
 
     wrapped_prompt = CINEMATIC_WRAPPER.format(prompt=prompt)
 
-    response = client.models.generate_content(
-        model=MODEL_ID,
-        contents=[wrapped_prompt],
-        config=types.GenerateContentConfig(
-            response_modalities=["IMAGE", "TEXT"],
-            image_generation_config=types.ImageGenerationConfig(
-                number_of_images=1,
-            ),
-        ),
-    )
-
-    # Extract image bytes from response
+    # Primary: Imagen 3 via generate_images()
     image_bytes = None
-    for candidate in response.candidates:
-        for part in candidate.content.parts:
-            if hasattr(part, "inline_data") and part.inline_data and part.inline_data.data:
-                image_bytes = part.inline_data.data
-                break
-        if image_bytes:
+    try:
+        response = client.models.generate_images(
+            model="imagen-3.0-generate-002",
+            prompt=wrapped_prompt,
+            config=types.GenerateImagesConfig(
+                number_of_images=1,
+                aspect_ratio="16:9",
+            ),
+        )
+        for generated_image in response.generated_images:
+            image_bytes = generated_image.image.image_bytes
             break
+    except Exception:
+        # Fallback: Gemini 2.0 Flash native image generation
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-exp-image-generation",
+            contents=[wrapped_prompt],
+            config=types.GenerateContentConfig(
+                response_modalities=["TEXT", "IMAGE"],
+            ),
+        )
+        for candidate in response.candidates:
+            for part in candidate.content.parts:
+                if hasattr(part, "inline_data") and part.inline_data and part.inline_data.data:
+                    image_bytes = part.inline_data.data
+                    break
+            if image_bytes:
+                break
 
     if not image_bytes:
         raise ValueError("No image data in Gemini response")

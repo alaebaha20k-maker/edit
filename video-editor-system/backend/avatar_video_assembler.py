@@ -175,6 +175,39 @@ class AvatarVideoAssembler:
 
         return final_video
 
+    def _normalize_avatar_source(
+        self,
+        avatar_video_path: str,
+        verbose: bool = False
+    ) -> str:
+        """
+        Re-encode the raw avatar video ONCE to the target format
+        (1920x1080, 25fps, H.264, yuv420p, timescale 12800).
+        All subsequent loops use stream copy from this normalized file.
+
+        Returns:
+            str: Path to normalized avatar file
+        """
+        normalized_path = os.path.join(self.temp_dir, "avatar_normalized.mp4")
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', avatar_video_path,
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',
+            '-crf', '28',
+            '-r', '25',
+            '-vf', 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080',
+            '-pix_fmt', 'yuv420p',
+            '-video_track_timescale', '12800',
+            '-an',
+            '-movflags', '+faststart',
+            normalized_path
+        ]
+        if not verbose:
+            cmd.extend(['-loglevel', 'error'])
+        subprocess.run(cmd, check=True)
+        return normalized_path
+
     def _create_avatar_loops(
         self,
         avatar_video_path: str,
@@ -182,7 +215,11 @@ class AvatarVideoAssembler:
         verbose: bool = False
     ) -> Dict[int, str]:
         """
-        Create looped avatar clips for all avatar segments
+        Create looped avatar clips for all avatar segments.
+
+        Encodes the source avatar ONCE to the target format, then uses
+        stream copy (no re-encode) for every individual loop — much faster
+        when there are many avatar segments.
 
         Args:
             avatar_video_path: Path to original avatar video
@@ -192,25 +229,33 @@ class AvatarVideoAssembler:
         Returns:
             Dict mapping segment index to avatar clip path
         """
-        avatar_clips = {}
         avatar_segments = [
             (i, seg) for i, seg in enumerate(media_plan['segments'])
             if seg['type'] == 'avatar'
         ]
 
+        if not avatar_segments:
+            return {}
+
+        # Normalize once — pay the encoding cost a single time
+        if verbose:
+            print("   🔧 Normalizing avatar source (once)...")
+        normalized_avatar = self._normalize_avatar_source(avatar_video_path, verbose=verbose)
+
+        avatar_clips = {}
         for i, (seg_idx, segment) in enumerate(avatar_segments):
             target_duration = segment['duration']
 
             if verbose:
-                print(f"   [{i+1}/{len(avatar_segments)}] Creating {target_duration:.1f}s avatar loop...")
+                print(f"   [{i+1}/{len(avatar_segments)}] Looping {target_duration:.1f}s (stream copy)...")
 
-            # Create looped clip
             output_path = os.path.join(self.temp_dir, f"avatar_loop_{seg_idx}.mp4")
 
             clip_path = self._loop_avatar_video(
-                avatar_video_path=avatar_video_path,
+                avatar_video_path=normalized_avatar,
                 target_duration=target_duration,
                 output_path=output_path,
+                use_stream_copy=True,
                 verbose=verbose
             )
 
@@ -223,41 +268,52 @@ class AvatarVideoAssembler:
         avatar_video_path: str,
         target_duration: float,
         output_path: str,
+        use_stream_copy: bool = False,
         verbose: bool = False
     ) -> str:
         """
-        Loop avatar video to target duration using FAST COPY codec
+        Loop avatar video to target duration.
 
         Args:
-            avatar_video_path: Original avatar video
+            avatar_video_path: Avatar video (preferably pre-normalized)
             target_duration: Target duration in seconds
             output_path: Output path
+            use_stream_copy: If True, skip re-encode (fast; requires pre-normalized source)
             verbose: Print progress
 
         Returns:
             str: Path to looped video
         """
-        # Re-encode avatar to 1920x1080 25fps — matches stock clips exactly.
-        # stream_loop loops the input; re-encode ensures consistent timebase,
-        # resolution and framerate across ALL clips for clean concat.
-        # Force video_track_timescale=12800 so all segments share the same
-        # timebase — eliminates non-monotonic DTS and bitstream filter warnings.
-        cmd = [
-            'ffmpeg', '-y',
-            '-stream_loop', '-1',
-            '-i', avatar_video_path,
-            '-t', str(target_duration),
-            '-c:v', 'libx264',
-            '-preset', 'ultrafast',
-            '-crf', '28',
-            '-r', '25',
-            '-vf', 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080',
-            '-pix_fmt', 'yuv420p',
-            '-video_track_timescale', '12800',
-            '-an',
-            '-movflags', '+faststart',
-            output_path
-        ]
+        if use_stream_copy:
+            # Source is already 1920x1080/25fps/H.264/yuv420p/timescale-12800
+            # — just loop and copy the bitstream, no re-encode needed.
+            cmd = [
+                'ffmpeg', '-y',
+                '-stream_loop', '-1',
+                '-i', avatar_video_path,
+                '-t', str(target_duration),
+                '-c', 'copy',
+                '-movflags', '+faststart',
+                output_path
+            ]
+        else:
+            # Re-encode to target format (fallback / first-time normalization)
+            cmd = [
+                'ffmpeg', '-y',
+                '-stream_loop', '-1',
+                '-i', avatar_video_path,
+                '-t', str(target_duration),
+                '-c:v', 'libx264',
+                '-preset', 'ultrafast',
+                '-crf', '28',
+                '-r', '25',
+                '-vf', 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080',
+                '-pix_fmt', 'yuv420p',
+                '-video_track_timescale', '12800',
+                '-an',
+                '-movflags', '+faststart',
+                output_path
+            ]
 
         if not verbose:
             cmd.extend(['-loglevel', 'error'])
