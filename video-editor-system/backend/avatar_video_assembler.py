@@ -175,6 +175,43 @@ class AvatarVideoAssembler:
 
         return final_video
 
+    # Target fps used uniformly across all clips so concat never needs re-encode.
+    # 30fps matches typical avatar source fps — no conversion work.
+    TARGET_FPS = 30
+
+    def _normalize_avatar_source(
+        self,
+        avatar_video_path: str,
+        verbose: bool = False
+    ) -> str:
+        """
+        Re-encode the raw avatar video ONCE to the target format
+        (1920x1080, 30fps, H.264, yuv420p, timescale 12800).
+        All subsequent loops stream-copy from this normalized file.
+
+        Returns:
+            str: Path to normalized avatar file
+        """
+        normalized_path = os.path.join(self.temp_dir, "avatar_normalized.mp4")
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', avatar_video_path,
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',
+            '-crf', '28',
+            '-r', str(self.TARGET_FPS),
+            '-vf', 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080',
+            '-pix_fmt', 'yuv420p',
+            '-video_track_timescale', '12800',
+            '-an',
+            '-movflags', '+faststart',
+            normalized_path
+        ]
+        if not verbose:
+            cmd.extend(['-loglevel', 'error'])
+        subprocess.run(cmd, check=True)
+        return normalized_path
+
     def _create_avatar_loops(
         self,
         avatar_video_path: str,
@@ -182,7 +219,12 @@ class AvatarVideoAssembler:
         verbose: bool = False
     ) -> Dict[int, str]:
         """
-        Create looped avatar clips for all avatar segments
+        Create looped avatar clips for all avatar segments.
+
+        Strategy:
+        1. Normalize avatar source ONCE (one encode, any fps/resolution → 1920x1080/30fps/H.264).
+        2. For each unique duration, create one loop file via stream copy (no re-encode).
+        3. Segments sharing the same duration reuse the same cached file — no duplicate work.
 
         Args:
             avatar_video_path: Path to original avatar video
@@ -192,28 +234,48 @@ class AvatarVideoAssembler:
         Returns:
             Dict mapping segment index to avatar clip path
         """
-        avatar_clips = {}
         avatar_segments = [
             (i, seg) for i, seg in enumerate(media_plan['segments'])
             if seg['type'] == 'avatar'
         ]
 
+        if not avatar_segments:
+            return {}
+
+        # Encode source to target format once
+        if verbose:
+            print("   🔧 Normalizing avatar source (once)...")
+        normalized_avatar = self._normalize_avatar_source(avatar_video_path, verbose=verbose)
+
+        # Cache: duration_key (ms-rounded float) → output_path
+        # Many segments share the same duration (e.g. all 60s) — build the loop
+        # file once and reuse it instead of calling ffmpeg N times.
+        _duration_cache: Dict[float, str] = {}
+        avatar_clips = {}
+
         for i, (seg_idx, segment) in enumerate(avatar_segments):
             target_duration = segment['duration']
+            cache_key = round(target_duration, 3)  # avoid float noise
 
+            if cache_key in _duration_cache:
+                avatar_clips[seg_idx] = _duration_cache[cache_key]
+                if verbose:
+                    print(f"   [{i+1}/{len(avatar_segments)}] Reusing cached {target_duration:.1f}s loop ♻️")
+                continue
+
+            output_path = os.path.join(self.temp_dir, f"avatar_loop_{cache_key}s.mp4")
             if verbose:
-                print(f"   [{i+1}/{len(avatar_segments)}] Creating {target_duration:.1f}s avatar loop...")
-
-            # Create looped clip
-            output_path = os.path.join(self.temp_dir, f"avatar_loop_{seg_idx}.mp4")
+                print(f"   [{i+1}/{len(avatar_segments)}] Creating {target_duration:.1f}s loop (stream copy)...")
 
             clip_path = self._loop_avatar_video(
-                avatar_video_path=avatar_video_path,
+                avatar_video_path=normalized_avatar,
                 target_duration=target_duration,
                 output_path=output_path,
+                use_stream_copy=True,
                 verbose=verbose
             )
 
+            _duration_cache[cache_key] = clip_path
             avatar_clips[seg_idx] = clip_path
 
         return avatar_clips
@@ -223,47 +285,57 @@ class AvatarVideoAssembler:
         avatar_video_path: str,
         target_duration: float,
         output_path: str,
+        use_stream_copy: bool = False,
         verbose: bool = False
     ) -> str:
         """
-        Loop avatar video to target duration using FAST COPY codec
+        Loop avatar video to target duration.
 
         Args:
-            avatar_video_path: Original avatar video
+            avatar_video_path: Avatar video (preferably pre-normalized)
             target_duration: Target duration in seconds
             output_path: Output path
+            use_stream_copy: Skip re-encode (requires pre-normalized source)
             verbose: Print progress
 
         Returns:
             str: Path to looped video
         """
-        # Re-encode avatar to 1920x1080 25fps — matches stock clips exactly.
-        # stream_loop loops the input; re-encode ensures consistent timebase,
-        # resolution and framerate across ALL clips for clean concat.
-        # Force video_track_timescale=12800 so all segments share the same
-        # timebase — eliminates non-monotonic DTS and bitstream filter warnings.
-        cmd = [
-            'ffmpeg', '-y',
-            '-stream_loop', '-1',
-            '-i', avatar_video_path,
-            '-t', str(target_duration),
-            '-c:v', 'libx264',
-            '-preset', 'ultrafast',
-            '-crf', '28',
-            '-r', '25',
-            '-vf', 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080',
-            '-pix_fmt', 'yuv420p',
-            '-video_track_timescale', '12800',
-            '-an',
-            '-movflags', '+faststart',
-            output_path
-        ]
+        if use_stream_copy:
+            # Source is already 1920x1080/30fps/H.264/yuv420p/timescale-12800
+            # — just loop and copy the bitstream, no re-encode.
+            cmd = [
+                'ffmpeg', '-y',
+                '-stream_loop', '-1',
+                '-i', avatar_video_path,
+                '-t', str(target_duration),
+                '-c', 'copy',
+                '-movflags', '+faststart',
+                output_path
+            ]
+        else:
+            # Re-encode path (fallback)
+            cmd = [
+                'ffmpeg', '-y',
+                '-stream_loop', '-1',
+                '-i', avatar_video_path,
+                '-t', str(target_duration),
+                '-c:v', 'libx264',
+                '-preset', 'ultrafast',
+                '-crf', '28',
+                '-r', str(self.TARGET_FPS),
+                '-vf', 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080',
+                '-pix_fmt', 'yuv420p',
+                '-video_track_timescale', '12800',
+                '-an',
+                '-movflags', '+faststart',
+                output_path
+            ]
 
         if not verbose:
             cmd.extend(['-loglevel', 'error'])
 
         subprocess.run(cmd, check=True)
-
         return output_path
 
     def _prepare_media_clips(
@@ -340,7 +412,7 @@ class AvatarVideoAssembler:
             '-preset', 'ultrafast',
             '-tune', 'stillimage',
             '-crf', '28',
-            '-r', '25',
+            '-r', str(self.TARGET_FPS),
             '-vf', 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080',
             '-pix_fmt', 'yuv420p',
             '-video_track_timescale', '12800',
@@ -382,7 +454,7 @@ class AvatarVideoAssembler:
         # Trim duration
         trim_duration = min(duration, target_duration)
 
-        # Always re-encode to 1920x1080 25fps h264 — guarantees consistent
+        # Always re-encode to 1920x1080/30fps/H.264 — guarantees consistent
         # timebase/framerate so the final concat never gets non-monotonic DTS.
         # ultrafast preset keeps this fast while fixing all format mismatches.
         # Force video_track_timescale=12800 to match avatar clips exactly.
@@ -393,7 +465,7 @@ class AvatarVideoAssembler:
             '-c:v', 'libx264',
             '-preset', 'ultrafast',
             '-crf', '28',
-            '-r', '25',
+            '-r', str(self.TARGET_FPS),
             '-vf', 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080',
             '-pix_fmt', 'yuv420p',
             '-video_track_timescale', '12800',
@@ -441,7 +513,7 @@ class AvatarVideoAssembler:
 
         output_path = os.path.join(self.temp_dir, "concatenated.mp4")
 
-        # All clips are already 1920x1080/25fps/h264/yuv420p from prep step
+        # All clips are already 1920x1080/30fps/h264/yuv420p from prep step
         # so concat can stream-copy — ultra fast, no quality loss.
         # Explicit -bsf:v h264_mp4toannexb avoids per-segment auto-detection
         # overhead that prints warnings and adds ~0.5s per segment.

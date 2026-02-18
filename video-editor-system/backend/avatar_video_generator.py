@@ -1148,28 +1148,38 @@ OUTPUT — valid JSON only, no markdown:
 
         image_bytes = None
 
-        # Primary: Gemini 2.5 Flash with image generation
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-preview-05-20",
-            contents=[cinematic_prompt],
-            config=_types.GenerateContentConfig(
-                response_modalities=["IMAGE", "TEXT"],
-                image_generation_config=_types.ImageGenerationConfig(
+        # Primary: Imagen 3 via generate_images()
+        try:
+            response = client.models.generate_images(
+                model="imagen-3.0-generate-002",
+                prompt=cinematic_prompt,
+                config=_types.GenerateImagesConfig(
                     number_of_images=1,
+                    aspect_ratio="16:9",
                 ),
-            ),
-        )
-
-        for candidate in response.candidates:
-            for part in candidate.content.parts:
-                if hasattr(part, "inline_data") and part.inline_data and part.inline_data.data:
-                    image_bytes = part.inline_data.data
-                    break
-            if image_bytes:
+            )
+            for generated_image in response.generated_images:
+                image_bytes = generated_image.image.image_bytes
                 break
+        except Exception as _e1:
+            # Fallback: Gemini 2.0 Flash native image generation
+            response = client.models.generate_content(
+                model="gemini-2.0-flash-exp-image-generation",
+                contents=[cinematic_prompt],
+                config=_types.GenerateContentConfig(
+                    response_modalities=["TEXT", "IMAGE"],
+                ),
+            )
+            for candidate in response.candidates:
+                for part in candidate.content.parts:
+                    if hasattr(part, "inline_data") and part.inline_data and part.inline_data.data:
+                        image_bytes = part.inline_data.data
+                        break
+                if image_bytes:
+                    break
 
         if not image_bytes:
-            raise ValueError("No image data returned by Gemini 2.5 Flash")
+            raise ValueError("No image data returned by Gemini image generation")
 
         # Upscale to 1920x1080
         img = _Image.open(_io.BytesIO(image_bytes)).convert("RGB")
