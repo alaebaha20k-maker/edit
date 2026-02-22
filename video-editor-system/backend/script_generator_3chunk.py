@@ -101,20 +101,24 @@ class ScriptGenerator3Chunk:
         # Plan chunks using ChunkPlanner
         planner = ChunkPlanner(length)
         chunks = planner.plan()
+        total_chunks = len(chunks)
 
         if verbose:
-            print(f"📦 Chunk Plan:")
+            print(f"📦 Chunk Plan ({total_chunks} chunks):")
             for chunk in chunks:
-                print(f"   Chunk {chunk.index}: {chunk.role} ({chunk.target_chars:,} chars)")
+                print(f"   Chunk {chunk.index}/{total_chunks}: {chunk.role} ({chunk.target_chars:,} chars)")
             print()
 
         # Generate each chunk
         generated_chunks = []
         previous_context = ""
 
+        # Per-chunk retry: if a chunk comes back too short, retry up to 2 times
+        MAX_CHUNK_RETRIES = 2
+
         for chunk in chunks:
             if verbose:
-                print(f"🎨 Generating Chunk {chunk.index}/3: {chunk.role}...")
+                print(f"🎨 Generating Chunk {chunk.index}/{total_chunks}: {chunk.role}...")
 
             # Build prompt for this chunk
             prompt = self._build_chunk_prompt(
@@ -122,37 +126,53 @@ class ScriptGenerator3Chunk:
                 niche=niche,
                 writing_guidelines=writing_guidelines,
                 chunk=chunk,
-                previous_context=previous_context
+                previous_context=previous_context,
+                total_chunks=total_chunks
             )
 
             # Determine temperature based on role
             temp = self._get_temperature(chunk.role)
 
-            # Call API
-            model = genai.GenerativeModel('gemini-2.5-flash')
-            response = model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=temp,
-                    max_output_tokens=65536,
-                    top_p=0.95,
-                    top_k=40
-                )
-            )
+            # Minimum acceptable length for this chunk (75% of target)
+            min_acceptable = int(chunk.target_chars * 0.75)
 
-            chunk_text = response.text.strip()
+            chunk_text = ""
+            for attempt in range(MAX_CHUNK_RETRIES + 1):
+                # Call API
+                model = genai.GenerativeModel('gemini-2.5-flash')
+                response = model.generate_content(
+                    prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=temp,
+                        max_output_tokens=65536,
+                        top_p=0.95,
+                        top_k=40
+                    )
+                )
+
+                chunk_text = response.text.strip()
+                actual_len = len(chunk_text)
+
+                if actual_len >= min_acceptable or attempt == MAX_CHUNK_RETRIES:
+                    break
+
+                if verbose:
+                    print(f"   ⚠️  Attempt {attempt + 1}: only {actual_len:,} chars "
+                          f"(need ≥ {min_acceptable:,}), retrying...")
+                time.sleep(1.5)
+
             generated_chunks.append(chunk_text)
 
             if verbose:
-                print(f"✅ Chunk {chunk.index}: {len(chunk_text):,} chars")
+                print(f"✅ Chunk {chunk.index}/{total_chunks}: {len(chunk_text):,} chars")
 
             # Save last 2-3 sentences as context for next chunk
-            if chunk.index < len(chunks):
+            if chunk.index < total_chunks:
                 sentences = [s.strip() for s in re.split(r'[.!?]', chunk_text) if len(s.strip()) > 15]
                 previous_context = '. '.join(sentences[-3:]) + '.' if len(sentences) >= 3 else chunk_text[-300:]
 
             # Rate limit protection
-            if chunk.index < len(chunks):
+            if chunk.index < total_chunks:
                 time.sleep(1.5)
 
         # Merge chunks
@@ -201,7 +221,8 @@ class ScriptGenerator3Chunk:
         niche: Dict,
         writing_guidelines: str,
         chunk: 'ChunkConfig',
-        previous_context: str
+        previous_context: str,
+        total_chunks: int = 3
     ) -> str:
         """
         Build role-locked prompt for a specific chunk
@@ -216,32 +237,34 @@ class ScriptGenerator3Chunk:
         # Role-specific instructions
         if chunk.role == "HOOK_AND_FRAMEWORK":
             role_instruction = f"""
-YOUR ROLE IN THIS CHUNK (1 of 3):
+YOUR ROLE IN THIS CHUNK ({chunk.index} of {total_chunks} — OPENING):
 - Create magnetic hook (first 10-15 seconds)
 - Establish framework and setup
 - Create curiosity and tension
 - Do NOT explain everything - leave mystery
 - This is the OPENING, not the full story
 
-TARGET: {chunk.target_chars:,} characters for this chunk."""
+TARGET: {chunk.target_chars:,} characters for this chunk.
+You MUST fill the entire {chunk.target_chars:,} characters. Do not stop early."""
 
         elif chunk.role == "DEEP_INSIGHTS_AND_EXAMPLES":
             role_instruction = f"""
-YOUR ROLE IN THIS CHUNK (2 of 3):
+YOUR ROLE IN THIS CHUNK ({chunk.index} of {total_chunks} — MIDDLE):
 - Develop the core content
 - Add deep insights and examples
-- Build on the hook from previous chunk
+- Build on what came before
 - Explore the topic thoroughly
 - Keep engagement high
 
 PREVIOUS CONTEXT (continue seamlessly from this):
 "{previous_context}"
 
-TARGET: {chunk.target_chars:,} characters for this chunk."""
+TARGET: {chunk.target_chars:,} characters for this chunk.
+You MUST fill the entire {chunk.target_chars:,} characters. Do not stop early."""
 
         else:  # IMPLEMENTATION_AND_CLOSE
             role_instruction = f"""
-YOUR ROLE IN THIS CHUNK (3 of 3 - FINAL):
+YOUR ROLE IN THIS CHUNK ({chunk.index} of {total_chunks} — FINAL):
 - Bring everything together
 - Provide actionable insights or resolution
 - Create memorable conclusion
@@ -251,7 +274,8 @@ YOUR ROLE IN THIS CHUNK (3 of 3 - FINAL):
 PREVIOUS CONTEXT (continue seamlessly from this):
 "{previous_context}"
 
-TARGET: {chunk.target_chars:,} characters for this chunk."""
+TARGET: {chunk.target_chars:,} characters for this chunk.
+You MUST fill the entire {chunk.target_chars:,} characters. Do not stop early."""
 
         # Build full prompt
         prompt = f"""You are an elite scriptwriter creating voice-ready narration.
