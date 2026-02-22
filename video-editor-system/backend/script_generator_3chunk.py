@@ -113,9 +113,6 @@ class ScriptGenerator3Chunk:
         generated_chunks = []
         previous_context = ""
 
-        # Per-chunk retry: if a chunk comes back too short, retry up to 2 times
-        MAX_CHUNK_RETRIES = 2
-
         for chunk in chunks:
             if verbose:
                 print(f"🎨 Generating Chunk {chunk.index}/{total_chunks}: {chunk.role}...")
@@ -133,34 +130,19 @@ class ScriptGenerator3Chunk:
             # Determine temperature based on role
             temp = self._get_temperature(chunk.role)
 
-            # Minimum acceptable length for this chunk (75% of target)
-            min_acceptable = int(chunk.target_chars * 0.75)
-
-            chunk_text = ""
-            for attempt in range(MAX_CHUNK_RETRIES + 1):
-                # Call API
-                model = genai.GenerativeModel('gemini-2.5-flash')
-                response = model.generate_content(
-                    prompt,
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=temp,
-                        max_output_tokens=65536,
-                        top_p=0.95,
-                        top_k=40
-                    )
+            # Call API
+            model = genai.GenerativeModel('gemini-2.5-flash')
+            response = model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=temp,
+                    max_output_tokens=65536,
+                    top_p=0.95,
+                    top_k=40
                 )
+            )
 
-                chunk_text = response.text.strip()
-                actual_len = len(chunk_text)
-
-                if actual_len >= min_acceptable or attempt == MAX_CHUNK_RETRIES:
-                    break
-
-                if verbose:
-                    print(f"   ⚠️  Attempt {attempt + 1}: only {actual_len:,} chars "
-                          f"(need ≥ {min_acceptable:,}), retrying...")
-                time.sleep(1.5)
-
+            chunk_text = response.text.strip()
             generated_chunks.append(chunk_text)
 
             if verbose:
