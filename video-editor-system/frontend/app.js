@@ -4893,6 +4893,9 @@ const VOICE_CATALOGUE = {
         { id: 'Logan',    desc: 'Bold · Dynamic · Promo' },
         { id: 'Blake',    desc: 'Smooth · Cool · Modern' },
         { id: 'Clive',    desc: 'Deep · Calm · Authoritative' },
+        { id: 'Mathieu',  desc: 'Naturel · Professionnel · FR' },
+        { id: 'Étienne',  desc: 'Chaleureux · Storytelling · FR' },
+        { id: 'Alain',    desc: 'Profond · Autoritaire · FR' },
     ],
     female: [
         { id: 'Olivia',    desc: 'Elegant · Smooth · Premium' },
@@ -4900,6 +4903,7 @@ const VOICE_CATALOGUE = {
         { id: 'Ashley',    desc: 'Energetic · Bright · Upbeat' },
         { id: 'Elizabeth', desc: 'Professional · Clear · Corporate' },
         { id: 'Wendy',     desc: 'Soft · Gentle · Soothing' },
+        { id: 'Hélène',   desc: 'Douce · Élégante · FR' },
     ],
 };
 

@@ -215,6 +215,35 @@ Output ONLY the JSON array, no extra text."""
             'gender': 'Male',
             'description': 'Strong, confident voice - great for motivational content',
             'preview_url': 'https://storage.googleapis.com/inworld-ai-samples/craig_preview.mp3'
+        },
+        # French voices (fr-FR)
+        'mathieu': {
+            'name': 'Mathieu',
+            'language': 'fr-FR',
+            'gender': 'Male',
+            'description': 'Voix masculine naturelle - idéale pour les contenus professionnels',
+            'preview_url': ''
+        },
+        'helene': {
+            'name': 'Hélène',
+            'language': 'fr-FR',
+            'gender': 'Female',
+            'description': 'Voix féminine douce et élégante - parfaite pour la narration',
+            'preview_url': ''
+        },
+        'etienne': {
+            'name': 'Étienne',
+            'language': 'fr-FR',
+            'gender': 'Male',
+            'description': 'Voix masculine chaleureuse - excellente pour le storytelling',
+            'preview_url': ''
+        },
+        'alain': {
+            'name': 'Alain',
+            'language': 'fr-FR',
+            'gender': 'Male',
+            'description': 'Voix masculine profonde et autoritaire - idéale pour les documentaires',
+            'preview_url': ''
         }
     }
 
