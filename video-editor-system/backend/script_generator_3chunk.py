@@ -131,9 +131,8 @@ class ScriptGenerator3Chunk:
             temp = self._get_temperature(chunk.role)
 
             # max_output_tokens: sized to the chunk, not a blanket 65536.
-            # 1 char ≈ 0.33 tokens (English) → chars/3 + buffer.
-            # This avoids burning quota on unused token headroom.
-            chunk_max_tokens = max(4096, int(chunk.target_chars / 3) + 2000)
+            # Arabic: ~2 chars/token → chars/2 + buffer (safer than /3 for English).
+            chunk_max_tokens = max(4096, int(chunk.target_chars / 2) + 2000)
 
             # Call API — retry on 429 quota errors using the suggested wait time
             MAX_API_RETRIES = 3
