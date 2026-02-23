@@ -135,17 +135,38 @@ class ScriptGenerator3Chunk:
             # This avoids burning quota on unused token headroom.
             chunk_max_tokens = max(4096, int(chunk.target_chars / 3) + 2000)
 
-            # Call API
-            model = genai.GenerativeModel('gemini-2.5-flash')
-            response = model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=temp,
-                    max_output_tokens=chunk_max_tokens,
-                    top_p=0.95,
-                    top_k=40
-                )
-            )
+            # Call API — retry on 429 quota errors using the suggested wait time
+            MAX_API_RETRIES = 3
+            response = None
+            for attempt in range(MAX_API_RETRIES + 1):
+                try:
+                    model = genai.GenerativeModel('gemini-2.5-flash')
+                    response = model.generate_content(
+                        prompt,
+                        generation_config=genai.types.GenerationConfig(
+                            temperature=temp,
+                            max_output_tokens=chunk_max_tokens,
+                            top_p=0.95,
+                            top_k=40
+                        )
+                    )
+                    break  # success
+                except Exception as e:
+                    err_str = str(e)
+                    is_quota = (
+                        '429' in err_str
+                        or 'quota' in err_str.lower()
+                        or 'ResourceExhausted' in type(e).__name__
+                    )
+                    if not is_quota or attempt == MAX_API_RETRIES:
+                        raise
+                    # Extract the suggested retry delay from the error message
+                    delay_match = re.search(r'seconds: (\d+)', err_str)
+                    wait = int(delay_match.group(1)) + 5 if delay_match else 35
+                    if verbose:
+                        print(f"   ⚠️  Quota limit hit — waiting {wait}s before retry "
+                              f"(attempt {attempt + 1}/{MAX_API_RETRIES})...")
+                    time.sleep(wait)
 
             chunk_text = response.text.strip()
             generated_chunks.append(chunk_text)
