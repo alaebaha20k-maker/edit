@@ -4893,9 +4893,9 @@ const VOICE_CATALOGUE = {
         { id: 'Logan',    desc: 'Bold · Dynamic · Promo' },
         { id: 'Blake',    desc: 'Smooth · Cool · Modern' },
         { id: 'Clive',    desc: 'Deep · Calm · Authoritative' },
-        { id: 'Mathieu',  desc: 'Naturel · Professionnel · FR' },
-        { id: 'Étienne',  desc: 'Chaleureux · Storytelling · FR' },
-        { id: 'Alain',    desc: 'Profond · Autoritaire · FR' },
+        { id: 'Mathieu',  desc: 'Naturel · Professionnel · FR', lang: 'fr-FR' },
+        { id: 'Étienne',  desc: 'Chaleureux · Storytelling · FR', lang: 'fr-FR' },
+        { id: 'Alain',    desc: 'Profond · Autoritaire · FR',    lang: 'fr-FR' },
     ],
     female: [
         { id: 'Olivia',    desc: 'Elegant · Smooth · Premium' },
@@ -4903,9 +4903,15 @@ const VOICE_CATALOGUE = {
         { id: 'Ashley',    desc: 'Energetic · Bright · Upbeat' },
         { id: 'Elizabeth', desc: 'Professional · Clear · Corporate' },
         { id: 'Wendy',     desc: 'Soft · Gentle · Soothing' },
-        { id: 'Hélène',   desc: 'Douce · Élégante · FR' },
+        { id: 'Hélène',   desc: 'Douce · Élégante · FR',        lang: 'fr-FR' },
     ],
 };
+
+function getVoiceLang(voiceId) {
+    const all = [...(VOICE_CATALOGUE.male || []), ...(VOICE_CATALOGUE.female || [])];
+    const entry = all.find(v => v.id === voiceId);
+    return (entry && entry.lang) ? entry.lang : 'en-US';
+}
 
 // Track which gender is currently active
 let _activeGender = 'male';
@@ -4970,6 +4976,10 @@ function updateVoiceDescription() {
     const list = VOICE_CATALOGUE[_activeGender] || [];
     const entry = list.find(v => v.id === selected);
     descEl.textContent = entry ? entry.desc : '';
+
+    // Keep the hidden language input in sync so generation uses the right locale
+    const langInput = document.getElementById('voiceLanguage');
+    if (langInput) langInput.value = getVoiceLang(selected);
 }
 
 async function previewVoice() {
@@ -4983,7 +4993,7 @@ async function previewVoice() {
 
     const voice_id = voiceSelect.value;
     const model_id = modelSelect ? modelSelect.value : 'inworld-tts-1.5-mini';
-    const language = 'en-US';
+    const language = getVoiceLang(voice_id);
 
     btn.disabled = true;
     btn.textContent = '⏳…';

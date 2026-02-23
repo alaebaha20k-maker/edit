@@ -2090,13 +2090,16 @@ def preview_voice_route():
     import requests as req
     from config import Config
 
-    PREVIEW_TEXT = "Hello! This is a preview of how this voice sounds. I hope you enjoy the quality."
+    PREVIEW_TEXT_EN = "Hello! This is a preview of how this voice sounds. I hope you enjoy the quality."
+    PREVIEW_TEXT_FR = "Bonjour ! Voici un aperçu de cette voix. J'espère que vous apprécierez la qualité."
 
     try:
         data = request.get_json() or {}
         voice_id = data.get('voice_id', 'Olivia')
         model_id = data.get('model_id', 'inworld-tts-1.5-mini')
         language = data.get('language', 'en-US')
+
+        preview_text = PREVIEW_TEXT_FR if language == 'fr-FR' else PREVIEW_TEXT_EN
 
         api_key = Config.get_inworld_api_key()
         api_secret = Config.get_inworld_api_secret()
@@ -2112,8 +2115,9 @@ def preview_voice_route():
         }
 
         payload = {
-            'text': PREVIEW_TEXT,
+            'text': preview_text,
             'voice_id': voice_id,
+            'language': language,
             'audio_config': {
                 'audio_encoding': 'MP3',
                 'speaking_rate': 1.0
