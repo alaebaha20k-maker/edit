@@ -130,13 +130,18 @@ class ScriptGenerator3Chunk:
             # Determine temperature based on role
             temp = self._get_temperature(chunk.role)
 
+            # max_output_tokens: sized to the chunk, not a blanket 65536.
+            # 1 char ≈ 0.33 tokens (English) → chars/3 + buffer.
+            # This avoids burning quota on unused token headroom.
+            chunk_max_tokens = max(4096, int(chunk.target_chars / 3) + 2000)
+
             # Call API
             model = genai.GenerativeModel('gemini-2.5-flash')
             response = model.generate_content(
                 prompt,
                 generation_config=genai.types.GenerationConfig(
                     temperature=temp,
-                    max_output_tokens=65536,
+                    max_output_tokens=chunk_max_tokens,
                     top_p=0.95,
                     top_k=40
                 )
@@ -153,9 +158,9 @@ class ScriptGenerator3Chunk:
                 sentences = [s.strip() for s in re.split(r'[.!?]', chunk_text) if len(s.strip()) > 15]
                 previous_context = '. '.join(sentences[-3:]) + '.' if len(sentences) >= 3 else chunk_text[-300:]
 
-            # Rate limit protection
+            # Rate limit protection — 4 s between chunks keeps RPM safe
             if chunk.index < total_chunks:
-                time.sleep(1.5)
+                time.sleep(4)
 
         # Merge chunks
         if verbose:

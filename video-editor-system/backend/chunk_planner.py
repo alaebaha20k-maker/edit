@@ -18,8 +18,10 @@ class ChunkConfig:
     target_chars: int
 
 
-# Maximum characters per chunk — keeps each API call reliable
-MAX_CHUNK_SIZE = 12000
+# Maximum characters per chunk.
+# 20k chars ≈ 5k-7k tokens — well within Gemini limits and keeps
+# total API calls low (80k → 5 chunks instead of 7) to avoid quota issues.
+MAX_CHUNK_SIZE = 20000
 
 # Threshold below which we use the simple 3-chunk split
 SMALL_SCRIPT_THRESHOLD = 36000
