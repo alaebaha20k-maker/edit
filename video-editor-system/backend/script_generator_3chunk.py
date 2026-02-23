@@ -95,7 +95,7 @@ class ScriptGenerator3Chunk:
                 print(f"Language: {detected_lang_name} (detected from title, overriding niche: {original_niche_lang})")
             else:
                 print(f"Language: {detected_lang_name}")
-            print(f"Chunks: 3 (30% + 40% + 30%)")
+            print(f"Chunks: dynamic (based on length)")
             print(f"{'='*70}\n")
 
         # Plan chunks using ChunkPlanner
