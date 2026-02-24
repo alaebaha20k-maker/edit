@@ -1755,6 +1755,10 @@ function toggleMediaSection(type) {
                 loadAutoImageStyles(); // Load styles (including custom) when section opens
             }
         }
+    } else if (type === 'localimages') {
+        const checked = document.getElementById('useLocalImagesMix')?.checked;
+        const section = document.getElementById('localImagesMixSection');
+        if (section) section.style.display = checked ? 'block' : 'none';
     }
 }
 
@@ -5026,5 +5030,146 @@ async function previewVoice() {
     } finally {
         btn.disabled = false;
         btn.textContent = '▶ Preview';
+    }
+}
+
+// =============================================================================
+// LOCAL IMAGES MIX — Avatar + user's own images, no AI generation
+// =============================================================================
+
+// Stores avatar path (server-side, muted) for local mix
+window.localMixAvatarData = null;
+// Stores uploaded image paths from server
+window.localMixImagePaths = [];
+
+async function handleLocalMixAvatarUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    showNotification('📤 Uploading and muting avatar video...', 'info');
+    const preview = document.getElementById('localMixAvatarPreview');
+    preview.innerHTML = '<p style="color:#888;">Uploading...</p>';
+
+    try {
+        const formData = new FormData();
+        formData.append('avatar', file);
+
+        const res = await fetch('/api/avatar/upload-avatar', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Upload failed');
+
+        window.localMixAvatarData = { path: data.path, duration: data.duration };
+
+        preview.innerHTML = `
+            <div style="background:rgba(76,175,80,0.1); padding:10px; border-radius:5px;">
+                ✅ <strong>${file.name}</strong> (${(data.duration || 0).toFixed(1)}s, muted)
+                <button onclick="window.localMixAvatarData=null; document.getElementById('localMixAvatarPreview').innerHTML='';"
+                    style="float:right; background:#f44336; color:white; border:none; padding:4px 10px; border-radius:3px; cursor:pointer;">Remove</button>
+            </div>`;
+        showNotification('✅ Avatar uploaded!', 'success');
+    } catch (err) {
+        preview.innerHTML = '';
+        showNotification('❌ Failed to upload avatar: ' + err.message, 'error');
+    }
+}
+
+async function handleLocalImagesUpload(event) {
+    const files = Array.from(event.target.files);
+    if (!files.length) return;
+
+    const preview = document.getElementById('localImagesPreview');
+    preview.innerHTML = '<p style="color:#888;">Uploading images...</p>';
+    showNotification(`📤 Uploading ${files.length} image(s)...`, 'info');
+
+    try {
+        const formData = new FormData();
+        files.forEach(f => formData.append('images', f));
+
+        const res = await fetch('/api/avatar/upload-local-images', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Upload failed');
+
+        window.localMixImagePaths = data.images.map(i => i.path);
+
+        preview.innerHTML = `
+            <div style="background:rgba(103,58,183,0.1); padding:10px; border-radius:5px; text-align:left;">
+                ✅ <strong>${data.count} image(s) ready</strong>
+                <button onclick="window.localMixImagePaths=[]; document.getElementById('localImagesPreview').innerHTML='';"
+                    style="float:right; background:#f44336; color:white; border:none; padding:4px 10px; border-radius:3px; cursor:pointer;">Clear</button>
+                <div style="margin-top:8px; font-size:12px; color:#666;">
+                    ${data.images.map(i => `• ${i.name}`).join('<br>')}
+                </div>
+            </div>`;
+        showNotification(`✅ ${data.count} image(s) uploaded!`, 'success');
+    } catch (err) {
+        preview.innerHTML = '';
+        showNotification('❌ Failed to upload images: ' + err.message, 'error');
+    }
+}
+
+async function generateLocalImagesMix() {
+    if (!window.localMixAvatarData) {
+        showNotification('⚠️ Please upload an avatar video first', 'warning'); return;
+    }
+    if (!window.localMixImagePaths || window.localMixImagePaths.length === 0) {
+        showNotification('⚠️ Please upload at least one image', 'warning'); return;
+    }
+
+    const voiceLibrary = window.videoData?.voiceLibrary || [];
+    if (voiceLibrary.length === 0) {
+        showNotification('⚠️ Please generate or upload voice first (Step 2)', 'warning'); return;
+    }
+
+    const progressDiv = document.getElementById('localImagesMixProgress');
+    progressDiv.style.display = 'block';
+    progressDiv.innerHTML = `<div style="padding:15px;">
+        ⚡ Assembling video — ${window.localMixImagePaths.length} image(s) + avatar loop...<br>
+        <small style="color:#888;">Smart timing: 30s avatar → 5s image (no AI needed)</small>
+    </div>`;
+
+    try {
+        const voicePaths = voiceLibrary.map(v => v.path).filter(Boolean);
+        const backgroundMusic = window.videoData?.backgroundMusic || null;
+
+        const res = await fetch('/api/avatar/generate-local-mix', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                avatar_video: window.localMixAvatarData.path,
+                audio: voicePaths[0],
+                voice_paths: voicePaths,
+                image_paths: window.localMixImagePaths,
+                background_music: backgroundMusic
+            })
+        });
+
+        const result = await res.json();
+        if (!result.success) throw new Error(result.error || 'Generation failed');
+
+        const videoFilename = result.video_path.split('/').pop();
+        const imagesMsg = result.images_used < result.total_images
+            ? `${result.images_used}/${result.total_images} images used (avatar loops for remaining time)`
+            : `All ${result.total_images} images used`;
+
+        progressDiv.innerHTML = `
+            <div style="padding:20px; background:rgba(103,58,183,0.1); border-radius:8px;">
+                <h3 style="color:#673ab7; margin:0 0 15px 0;">✅ Local Images Mix Ready!</h3>
+                <p><strong>Duration:</strong> ${(result.audio_duration || 0).toFixed(1)}s</p>
+                <p><strong>Images:</strong> ${imagesMsg}</p>
+                <p><strong>Timing:</strong> ${(result.avatar_gap || 30).toFixed(0)}s avatar + 5s image per cycle</p>
+                <p><strong>Done in:</strong> ${(result.generation_time || 0).toFixed(1)}s</p>
+                <video controls style="width:100%; max-width:800px; aspect-ratio:16/9; margin:15px 0; border-radius:8px; background:#000;">
+                    <source src="/api/download/${videoFilename}" type="video/mp4">
+                </video>
+                <div>
+                    <button class="btn-primary" onclick="window.location.href='/api/download/${videoFilename}'">📥 Download Video (MP4)</button>
+                </div>
+            </div>`;
+        showNotification('✅ Local Images Mix video ready!', 'success');
+
+    } catch (err) {
+        console.error('Local Images Mix error:', err);
+        progressDiv.innerHTML = `<div style="padding:15px; background:rgba(244,67,54,0.1); color:#f44336;">❌ ${err.message}</div>`;
+        showNotification('❌ Failed to generate Local Images Mix', 'error');
     }
 }

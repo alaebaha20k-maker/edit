@@ -352,6 +352,10 @@
                         <input type="checkbox" id="useAutoAvatar" onchange="toggleMediaSection('autoavatar')">
                         <span>🎭 Auto Avatar Mix (Avatar + AI Images)</span>
                     </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="useLocalImagesMix" onchange="toggleMediaSection('localimages')">
+                        <span>🖼️ Local Images Mix (Avatar + Your Images, No AI)</span>
+                    </label>
                 </div>
 
                 <!-- Auto Images AI Section -->
@@ -543,6 +547,41 @@
 
                     <button onclick="generateAutoAvatar()" class="btn-secondary" style="width: 100%;">🎭 Generate Auto Avatar Mix</button>
                     <div id="autoAvatarProgress" class="progress-box" style="display: none;"></div>
+                </div>
+
+                <!-- Local Images Mix Section -->
+                <div id="localImagesMixSection" class="subsection" style="display: none;">
+                    <div style="background: rgba(103, 58, 183, 0.1); padding: 12px; border-radius: 8px; margin-bottom: 15px;">
+                        <p style="font-size: 13px; color: #666; margin: 0;">
+                            🖼️ <strong>Local Images Mix:</strong> Upload your avatar + your own images. No AI generation.<br>
+                            📐 <strong>Pattern:</strong> [30s avatar] → [5s image] → [30s avatar] → [5s image] → ...<br>
+                            🧠 <strong>Smart calc:</strong> If images run out early → avatar loops to end. Too many images → spacing auto-adjusted to fit all images perfectly.
+                        </p>
+                    </div>
+
+                    <!-- Avatar Video -->
+                    <div style="margin-bottom: 15px;">
+                        <label>Avatar Video (will be auto-muted):</label>
+                        <div class="upload-zone" style="padding: 20px; text-align: center;">
+                            <input type="file" id="localMixAvatarUpload" accept="video/*" style="display: none;" onchange="handleLocalMixAvatarUpload(event)">
+                            <button onclick="document.getElementById('localMixAvatarUpload').click()" class="btn-secondary">📤 Upload Avatar Video</button>
+                            <div id="localMixAvatarPreview" style="margin-top: 10px;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Local Images Upload -->
+                    <div style="margin-bottom: 15px;">
+                        <label>Your Images <span style="color:#888; font-size:12px;">(JPG, PNG, WEBP, BMP, GIF — all formats)</span>:</label>
+                        <div class="upload-zone" style="padding: 20px; text-align: center;">
+                            <input type="file" id="localImagesUpload" accept="image/*" multiple style="display: none;" onchange="handleLocalImagesUpload(event)">
+                            <button onclick="document.getElementById('localImagesUpload').click()" class="btn-secondary">🖼️ Upload Images</button>
+                            <p style="font-size: 12px; color: #888; margin: 8px 0 0 0;">Select multiple images at once</p>
+                            <div id="localImagesPreview" style="margin-top: 12px;"></div>
+                        </div>
+                    </div>
+
+                    <button onclick="generateLocalImagesMix()" class="btn-secondary" style="width: 100%; background: linear-gradient(135deg, #673ab7, #9c27b0); border: none; color: white;">🖼️ Generate Local Images Mix</button>
+                    <div id="localImagesMixProgress" class="progress-box" style="display: none;"></div>
                 </div>
 
                 <!-- Media Library -->

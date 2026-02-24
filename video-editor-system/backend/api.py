@@ -3722,6 +3722,179 @@ def avatar_upload_avatar():
         }), 500
 
 
+@app.route('/api/avatar/upload-local-images', methods=['POST'])
+def avatar_upload_local_images():
+    """Upload multiple local images (all formats) for Local Images Mix."""
+    import time as _time
+    try:
+        files = request.files.getlist('images')
+        if not files:
+            return jsonify({'success': False, 'error': 'No images provided'}), 400
+
+        ALLOWED = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.avif'}
+        saved = []
+        for file in files:
+            if not file or not file.filename:
+                continue
+            ext = os.path.splitext(file.filename)[1].lower()
+            if ext not in ALLOWED:
+                continue
+            fname = secure_filename(file.filename)
+            fname = f"localimg_{int(_time.time()*1000)}_{fname}"
+            fpath = os.path.join(UPLOAD_FOLDER, fname)
+            file.save(fpath)
+            saved.append({'path': fpath, 'name': file.filename})
+
+        if not saved:
+            return jsonify({'success': False, 'error': 'No valid images found (check format)'}), 400
+
+        return jsonify({'success': True, 'images': saved, 'count': len(saved)})
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/avatar/generate-local-mix', methods=['POST'])
+def avatar_generate_local_mix():
+    """
+    Generate avatar video mixed with user's local images.
+    No AI generation — smart timing calc:
+      Default: 30s avatar + 5s image per cycle.
+      If images run out → avatar loops to end.
+      If too many images → spacing compressed to fit all.
+    """
+    import subprocess as _sp
+    import time as _time
+    try:
+        from avatar_video_assembler import AvatarVideoAssembler
+
+        data = request.json or {}
+        avatar_video_path = data.get('avatar_video')
+        voice_paths       = data.get('voice_paths', [])
+        audio_path        = data.get('audio') or (voice_paths[0] if voice_paths else None)
+        image_paths       = data.get('image_paths', [])
+        background_music  = data.get('background_music')
+
+        if not avatar_video_path or not audio_path:
+            return jsonify({'success': False, 'error': 'avatar_video and audio are required'}), 400
+        if not image_paths:
+            return jsonify({'success': False, 'error': 'At least one image_path is required'}), 400
+
+        start_time = _time.time()
+
+        # Merge multiple voice files if needed
+        if len(voice_paths) > 1:
+            merged = os.path.join(TEMP_FOLDER, f"merged_voice_{int(_time.time())}.mp3")
+            cfile  = os.path.join(TEMP_FOLDER, f"voice_concat_{int(_time.time())}.txt")
+            with open(cfile, 'w') as f:
+                for vp in voice_paths:
+                    f.write(f"file '{os.path.abspath(vp)}'\n")
+            _sp.run(['ffmpeg', '-y', '-f', 'concat', '-safe', '0',
+                     '-i', cfile, '-c', 'copy', merged],
+                    check=True, capture_output=True)
+            audio_path = merged
+
+        # Get audio duration
+        probe = _sp.run(
+            ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+             '-of', 'default=noprint_wrappers=1:nokey=1', audio_path],
+            capture_output=True, text=True
+        )
+        total_duration = float(probe.stdout.strip())
+
+        print(f"\n🖼️  LOCAL IMAGES MIX")
+        print(f"   Audio: {total_duration:.1f}s | Images: {len(image_paths)}")
+
+        # ── Smart timing ──────────────────────────────────────────────────────
+        IMAGE_DUR   = 5.0   # seconds each image is shown
+        DEFAULT_GAP = 30.0  # seconds of avatar between images (default)
+        num_images  = len(image_paths)
+
+        if num_images * (DEFAULT_GAP + IMAGE_DUR) <= total_duration:
+            # Images fit comfortably; use default 30s gap, avatar loops at end
+            avatar_gap = DEFAULT_GAP
+        else:
+            # Too many images: compress spacing so all fit
+            cycle      = total_duration / num_images
+            avatar_gap = max(3.0, cycle - IMAGE_DUR)
+
+        print(f"   Cycle: {avatar_gap:.1f}s avatar + {IMAGE_DUR}s image")
+
+        # ── Build segment list ────────────────────────────────────────────────
+        segments    = []
+        images_used = 0
+        current     = 0.0
+
+        while current < total_duration - 0.5:
+            remaining = total_duration - current
+
+            # If no more images or barely any time left → fill with avatar
+            if images_used >= num_images or remaining <= IMAGE_DUR:
+                segments.append({'type': 'avatar', 'duration': remaining})
+                current = total_duration
+                break
+
+            # Avatar clip
+            avt = min(avatar_gap, remaining)
+            segments.append({'type': 'avatar', 'duration': avt})
+            current += avt
+
+            remaining = total_duration - current
+            if remaining <= 0:
+                break
+
+            # Image clip
+            img = min(IMAGE_DUR, remaining)
+            segments.append({'type': 'ai_image', 'duration': img})
+            current     += img
+            images_used += 1
+
+        # Tail: any leftover time → avatar
+        if total_duration - current > 0.5:
+            segments.append({'type': 'avatar', 'duration': total_duration - current})
+
+        # ── Map images → segment indices ──────────────────────────────────────
+        media_items = []
+        img_idx = 0
+        for seg_idx, seg in enumerate(segments):
+            if seg['type'] == 'ai_image' and img_idx < num_images:
+                media_items.append({'segment_index': seg_idx, 'path': image_paths[img_idx]})
+                img_idx += 1
+
+        media_plan = {'segments': segments}
+        print(f"   Segments: {len(segments)} | Images placed: {images_used}")
+
+        # ── Assemble with the same fast FFmpeg assembler ──────────────────────
+        assembler = AvatarVideoAssembler(temp_dir=TEMP_FOLDER, output_dir=OUTPUT_FOLDER)
+        final_video = assembler.assemble_video(
+            avatar_video_path=avatar_video_path,
+            audio_path=audio_path,
+            media_plan=media_plan,
+            media_items=media_items,
+            mode='ai_images',          # reuses the image→video path
+            background_music_path=background_music,
+            verbose=True
+        )
+
+        return jsonify({
+            'success': True,
+            'video_path': os.path.basename(final_video),
+            'audio_duration': total_duration,
+            'images_used': images_used,
+            'total_images': num_images,
+            'segments_count': len(segments),
+            'avatar_gap': avatar_gap,
+            'generation_time': _time.time() - start_time
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/avatar/upload-audio', methods=['POST'])
 def avatar_upload_audio():
     """Upload audio for avatar video"""
