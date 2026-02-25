@@ -171,7 +171,7 @@ class ScriptGenerator3Chunk:
             generated_chunks.append(chunk_text)
 
             if verbose:
-                print(f"✅ Chunk {chunk.index}/{total_chunks}: {len(chunk_text):,} chars")
+                print(f"✅ Chunk {chunk.index}/{total_chunks}: {len(chunk_text):,} chars (raw, before cleaning)")
 
             # Save last 2-3 sentences as context for next chunk
             if chunk.index < total_chunks:
@@ -187,6 +187,7 @@ class ScriptGenerator3Chunk:
             print(f"\n🔗 Merging chunks...")
 
         full_script = self._merge_chunks(generated_chunks)
+        raw_total = len(full_script)
 
         # Clean script
         full_script = self._clean_script(full_script)
@@ -201,7 +202,9 @@ class ScriptGenerator3Chunk:
 
         if verbose:
             print(f"\n📊 FINAL STATS:")
-            print(f"   Characters: {char_count:,}")
+            print(f"   Characters: {char_count:,}  ← this is what the frontend shows")
+            if raw_total != char_count:
+                print(f"   (raw before cleaning: {raw_total:,} — cleaning removed {raw_total - char_count:,} chars of formatting)")
             print(f"   Words: {word_count:,}")
             print(f"   Target: {length:,} (±3%)")
             print(f"   Accuracy: {100 - abs(char_count - length)/length*100:.1f}%")

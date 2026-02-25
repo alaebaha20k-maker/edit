@@ -968,10 +968,19 @@ async function generateScript() {
             window.videoData.script = data.script;
             appState.generatedScript = data.script;
 
-            // CRITICAL FIX: Populate the scriptInput textarea so it's available for all features
+            // Populate the scriptInput textarea and flash it so user can see it updated
             const scriptInput = document.getElementById('scriptInput');
             if (scriptInput) {
                 scriptInput.value = data.script;
+                // Visual flash: green border for 1.5s so user knows the textarea updated
+                scriptInput.style.transition = 'border-color 0.3s';
+                scriptInput.style.borderColor = '#4CAF50';
+                scriptInput.style.borderWidth = '3px';
+                setTimeout(() => {
+                    scriptInput.style.borderColor = '';
+                    scriptInput.style.borderWidth = '';
+                }, 1500);
+                scriptInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
 
             // DON'T display full script (can be very long - just show success message)
@@ -997,7 +1006,7 @@ async function generateScript() {
                             <strong>📝 Words:</strong><br>${data.words.toLocaleString()}
                         </div>
                         <div>
-                            <strong>📦 Chunks:</strong><br>${data.chunks_used} chunks (30/40/30)
+                            <strong>📦 Chunks:</strong><br>${data.chunks_used} chunks
                         </div>
                         <div>
                             <strong>⏱️ Time:</strong><br>${data.time.toFixed(1)}s
@@ -1005,6 +1014,10 @@ async function generateScript() {
                         <div>
                             <strong>📄 File:</strong><br>${data.script_filename || 'script.txt'}
                         </div>
+                    </div>
+                    <div style="margin-top:12px; padding:10px; background:rgba(0,0,0,0.04); border-radius:6px; font-size:12px; color:#555; border-left:3px solid #4CAF50;">
+                        <strong>✅ Script loaded in textarea below (${data.length.toLocaleString()} chars after cleaning):</strong><br>
+                        <em>${(data.script || '').substring(0, 120).replace(/</g,'&lt;')}…</em>
                     </div>
                 `;
             }
