@@ -1686,7 +1686,7 @@ function renderBackgroundMusicPreview(musicData) {
                 <div style="flex: 1;">
                     <strong style="color: #ff9800;">🎵 ${musicData.filename}</strong>
                     <div style="color: #666; font-size: 0.9em; margin-top: 3px;">
-                        ⏱️ ${minutes}:${seconds.toString().padStart(2, '0')} • Will loop at 10% volume
+                        ⏱️ ${minutes}:${seconds.toString().padStart(2, '0')} • Will loop at 5% volume
                     </div>
                 </div>
                 <button onclick="removeBackgroundMusic()" style="
@@ -1716,9 +1716,9 @@ function playBackgroundMusicPreview() {
     }
 
     backgroundMusicAudio = new Audio(window.videoData.backgroundMusic.url);
-    backgroundMusicAudio.volume = 0.1; // Preview at 10% volume
+    backgroundMusicAudio.volume = 0.05; // Preview at 5% volume
     backgroundMusicAudio.play();
-    showNotification('▶️ Playing music preview at 10% volume...', 'info');
+    showNotification('▶️ Playing music preview at 5% volume...', 'info');
 
     backgroundMusicAudio.addEventListener('ended', () => {
         showNotification('⏹️ Music preview ended', 'info');
