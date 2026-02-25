@@ -1914,7 +1914,9 @@ def editor_process_route():
         temp_dir = TEMP_FOLDER
 
         for i, clip in enumerate(clips):
-            clip_path = clip.get('videoPath', '')
+            # Support both 'path' (frontend) and 'videoPath' (legacy) field names
+            clip_path = clip.get('path', clip.get('videoPath', ''))
+            clip_type = clip.get('type', 'video')
             start_time = clip.get('start', 0)
             end_time = clip.get('end', 0)
             duration = end_time - start_time
@@ -1925,18 +1927,37 @@ def editor_process_route():
             # Extract clip segment
             temp_clip = os.path.join(temp_dir, f'clip_{i}.mp4')
 
-            cmd = [
-                'ffmpeg', '-y',
-                '-i', clip_path,
-                '-ss', str(start_time),
-                '-t', str(duration),
-                '-c:v', 'libx264',
-                '-preset', 'fast',
-                '-crf', '23',
-                '-c:a', 'aac',
-                '-b:a', '128k',
-                temp_clip
-            ]
+            if clip_type == 'image':
+                # Convert image to video clip at specified duration
+                cmd = [
+                    'ffmpeg', '-y',
+                    '-loop', '1',
+                    '-framerate', '2',
+                    '-i', clip_path,
+                    '-t', str(duration),
+                    '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2',
+                    '-c:v', 'libx264',
+                    '-preset', 'fast',
+                    '-tune', 'stillimage',
+                    '-crf', '23',
+                    '-an',
+                    temp_clip
+                ]
+            else:
+                # Extract video segment
+                cmd = [
+                    'ffmpeg', '-y',
+                    '-i', clip_path,
+                    '-ss', str(start_time),
+                    '-t', str(duration),
+                    '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=30',
+                    '-c:v', 'libx264',
+                    '-preset', 'fast',
+                    '-crf', '23',
+                    '-c:a', 'aac',
+                    '-b:a', '128k',
+                    temp_clip
+                ]
 
             subprocess.run(cmd, check=True, capture_output=True)
 
@@ -1972,26 +1993,16 @@ def editor_process_route():
                 for clip in temp_clips:
                     f.write(f"file '{os.path.abspath(clip)}'\n")
 
-            # Set quality parameters
-            if quality == '1080':
-                scale = 'scale=1920:1080'
-                crf = '18'
-            else:
-                scale = 'scale=1280:720'
-                crf = '23'
-
-            # Final concatenation
+            # Final concatenation - clips are already at target resolution, use stream copy
             cmd = [
                 'ffmpeg', '-y',
                 '-f', 'concat',
                 '-safe', '0',
                 '-i', concat_file,
-                '-vf', scale,
-                '-c:v', 'libx264',
-                '-preset', 'medium',
-                '-crf', crf,
+                '-c:v', 'copy',
                 '-c:a', 'aac',
                 '-b:a', '192k',
+                '-movflags', '+faststart',
                 output_path
             ]
 
