@@ -300,7 +300,7 @@ class VideoAssembler:
                 }
 
             # SINGLE IMAGE: Use -framerate 2 BEFORE -i (CRITICAL!)
-            if ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']:
+            if ext in ['.jpg', '.jpeg', '.jfif', '.png', '.webp', '.bmp', '.tiff', '.gif']:
                 if verbose:
                     if use_timed_zoom:
                         zoom_dir = video_settings.get('zoom_direction', 'in').upper()
@@ -442,7 +442,7 @@ class VideoAssembler:
                 }
 
         # MULTIPLE MEDIA: Handle images AND videos together
-        IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp'}
+        IMAGE_EXTS = {'.jpg', '.jpeg', '.jfif', '.png', '.webp', '.bmp', '.tiff', '.gif'}
         VIDEO_EXTS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv'}
 
         if verbose:
