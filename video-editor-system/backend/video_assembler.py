@@ -461,16 +461,24 @@ class VideoAssembler:
         if len(media_paths) == 0:
             raise ValueError("No valid media found in media_paths")
 
-        duration_per_item = voice_duration / len(media_paths)
+        # Pre-filter to only supported types so duration_per_item is always exact
+        supported_paths = [p for p in media_paths if os.path.splitext(p)[1].lower() in IMAGE_EXTS | VIDEO_EXTS]
+        skipped = len(media_paths) - len(supported_paths)
+        if skipped > 0 and verbose:
+            print(f"   ⚠️  {skipped} unsupported file(s) excluded before duration calculation")
+        if len(supported_paths) == 0:
+            raise ValueError("No supported media found in media_paths")
+
+        duration_per_item = voice_duration / len(supported_paths)
 
         # Process each media item into a standardised temp clip
         cache_start = time.time()
         processed_clips = []
 
         if verbose:
-            print(f"   Processing {len(media_paths)} media items ({duration_per_item:.2f}s each)...")
+            print(f"   Processing {len(supported_paths)} media items ({duration_per_item:.2f}s each)...")
 
-        for idx, mpath in enumerate(media_paths):
+        for idx, mpath in enumerate(supported_paths):
             ext = os.path.splitext(mpath)[1].lower()
             clip_out = str(self.temp_dir / f"media_clip_{idx:03d}_{int(time.time())}.mp4")
 
