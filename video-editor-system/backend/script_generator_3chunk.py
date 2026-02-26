@@ -187,10 +187,45 @@ class ScriptGenerator3Chunk:
             print(f"\n🔗 Merging chunks...")
 
         full_script = self._merge_chunks(generated_chunks)
-        raw_total = len(full_script)
 
         # Clean script
         full_script = self._clean_script(full_script)
+
+        # ── Length enforcement ───────────────────────────────────────────
+        # Goal: result must be ≥ target, and at most target + 5 000 chars.
+        MAX_OVERSHOOT = 5000
+
+        char_count = len(full_script)
+        if verbose:
+            print(f"\n📏 Length check: {char_count:,} / {length:,} target")
+
+        # --- Extend if short ---
+        if char_count < length:
+            shortage = length - char_count
+            if verbose:
+                print(f"   ⚠️  Short by {shortage:,} chars — extending...")
+            full_script = self._extend_script(
+                current_script=full_script,
+                target_length=length,
+                title=title,
+                niche=niche,
+                writing_guidelines=writing_guidelines,
+                verbose=verbose,
+            )
+            full_script = self._clean_script(full_script)
+            char_count = len(full_script)
+            if verbose:
+                print(f"   ✅ After extension: {char_count:,} chars")
+
+        # --- Trim if over by more than 5 000 chars ---
+        if char_count > length + MAX_OVERSHOOT:
+            if verbose:
+                print(f"   ✂️  Over by {char_count - length:,} — trimming to {length + MAX_OVERSHOOT:,}...")
+            full_script = self._trim_to_length(full_script, length + MAX_OVERSHOOT)
+            char_count = len(full_script)
+            if verbose:
+                print(f"   ✅ After trim: {char_count:,} chars")
+        # ────────────────────────────────────────────────────────────────
 
         # Validate
         validation = self._validate_script(full_script, title, length)
@@ -203,11 +238,9 @@ class ScriptGenerator3Chunk:
         if verbose:
             print(f"\n📊 FINAL STATS:")
             print(f"   Characters: {char_count:,}  ← this is what the frontend shows")
-            if raw_total != char_count:
-                print(f"   (raw before cleaning: {raw_total:,} — cleaning removed {raw_total - char_count:,} chars of formatting)")
             print(f"   Words: {word_count:,}")
-            print(f"   Target: {length:,} (±3%)")
-            print(f"   Accuracy: {100 - abs(char_count - length)/length*100:.1f}%")
+            print(f"   Target: {length:,} (must be ≥ target, ≤ target+5k)")
+            print(f"   Delta: {char_count - length:+,}")
             print(f"   Time: {generation_time:.1f}s")
             print(f"   Valid: {validation['valid']}")
             if not validation['valid']:
@@ -332,10 +365,11 @@ PRODUCT INTEGRATION (Natural):
 - Example: "...and I track this using {product}, link in description..."
 - NEVER mention price or cost
 
-LENGTH REQUIREMENT:
-- Target exactly {chunk.target_chars:,} characters (±5%)
-- Do not pad with filler
-- Do not rush content
+LENGTH REQUIREMENT (CRITICAL):
+- Write AT LEAST {chunk.target_chars:,} characters — never stop short
+- Going up to {int(chunk.target_chars * 1.08):,} chars is acceptable
+- Do not pad with filler — expand ideas, add examples, go deeper
+- Do not rush or cut content short to finish faster
 
 ════════════════════════════════════════════════════════════
 NOW WRITE THE CHUNK IN {language.upper()}
@@ -346,6 +380,98 @@ Start writing immediately - no preamble.
 """
 
         return prompt
+
+    def _extend_script(
+        self,
+        current_script: str,
+        target_length: int,
+        title: str,
+        niche: dict,
+        writing_guidelines: str,
+        verbose: bool = False,
+    ) -> str:
+        """
+        Call the API once more to continue the script until ≥ target_length chars.
+        Will retry up to 2 times if still short after first extension.
+        """
+        MAX_EXTEND_RETRIES = 2
+        language = niche.get('language', 'English')
+        niche_name = niche.get('name', '')
+
+        for attempt in range(MAX_EXTEND_RETRIES):
+            shortage = target_length - len(current_script)
+            if shortage <= 0:
+                break
+
+            # Ask for slightly more than missing to absorb cleaning loss
+            extend_chars = shortage + 1500
+            extend_tokens = max(2048, int(extend_chars / 2) + 1000)
+
+            # Last ~500 chars as context so model continues seamlessly
+            tail = current_script[-500:].strip()
+
+            prompt = f"""You are continuing a narration script. Continue SEAMLESSLY from where it left off.
+
+TITLE: "{title}"
+NICHE: {niche_name}
+LANGUAGE: {language}
+
+LAST PART OF SCRIPT (continue from here — do NOT repeat it):
+"...{tail}"
+
+WRITING GUIDELINES:
+{writing_guidelines}
+
+════════════════════════════════════════════════════════════
+RULES (MANDATORY)
+════════════════════════════════════════════════════════════
+- Write EXACTLY {extend_chars:,} characters of new content
+- Continue in {language} — no language switch
+- Plain text only — no markdown, labels, or timestamps
+- Do NOT repeat any text from above
+- Do NOT add a closing or conclusion — just continue the body
+- Start writing the continuation immediately
+════════════════════════════════════════════════════════════
+"""
+            try:
+                model = genai.GenerativeModel('gemini-2.5-flash')
+                response = model.generate_content(
+                    prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.85,
+                        max_output_tokens=extend_tokens,
+                        top_p=0.95,
+                        top_k=40,
+                    )
+                )
+                extension = response.text.strip()
+                current_script = current_script.rstrip() + ' ' + extension
+                if verbose:
+                    print(f"   Extension attempt {attempt + 1}: +{len(extension):,} chars → total {len(current_script):,}")
+                time.sleep(4)  # Rate limit protection
+            except Exception as e:
+                if verbose:
+                    print(f"   ⚠️  Extension attempt {attempt + 1} failed: {e}")
+                break
+
+        return current_script
+
+    def _trim_to_length(self, text: str, max_chars: int) -> str:
+        """
+        Trim text to at most max_chars, cutting at the last sentence boundary.
+        """
+        if len(text) <= max_chars:
+            return text
+        # Cut at max_chars then back-track to a sentence end
+        truncated = text[:max_chars]
+        last_sentence = max(
+            truncated.rfind('.'),
+            truncated.rfind('!'),
+            truncated.rfind('?'),
+        )
+        if last_sentence > max_chars * 0.8:
+            return truncated[:last_sentence + 1].strip()
+        return truncated.strip()
 
     def _get_temperature(self, role: str) -> float:
         """Get temperature based on chunk role"""
@@ -415,15 +541,14 @@ Start writing immediately - no preamble.
         """
         errors = []
 
-        # Check length (±10% tolerance for 3-chunk)
+        # Check length: must be ≥ target and ≤ target + 5 000
         actual_length = len(script)
-        min_length = int(target_length * 0.90)
-        max_length = int(target_length * 1.10)
+        max_length = target_length + 5000
 
-        if actual_length < min_length:
-            errors.append(f"Too short: {actual_length} < {min_length}")
+        if actual_length < target_length:
+            errors.append(f"Too short: {actual_length:,} < {target_length:,}")
         elif actual_length > max_length:
-            errors.append(f"Too long: {actual_length} > {max_length}")
+            errors.append(f"Too long: {actual_length:,} > {max_length:,}")
 
         # Check for forbidden patterns
         forbidden = [
