@@ -1,9 +1,21 @@
 #!/usr/bin/env python3
 """
-Chunk Planner - Dynamic chunking based on target length
-- Small scripts (≤36k chars): 3 chunks (30/40/30 split)
-- Large scripts (>36k chars): dynamic chunks targeting ~12k chars each
-  so the model reliably fills each chunk without undershooting
+Chunk Planner - Dynamic chunking for ALL script lengths.
+
+Strategy for every length:
+  - Hook  : 20 % of total, capped at 8 000 chars (min 2 000)
+  - Close : 15 % of total, capped at 8 000 chars (min 1 500)
+  - Middle: remainder split into chunks of at most MAX_CHUNK_SIZE chars
+
+Keeping every chunk ≤ 8 000 chars makes the model reliably fill its target
+and stay well inside Gemini's output-token limit, so the final script always
+reaches the requested length without needing many extension retries.
+
+API-call count examples:
+  10 000 chars → 3 chunks   (hook 2k + middle 5k + close 3k)
+  30 000 chars → 5–6 chunks
+  60 000 chars → 9–10 chunks
+  80 000 chars → 12–13 chunks  (still ≪ 20 calls/min quota)
 """
 
 import math
@@ -14,99 +26,94 @@ from dataclasses import dataclass
 class ChunkConfig:
     """Configuration for a single chunk"""
     index: int
-    role: str
+    role: str           # HOOK_AND_FRAMEWORK | DEEP_INSIGHTS_AND_EXAMPLES | IMPLEMENTATION_AND_CLOSE
     target_chars: int
+    # Fraction of the full script this chunk covers  (0.0–1.0)
+    script_position_start: float = 0.0
+    script_position_end: float   = 1.0
 
 
-# Maximum characters per chunk.
-# 20k chars ≈ 5k-7k tokens — well within Gemini limits and keeps
-# total API calls low (80k → 5 chunks instead of 7) to avoid quota issues.
-MAX_CHUNK_SIZE = 20000
-
-# Threshold below which we use the simple 3-chunk split
-SMALL_SCRIPT_THRESHOLD = 36000
+# Every chunk is kept at or below this size so the model fills it reliably.
+MAX_CHUNK_SIZE = 8_000
 
 
 class ChunkPlanner:
     """
-    Dynamic chunk planner.
-    - ≤36k chars  → 3 chunks (30/40/30)
-    - >36k chars  → hook(10k) + N middle chunks(~12k each) + close(10k)
+    Dynamic chunk planner that works for ANY script length (1 000 – 80 000 chars).
 
-    This ensures each chunk is small enough that the model reliably
-    generates the requested character count, which fixes the length
-    mismatch problem for long scripts (60k / 80k).
-
-    API call count:
-    - Title generation : 1 call
-    - Script chunks    : N calls (3–8 depending on length)
-    - Total for 80k    : ~8 calls  (well within 20 calls/min limit)
+    The plan always has at least 3 chunks:
+      1. HOOK_AND_FRAMEWORK      (opening)
+      N. DEEP_INSIGHTS_AND_EXAMPLES  (one or more middle chunks)
+      last. IMPLEMENTATION_AND_CLOSE (closing)
     """
 
     def __init__(self, total_chars: int):
         self.total_chars = total_chars
 
     def plan(self) -> list:
-        """
-        Plan chunks for the requested total length.
+        """Return a list of ChunkConfig objects (always ≥ 3)."""
 
-        Returns:
-            List of ChunkConfig objects (always ≥ 3)
-        """
-        if self.total_chars <= SMALL_SCRIPT_THRESHOLD:
-            return self._plan_3chunk()
-        return self._plan_dynamic()
+        # --- hook & close sizes (proportional, capped) ---
+        hook_size  = max(2_000, min(int(self.total_chars * 0.20), 8_000))
+        close_size = max(1_500, min(int(self.total_chars * 0.15), 8_000))
 
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
+        # Guard: for very short targets keep hook+close within budget
+        if hook_size + close_size >= self.total_chars:
+            hook_size  = int(self.total_chars * 0.35)
+            close_size = self.total_chars - hook_size
+            return [
+                ChunkConfig(index=1, role="HOOK_AND_FRAMEWORK",
+                            target_chars=hook_size,
+                            script_position_start=0.0,
+                            script_position_end=float(hook_size)/self.total_chars),
+                ChunkConfig(index=2, role="IMPLEMENTATION_AND_CLOSE",
+                            target_chars=close_size,
+                            script_position_start=float(hook_size)/self.total_chars,
+                            script_position_end=1.0),
+            ]
 
-    def _plan_3chunk(self) -> list:
-        """Classic 30/40/30 split for short scripts."""
-        c1 = int(self.total_chars * 0.30)
-        c2 = int(self.total_chars * 0.40)
-        c3 = self.total_chars - c1 - c2
-
-        return [
-            ChunkConfig(index=1, role="HOOK_AND_FRAMEWORK",          target_chars=c1),
-            ChunkConfig(index=2, role="DEEP_INSIGHTS_AND_EXAMPLES",  target_chars=c2),
-            ChunkConfig(index=3, role="IMPLEMENTATION_AND_CLOSE",    target_chars=c3),
-        ]
-
-    def _plan_dynamic(self) -> list:
-        """
-        Dynamic split for longer scripts.
-
-        Hook  : 10,000 chars (fixed)
-        Close : 10,000 chars (fixed)
-        Middle: remainder split into ~12k chunks
-        """
-        hook_size  = 10000
-        close_size = 10000
         middle_total = self.total_chars - hook_size - close_size
 
-        # How many middle chunks do we need?
-        n_middle = max(1, math.ceil(middle_total / MAX_CHUNK_SIZE))
+        # Split middle into ≤ MAX_CHUNK_SIZE pieces
+        n_middle    = max(1, math.ceil(middle_total / MAX_CHUNK_SIZE))
         middle_size = middle_total // n_middle
         remainder   = middle_total - middle_size * n_middle
 
-        chunks = [
-            ChunkConfig(index=1, role="HOOK_AND_FRAMEWORK", target_chars=hook_size)
-        ]
+        chunks = []
 
+        # Hook
+        hook_end = hook_size / self.total_chars
+        chunks.append(ChunkConfig(
+            index=1,
+            role="HOOK_AND_FRAMEWORK",
+            target_chars=hook_size,
+            script_position_start=0.0,
+            script_position_end=round(hook_end, 3),
+        ))
+
+        # Middle chunks
+        cursor = hook_size
         for i in range(n_middle):
-            # Give the leftover chars to the last middle chunk
             extra = remainder if i == n_middle - 1 else 0
+            size  = middle_size + extra
+            pos_start = cursor / self.total_chars
+            pos_end   = (cursor + size) / self.total_chars
             chunks.append(ChunkConfig(
                 index=len(chunks) + 1,
                 role="DEEP_INSIGHTS_AND_EXAMPLES",
-                target_chars=middle_size + extra,
+                target_chars=size,
+                script_position_start=round(pos_start, 3),
+                script_position_end=round(min(pos_end, 1.0), 3),
             ))
+            cursor += size
 
+        # Close
         chunks.append(ChunkConfig(
             index=len(chunks) + 1,
             role="IMPLEMENTATION_AND_CLOSE",
             target_chars=close_size,
+            script_position_start=round((self.total_chars - close_size) / self.total_chars, 3),
+            script_position_end=1.0,
         ))
 
         return chunks

@@ -14,6 +14,7 @@ from typing import Dict, List
 from config import Config
 from niche_manager import NicheManager
 from chunk_planner import ChunkPlanner
+from settings_manager import SettingsManager
 from utils import detect_language_from_text, get_language_name
 
 
@@ -81,8 +82,20 @@ class ScriptGenerator3Chunk:
         original_niche_lang = niche.get('language', 'English')
         niche['language'] = detected_lang_name  # Override with detected language
 
-        # Use niche writing guidelines (formulas removed - guidelines define the writing style)
+        # Use niche writing guidelines (style/tone)
         writing_guidelines = niche['writing_guidelines']
+
+        # Load the user's script formula (any formula they have saved — French, custom, etc.)
+        raw_formula = SettingsManager.load_formula('script')
+        # Fill simple placeholders that may exist in the formula template
+        word_count_estimate = int(length / 5)  # ~5 chars per word
+        script_formula = (
+            raw_formula
+            .replace('{target_length}', f'{length:,}')
+            .replace('{word_count}',    f'{word_count_estimate:,}')
+            .replace('{language}',      detected_lang_name)
+            .replace('{niche}',         niche.get('name', ''))
+        )
 
         if verbose:
             print(f"\n{'='*70}")
@@ -122,6 +135,7 @@ class ScriptGenerator3Chunk:
                 title=title,
                 niche=niche,
                 writing_guidelines=writing_guidelines,
+                script_formula=script_formula,
                 chunk=chunk,
                 previous_context=previous_context,
                 total_chunks=total_chunks
@@ -210,6 +224,7 @@ class ScriptGenerator3Chunk:
                 title=title,
                 niche=niche,
                 writing_guidelines=writing_guidelines,
+                script_formula=script_formula,
                 verbose=verbose,
             )
             full_script = self._clean_script(full_script)
@@ -263,122 +278,137 @@ class ScriptGenerator3Chunk:
         title: str,
         niche: Dict,
         writing_guidelines: str,
+        script_formula: str,
         chunk: 'ChunkConfig',
         previous_context: str,
         total_chunks: int = 3
     ) -> str:
         """
-        Build role-locked prompt for a specific chunk
+        Build a prompt for one chunk.
 
-        This is the CORE of the 3-chunk architecture.
-        Each chunk gets a tailored prompt based on its role.
+        The user's script formula (any formula, any language) is injected as the
+        PRIMARY structure guide.  Each chunk is told exactly which portion of the
+        total script it covers so it stays faithful to the formula section by section.
         """
-        product = niche.get('product', 'our platform')
-        language = niche['language']
+        product    = niche.get('product', 'our platform')
+        language   = niche['language']
         niche_name = niche['name']
 
-        # Role-specific instructions
-        if chunk.role == "HOOK_AND_FRAMEWORK":
-            role_instruction = f"""
-YOUR ROLE IN THIS CHUNK ({chunk.index} of {total_chunks} — OPENING):
-- Create magnetic hook (first 10-15 seconds)
-- Establish framework and setup
-- Create curiosity and tension
-- Do NOT explain everything - leave mystery
-- This is the OPENING, not the full story
+        # Progress labels for the AI
+        pct_start = int(chunk.script_position_start * 100)
+        pct_end   = int(chunk.script_position_end   * 100)
 
-TARGET: {chunk.target_chars:,} characters for this chunk.
-You MUST fill the entire {chunk.target_chars:,} characters. Do not stop early."""
+        if chunk.role == "HOOK_AND_FRAMEWORK":
+            position_label = f"OPENING of the script (0 % → {pct_end} %)"
+            position_task  = (
+                "You are writing the BEGINNING of the script.\n"
+                "Follow the OPENING / HOOK section of the formula above.\n"
+                "Create an irresistible hook that forces the listener to keep listening.\n"
+                "Establish the framework and promise — do NOT reveal the full answer yet."
+            )
+            continuation_block = ""
 
         elif chunk.role == "DEEP_INSIGHTS_AND_EXAMPLES":
-            role_instruction = f"""
-YOUR ROLE IN THIS CHUNK ({chunk.index} of {total_chunks} — MIDDLE):
-- Develop the core content
-- Add deep insights and examples
-- Build on what came before
-- Explore the topic thoroughly
-- Keep engagement high
-
-PREVIOUS CONTEXT (continue seamlessly from this):
-"{previous_context}"
-
-TARGET: {chunk.target_chars:,} characters for this chunk.
-You MUST fill the entire {chunk.target_chars:,} characters. Do not stop early."""
-
-        else:  # IMPLEMENTATION_AND_CLOSE
-            role_instruction = f"""
-YOUR ROLE IN THIS CHUNK ({chunk.index} of {total_chunks} — FINAL):
-- Bring everything together
-- Provide actionable insights or resolution
-- Create memorable conclusion
-- Echo the opening hook with new meaning
-- End powerfully
-
-PREVIOUS CONTEXT (continue seamlessly from this):
-"{previous_context}"
-
-TARGET: {chunk.target_chars:,} characters for this chunk.
-You MUST fill the entire {chunk.target_chars:,} characters. Do not stop early."""
-
-        # Build full prompt
-        prompt = f"""You are an elite scriptwriter creating voice-ready narration.
-
-TITLE: "{title}"
-
-NICHE: {niche_name}
-LANGUAGE: {language}
-
-{role_instruction}
-
-WRITING GUIDELINES (follow this style and approach):
-{writing_guidelines}
-
-════════════════════════════════════════════════════════════
-CRITICAL OUTPUT RULES (MANDATORY)
-════════════════════════════════════════════════════════════
-
-LANGUAGE REQUIREMENT (HIGHEST PRIORITY):
-- Write the ENTIRE script in {language}
-- Use {language} grammar, vocabulary, and natural expressions
-- Do NOT write in English if the title is in another language
-- The script MUST match the language of the title: "{title}"
-- Use high-quality, native-level {language} language
-
-YOU MUST OUTPUT:
-- ONE continuous block of plain text
-- RAW VOICE TEXT ONLY in {language}
-- No visual cues (NO "VISUAL:", "VIDEO:", "SHOW:")
-- No narrator labels (NO "NARRATOR:", "SPEAKER:")
-- No timestamps (NO "(0:00-0:15)", NO "(pause)")
-- No parentheses, brackets, or stage directions
-- No markdown formatting (**, __, ##, etc.)
-- No section headers or dividers
-- No meta commentary
-
-TITLE-LOCK ENFORCEMENT:
-- Every sentence must relate to: "{title}"
-- Do NOT drift to unrelated topics
-- Stay focused on the title's core subject
-
-PRODUCT INTEGRATION (Natural):
-- Mention "{product}" naturally 1-2 times if relevant
-- Example: "...and I track this using {product}, link in description..."
-- NEVER mention price or cost
-
-LENGTH REQUIREMENT (CRITICAL):
-- Write AT LEAST {chunk.target_chars:,} characters — never stop short
-- Going up to {int(chunk.target_chars * 1.08):,} chars is acceptable
-- Do not pad with filler — expand ideas, add examples, go deeper
-- Do not rush or cut content short to finish faster
-
-════════════════════════════════════════════════════════════
-NOW WRITE THE CHUNK IN {language.upper()}
-════════════════════════════════════════════════════════════
-
-Write natural, engaging narration in {language} that sounds deeply human.
-Start writing immediately - no preamble.
+            position_label = f"MIDDLE of the script ({pct_start} % → {pct_end} %)"
+            position_task  = (
+                "You are writing a MIDDLE section of the script.\n"
+                "Follow the corresponding middle / development / journey section of the formula above.\n"
+                "Go deep: add examples, stories, data, insights.\n"
+                "Keep the energy high, vary sentence rhythm, include mini-revelations.\n"
+                "Do NOT conclude — the script continues after this chunk."
+            )
+            continuation_block = f"""
+CONTINUE SEAMLESSLY FROM HERE (do NOT repeat it):
+"...{previous_context}"
 """
 
+        else:  # IMPLEMENTATION_AND_CLOSE
+            position_label = f"CLOSING of the script ({pct_start} % → 100 %)"
+            position_task  = (
+                "You are writing the END of the script.\n"
+                "Follow the CLOSE / CONCLUSION / TRANSFORMATION section of the formula above.\n"
+                "Synthesise everything, deliver the payoff, echo the opening hook with new meaning.\n"
+                "End powerfully and memorably."
+            )
+            continuation_block = f"""
+CONTINUE SEAMLESSLY FROM HERE (do NOT repeat it):
+"...{previous_context}"
+"""
+
+        prompt = f"""You are an elite, highly creative scriptwriter producing voice-ready narration.
+Your output must sound like a world-class human storyteller — not a robot.
+
+══════════════════════════════════════════════════════════════
+PROJECT DETAILS
+══════════════════════════════════════════════════════════════
+TITLE   : "{title}"
+NICHE   : {niche_name}
+LANGUAGE: {language}
+CHUNK   : {chunk.index} of {total_chunks}  |  {position_label}
+══════════════════════════════════════════════════════════════
+
+══════════════════════════════════════════════════════════════
+SCRIPT FORMULA  ← FOLLOW THIS STRUCTURE EXACTLY
+══════════════════════════════════════════════════════════════
+{script_formula}
+══════════════════════════════════════════════════════════════
+
+══════════════════════════════════════════════════════════════
+NICHE WRITING STYLE  ← APPLY THIS TONE AND APPROACH
+══════════════════════════════════════════════════════════════
+{writing_guidelines}
+══════════════════════════════════════════════════════════════
+
+YOUR TASK FOR THIS CHUNK
+──────────────────────────────────────────────────────────────
+{position_task}
+{continuation_block}
+──────────────────────────────────────────────────────────────
+
+══════════════════════════════════════════════════════════════
+MANDATORY OUTPUT RULES
+══════════════════════════════════════════════════════════════
+
+LANGUAGE (ABSOLUTE PRIORITY):
+- Write 100 % in {language} — not a single word of another language
+- Native-level {language}: natural expressions, idioms, rhythm
+- The title is in {language}: "{title}" — match that register exactly
+
+FORMAT — PLAIN VOICE TEXT ONLY:
+- One continuous block of flowing prose
+- NO markdown (**, __, ##, ---, etc.)
+- NO section headers, dividers, or labels
+- NO visual cues: VISUAL:, VIDEO:, SHOW:, CUT TO:
+- NO narrator tags: NARRATOR:, SPEAKER:, HOST:
+- NO timestamps: (0:00-0:15), (30 sec), (pause)
+- NO parentheses or brackets with stage directions
+- NO meta-commentary ("In this section...", "As I mentioned...")
+
+QUALITY (NON-NEGOTIABLE):
+- Every sentence must earn its place — no filler, no padding
+- Vary sentence length: short punchy lines for impact, longer ones for depth
+- Use vivid metaphors, concrete examples, and emotional storytelling
+- Keep the listener hooked from the first word to the last
+
+TOPIC LOCK:
+- Every sentence must serve the title: "{title}"
+- Do NOT drift to unrelated subjects
+
+PRODUCT (only if relevant):
+- Mention "{product}" naturally 1–2 times max
+- Example: "…and I manage this with {product}, link in description…"
+- NEVER mention price
+
+LENGTH — CRITICAL:
+- Write AT LEAST {chunk.target_chars:,} characters for this chunk
+- Up to {int(chunk.target_chars * 1.08):,} chars is fine
+- Expand ideas, add more examples, go deeper — never stop early
+- Do NOT rush to finish
+
+══════════════════════════════════════════════════════════════
+START WRITING IN {language.upper()} NOW — NO PREAMBLE
+══════════════════════════════════════════════════════════════
+"""
         return prompt
 
     def _extend_script(
@@ -388,14 +418,15 @@ Start writing immediately - no preamble.
         title: str,
         niche: dict,
         writing_guidelines: str,
+        script_formula: str = '',
         verbose: bool = False,
     ) -> str:
         """
-        Call the API once more to continue the script until ≥ target_length chars.
-        Will retry up to 2 times if still short after first extension.
+        Continue the script until ≥ target_length chars.
+        Retries up to 2 times.  Follows the user's formula.
         """
         MAX_EXTEND_RETRIES = 2
-        language = niche.get('language', 'English')
+        language  = niche.get('language', 'English')
         niche_name = niche.get('name', '')
 
         for attempt in range(MAX_EXTEND_RETRIES):
@@ -403,35 +434,38 @@ Start writing immediately - no preamble.
             if shortage <= 0:
                 break
 
-            # Ask for slightly more than missing to absorb cleaning loss
-            extend_chars = shortage + 1500
+            extend_chars  = shortage + 1500   # buffer for cleaning loss
             extend_tokens = max(2048, int(extend_chars / 2) + 1000)
+            tail = current_script[-600:].strip()
 
-            # Last ~500 chars as context so model continues seamlessly
-            tail = current_script[-500:].strip()
+            formula_block = (
+                f"\nSCRIPT FORMULA (keep following the body/development section):\n{script_formula}\n"
+                if script_formula else ""
+            )
 
-            prompt = f"""You are continuing a narration script. Continue SEAMLESSLY from where it left off.
+            prompt = f"""You are continuing a voice narration script. Continue SEAMLESSLY.
 
-TITLE: "{title}"
-NICHE: {niche_name}
+TITLE   : "{title}"
+NICHE   : {niche_name}
 LANGUAGE: {language}
-
-LAST PART OF SCRIPT (continue from here — do NOT repeat it):
-"...{tail}"
-
-WRITING GUIDELINES:
+{formula_block}
+WRITING STYLE:
 {writing_guidelines}
 
-════════════════════════════════════════════════════════════
+LAST PART OF SCRIPT (do NOT repeat — continue from here):
+"...{tail}"
+
+══════════════════════════════════════════════════════════════
 RULES (MANDATORY)
-════════════════════════════════════════════════════════════
-- Write EXACTLY {extend_chars:,} characters of new content
-- Continue in {language} — no language switch
-- Plain text only — no markdown, labels, or timestamps
-- Do NOT repeat any text from above
-- Do NOT add a closing or conclusion — just continue the body
-- Start writing the continuation immediately
-════════════════════════════════════════════════════════════
+══════════════════════════════════════════════════════════════
+- Write AT LEAST {extend_chars:,} characters of NEW content
+- Stay 100 % in {language} — no other language
+- Plain flowing prose only — no markdown, no labels, no timestamps
+- Do NOT repeat anything already written
+- Do NOT add a conclusion or closing — the body is still ongoing
+- Follow the formula's body/development section style
+- Start the continuation immediately, no preamble
+══════════════════════════════════════════════════════════════
 """
             try:
                 model = genai.GenerativeModel('gemini-2.5-flash')
