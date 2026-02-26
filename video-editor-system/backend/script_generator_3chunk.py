@@ -159,7 +159,6 @@ class ScriptGenerator3Chunk:
                             "max_output_tokens": CHUNK_MAX_TOKENS,
                             "top_p": 0.95,
                             "top_k": 40,
-                            "thinking_config": {"thinking_budget": 0},
                         }
                         response = model.generate_content(prompt, generation_config=gen_cfg)
                         break  # success
@@ -468,7 +467,6 @@ RULES (MANDATORY)
                         "max_output_tokens": extend_tokens,
                         "top_p": 0.95,
                         "top_k": 40,
-                        "thinking_config": {"thinking_budget": 0},
                     }
                 )
                 extension = response.text.strip()
