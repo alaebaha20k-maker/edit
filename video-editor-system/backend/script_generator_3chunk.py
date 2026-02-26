@@ -82,20 +82,9 @@ class ScriptGenerator3Chunk:
         original_niche_lang = niche.get('language', 'English')
         niche['language'] = detected_lang_name  # Override with detected language
 
-        # Use niche writing guidelines (style/tone)
+        # The niche writing_guidelines IS the user's content formula —
+        # it defines both the structure and the style for every script.
         writing_guidelines = niche['writing_guidelines']
-
-        # Load the user's script formula (any formula they have saved — French, custom, etc.)
-        raw_formula = SettingsManager.load_formula('script')
-        # Fill simple placeholders that may exist in the formula template
-        word_count_estimate = int(length / 5)  # ~5 chars per word
-        script_formula = (
-            raw_formula
-            .replace('{target_length}', f'{length:,}')
-            .replace('{word_count}',    f'{word_count_estimate:,}')
-            .replace('{language}',      detected_lang_name)
-            .replace('{niche}',         niche.get('name', ''))
-        )
 
         if verbose:
             print(f"\n{'='*70}")
@@ -135,7 +124,6 @@ class ScriptGenerator3Chunk:
                 title=title,
                 niche=niche,
                 writing_guidelines=writing_guidelines,
-                script_formula=script_formula,
                 chunk=chunk,
                 previous_context=previous_context,
                 total_chunks=total_chunks
@@ -224,7 +212,6 @@ class ScriptGenerator3Chunk:
                 title=title,
                 niche=niche,
                 writing_guidelines=writing_guidelines,
-                script_formula=script_formula,
                 verbose=verbose,
             )
             full_script = self._clean_script(full_script)
@@ -278,7 +265,6 @@ class ScriptGenerator3Chunk:
         title: str,
         niche: Dict,
         writing_guidelines: str,
-        script_formula: str,
         chunk: 'ChunkConfig',
         previous_context: str,
         total_chunks: int = 3
@@ -286,15 +272,14 @@ class ScriptGenerator3Chunk:
         """
         Build a prompt for one chunk.
 
-        The user's script formula (any formula, any language) is injected as the
-        PRIMARY structure guide.  Each chunk is told exactly which portion of the
-        total script it covers so it stays faithful to the formula section by section.
+        The niche writing_guidelines is the user's content formula —
+        it drives both the structure and the style. It is injected as
+        the PRIMARY guide so every chunk follows it exactly.
         """
         product    = niche.get('product', 'our platform')
         language   = niche['language']
         niche_name = niche['name']
 
-        # Progress labels for the AI
         pct_start = int(chunk.script_position_start * 100)
         pct_end   = int(chunk.script_position_end   * 100)
 
@@ -302,7 +287,7 @@ class ScriptGenerator3Chunk:
             position_label = f"OPENING of the script (0 % → {pct_end} %)"
             position_task  = (
                 "You are writing the BEGINNING of the script.\n"
-                "Follow the OPENING / HOOK section of the formula above.\n"
+                "Apply the OPENING / HOOK instructions from your Content Formula above.\n"
                 "Create an irresistible hook that forces the listener to keep listening.\n"
                 "Establish the framework and promise — do NOT reveal the full answer yet."
             )
@@ -312,9 +297,9 @@ class ScriptGenerator3Chunk:
             position_label = f"MIDDLE of the script ({pct_start} % → {pct_end} %)"
             position_task  = (
                 "You are writing a MIDDLE section of the script.\n"
-                "Follow the corresponding middle / development / journey section of the formula above.\n"
-                "Go deep: add examples, stories, data, insights.\n"
-                "Keep the energy high, vary sentence rhythm, include mini-revelations.\n"
+                "Apply the MIDDLE / DEVELOPMENT / JOURNEY instructions from your Content Formula above.\n"
+                "Go deep: add examples, stories, data, insights, mini-revelations.\n"
+                "Vary sentence rhythm — short for impact, longer for depth.\n"
                 "Do NOT conclude — the script continues after this chunk."
             )
             continuation_block = f"""
@@ -326,7 +311,7 @@ CONTINUE SEAMLESSLY FROM HERE (do NOT repeat it):
             position_label = f"CLOSING of the script ({pct_start} % → 100 %)"
             position_task  = (
                 "You are writing the END of the script.\n"
-                "Follow the CLOSE / CONCLUSION / TRANSFORMATION section of the formula above.\n"
+                "Apply the CLOSING / CONCLUSION / TRANSFORMATION instructions from your Content Formula above.\n"
                 "Synthesise everything, deliver the payoff, echo the opening hook with new meaning.\n"
                 "End powerfully and memorably."
             )
@@ -348,13 +333,9 @@ CHUNK   : {chunk.index} of {total_chunks}  |  {position_label}
 ══════════════════════════════════════════════════════════════
 
 ══════════════════════════════════════════════════════════════
-SCRIPT FORMULA  ← FOLLOW THIS STRUCTURE EXACTLY
-══════════════════════════════════════════════════════════════
-{script_formula}
-══════════════════════════════════════════════════════════════
-
-══════════════════════════════════════════════════════════════
-NICHE WRITING STYLE  ← APPLY THIS TONE AND APPROACH
+YOUR CONTENT FORMULA  ← FOLLOW THIS EXACTLY
+(This is the niche you selected. Apply its structure, tone,
+style, and all instructions to every sentence you write.)
 ══════════════════════════════════════════════════════════════
 {writing_guidelines}
 ══════════════════════════════════════════════════════════════
@@ -372,7 +353,7 @@ MANDATORY OUTPUT RULES
 LANGUAGE (ABSOLUTE PRIORITY):
 - Write 100 % in {language} — not a single word of another language
 - Native-level {language}: natural expressions, idioms, rhythm
-- The title is in {language}: "{title}" — match that register exactly
+- The title is "{title}" — match that language and register exactly
 
 FORMAT — PLAIN VOICE TEXT ONLY:
 - One continuous block of flowing prose
@@ -386,8 +367,7 @@ FORMAT — PLAIN VOICE TEXT ONLY:
 
 QUALITY (NON-NEGOTIABLE):
 - Every sentence must earn its place — no filler, no padding
-- Vary sentence length: short punchy lines for impact, longer ones for depth
-- Use vivid metaphors, concrete examples, and emotional storytelling
+- Vivid metaphors, concrete examples, emotional storytelling
 - Keep the listener hooked from the first word to the last
 
 TOPIC LOCK:
@@ -396,14 +376,12 @@ TOPIC LOCK:
 
 PRODUCT (only if relevant):
 - Mention "{product}" naturally 1–2 times max
-- Example: "…and I manage this with {product}, link in description…"
 - NEVER mention price
 
 LENGTH — CRITICAL:
 - Write AT LEAST {chunk.target_chars:,} characters for this chunk
 - Up to {int(chunk.target_chars * 1.08):,} chars is fine
-- Expand ideas, add more examples, go deeper — never stop early
-- Do NOT rush to finish
+- Expand ideas, go deeper, add examples — never stop early
 
 ══════════════════════════════════════════════════════════════
 START WRITING IN {language.upper()} NOW — NO PREAMBLE
