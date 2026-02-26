@@ -1834,7 +1834,7 @@ function renderMediaLibrary() {
         const isVideo = media.type === 'video';
 
         const preview = isVideo
-            ? `<video src="${media.url}" style="width: 100%; height: 120px; object-fit: cover;"></video>`
+            ? `<video src="${media.url}" style="width: 100%; height: 120px; object-fit: cover;" ${media.muted ? 'muted' : ''}></video>`
             : `<img src="${media.url}" style="width: 100%; height: 120px; object-fit: cover;">`;
 
         const selectCheckbox = selectionState.isSelectionMode
@@ -1938,7 +1938,23 @@ function toggleMediaMute(id) {
     if (media) {
         media.muted = !media.muted;
         showNotification(media.muted ? '🔇 Video muted' : '🔊 Video unmuted', 'info');
+        renderMediaLibrary();
     }
+}
+
+function muteAllVideos() {
+    const videos = appState.mediaLibrary.filter(m => m.type === 'video');
+    if (videos.length === 0) {
+        showNotification('No videos in media library', 'info');
+        return;
+    }
+    const allMuted = videos.every(m => m.muted);
+    // Toggle: if all already muted → unmute all; otherwise → mute all
+    const newState = !allMuted;
+    videos.forEach(m => { m.muted = newState; });
+    window.videoData.mediaLibrary = appState.mediaLibrary;
+    renderMediaLibrary();
+    showNotification(newState ? `🔇 ${videos.length} video(s) muted` : `🔊 ${videos.length} video(s) unmuted`, 'info');
 }
 
 function downloadMedia(id) {

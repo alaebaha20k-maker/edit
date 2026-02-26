@@ -469,32 +469,66 @@ class VideoAssembler:
         if len(supported_paths) == 0:
             raise ValueError("No supported media found in media_paths")
 
-        duration_per_item = voice_duration / len(supported_paths)
+        # ── Duration logic ──────────────────────────────────────────────────
+        # Videos: play once at their natural duration (no looping, no trimming)
+        # Images: share whatever time is left over equally
+        # ────────────────────────────────────────────────────────────────────
+
+        # Probe each video's natural duration first
+        natural_video_durations = {}   # path → seconds
+        for p in supported_paths:
+            if os.path.splitext(p)[1].lower() in VIDEO_EXTS:
+                try:
+                    res = subprocess.run([
+                        'ffprobe', '-v', 'error',
+                        '-show_entries', 'format=duration',
+                        '-of', 'default=noprint_wrappers=1:nokey=1', p
+                    ], capture_output=True, text=True)
+                    natural_video_durations[p] = float(res.stdout.strip())
+                except Exception:
+                    natural_video_durations[p] = 10.0  # safe fallback
+
+        total_video_duration = sum(natural_video_durations.values())
+        remaining_for_images = max(voice_duration - total_video_duration, 0.0)
+        image_paths_list = [p for p in supported_paths if os.path.splitext(p)[1].lower() in IMAGE_EXTS]
+        num_images = len(image_paths_list)
+        duration_per_image = (remaining_for_images / num_images) if num_images > 0 else 0.0
+
+        if verbose:
+            print(f"   Videos total: {total_video_duration:.1f}s | Remaining for {num_images} image(s): {remaining_for_images:.1f}s ({duration_per_image:.2f}s each)")
 
         # Process each media item into a standardised temp clip
         cache_start = time.time()
         processed_clips = []
 
         if verbose:
-            print(f"   Processing {len(supported_paths)} media items ({duration_per_item:.2f}s each)...")
+            print(f"   Processing {len(supported_paths)} media items...")
 
         for idx, mpath in enumerate(supported_paths):
             ext = os.path.splitext(mpath)[1].lower()
             clip_out = str(self.temp_dir / f"media_clip_{idx:03d}_{int(time.time())}.mp4")
 
             if ext in IMAGE_EXTS:
+                if duration_per_image <= 0:
+                    if verbose:
+                        print(f"   ⚠️  Skipping image (no time left after videos): {mpath}")
+                    continue
+
                 # Cache image to 1080p JPG then encode to video
                 cached_img = self._get_cached_image(mpath, int(width), int(height))
 
                 if use_timed_zoom:
-                    zoom_filter = self._get_timed_zoom_filter(duration_per_item, video_settings, int(width), int(height), output_fps=30)
+                    zoom_filter = self._get_timed_zoom_filter(duration_per_image, video_settings, int(width), int(height), output_fps=30)
                     vf = zoom_filter
                 elif use_ken_burns:
-                    total_frames_img = int(duration_per_item * 2)
+                    total_frames_img = int(duration_per_image * 2)
                     zoom_step = 0.05 / max(total_frames_img, 1)
                     vf = 'zoompan=z=\'min(zoom+{:.6f},1.05)\':d=1:s={}x{}'.format(zoom_step, width, height)
                 else:
                     vf = None
+
+                if verbose:
+                    print(f"   Image {idx+1}: {duration_per_image:.2f}s")
 
                 img_cmd = [
                     'ffmpeg', '-y',
@@ -504,7 +538,7 @@ class VideoAssembler:
                     '-framerate', '2',
                     '-loop', '1',
                     '-i', cached_img,
-                    '-t', str(duration_per_item),
+                    '-t', str(duration_per_image),
                     '-c:v', 'libx264',
                     '-preset', 'ultrafast',
                     '-crf', '35',
@@ -522,49 +556,24 @@ class VideoAssembler:
                 subprocess.run(img_cmd, capture_output=True, text=True, check=True, timeout=300)
 
             elif ext in VIDEO_EXTS:
-                # Normalize video to standard resolution and trim/loop to duration
-                vid_duration_cmd = [
-                    'ffprobe', '-v', 'error',
-                    '-show_entries', 'format=duration',
-                    '-of', 'default=noprint_wrappers=1:nokey=1',
-                    mpath
-                ]
-                vid_result = subprocess.run(vid_duration_cmd, capture_output=True, text=True)
-                try:
-                    vid_dur = float(vid_result.stdout.strip())
-                except Exception:
-                    vid_dur = duration_per_item
+                # Videos play ONCE at their natural duration — no looping, no trimming
+                vid_dur = natural_video_durations.get(mpath, 10.0)
 
-                if vid_dur < duration_per_item:
-                    num_loops = int(duration_per_item / vid_dur) + 1
-                    vid_cmd = [
-                        'ffmpeg', '-y',
-                        '-stream_loop', str(num_loops),
-                        '-i', mpath,
-                        '-t', str(duration_per_item),
-                        '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,fps=30',
-                        '-c:v', 'libx264',
-                        '-preset', 'ultrafast',
-                        '-crf', '35',
-                        '-an',
-                        '-pix_fmt', 'yuv420p',
-                        '-threads', '0',
-                        clip_out
-                    ]
-                else:
-                    vid_cmd = [
-                        'ffmpeg', '-y',
-                        '-i', mpath,
-                        '-t', str(duration_per_item),
-                        '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,fps=30',
-                        '-c:v', 'libx264',
-                        '-preset', 'ultrafast',
-                        '-crf', '35',
-                        '-an',
-                        '-pix_fmt', 'yuv420p',
-                        '-threads', '0',
-                        clip_out
-                    ]
+                if verbose:
+                    print(f"   Video {idx+1}: {vid_dur:.2f}s (natural, no loop)")
+
+                vid_cmd = [
+                    'ffmpeg', '-y',
+                    '-i', mpath,
+                    '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,fps=30',
+                    '-c:v', 'libx264',
+                    '-preset', 'ultrafast',
+                    '-crf', '35',
+                    '-an',
+                    '-pix_fmt', 'yuv420p',
+                    '-threads', '0',
+                    clip_out
+                ]
                 subprocess.run(vid_cmd, capture_output=True, text=True, check=True, timeout=600)
             else:
                 if verbose:
@@ -576,7 +585,7 @@ class VideoAssembler:
         cache_elapsed = time.time() - cache_start
 
         if verbose:
-            print(f"   Clips processed: {len(processed_clips)} in {cache_elapsed:.1f}s (image cache hits: {self.cache_hits}, misses: {self.cache_misses})")
+            print(f"   Clips processed: {len(processed_clips)} in {cache_elapsed:.1f}s (cache hits: {self.cache_hits}, misses: {self.cache_misses})")
 
         if len(processed_clips) == 0:
             raise ValueError("No media clips could be processed")
