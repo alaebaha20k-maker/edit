@@ -132,44 +132,64 @@ class ScriptGenerator3Chunk:
             # Determine temperature based on role
             temp = self._get_temperature(chunk.role)
 
-            # max_output_tokens: sized to the chunk, not a blanket 65536.
-            # Arabic: ~2 chars/token → chars/2 + buffer (safer than /3 for English).
-            chunk_max_tokens = max(4096, int(chunk.target_chars / 2) + 2000)
+            # max_output_tokens: use model maximum (65536).
+            # Gemini 2.5 Flash uses thinking tokens by default — these consume
+            # the output-token budget first, leaving almost nothing for actual
+            # content.  Setting thinking_budget=0 disables thinking mode so
+            # ALL 65536 tokens are available for the script text.
+            CHUNK_MAX_TOKENS = 65536
 
-            # Call API — retry on 429 quota errors using the suggested wait time
+            # Call API — retry on 429 quota errors using the suggested wait time.
+            # Also retry immediately if the chunk output is < 50 % of target
+            # (happens when the model truncates early).
             MAX_API_RETRIES = 3
+            MAX_SHORT_RETRIES = 2
             response = None
-            for attempt in range(MAX_API_RETRIES + 1):
-                try:
-                    model = genai.GenerativeModel('gemini-2.5-flash')
-                    response = model.generate_content(
-                        prompt,
-                        generation_config=genai.types.GenerationConfig(
-                            temperature=temp,
-                            max_output_tokens=chunk_max_tokens,
-                            top_p=0.95,
-                            top_k=40
-                        )
-                    )
-                    break  # success
-                except Exception as e:
-                    err_str = str(e)
-                    is_quota = (
-                        '429' in err_str
-                        or 'quota' in err_str.lower()
-                        or 'ResourceExhausted' in type(e).__name__
-                    )
-                    if not is_quota or attempt == MAX_API_RETRIES:
-                        raise
-                    # Extract the suggested retry delay from the error message
-                    delay_match = re.search(r'seconds: (\d+)', err_str)
-                    wait = int(delay_match.group(1)) + 5 if delay_match else 35
-                    if verbose:
-                        print(f"   ⚠️  Quota limit hit — waiting {wait}s before retry "
-                              f"(attempt {attempt + 1}/{MAX_API_RETRIES})...")
-                    time.sleep(wait)
+            chunk_text = ""
 
-            chunk_text = response.text.strip()
+            for short_attempt in range(MAX_SHORT_RETRIES + 1):
+                for attempt in range(MAX_API_RETRIES + 1):
+                    try:
+                        model = genai.GenerativeModel('gemini-2.5-flash')
+                        # Pass as dict so it works across SDK versions.
+                        # thinking_budget=0 disables thinking tokens, freeing
+                        # the full token budget for the actual script output.
+                        gen_cfg = {
+                            "temperature": temp,
+                            "max_output_tokens": CHUNK_MAX_TOKENS,
+                            "top_p": 0.95,
+                            "top_k": 40,
+                            "thinking_config": {"thinking_budget": 0},
+                        }
+                        response = model.generate_content(prompt, generation_config=gen_cfg)
+                        break  # success
+                    except Exception as e:
+                        err_str = str(e)
+                        is_quota = (
+                            '429' in err_str
+                            or 'quota' in err_str.lower()
+                            or 'ResourceExhausted' in type(e).__name__
+                        )
+                        if not is_quota or attempt == MAX_API_RETRIES:
+                            raise
+                        delay_match = re.search(r'seconds: (\d+)', err_str)
+                        wait = int(delay_match.group(1)) + 5 if delay_match else 35
+                        if verbose:
+                            print(f"   ⚠️  Quota limit hit — waiting {wait}s before retry "
+                                  f"(attempt {attempt + 1}/{MAX_API_RETRIES})...")
+                        time.sleep(wait)
+
+                chunk_text = response.text.strip()
+
+                # Retry if output is suspiciously short (< 50 % of target)
+                min_acceptable = int(chunk.target_chars * 0.50)
+                if len(chunk_text) >= min_acceptable or short_attempt == MAX_SHORT_RETRIES:
+                    break
+                if verbose:
+                    print(f"   ⚠️  Output too short ({len(chunk_text):,} < {min_acceptable:,}) "
+                          f"— retrying chunk (attempt {short_attempt + 1}/{MAX_SHORT_RETRIES})...")
+                time.sleep(4)
+
             generated_chunks.append(chunk_text)
 
             if verbose:
@@ -396,12 +416,11 @@ START WRITING IN {language.upper()} NOW — NO PREAMBLE
         title: str,
         niche: dict,
         writing_guidelines: str,
-        script_formula: str = '',
         verbose: bool = False,
     ) -> str:
         """
         Continue the script until ≥ target_length chars.
-        Retries up to 2 times.  Follows the user's formula.
+        Retries up to 2 times.  Follows the niche writing guidelines.
         """
         MAX_EXTEND_RETRIES = 2
         language  = niche.get('language', 'English')
@@ -413,21 +432,16 @@ START WRITING IN {language.upper()} NOW — NO PREAMBLE
                 break
 
             extend_chars  = shortage + 1500   # buffer for cleaning loss
-            extend_tokens = max(2048, int(extend_chars / 2) + 1000)
+            extend_tokens = 65536             # always use model max; thinking disabled below
             tail = current_script[-600:].strip()
-
-            formula_block = (
-                f"\nSCRIPT FORMULA (keep following the body/development section):\n{script_formula}\n"
-                if script_formula else ""
-            )
 
             prompt = f"""You are continuing a voice narration script. Continue SEAMLESSLY.
 
 TITLE   : "{title}"
 NICHE   : {niche_name}
 LANGUAGE: {language}
-{formula_block}
-WRITING STYLE:
+
+YOUR CONTENT FORMULA (keep following body/development section):
 {writing_guidelines}
 
 LAST PART OF SCRIPT (do NOT repeat — continue from here):
@@ -449,12 +463,13 @@ RULES (MANDATORY)
                 model = genai.GenerativeModel('gemini-2.5-flash')
                 response = model.generate_content(
                     prompt,
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=0.85,
-                        max_output_tokens=extend_tokens,
-                        top_p=0.95,
-                        top_k=40,
-                    )
+                    generation_config={
+                        "temperature": 0.85,
+                        "max_output_tokens": extend_tokens,
+                        "top_p": 0.95,
+                        "top_k": 40,
+                        "thinking_config": {"thinking_budget": 0},
+                    }
                 )
                 extension = response.text.strip()
                 current_script = current_script.rstrip() + ' ' + extension
