@@ -618,6 +618,15 @@ COMPLETE NOW:"""
             approach=approach
         )
 
+        # Calculate max_output_tokens dynamically based on target length
+        # French/Arabic: ~3 chars/token; English: ~4 chars/token — use 3 to be safe
+        # Add 25% buffer + 3000 tokens for thinking overhead
+        needed_tokens = int(length / 3 * 1.25) + 3000
+        max_tokens = min(Config.GEMINI_MAX_TOKENS, max(needed_tokens, 6000))
+
+        if verbose:
+            print(f"⚡ Token budget: {max_tokens:,} output tokens (for {length:,} chars)")
+
         # RETRY LOOP - Generate with validation
         script = None
         validation_result = None
@@ -634,8 +643,8 @@ COMPLETE NOW:"""
             response = model.generate_content(
                 prompt,
                 generation_config=genai.types.GenerationConfig(
-                    temperature=0.88,  # Single optimal temperature
-                    max_output_tokens=Config.GEMINI_MAX_TOKENS,
+                    temperature=0.88,
+                    max_output_tokens=max_tokens,
                     top_p=0.95,
                     top_k=40
                 )
@@ -806,153 +815,14 @@ ABSOLUTE OUTPUT RULES (NO EXCEPTIONS)
 - The script must be completely clean and voice-ready.
 
 ────────────────────────────────────────
-CORE OBJECTIVE
-────────────────────────────────────────
-Write a high-quality YouTube video script that maximizes retention and emotional engagement.
-
-The script must:
-- Be written ONLY for the provided title: "{title}"
-- Match the selected niche and audience.
-- Respect the custom formula provided by the user.
-- Match the required character length EXACTLY (±3%).
-- Flow clearly and logically from the first sentence to the last.
-
-────────────────────────────────────────
-HOOK INTELLIGENCE (CRITICAL)
-────────────────────────────────────────
-The first 2 to 3 sentences must:
-- Create immediate curiosity, tension, or emotional pull.
-- Avoid explaining the topic.
-- Avoid summarizing the content.
-- Avoid generic openings such as:
-  "Today we will"
-  "This video is about"
-  "In this story"
-  "Welcome to"
-  "Let me tell you about"
-- Make the listener feel compelled to continue.
-
-If the hook is weak, the script is considered a failure.
-
-────────────────────────────────────────
-FORMULA NORMALIZATION SYSTEM
-────────────────────────────────────────
-The user provides a SCRIPT FORMULA written in natural language.
-
-Your task is to:
-1. Internally translate the formula into a clear narrative structure you fully understand.
-2. Convert it into an internal sequence such as:
-   opening intention
-   progression
-   escalation
-   resolution or takeaway
-3. Follow this internal structure faithfully.
-4. Never output the formula or mention it.
-
-The formula defines HOW the script is written.
-The title defines WHAT the script is about.
-
-────────────────────────────────────────
-NICHE-SPECIFIC HIDDEN RULES (INTERNAL ONLY)
-────────────────────────────────────────
-
-If NICHE = STORY / HORROR / DRAMA:
-- Maintain strict consistency of names, places, and timeline.
-- Build tension gradually.
-- Never change story facts mid-script.
-- Focus on emotion and consequence.
-
-If NICHE = EDUCATION / EXPLAINER:
-- Challenge assumptions early.
-- Explain clearly using simple language.
-- Avoid sounding academic.
-- Build understanding step by step.
-
-If NICHE = NEWS / ANALYSIS:
-- Emphasize why this matters now.
-- Clearly explain context and implications.
-- Stay factual and grounded.
-- Avoid speculation unless clearly framed.
-
-If NICHE = FINANCE / TRADING:
-- Be realistic and grounded.
-- Explain risks and misunderstandings.
-- Avoid hype language.
-- End with a clear, sober takeaway.
-
-────────────────────────────────────────
-CREATIVE VARIATION ENGINE (ANTI-REPETITION)
-────────────────────────────────────────
-Every script must feel fresh and original.
-
-Rules:
-- Never reuse the same narrative rhythm in consecutive generations.
-- Vary sentence length and pacing.
-- Rotate hook psychology (curiosity, tension, contrast, mystery, emotion).
-- Avoid predictable phrasing.
-- Write as if a different human author is writing each script.
-
-────────────────────────────────────────
-RESEARCH INTELLIGENCE
-────────────────────────────────────────
-If the topic requires knowledge:
-- Write as if you deeply understand the subject.
-- Be accurate and confident.
-- Do not invent facts.
-- Do not cite sources.
-- Do not sound robotic or academic.
-
-────────────────────────────────────────
-CHUNKED GENERATION SYSTEM (TOKEN SAFE)
-────────────────────────────────────────
-If the script is long:
-- Internally generate the script in logical chunks.
-- Ensure each chunk flows seamlessly into the next.
-- Maintain consistency across all chunks.
-- Merge internally into ONE final clean block.
-- Do NOT expose chunks in the output.
-
-────────────────────────────────────────
-PRODUCT INTEGRATION (NATURAL & SEAMLESS)
+PRODUCT INTEGRATION
 ────────────────────────────────────────
 Product/Platform: {product}
-- Mention naturally 2-3 times throughout the script
-- Example: "and I track everything using {product}, link in description"
-- NEVER mention price, cost, or affordability
-- Seamlessly woven into the narrative
+Follow the product integration rules defined in the niche formula above.
+NEVER mention price, cost, or affordability.
 
 MANDATORY LANGUAGE: {language}
 Every word of the output MUST be written in {language}. No exceptions.
-
-════════════════════════════════════════════════════════════
-🔄 AUTO-RETRY QUALITY VALIDATOR (ENHANCED)
-════════════════════════════════════════════════════════════
-
-Before outputting the final script, verify:
-
-✓ Clean formatting (no symbols, no meta text, no screenplay formatting)
-✓ Strong hook (first 2-3 sentences create tension/curiosity)
-✓ Formula compliance (follows user's structure)
-✓ Niche rules followed (story consistency, education clarity, etc.)
-✓ Length within ±3% tolerance ({int(target_chars * 0.97):,} - {int(target_chars * 1.03):,} chars)
-✓ Title-lock verified (no topic drift)
-✓ Logical consistency (no contradictions)
-✓ Creative freshness (not repetitive)
-✓ No scene labels, narrator labels, dialogue formatting, or visual cues
-✓ No "Part 1", "Part 2", "To be continued", or continuation markers
-✓ ONE single continuous block only
-
-FAIL AND REGENERATE IF:
-- Output contains labels, scenes, dialogue formatting, or visual cues
-- Output implies multiple parts or continuation
-- Output exceeds ±3% of target length
-- Topic drifts from the title
-- Output is not a single continuous block
-
-If ANY check fails:
-- Internally revise and regenerate.
-- Retry up to 3 times.
-- Only output the script when ALL checks pass.
 
 ════════════════════════════════════════════════════════════
 INPUTS
