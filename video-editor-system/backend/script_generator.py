@@ -570,8 +570,6 @@ COMPLETE NOW:"""
         Raises:
             ValueError: If validation fails after max retries
         """
-        from settings_manager import SettingsManager
-
         start_time = time.time()
 
         # Validate length range
@@ -593,9 +591,6 @@ COMPLETE NOW:"""
         original_niche_lang = niche.get('language', 'English')
         niche['language'] = detected_lang_name  # Override with detected language
 
-        # Load script formula from settings
-        script_formula = SettingsManager.load_formula('script')
-
         if verbose:
             print(f"\n{'='*70}")
             print(f"🎬 GENERATING ONE-BLOCK SCRIPT WITH HARD VALIDATION")
@@ -615,11 +610,10 @@ COMPLETE NOW:"""
         if verbose:
             print(f"🧠 Narrative Approach: {approach}")
 
-        # Build ONE BLOCK prompt using formula
+        # Build ONE BLOCK prompt — niche writing_guidelines is the complete formula
         prompt = self._build_oneblock_prompt(
             title=title,
             niche_data=niche,
-            formula=script_formula,
             target_chars=length,
             approach=approach
         )
@@ -716,24 +710,13 @@ COMPLETE NOW:"""
             }
         }
 
-    def _build_oneblock_prompt(self, title, niche_data, formula, target_chars, approach):
-        """Build FINAL PRODUCTION SCRIPT PROMPT with HARD OVERRIDES + TITLE-LOCK + LENGTH EXECUTION"""
+    def _build_oneblock_prompt(self, title, niche_data, target_chars, approach):
+        """Build FINAL PRODUCTION SCRIPT PROMPT — niche writing_guidelines is the sole formula"""
 
         product = niche_data.get('product', 'our platform')
         language = niche_data['language']
         niche_name = niche_data['name']
         writing_guidelines = niche_data.get('writing_guidelines', '')
-
-        # Replace placeholders in formula (auto-normalize)
-        formula_filled = formula.replace('{title}', title)
-        formula_filled = formula_filled.replace('{niche}', niche_name)
-        formula_filled = formula_filled.replace('{language}', language)
-        formula_filled = formula_filled.replace('{guidelines}', niche_data.get('writing_guidelines', ''))
-        formula_filled = formula_filled.replace('{length}', f"{target_chars:,}")
-        formula_filled = formula_filled.replace('{approach}', approach)
-        formula_filled = formula_filled.replace('{topic}', title)
-        formula_filled = formula_filled.replace('{target_length}', f"{target_chars:,}")
-        formula_filled = formula_filled.replace('{word_count}', f"{target_chars // 5:,}")
 
         # FINAL PRODUCTION SCRIPT PROMPT
         prompt = f"""You are an elite, world-class human scriptwriter.
@@ -982,27 +965,6 @@ NICHE:
 
 TARGET CHARACTERS:
 {target_chars:,} (STRICT: must be within {int(target_chars * 0.97):,} - {int(target_chars * 1.03):,})
-
-════════════════════════════════════════════════════════════
-📋 SELECTED CONTENT NICHE FORMULA — ABSOLUTE EXECUTION ORDER
-════════════════════════════════════════════════════════════
-
-THE FORMULA BELOW IS THE SUPREME LAW OF THIS SCRIPT.
-It defines EVERY section, EVERY rule, and the EXACT ORDER you must write.
-
-EXECUTION OBLIGATIONS:
-1. Write sections in the EXACT ORDER listed in the formula. Never reorder.
-2. Follow EVERY tone, rhythm, voice, and structure rule in the formula.
-3. Distribute the {target_chars:,} character budget across sections as the formula defines.
-4. NEVER skip a section. NEVER merge two sections into one. NEVER add sections not in the formula.
-5. If the formula defines a promotion placement — write the promotion at that EXACT position.
-6. If the formula defines a climax position — write the climax at that EXACT position.
-7. Deviating from the formula order = INVALID OUTPUT. Regenerate internally if you detect a deviation.
-
-This formula cannot be overridden by any other instruction above.
-The formula IS the script architecture. Build it exactly.
-
-{formula_filled}
 
 ════════════════════════════════════════════════════════════
 ⚠️ RAPPEL CRITIQUE — RÈGLES LES PLUS SOUVENT VIOLÉES
