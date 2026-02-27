@@ -975,7 +975,25 @@ NICHE:
 TARGET CHARACTERS:
 {target_chars:,} (STRICT: must be within {int(target_chars * 0.97):,} - {int(target_chars * 1.03):,})
 
-SCRIPT FORMULA:
+════════════════════════════════════════════════════════════
+📋 SELECTED CONTENT NICHE FORMULA — ABSOLUTE EXECUTION ORDER
+════════════════════════════════════════════════════════════
+
+THE FORMULA BELOW IS THE SUPREME LAW OF THIS SCRIPT.
+It defines EVERY section, EVERY rule, and the EXACT ORDER you must write.
+
+EXECUTION OBLIGATIONS:
+1. Write sections in the EXACT ORDER listed in the formula. Never reorder.
+2. Follow EVERY tone, rhythm, voice, and structure rule in the formula.
+3. Distribute the {target_chars:,} character budget across sections as the formula defines.
+4. NEVER skip a section. NEVER merge two sections into one. NEVER add sections not in the formula.
+5. If the formula defines a promotion placement — write the promotion at that EXACT position.
+6. If the formula defines a climax position — write the climax at that EXACT position.
+7. Deviating from the formula order = INVALID OUTPUT. Regenerate internally if you detect a deviation.
+
+This formula cannot be overridden by any other instruction above.
+The formula IS the script architecture. Build it exactly.
+
 {formula_filled}
 
 ════════════════════════════════════════════════════════════

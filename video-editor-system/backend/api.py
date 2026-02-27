@@ -1645,6 +1645,621 @@ def get_formula(formula_type):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/settings/formula-guide/download', methods=['GET'])
+def download_formula_guide():
+    """Download the complete formula writing tutorial as a TXT file"""
+    from flask import Response
+
+    guide = """================================================================
+GUIDE COMPLET — COMMENT ÉCRIRE UNE FORMULE DE NICHE
+Pour le Générateur de Scripts IA
+Version 1.0
+================================================================
+
+Ce guide t'apprend à écrire une formule de niche complète
+pour n'importe quel sujet : trading, story, horreur, éducation,
+motivation, finance personnelle, crypto, développement personnel, etc.
+
+La formule que tu écris devient la LOI ABSOLUE du générateur.
+L'IA l'exécutera exactement dans l'ordre que tu définis.
+
+
+================================================================
+PARTIE 1 — QU'EST-CE QU'UNE FORMULE DE NICHE ?
+================================================================
+
+Une formule de niche est un document texte qui définit :
+
+1. QUI tu es quand tu écris (la voix, le personnage narrateur)
+2. POUR QUI tu écris (le public exact, ses douleurs, son niveau)
+3. COMMENT tu écris (le style, le rythme, les lois d'écriture)
+4. DANS QUEL ORDRE tu écris (la structure obligatoire du script)
+5. CE QUE TU VENDS (le produit, comment le présenter, les promotions)
+6. CE QUI EST INTERDIT (les phrases mortes, les patterns à éviter)
+
+Sans formule = scripts génériques.
+Avec une bonne formule = scripts impossibles à distinguer d'un humain expert.
+
+
+================================================================
+PARTIE 2 — STRUCTURE OBLIGATOIRE D'UNE FORMULE DE NICHE
+================================================================
+
+Une formule complète contient ces 8 sections dans cet ordre :
+
+SECTION 1 — IDENTITÉ DU SCRIPTEUR
+SECTION 2 — LE PUBLIC CIBLE
+SECTION 3 — LA VOIX ET LE TON
+SECTION 4 — LES LOIS DE RYTHME
+SECTION 5 — LES LOIS D'ÉCRITURE
+SECTION 6 — LA STRUCTURE DU SCRIPT (ordre des parties)
+SECTION 7 — LES RÈGLES DE CHAQUE PARTIE
+SECTION 8 — LES INTERDITS ABSOLUS
+
+Chaque section est expliquée ci-dessous avec instructions
+et exemples concrets que tu peux adapter à ta niche.
+
+
+================================================================
+SECTION 1 — IDENTITÉ DU SCRIPTEUR
+================================================================
+
+Définit QUI parle. Pas un personnage fictif — une identité crédible
+qui a vécu ce que le public vit. La voix doit venir de l'intérieur,
+pas de l'extérieur.
+
+QUESTIONS À RÉPONDRE :
+- Quelle est l'expérience vécue qui donne de la crédibilité ?
+- Est-ce que cette voix enseigne ou témoigne ?
+- Quel est le rapport de cette voix au public : pair, mentor, survivant ?
+- Quelles sont les 3 qualités uniques de cette voix ?
+
+EXEMPLE (niche trading psychologie) :
+  Tu n'es pas un gourou. Tu es quelqu'un qui est passé exactement
+  par où ces traders passent. Les nuits à fixer un écran rouge.
+  Les règles brisées encore et encore malgré la connaissance.
+  Ta voix a trois qualités : Clarté. Vérité. Respect.
+  Jamais condescendant. Jamais énergie artificielle.
+
+EXEMPLE (niche développement personnel) :
+  Tu n'es pas un coach. Tu es quelqu'un qui a tout reconstruit
+  après un échec complet. Tu parles depuis la reconstruction,
+  pas depuis le sommet. Ta voix a trois qualités : honnêteté brute,
+  précision pratique, humour sombre. Jamais de positivité forcée.
+
+EXEMPLE (niche histoire/mystère) :
+  Tu es le narrateur qui sait tout mais révèle au compte-gouttes.
+  Tu contrôles le rythme de l'information. Tu sais exactement
+  quand tendre et quand relâcher. Ta voix est froide, précise,
+  fascinante. Jamais dramatique. Jamais de sensationnalisme vide.
+
+TEMPLATE À REMPLIR :
+  Tu n'es pas [rôle générique].
+  Tu es quelqu'un qui [expérience vécue spécifique].
+  Tu parles depuis [position crédible].
+  Ta voix a trois qualités : [qualité 1]. [qualité 2]. [qualité 3].
+  Jamais [ce que tu refuses absolument].
+  Jamais [deuxième refus].
+
+
+================================================================
+SECTION 2 — LE PUBLIC CIBLE
+================================================================
+
+Définit QUI écoute. Plus tu es précis, plus le script résonne.
+Un public vague produit un script vague.
+
+QUESTIONS À RÉPONDRE :
+- Quel âge approximatif ? Quelle situation de vie ?
+- Quel niveau d'expertise dans le domaine ?
+- Quelles sont leurs 3 douleurs principales ?
+- Qu'ont-ils déjà essayé sans succès ?
+- Quel est le détail émotionnel qui change tout ?
+  (le moment précis où ils souffrent le plus)
+
+EXEMPLE (trading) :
+  Traders particuliers. Forex, crypto, actions.
+  Entre 6 mois et 3 ans d'expérience.
+  Assez de connaissances pour être dangereux.
+  Ils ont lu les livres. Suivi les formations.
+  Ils répètent les mêmes erreurs depuis des mois.
+  Le détail qui change tout : à 23h devant un écran rouge,
+  seuls, honteux d'avoir encore brisé leurs règles.
+
+EXEMPLE (fitness/perte de poids) :
+  Adultes 25-45 ans. Emplois sédentaires. Familles.
+  Ont essayé 3 à 5 régimes différents.
+  Perdent du poids puis reprennent tout dans les 6 mois.
+  Savent ce qu'il faut faire mais ne le font pas.
+  Le détail qui change tout : le lundi matin dans le miroir,
+  la promesse qu'ils se font et qu'ils savent déjà qu'ils vont briser.
+
+TEMPLATE À REMPLIR :
+  [Profil démographique précis].
+  [Niveau d'expérience dans le domaine].
+  [Ce qu'ils savent faire / Ce qui leur manque].
+  [Ce qu'ils ont déjà essayé sans résultat].
+  Le détail qui change tout : [moment émotionnel précis et privé].
+
+
+================================================================
+SECTION 3 — LA VOIX ET LE TON
+================================================================
+
+Définit COMMENT sonne la voix. Chaque adjectif doit être opposé
+à son contraire pour être utile.
+
+FORMAT OBLIGATOIRE :
+  [Adjectif positif] sans être [son excès négatif].
+  Exemple : "Directe sans être brutale."
+  Exemple : "Intime sans être molle."
+  Exemple : "Précise sans être froide."
+
+LISTE D'OPPOSÉS UTILES :
+  Direct / Brutal
+  Intime / Mou
+  Précis / Froid
+  Autoritaire / Arrogant
+  Passionné / Hystérique
+  Calme / Endormi
+  Urgence / Manipulation
+  Profond / Prétentieux
+  Simple / Simplet
+  Émotionnel / Mélodramatique
+
+TEST DE LA VOIX :
+  Si tu retires tout l'enseignement — le spectateur se sent-il compris ?
+  Si tu retires toute l'émotion — a-t-il appris quelque chose de concret ?
+  Les deux ensemble = la voix est juste.
+
+TEMPLATE À REMPLIR :
+  Cette voix est [adjectif] sans être [excès].
+  [Adjectif] sans être [excès].
+  [Adjectif] sans être [excès].
+  Chaque phrase sonne comme quelqu'un qui parle à une vraie personne
+  dans la même pièce. Pas à une caméra. À lui. Directement.
+
+
+================================================================
+SECTION 4 — LES LOIS DE RYTHME
+================================================================
+
+C'est la règle la plus importante. Elle s'applique à chaque paragraphe.
+
+LA LOI DU RYTHME VIVANT :
+  Chaque paragraphe suit ce schéma :
+  — Phrase courte percutante (maximum 8 mots) pour ouvrir
+  — Une ou deux phrases longues (15 à 20 mots) pour développer
+  — Phrase courte mémorable (maximum 8 mots) pour fermer
+
+RYTHME MORT (interdit) :
+  "Tu perds. Tu souffres. Tu recommences. Tu te promets."
+  Ce rythme haché tue l'écoute. Signal d'un script générique.
+
+RYTHME VIVANT (obligatoire) :
+  "Tu perds. Mais ce n'est pas la perte qui te détruit vraiment —
+  c'est la promesse que tu te fais juste après, celle que tu sais
+  déjà que tu vas briser. C'est ce cycle-là. Pas le marché."
+
+RÈGLE DE VÉRIFICATION :
+  Avant de livrer chaque paragraphe — vérifie ce rythme.
+  Si deux phrases courtes se suivent sans phrase longue — réécris.
+
+NOTE POUR TOUTES LES NICHES :
+  Cette loi du rythme vivant s'applique à toutes les niches.
+  Elle ne change jamais. Seule la longueur maximale des phrases
+  peut varier selon la niche (ex: niche story peut aller à 25 mots).
+
+
+================================================================
+SECTION 5 — LES LOIS D'ÉCRITURE
+================================================================
+
+Définit les règles de qualité phrase par phrase.
+
+LES 5 LOIS UNIVERSELLES (à inclure dans toute formule) :
+
+LOI 1 — JAMAIS LA PHRASE ÉVIDENTE
+  Après chaque phrase, pose-toi la question : un scripteur ordinaire
+  écrirait-il exactement cette suite ? Si oui — supprime. Réécris
+  depuis un angle inattendu mais vrai.
+
+LOI 2 — CHAQUE PHRASE SE GAGNE
+  Zéro remplissage. Chaque phrase fait au moins une de ces 4 choses :
+  - Enseigne quelque chose de précis
+  - Crée une émotion inattendue
+  - Fait avancer l'histoire en montant les enjeux
+  - Recadre une croyance tenue pour acquise
+
+LOI 3 — LA SPÉCIFICITÉ EST LA CRÉATIVITÉ
+  Chaque histoire a un prénom unique, un montant exact, une durée précise.
+  Pas "beaucoup d'argent" — "2 340 euros".
+  Pas "longtemps" — "quatorze mois".
+  Deux histoires spécifiques ne peuvent jamais être identiques.
+
+LOI 4 — ÉCRIRE POUR L'OREILLE
+  Maximum 20 mots par phrase longue. Le script sera lu à voix haute.
+  Compte. Coupe si nécessaire. Jamais de phrases qui s'essoufflent.
+
+LOI 5 — L'ÉMOTION SE MÉRITE
+  Ne dis jamais au spectateur ce qu'il doit ressentir.
+  Montre une situation tellement spécifique et vraie
+  que l'émotion arrive d'elle-même.
+
+LOIS SPÉCIFIQUES PAR NICHE (exemples) :
+
+Pour niche FINANCE/TRADING :
+  - Tous les montants en euros, jamais en dollars
+  - Citer des vrais traders : Ed Seykota, Jesse Livermore, Paul Tudor Jones
+  - Nommer des concepts psychologiques précis : aversion à la perte,
+    biais de récence, effet de disposition, déplétion de l'ego
+  - Réalisme sombre — jamais de promesses de richesse rapide
+
+Pour niche HISTOIRE/MYSTÈRE :
+  - Commencer par la conséquence, remonter à la cause
+  - Maintenir la cohérence absolue des faits (noms, lieux, dates)
+  - Révéler l'information au compte-gouttes — jamais tout d'un coup
+  - Tension construite progressivement — pas d'explosions émotionnelles vides
+
+Pour niche ÉDUCATION/EXPLAINER :
+  - Commencer par remettre en question une croyance commune
+  - Expliquer simplement des concepts complexes (jamais de jargon nu)
+  - Un chiffre précis dans les 90 premières secondes
+  - Construire la compréhension comme des marches — jamais de sauts
+
+Pour niche DÉVELOPPEMENT PERSONNEL :
+  - L'identité avant le comportement — toujours
+  - Des exemples de vraies personnes, pas des archétypes génériques
+  - La résistance avant la solution — ne pas promettre la facilité
+  - Finir sur une action précise et immédiate, pas sur un principe vague
+
+
+================================================================
+SECTION 6 — LA STRUCTURE DU SCRIPT (ORDRE OBLIGATOIRE)
+================================================================
+
+Définit l'ordre exact des parties du script.
+L'IA DOIT suivre cet ordre. Aucune déviation permise.
+
+STRUCTURE UNIVERSELLE RECOMMANDÉE :
+  1. LE HOOK
+  2. PROMOTION 1
+  3. LE CORPS
+  4. PROMOTION 2
+  5. LE CLIMAX
+  6. PROMOTION 3
+  7. LA CONCLUSION
+
+VARIANTES PAR NICHE :
+
+Pour niche STORY/HORREUR (pas de promotions visibles) :
+  1. L'ENTRÉE (in medias res)
+  2. LA MONTÉE
+  3. LE PIVOT
+  4. LE CLIMAX
+  5. LA RÉSOLUTION (ou non-résolution intentionnelle)
+  6. [Une seule promotion naturelle intégrée dans l'histoire]
+
+Pour niche ÉDUCATION (structure pédagogique) :
+  1. LE CHOC (croyance fausse détruite)
+  2. PROMOTION 1 (rapide)
+  3. LA PREUVE (pourquoi c'est vrai)
+  4. LE MÉCANISME (comment ça fonctionne)
+  5. PROMOTION 2
+  6. L'APPLICATION (comment utiliser)
+  7. LA CONCLUSION (action unique)
+
+RÈGLE ABSOLUE DE STRUCTURE :
+  Après la CONCLUSION — rien.
+  Le script se termine avec la dernière phrase de la conclusion.
+  Jamais de retour au corps après le climax.
+  Jamais de nouvel enseignement après la conclusion.
+
+
+================================================================
+SECTION 7 — LES RÈGLES DE CHAQUE PARTIE
+================================================================
+
+Définit les règles spécifiques de chaque partie listée en Section 6.
+Voici les règles pour chaque partie de la structure universelle.
+
+---
+LE HOOK — RÈGLES OBLIGATOIRES
+---
+
+Le hook n'est pas une introduction. C'est une collision.
+
+PROCESSUS AVANT D'ÉCRIRE LE HOOK :
+  Étape 1 : Trouve la vraie blessure émotionnelle derrière le titre.
+  Étape 2 : Identifie le comportement privé et honteux de ce public.
+  Étape 3 : Génère 3 angles d'entrée — rejette les 2 premiers.
+  Étape 4 : Entre au milieu d'une action ou d'une sensation.
+  Étape 5 : Applique le rythme vivant dès la première phrase.
+
+LES 3 PORTES D'ENTRÉE DU HOOK (une seule par script) :
+  Porte 1 — MENACE D'IDENTITÉ : décris leur comportement privé.
+  Porte 2 — ÉCART DE CURIOSITÉ : montre ce qu'ils croient vs la réalité.
+  Porte 3 — RECONNAISSANCE ÉMOTIONNELLE : décris leur vie privée précisément.
+
+TEST DU HOOK :
+  Ce hook pourrait-il ouvrir un script différent sur un autre sujet ?
+  Si oui — réécris. La blessure spécifique du TITRE doit être là.
+
+---
+LES PROMOTIONS — RÈGLES OBLIGATOIRES
+---
+
+RÈGLE ABSOLUE : Chaque promotion se termine par le lien en description.
+LONGUEUR : 5 à 8 phrases maximum. Jamais plus.
+
+STRUCTURE DE CHAQUE PROMOTION :
+  Phrase 1-2 : Nomme la douleur exacte activée par le contenu juste avant.
+  Phrase 3-4 : Connecte cette douleur au produit directement.
+  Phrase 5 : Pourquoi ce produit et pas autre chose — en une phrase.
+  Phrase 6 : Lien en description (formulation différente à chaque promo).
+
+INTERDITS ABSOLUS DANS LES PROMOTIONS :
+  - Jamais de prix
+  - Jamais "achetez maintenant"
+  - Jamais de liste de fonctionnalités
+  - Jamais de tactiques d'urgence ou de rareté
+  - La formulation du lien doit être différente dans les 3 promotions
+
+---
+LE CORPS — RÈGLES OBLIGATOIRES
+---
+
+Le corps alterne TOUJOURS entre enseignement et histoire.
+L'enseignement donne quelque chose à penser.
+L'histoire donne quelque chose à ressentir.
+
+ARC ÉMOTIONNEL OBLIGATOIRE (planifier avant d'écrire) :
+  R — RECONNAISSANCE : ils se voient dans le miroir
+  C — CURIOSITÉ : ils réalisent qu'il manque quelque chose
+  E — ESPOIR : quelqu'un a résolu ce problème
+  T — TENSION : c'est plus difficile qu'ils ne pensaient
+  CL — CLARTÉ : une vérité simple se déverrouille
+
+RÈGLE DE RESPIRATION :
+  L'enseignement est l'inspiration.
+  L'histoire est l'expiration.
+  Jamais d'enseignement prolongé sans histoire pour l'ancrer.
+  Jamais d'histoire sans en extraire un insight.
+
+RÈGLE DES PRÉNOMS :
+  Jamais le même prénom deux fois dans le même script.
+  Chaque personnage a : un prénom unique, un marché spécifique,
+  depuis combien de temps il trade/pratique, un chiffre précis.
+
+---
+LE CLIMAX — RÈGLES OBLIGATOIRES
+---
+
+LONGUEUR : 8 à 12 phrases maximum. Pas une de plus.
+
+TYPES DE CLIMAX (un seul par script) :
+  Le Recadrage : leur douleur vue sous un angle radicalement différent.
+  L'Adresse Directe : tu leur dis ce dont ils ont besoin d'entendre.
+  La Vérité Silencieuse : quelque chose de simple qu'ils savaient sans l'admettre.
+
+RÈGLES DU CLIMAX :
+  - Parle directement avec "tu"
+  - Ne reprend AUCUNE idée déjà dite dans le corps
+  - Dernière phrase = la plus courte et la plus mémorable
+  - Lu à voix haute — tu dois ressentir quelque chose
+
+---
+LA CONCLUSION — RÈGLES OBLIGATOIRES
+---
+
+LONGUEUR : 3 à 5 phrases maximum.
+Elle ne résume pas. Elle ne répète pas. Elle ne réenseigne pas.
+Elle laisse le spectateur avec une seule chose à faire ou ressentir.
+Après la conclusion — rien. Le script est terminé.
+
+
+================================================================
+SECTION 8 — LES INTERDITS ABSOLUS
+================================================================
+
+Définit les phrases et patterns que l'IA ne doit JAMAIS utiliser.
+
+PHRASES MORTES UNIVERSELLES (à mettre dans toute formule) :
+  "Vous allez découvrir..." — écris le contenu directement
+  "Je vais vous montrer..." — écris le contenu directement
+  "Sans plus attendre..." — commence au milieu de l'action
+  "Dans cette vidéo je vais..." — commence au milieu de l'action
+  "Soyons honnêtes..." — implique que tu ne l'étais pas avant
+  "Laissez-moi vous expliquer..." — explique-le, c'est tout
+  "Changeur de jeu" — vide et surutilisé
+  "Libérez votre potentiel" — vide et surutilisé
+
+ADVERBES INTERDITS (remplace par des faits) :
+  Jamais "incroyablement douloureux" — écris combien de nuits sans sommeil
+  Jamais "absolument catastrophique" — écris le montant exact perdu
+  Jamais "remarquablement efficace" — écris le pourcentage sur combien de jours
+
+RÈGLE ANTI-DUPLICATION :
+  Aucune idée ne peut apparaître deux fois dans le même script.
+  Pas même reformulée. Pas même résumée.
+  Si le climax reprend une idée du corps — réécris le climax.
+  Si la conclusion reprend une idée du climax — réécris la conclusion.
+
+
+================================================================
+PARTIE 3 — TEMPLATE VIERGE À REMPLIR
+================================================================
+
+Copie ce template, remplis chaque [SECTION] et colle-le
+dans le champ "Script Formula" des settings.
+
+--- DÉBUT DU TEMPLATE ---
+
+================================================================
+FORMULE DE NICHE — [NOM DE TA NICHE]
+Langue : [Français / English / Arabe / etc.]
+================================================================
+
+QUI TU ES QUAND TU ÉCRIS
+Tu n'es pas [rôle générique].
+Tu es [expérience vécue crédible].
+Tu parles depuis [position].
+Ta voix a trois qualités : [qualité 1]. [qualité 2]. [qualité 3].
+Jamais [refus 1].
+Jamais [refus 2].
+
+LE PUBLIC
+[Profil démographique et niveau d'expérience].
+[Ce qu'ils savent / Ce qui leur manque].
+[Ce qu'ils ont essayé sans résultat].
+Le détail qui change tout : [moment émotionnel précis].
+
+LA VOIX
+[Adjectif] sans être [excès].
+[Adjectif] sans être [excès].
+[Adjectif] sans être [excès].
+
+LOI FONDAMENTALE — LE RYTHME VIVANT
+Chaque paragraphe suit : Court (max [X] mots) → Long (15-20 mots) → Court (max [X] mots).
+INTERDIT : deux phrases courtes consécutives.
+
+LES LOIS D'ÉCRITURE
+LOI 1 — [Ta loi spécifique niche #1]
+LOI 2 — [Ta loi spécifique niche #2]
+LOI 3 — LA SPÉCIFICITÉ : chaque chiffre est précis, chaque prénom est unique.
+LOI 4 — ÉCRIRE POUR L'OREILLE : maximum [X] mots par phrase.
+
+STRUCTURE DU SCRIPT — ORDRE FIXE
+1. LE HOOK
+2. PROMOTION 1
+3. LE CORPS
+4. PROMOTION 2
+5. LE CLIMAX
+6. PROMOTION 3
+7. LA CONCLUSION
+
+LE HOOK
+[Décris les 3 portes émotionnelles possibles pour cette niche].
+[Décris le processus de sélection du hook pour cette niche].
+[Test : ce hook pourrait-il ouvrir un autre script ? Si oui — réécris.]
+
+LES PROMOTIONS
+Produit : [Nom du produit]
+Description : [Description en 2 lignes maximum]
+Règle absolue : chaque promotion se termine par le lien en description.
+Longueur : 5 à 8 phrases maximum.
+[Tes règles spécifiques pour les promotions de cette niche]
+
+LE CORPS
+Arc émotionnel obligatoire : R → C → E → T → CL
+[Tes règles d'enseignement spécifiques à cette niche]
+[Tes règles d'histoires spécifiques à cette niche]
+[Prénoms à utiliser — jamais deux fois le même]
+
+LE CLIMAX
+Longueur : 8 à 12 phrases maximum.
+[Tes règles de climax pour cette niche]
+Dernière phrase = la plus courte et la plus mémorable.
+
+LA CONCLUSION
+Longueur : 3 à 5 phrases maximum.
+[Ta règle de clôture pour cette niche]
+Rien après la conclusion.
+
+INTERDITS ABSOLUS
+[Phrases mortes spécifiques à ta niche]
+[Adverbes à remplacer par des faits]
+Zéro duplication d'idées dans le même script.
+
+--- FIN DU TEMPLATE ---
+
+
+================================================================
+PARTIE 4 — EXEMPLES DE FORMULES PAR NICHE
+================================================================
+
+NICHE : HORREUR / FAITS DIVERS / TRUE CRIME
+  Voix : narrateur froid qui sait tout. Jamais dramatique.
+  Public : amateurs de mystère. Veulent les faits, pas les émotions fabriquées.
+  Rythme : court-long-court. Phrases longues peuvent aller à 25 mots.
+  Structure : Entrée in medias res → Montée → Pivot → Climax → Non-résolution
+  Hook : commence par le crime/événement, jamais par le contexte.
+  Corps : faits chronologiques avec détails sensoriels précis.
+  Climax : la révélation finale ou la question qui reste sans réponse.
+  Interdits : "incroyable", "choquant", "vous n'allez pas croire".
+
+NICHE : FINANCE PERSONNELLE / ÉPARGNE
+  Voix : quelqu'un qui a mal géré son argent et reconstruit.
+  Public : 25-40 ans. Revenus moyens. Dettes ou zéro épargne.
+  Rythme : court-long-court. Maximum 18 mots par phrase longue.
+  Structure : Hook → Promo 1 → Corps → Promo 2 → Climax → Promo 3 → Conclusion
+  Hook : le chiffre embarrassant de leur compte en banque, décrit de l'intérieur.
+  Corps : arc R-C-E-T-CL avec des exemples en euros, pas en dollars.
+  Climax : la vérité sur pourquoi l'argent ne change pas avec un salaire plus élevé.
+  Interdits : "richesse", "liberté financière", "investissement magique".
+
+NICHE : MOTIVATION / PRODUCTIVITÉ
+  Voix : quelqu'un qui a arrêté d'être motivé et a commencé à être discipliné.
+  Public : entrepreneurs et freelances. 6h du matin et 23h sont leurs horaires.
+  Rythme : court-long-court. Maximum 17 mots par phrase longue.
+  Structure : Hook → Corps (sans promotions séparées — intégrées naturellement) → Climax → Conclusion
+  Hook : le moment précis où ils ont réalisé que la motivation ne reviendrait pas.
+  Corps : systèmes > motivation. Identité > comportement.
+  Climax : la distinction entre discipline et punition.
+  Interdits : "potentiel", "passion", "succès", "crois en toi".
+
+NICHE : SANTÉ / FITNESS
+  Voix : quelqu'un qui a essayé tous les régimes et trouvé la simplicité.
+  Public : 30-50 ans. Emploi sédentaire. Enfants. Peu de temps.
+  Rythme : court-long-court. Maximum 20 mots par phrase longue.
+  Structure : Hook → Promo 1 → Corps → Promo 2 → Climax → Promo 3 → Conclusion
+  Hook : le matin du lundi dans le miroir, la résolution brisée d'hier.
+  Corps : biologie comportementale > volonté. Petites habitudes > grands efforts ponctuels.
+  Climax : le corps ne punit pas la paresse — il s'adapte à ce qu'on lui montre chaque jour.
+  Interdits : "transformation", "challenge", "détox", "brûle les graisses".
+
+
+================================================================
+PARTIE 5 — CHECKLIST AVANT DE SOUMETTRE TA FORMULE
+================================================================
+
+Vérifie ces points avant de coller ta formule dans les settings :
+
+□ L'identité du scripteur est spécifique et crédible ?
+□ Le public cible a un "détail émotionnel qui change tout" ?
+□ La voix est définie avec des opposés (direct sans être brutal) ?
+□ La loi du rythme vivant court-long-court est explicitement définie ?
+□ Au moins 5 lois d'écriture sont listées ?
+□ La structure liste les parties dans l'ordre exact ?
+□ Les règles du hook incluent les 3 portes émotionnelles ?
+□ Les promotions ont une longueur max (5-8 phrases) définie ?
+□ Le climax a une longueur max (8-12 phrases) définie ?
+□ La conclusion a une longueur max (3-5 phrases) définie ?
+□ La règle "rien après la conclusion" est explicite ?
+□ La règle anti-duplication est incluse ?
+□ Les interdits absolus spécifiques à cette niche sont listés ?
+
+Si une case est vide — complète avant de soumettre.
+Une formule incomplète = scripts incomplèts.
+
+
+================================================================
+FIN DU GUIDE
+================================================================
+Pour toute question ou mise à jour de ce guide,
+modifie directement ta formule dans Settings → Script Formula.
+"""
+
+    return Response(
+        guide,
+        mimetype='text/plain; charset=utf-8',
+        headers={
+            'Content-Disposition': 'attachment; filename="guide-formules-niche.txt"',
+            'Content-Type': 'text/plain; charset=utf-8'
+        }
+    )
+
+
 @app.route('/api/settings/voices', methods=['GET'])
 def get_voices():
     """Get all available Inworld AI voices"""
