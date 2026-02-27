@@ -979,6 +979,35 @@ SCRIPT FORMULA:
 {formula_filled}
 
 ════════════════════════════════════════════════════════════
+⚠️ RAPPEL CRITIQUE — RÈGLES LES PLUS SOUVENT VIOLÉES
+════════════════════════════════════════════════════════════
+
+Avant d'écrire le premier mot, mémorise ces 5 points absolus :
+
+① RYTHME VIVANT — LOI FONDAMENTALE, AUCUNE EXCEPTION
+   Chaque paragraphe DOIT suivre : Court (≤8 mots) → Long (15-20 mots) → Court (≤8 mots)
+   ABSOLUMENT INTERDIT : deux phrases courtes consécutives.
+   Vérifie chaque paragraphe avant de passer au suivant. Si deux courtes se suivent — réécris immédiatement.
+
+② CLIMAX — 8 À 12 PHRASES MAXIMUM, PAS UNE DE PLUS
+   Le climax ne reprend AUCUNE idée déjà exprimée dans le corps — c'est une vérité nouvelle, pas un résumé.
+   La dernière phrase du climax = la plus courte et la plus mémorable du climax entier.
+   Si le climax dépasse 12 phrases — coupe sans pitié.
+
+③ PROMOTIONS — DOULEUR → PRODUIT → LIEN (5 à 8 phrases MAX chacune)
+   Ne liste JAMAIS des fonctionnalités. Connecte uniquement la douleur exacte de CE script au produit.
+   Chaque promotion SE TERMINE obligatoirement par le lien en description.
+   La formulation du lien doit être différente dans chacune des 3 promotions.
+
+④ PRÉNOMS — JAMAIS LE MÊME DEUX FOIS DANS LE MÊME SCRIPT
+   Avant d'introduire un personnage, vérifie mentalement tous les prénoms déjà utilisés.
+   Un prénom utilisé une fois = interdit pour le reste du script. Zéro exception.
+
+⑤ ARC ÉMOTIONNEL — R → C → E → T → CL DANS L'ORDRE STRICT
+   Planifie les 5 cases avant d'écrire le premier mot du corps.
+   Ne reviens JAMAIS en arrière dans l'arc. Ne passe pas à l'émotion suivante sans avoir atteint la précédente.
+
+════════════════════════════════════════════════════════════
 NOW WRITE THE FINAL SCRIPT
 ════════════════════════════════════════════════════════════
 
