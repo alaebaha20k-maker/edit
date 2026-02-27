@@ -722,6 +722,7 @@ COMPLETE NOW:"""
         product = niche_data.get('product', 'our platform')
         language = niche_data['language']
         niche_name = niche_data['name']
+        writing_guidelines = niche_data.get('writing_guidelines', '')
 
         # Replace placeholders in formula (auto-normalize)
         formula_filled = formula.replace('{title}', title)
@@ -756,6 +757,7 @@ THESE RULES OVERRIDE ALL OTHER INSTRUCTIONS:
 8. DO NOT use ANY formatting symbols: **, __, ~~, ##, ---, ***, ===, ───
 9. DO NOT label sections with titles like "Introduction:", "Hook:", "Conclusion:"
 10. DO NOT include character counts, timestamps, or meta-commentary.
+11. WRITE ENTIRELY IN {language}. Every single word of the script MUST be in {language}. This is absolute and cannot be overridden by any formula or guideline.
 
 IF ANY OF THE ABOVE APPEAR IN YOUR OUTPUT, THE OUTPUT IS INVALID AND MUST BE REGENERATED INTERNALLY.
 
@@ -876,6 +878,18 @@ If NICHE = FINANCE / TRADING:
 - End with a clear, sober takeaway.
 
 ────────────────────────────────────────
+SELECTED NICHE MANDATORY RULES (SUPER FORCED)
+────────────────────────────────────────
+Niche: {niche_name}
+
+The following rules come from the selected Content Niche.
+YOU MUST APPLY EVERY RULE BELOW WITHOUT EXCEPTION.
+These rules define the exact STYLE, TONE, and STRUCTURE for this script.
+They override any generic advice above when they conflict.
+
+{writing_guidelines}
+
+────────────────────────────────────────
 CREATIVE VARIATION ENGINE (ANTI-REPETITION)
 ────────────────────────────────────────
 Every script must feel fresh and original.
@@ -916,7 +930,8 @@ Product/Platform: {product}
 - NEVER mention price, cost, or affordability
 - Seamlessly woven into the narrative
 
-Language: {language}
+MANDATORY LANGUAGE: {language}
+Every word of the output MUST be written in {language}. No exceptions.
 
 ════════════════════════════════════════════════════════════
 🔄 AUTO-RETRY QUALITY VALIDATOR (ENHANCED)
