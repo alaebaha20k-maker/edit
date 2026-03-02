@@ -111,6 +111,12 @@ class ScriptGenerator3Chunk:
                 print(f"   Chunk {chunk.index}/{total_chunks}: {chunk.role} ({chunk.target_chars:,} chars)")
             print()
 
+        # Build system instruction once — formula as model identity (highest priority)
+        system_instruction = self._build_system_instruction(writing_guidelines, niche['language'])
+
+        if verbose:
+            print(f"📋 System instruction: {len(system_instruction):,} chars (formula as model identity)")
+
         # Generate each chunk
         generated_chunks = []
         previous_context = ""
@@ -119,7 +125,7 @@ class ScriptGenerator3Chunk:
             if verbose:
                 print(f"🎨 Generating Chunk {chunk.index}/{total_chunks}: {chunk.role}...")
 
-            # Build prompt for this chunk
+            # Build user-turn prompt for this chunk (formula already in system instruction)
             prompt = self._build_chunk_prompt(
                 title=title,
                 niche=niche,
@@ -132,12 +138,10 @@ class ScriptGenerator3Chunk:
             # Determine temperature based on role
             temp = self._get_temperature(chunk.role)
 
-            # max_output_tokens: use model maximum (65536).
-            # Gemini 2.5 Flash uses thinking tokens by default — these consume
-            # the output-token budget first, leaving almost nothing for actual
-            # content.  Setting thinking_budget=0 disables thinking mode so
-            # ALL 65536 tokens are available for the script text.
-            CHUNK_MAX_TOKENS = 65536
+            # Dynamic token budget per chunk — avoids reserving 65536 tokens
+            # when the chunk only needs a fraction of that.
+            # chars/3 ≈ tokens for French/Arabic; add 20% buffer + 2000 safety margin
+            chunk_tokens = min(65536, max(int(chunk.target_chars / 3 * 1.20) + 2000, 4000))
 
             # Call API — retry on 429 quota errors using the suggested wait time.
             # Also retry immediately if the chunk output is < 50 % of target
@@ -150,13 +154,15 @@ class ScriptGenerator3Chunk:
             for short_attempt in range(MAX_SHORT_RETRIES + 1):
                 for attempt in range(MAX_API_RETRIES + 1):
                     try:
-                        model = genai.GenerativeModel('gemini-2.5-flash')
-                        # Pass as dict so it works across SDK versions.
-                        # thinking_budget=0 disables thinking tokens, freeing
-                        # the full token budget for the actual script output.
+                        # Create model with formula as system instruction —
+                        # this gives the formula the highest possible priority.
+                        model = genai.GenerativeModel(
+                            'gemini-2.5-flash',
+                            system_instruction=system_instruction
+                        )
                         gen_cfg = {
                             "temperature": temp,
-                            "max_output_tokens": CHUNK_MAX_TOKENS,
+                            "max_output_tokens": chunk_tokens,
                             "top_p": 0.95,
                             "top_k": 40,
                         }
@@ -279,6 +285,43 @@ class ScriptGenerator3Chunk:
             'chunks_used': len(chunks)
         }
 
+    def _build_system_instruction(self, writing_guidelines: str, language: str) -> str:
+        """
+        Build the Gemini system instruction.
+
+        The niche Content Formula is placed here — in the system instruction
+        slot — which Gemini treats with the HIGHEST priority, above all
+        user-turn text.  This forces Gemini to internalize the formula as
+        its core identity rather than treating it as one instruction among many.
+        """
+        return f"""You are an elite professional scriptwriter creating YouTube voice-over scripts.
+
+YOUR CONTENT FORMULA — THIS IS YOUR COMPLETE WRITING BLUEPRINT:
+Read every line below. This formula defines exactly how you write every script:
+the structure, the tone, the voice, the rhythm, the hook style, the story arc,
+the promotion placement, the conclusion format — everything.
+
+══════════════════════════════════════════════════════════════════════
+{writing_guidelines}
+══════════════════════════════════════════════════════════════════════
+
+You follow this formula exactly. Not approximately — EXACTLY.
+You do not invent your own structure on top of it.
+You do not skip formula sections.
+You execute each formula section in the correct order, with full creative energy.
+
+NON-NEGOTIABLE OUTPUT RULES (override nothing — these are always active):
+1. Write 100% in {language} — every single word, zero exceptions
+2. Output ONLY plain flowing prose — no markdown, no **, no __, no ##
+3. No section headers, labels, or dividers of any kind
+4. No visual cues: VISUAL:, VIDEO:, SHOW:, CUT TO:, etc.
+5. No narrator/speaker tags: NARRATOR:, SPEAKER:, HOST:, etc.
+6. No timestamps: (0:00–0:15), (30 sec), (pause), etc.
+7. No stage directions in brackets [ ] or parentheses ( )
+8. No meta-commentary: "In this section…", "As I mentioned…", etc.
+9. Never mention price, cost, or affordability
+10. Start writing the script immediately — no preamble, no explanation"""
+
     def _build_chunk_prompt(
         self,
         title: str,
@@ -289,123 +332,100 @@ class ScriptGenerator3Chunk:
         total_chunks: int = 3
     ) -> str:
         """
-        Build a prompt for one chunk.
+        Build the user-turn prompt for one chunk.
 
-        The niche writing_guidelines is the user's content formula —
-        it drives both the structure and the style. It is injected as
-        the PRIMARY guide so every chunk follows it exactly.
+        The formula already lives in the system instruction (highest priority).
+        This prompt focuses entirely on chunk position, formula section mapping,
+        and precise execution instructions.
         """
-        product    = niche.get('product', 'our platform')
         language   = niche['language']
         niche_name = niche['name']
+        product    = niche.get('product', 'our platform')
 
         pct_start = int(chunk.script_position_start * 100)
         pct_end   = int(chunk.script_position_end   * 100)
 
         if chunk.role == "HOOK_AND_FRAMEWORK":
-            position_label = f"OPENING of the script (0 % → {pct_end} %)"
-            position_task  = (
-                "You are writing the BEGINNING of the script.\n"
-                "Apply the OPENING / HOOK instructions from your Content Formula above.\n"
-                "Create an irresistible hook that forces the listener to keep listening.\n"
-                "Establish the framework and promise — do NOT reveal the full answer yet."
+            position_desc  = f"Chunk 1 of {total_chunks} — OPENING (0 % → {pct_end} % of the full script)"
+            formula_task   = (
+                "━━━ FORMULA EXECUTION FOR THIS CHUNK ━━━\n"
+                "Step 1 — PARSE: Re-read the formula in your system instructions.\n"
+                "         Identify the section(s) that define the HOOK and OPENING of the script.\n"
+                "Step 2 — MAP: Those opening formula sections are what you write RIGHT NOW.\n"
+                "Step 3 — EXECUTE: Follow every rule in those sections to the letter:\n"
+                "         the hook style, the opening tone, the emotional trigger,\n"
+                "         the sentence rhythm, the promise or tension to establish.\n"
+                "Step 4 — LIMIT: Do NOT write anything from the middle or closing sections.\n"
+                "         The script continues in the next chunks — do NOT conclude."
             )
             continuation_block = ""
 
         elif chunk.role == "DEEP_INSIGHTS_AND_EXAMPLES":
-            position_label = f"MIDDLE of the script ({pct_start} % → {pct_end} %)"
-            position_task  = (
-                "You are writing a MIDDLE section of the script.\n"
-                "Apply the MIDDLE / DEVELOPMENT / JOURNEY instructions from your Content Formula above.\n"
-                "Go deep: add examples, stories, data, insights, mini-revelations.\n"
-                "Vary sentence rhythm — short for impact, longer for depth.\n"
-                "Do NOT conclude — the script continues after this chunk."
+            position_desc  = f"Chunk {chunk.index} of {total_chunks} — MIDDLE BODY ({pct_start} % → {pct_end} % of the full script)"
+            formula_task   = (
+                "━━━ FORMULA EXECUTION FOR THIS CHUNK ━━━\n"
+                "Step 1 — PARSE: Re-read the formula in your system instructions.\n"
+                "         Identify the section(s) that define the BODY / DEVELOPMENT / STORY EVENTS.\n"
+                "Step 2 — MAP: Those body/development formula sections are what you write RIGHT NOW.\n"
+                "Step 3 — EXECUTE: Follow every rule in those sections to the letter:\n"
+                "         the story progression, the emotional arc stages, the rhythm rules,\n"
+                "         the number and placement of story events, any promotion rules that apply here.\n"
+                "Step 4 — LIMIT: Do NOT re-write the hook (already done). Do NOT conclude.\n"
+                "         The script ends in the next chunk — keep the tension alive."
             )
-            continuation_block = f"""
-CONTINUE SEAMLESSLY FROM HERE (do NOT repeat it):
-"...{previous_context}"
-"""
+            continuation_block = (
+                f"CONTINUE SEAMLESSLY FROM THE PREVIOUS CHUNK "
+                f"(do NOT repeat or summarize what came before):\n"
+                f'"...{previous_context}"\n\n'
+            )
 
         else:  # IMPLEMENTATION_AND_CLOSE
-            position_label = f"CLOSING of the script ({pct_start} % → 100 %)"
-            position_task  = (
-                "You are writing the END of the script.\n"
-                "Apply the CLOSING / CONCLUSION / TRANSFORMATION instructions from your Content Formula above.\n"
-                "Synthesise everything, deliver the payoff, echo the opening hook with new meaning.\n"
-                "End powerfully and memorably."
+            position_desc  = f"Chunk {chunk.index} of {total_chunks} — CLOSING ({pct_start} % → 100 % of the full script)"
+            formula_task   = (
+                "━━━ FORMULA EXECUTION FOR THIS CHUNK ━━━\n"
+                "Step 1 — PARSE: Re-read the formula in your system instructions.\n"
+                "         Identify the section(s) that define the CLOSING, CONCLUSION, PROMOTION, and CTA.\n"
+                "Step 2 — MAP: Those closing formula sections are what you write RIGHT NOW.\n"
+                "Step 3 — EXECUTE: Follow every rule in those sections to the letter:\n"
+                "         the climax structure, the conclusion tone, the exact number of promotions,\n"
+                "         how each promotion is written, the CTA format, the final sentence style.\n"
+                "Step 4 — COMPLETE: This is the FINAL chunk. End the script fully and powerfully."
             )
-            continuation_block = f"""
-CONTINUE SEAMLESSLY FROM HERE (do NOT repeat it):
-"...{previous_context}"
-"""
+            continuation_block = (
+                f"CONTINUE SEAMLESSLY FROM THE PREVIOUS CHUNK "
+                f"(do NOT repeat or summarize what came before):\n"
+                f'"...{previous_context}"\n\n'
+            )
 
-        prompt = f"""You are an elite, highly creative scriptwriter producing voice-ready narration.
-Your output must sound like a world-class human storyteller — not a robot.
+        prompt = f"""SCRIPT CHUNK — EXECUTE YOUR FORMULA NOW
 
-══════════════════════════════════════════════════════════════
-PROJECT DETAILS
-══════════════════════════════════════════════════════════════
-TITLE   : "{title}"
-NICHE   : {niche_name}
-LANGUAGE: {language}
-CHUNK   : {chunk.index} of {total_chunks}  |  {position_label}
-══════════════════════════════════════════════════════════════
+TITLE    : "{title}"
+NICHE    : {niche_name}
+LANGUAGE : {language}
+POSITION : {position_desc}
 
-══════════════════════════════════════════════════════════════
-YOUR CONTENT FORMULA  ← FOLLOW THIS EXACTLY
-(This is the niche you selected. Apply its structure, tone,
-style, and all instructions to every sentence you write.)
-══════════════════════════════════════════════════════════════
-{writing_guidelines}
-══════════════════════════════════════════════════════════════
+{continuation_block}{formula_task}
 
-YOUR TASK FOR THIS CHUNK
-──────────────────────────────────────────────────────────────
-{position_task}
-{continuation_block}
-──────────────────────────────────────────────────────────────
+━━━ CREATIVE EXECUTION ━━━
+The formula defines your structure. Fill it with vivid, original content:
+- Write specifically about "{title}" — not generic content
+- Invent concrete, believable details: real-feeling examples, specific numbers,
+  named characters if the formula uses them, emotional moments that feel lived-in
+- Never sound like AI — sound like a world-class human storyteller
+- Every sentence must earn its place
 
-══════════════════════════════════════════════════════════════
-MANDATORY OUTPUT RULES
-══════════════════════════════════════════════════════════════
+PRODUCT: {product}
+Follow the formula's exact product placement rules.
+NEVER mention price, cost, or affordability.
 
-LANGUAGE (ABSOLUTE PRIORITY):
-- Write 100 % in {language} — not a single word of another language
-- Native-level {language}: natural expressions, idioms, rhythm
-- The title is "{title}" — match that language and register exactly
+TOPIC LOCK: Every sentence must serve the title "{title}". Do not drift.
 
-FORMAT — PLAIN VOICE TEXT ONLY:
-- One continuous block of flowing prose
-- NO markdown (**, __, ##, ---, etc.)
-- NO section headers, dividers, or labels
-- NO visual cues: VISUAL:, VIDEO:, SHOW:, CUT TO:
-- NO narrator tags: NARRATOR:, SPEAKER:, HOST:
-- NO timestamps: (0:00-0:15), (30 sec), (pause)
-- NO parentheses or brackets with stage directions
-- NO meta-commentary ("In this section...", "As I mentioned...")
+LENGTH: Write AT LEAST {chunk.target_chars:,} characters.
+        Up to {int(chunk.target_chars * 1.08):,} characters is acceptable.
+        Never cut short — use the full length to go deeper, not to pad.
 
-QUALITY (NON-NEGOTIABLE):
-- Every sentence must earn its place — no filler, no padding
-- Vivid metaphors, concrete examples, emotional storytelling
-- Keep the listener hooked from the first word to the last
+START WRITING IN {language.upper()} NOW:"""
 
-TOPIC LOCK:
-- Every sentence must serve the title: "{title}"
-- Do NOT drift to unrelated subjects
-
-PRODUCT (only if relevant):
-- Mention "{product}" naturally 1–2 times max
-- NEVER mention price
-
-LENGTH — CRITICAL:
-- Write AT LEAST {chunk.target_chars:,} characters for this chunk
-- Up to {int(chunk.target_chars * 1.08):,} chars is fine
-- Expand ideas, go deeper, add examples — never stop early
-
-══════════════════════════════════════════════════════════════
-START WRITING IN {language.upper()} NOW — NO PREAMBLE
-══════════════════════════════════════════════════════════════
-"""
         return prompt
 
     def _extend_script(
@@ -419,47 +439,52 @@ START WRITING IN {language.upper()} NOW — NO PREAMBLE
     ) -> str:
         """
         Continue the script until ≥ target_length chars.
-        Retries up to 2 times.  Follows the niche writing guidelines.
+        Uses the same system_instruction (formula) approach as the main chunks.
         """
         MAX_EXTEND_RETRIES = 2
-        language  = niche.get('language', 'English')
+        language   = niche.get('language', 'English')
         niche_name = niche.get('name', '')
+
+        # Formula as system instruction — same approach as main chunks
+        system_instruction = self._build_system_instruction(writing_guidelines, language)
 
         for attempt in range(MAX_EXTEND_RETRIES):
             shortage = target_length - len(current_script)
             if shortage <= 0:
                 break
 
-            extend_chars  = shortage + 1500   # buffer for cleaning loss
-            extend_tokens = 65536             # always use model max; thinking disabled below
+            extend_chars  = shortage + 1500
+            extend_tokens = min(65536, max(int(extend_chars / 3 * 1.20) + 2000, 4000))
             tail = current_script[-600:].strip()
 
-            prompt = f"""You are continuing a voice narration script. Continue SEAMLESSLY.
+            prompt = f"""SCRIPT EXTENSION — CONTINUE THE BODY SECTION
 
 TITLE   : "{title}"
 NICHE   : {niche_name}
 LANGUAGE: {language}
 
-YOUR CONTENT FORMULA (keep following body/development section):
-{writing_guidelines}
-
-LAST PART OF SCRIPT (do NOT repeat — continue from here):
+LAST PART OF SCRIPT (do NOT repeat — continue seamlessly from here):
 "...{tail}"
 
-══════════════════════════════════════════════════════════════
-RULES (MANDATORY)
-══════════════════════════════════════════════════════════════
-- Write AT LEAST {extend_chars:,} characters of NEW content
-- Stay 100 % in {language} — no other language
-- Plain flowing prose only — no markdown, no labels, no timestamps
-- Do NOT repeat anything already written
-- Do NOT add a conclusion or closing — the body is still ongoing
-- Follow the formula's body/development section style
-- Start the continuation immediately, no preamble
-══════════════════════════════════════════════════════════════
-"""
+━━━ FORMULA EXECUTION ━━━
+Re-read your formula (in your system instructions).
+Identify the BODY / DEVELOPMENT section rules that apply here.
+Execute those rules now — continue the script body.
+
+RULES:
+- Write AT LEAST {extend_chars:,} characters of NEW, original content
+- Do NOT repeat anything already in the script
+- Do NOT add a conclusion or closing yet — this is body extension only
+- Follow the formula's body section rhythm and structure exactly
+- Start immediately — no preamble
+
+START WRITING IN {language.upper()} NOW:"""
+
             try:
-                model = genai.GenerativeModel('gemini-2.5-flash')
+                model = genai.GenerativeModel(
+                    'gemini-2.5-flash',
+                    system_instruction=system_instruction
+                )
                 response = model.generate_content(
                     prompt,
                     generation_config={
@@ -473,7 +498,7 @@ RULES (MANDATORY)
                 current_script = current_script.rstrip() + ' ' + extension
                 if verbose:
                     print(f"   Extension attempt {attempt + 1}: +{len(extension):,} chars → total {len(current_script):,}")
-                time.sleep(4)  # Rate limit protection
+                time.sleep(4)
             except Exception as e:
                 if verbose:
                     print(f"   ⚠️  Extension attempt {attempt + 1} failed: {e}")
