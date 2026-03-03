@@ -1041,6 +1041,25 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Alae Baha Settings Vault -->
+                <div class="settings-section" style="border-top:2px solid #b8860b; padding-top:24px; margin-top:8px;">
+                    <h3 style="color:#f5c842; display:flex; align-items:center; gap:10px;">
+                        🔐 Alae Baha – Settings Vault
+                    </h3>
+                    <p style="color:#d4a84b; margin-bottom:18px; font-size:14px;">
+                        Export ALL your settings (APIs, niches, styles, formulas) from this machine, or import them onto any other machine with one click — password protected.
+                    </p>
+                    <div style="display:flex; gap:12px; flex-wrap:wrap;">
+                        <button onclick="alaeBahaOpen('export')" class="btn-primary" style="background:linear-gradient(135deg,#f5c842,#b8860b); color:#1a0a00; font-weight:700; border:none; padding:10px 22px; border-radius:8px; cursor:pointer; font-size:14px;">
+                            📤 Export Settings
+                        </button>
+                        <button onclick="alaeBahaOpen('import')" class="btn-primary" style="background:linear-gradient(135deg,#3b82f6,#1d4ed8); color:white; font-weight:700; border:none; padding:10px 22px; border-radius:8px; cursor:pointer; font-size:14px;">
+                            📥 Import Settings
+                        </button>
+                    </div>
+                    <p style="color:#a07040; margin:12px 0 0; font-size:12px;">Password: ALAEBMW · One-time sync · All data transferred instantly</p>
+                </div>
             </div>
 
             <div class="modal-footer">
@@ -1049,6 +1068,160 @@
             </div>
         </div>
     </div>
+
+    <!-- Alae Baha Modal -->
+    <div id="alaeBahaModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:9999; align-items:center; justify-content:center;">
+        <div style="background:linear-gradient(135deg,#1a0a00,#2d1200); border:2px solid #b8860b; border-radius:16px; padding:32px; max-width:500px; width:92%; box-shadow:0 24px 80px rgba(0,0,0,0.8);">
+            <h3 id="abModalTitle" style="color:#f5c842; font-size:20px; margin:0 0 6px;">🔐 Export Settings</h3>
+            <p id="abModalDesc" style="color:#d4a84b; font-size:13px; margin:0 0 20px;"></p>
+
+            <!-- Step 1: Password -->
+            <div id="abStepPw">
+                <label style="color:#f5c842; font-size:13px; font-weight:600; display:block; margin-bottom:6px;">Password</label>
+                <input type="password" id="abPwInput" placeholder="Enter password…"
+                    style="width:100%; padding:10px 14px; background:#2a1400; border:1px solid #b8860b; color:#f5c842; border-radius:8px; font-size:14px; box-sizing:border-box; margin-bottom:10px;"
+                    onkeydown="if(event.key==='Enter') abVerify()">
+                <div id="abPwError" style="color:#ef4444; font-size:13px; margin-bottom:10px; display:none;">Incorrect password.</div>
+                <div style="display:flex; gap:10px;">
+                    <button onclick="alaeBahaClose()" style="flex:1; padding:10px; background:#4b5563; color:white; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600;">Cancel</button>
+                    <button onclick="abVerify()" style="flex:2; padding:10px; background:linear-gradient(135deg,#f5c842,#b8860b); color:#1a0a00; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:700;">Unlock</button>
+                </div>
+            </div>
+
+            <!-- Step 2a: Export -->
+            <div id="abStepExport" style="display:none; text-align:center;">
+                <div id="abExportSpinner" style="padding:20px 0;">
+                    <div style="border:3px solid #2a1400; border-top:3px solid #f5c842; border-radius:50%; width:32px; height:32px; animation:spin 1s linear infinite; margin:0 auto 12px;"></div>
+                    <p style="color:#d4a84b;">Collecting all settings…</p>
+                </div>
+                <div id="abExportReady" style="display:none;">
+                    <p style="font-size:36px; margin:0 0 6px;">✅</p>
+                    <p style="color:#22c55e; font-weight:700; margin:0 0 10px;">Bundle ready!</p>
+                    <p style="color:#d4a84b; font-size:13px; margin:0 0 16px;">Download and copy to the other machine, then use <strong style="color:#f5c842;">Import Settings</strong> there.</p>
+                    <button id="abDownloadBtn" style="width:100%; padding:12px; background:linear-gradient(135deg,#22c55e,#16a34a); color:white; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:700; margin-bottom:8px;">⬇️ Download alae_baha_settings.json</button>
+                    <button onclick="alaeBahaClose()" style="width:100%; padding:10px; background:#4b5563; color:white; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600;">Close</button>
+                </div>
+            </div>
+
+            <!-- Step 2b: Import -->
+            <div id="abStepImport" style="display:none;">
+                <p style="color:#d4a84b; font-size:13px; margin:0 0 12px;">Select the <code style="color:#f5c842;">alae_baha_settings.json</code> file from the other machine.</p>
+                <input type="file" id="abFileInput" accept=".json"
+                    style="width:100%; padding:10px; background:#2a1400; border:1px solid #b8860b; color:#f5c842; border-radius:8px; box-sizing:border-box; margin-bottom:12px;">
+                <div id="abImportStatus" style="margin-bottom:12px; display:none;"></div>
+                <div style="display:flex; gap:10px;">
+                    <button onclick="alaeBahaClose()" style="flex:1; padding:10px; background:#4b5563; color:white; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600;">Cancel</button>
+                    <button onclick="abDoImport()" style="flex:2; padding:10px; background:linear-gradient(135deg,#3b82f6,#1d4ed8); color:white; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:700;">📥 Import All Settings</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let _abMode = 'export', _abBundle = null;
+
+        function alaeBahaOpen(mode) {
+            _abMode = mode; _abBundle = null;
+            document.getElementById('abPwInput').value = '';
+            document.getElementById('abPwError').style.display = 'none';
+            document.getElementById('abStepPw').style.display = 'block';
+            document.getElementById('abStepExport').style.display = 'none';
+            document.getElementById('abStepImport').style.display = 'none';
+            document.getElementById('abModalTitle').textContent = mode === 'export' ? '📤 Export All Settings' : '📥 Import Settings';
+            document.getElementById('abModalDesc').textContent = mode === 'export'
+                ? 'Enter the password to export all APIs, niches, styles, and formulas.'
+                : 'Enter the password to import settings from a backup file.';
+            const m = document.getElementById('alaeBahaModal');
+            m.style.display = 'flex';
+            setTimeout(() => document.getElementById('abPwInput').focus(), 80);
+        }
+
+        function alaeBahaClose() { document.getElementById('alaeBahaModal').style.display = 'none'; }
+
+        document.getElementById('alaeBahaModal').addEventListener('click', function(e) {
+            if (e.target === this) alaeBahaClose();
+        });
+
+        async function abVerify() {
+            const pw = document.getElementById('abPwInput').value;
+            const errEl = document.getElementById('abPwError');
+            if (!pw) { errEl.style.display = 'block'; errEl.textContent = 'Password is required.'; return; }
+            document.getElementById('abStepPw').style.display = 'none';
+
+            if (_abMode === 'export') {
+                document.getElementById('abStepExport').style.display = 'block';
+                document.getElementById('abExportSpinner').style.display = 'block';
+                document.getElementById('abExportReady').style.display = 'none';
+                try {
+                    const res = await fetch('/api/alae-baha/export', {
+                        method: 'POST', headers: {'Content-Type':'application/json'},
+                        body: JSON.stringify({ password: pw })
+                    });
+                    const data = await res.json();
+                    if (!res.ok || !data.success) {
+                        if (res.status === 403) {
+                            errEl.style.display = 'block'; errEl.textContent = 'Incorrect password.';
+                            document.getElementById('abStepExport').style.display = 'none';
+                            document.getElementById('abStepPw').style.display = 'block';
+                        } else { alaeBahaClose(); }
+                        return;
+                    }
+                    _abBundle = data.bundle;
+                    document.getElementById('abExportSpinner').style.display = 'none';
+                    document.getElementById('abExportReady').style.display = 'block';
+                    document.getElementById('abDownloadBtn').onclick = () => {
+                        const blob = new Blob([JSON.stringify(_abBundle, null, 2)], {type:'application/json'});
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a'); a.href = url; a.download = 'alae_baha_settings.json'; a.click();
+                        URL.revokeObjectURL(url);
+                    };
+                } catch(e) { alaeBahaClose(); }
+            } else {
+                document.getElementById('abStepImport').style.display = 'block';
+                document.getElementById('abImportStatus').style.display = 'none';
+                document.getElementById('abFileInput').value = '';
+                document.getElementById('abFileInput').dataset.pw = pw;
+            }
+        }
+
+        async function abDoImport() {
+            const fileInput = document.getElementById('abFileInput');
+            const pw = fileInput.dataset.pw;
+            const statusEl = document.getElementById('abImportStatus');
+            if (!fileInput.files || !fileInput.files[0]) {
+                statusEl.style.display = 'block';
+                statusEl.innerHTML = '<span style="color:#ef4444;">⚠️ Please select a file first.</span>';
+                return;
+            }
+            statusEl.style.display = 'block';
+            statusEl.innerHTML = '<span style="color:#d4a84b;">⏳ Importing…</span>';
+            try {
+                const bundle = JSON.parse(await fileInput.files[0].text());
+                const res = await fetch('/api/alae-baha/import', {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({ password: pw, bundle })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    statusEl.innerHTML = `<span style="color:#ef4444;">❌ ${res.status === 403 ? 'Incorrect password.' : (data.error || 'Import failed.')}</span>`;
+                    return;
+                }
+                const r = data.results || {};
+                statusEl.innerHTML = `<div style="background:#052e16; border:1px solid #22c55e; border-radius:8px; padding:14px; color:#d1fae5;">
+                    <p style="color:#4ade80; font-weight:700; margin:0 0 8px;">✅ Import Complete!</p>
+                    <ul style="margin:0; padding-left:16px; font-size:13px; line-height:1.8;">
+                        <li>API Keys: ${r.api_keys ? '✅ Saved' : '⚠️ Skipped'}</li>
+                        <li>Formulas: ${r.formulas ? '✅ Saved' : '⚠️ Skipped'}</li>
+                        <li>Niches: <strong>${r.niches || 0}</strong> imported</li>
+                        <li>Image Styles: <strong>${r.image_styles || 0}</strong> imported</li>
+                    </ul>
+                    <p style="margin:10px 0 0; font-size:12px; color:#86efac;">Reload the page to see all updates.</p>
+                </div>`;
+            } catch(e) {
+                statusEl.innerHTML = `<span style="color:#ef4444;">❌ Error: ${e.message}</span>`;
+            }
+        }
+    </script>
 
     <script src="app.js?v=20260207-fix"></script>
     <script src="capcut_editor.js?v=20260207"></script>
