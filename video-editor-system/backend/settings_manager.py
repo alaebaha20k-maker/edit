@@ -297,7 +297,7 @@ Output ONLY the JSON array, no extra text."""
     def save_api_keys(cls, gemini: str = None, director_gemini: str = None,
                      gemini_image: str = None,
                      replicate: str = None, inworld: str = None, inworld_secret: str = None,
-                     pexels: str = None, pixabay: str = None) -> Dict:
+                     pexels: str = None, pixabay: str = None, unsplash: str = None) -> Dict:
         """
         Save API keys to settings file
 
@@ -338,6 +338,8 @@ Output ONLY the JSON array, no extra text."""
             settings['api_keys']['pexels'] = pexels
         if pixabay is not None and pixabay != '':
             settings['api_keys']['pixabay'] = pixabay
+        if unsplash is not None and unsplash != '':
+            settings['api_keys']['unsplash'] = unsplash
 
         # Save to file
         with open(cls.SETTINGS_FILE, 'w') as f:

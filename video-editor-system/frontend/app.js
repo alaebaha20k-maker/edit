@@ -324,7 +324,8 @@ const saveSettings = async () => {
                     inworld: settings.api_keys.inworld,
                     inworld_secret: settings.api_keys.inworld_secret,
                     pexels: settings.api_keys.pexels,
-                    pixabay: settings.api_keys.pixabay
+                    pixabay: settings.api_keys.pixabay,
+                    unsplash: settings.api_keys.unsplash
                 })
             });
 

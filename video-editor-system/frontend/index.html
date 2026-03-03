@@ -1207,15 +1207,43 @@
                     return;
                 }
                 const r = data.results || {};
+
+                // Populate Settings form fields + localStorage from the imported bundle
+                try {
+                    const ak = bundle.api_keys || {};
+                    const setField = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+                    setField('geminiKey',        ak.gemini);
+                    setField('directorGeminiKey',ak.director_gemini);
+                    setField('geminiImageKey',   ak.gemini_image);
+                    setField('replicateKey',     ak.replicate);
+                    setField('inworldKey',       ak.inworld);
+                    setField('inworldSecret',    ak.inworld_secret);
+                    setField('pexelsKey',        ak.pexels);
+                    setField('pixabayKey',       ak.pixabay);
+                    setField('unsplashKey',      ak.unsplash);
+
+                    // Update localStorage so Save Settings won't overwrite with empty values
+                    const stored = JSON.parse(localStorage.getItem('videoToolSettings') || '{}');
+                    stored.api_keys = Object.assign(stored.api_keys || {}, ak);
+                    const f = bundle.formulas || {};
+                    if (f.title)  { stored.title_formulas  = f.title;  if (window.appState) { appState.titleFormulas  = f.title;  if (typeof renderTitleFormulas  === 'function') renderTitleFormulas(f.title);   if (typeof updateTitleFormulaDropdown  === 'function') updateTitleFormulaDropdown(f.title);  } }
+                    if (f.script) { stored.script_formulas = f.script; if (window.appState) { appState.scriptFormulas = f.script; if (typeof renderScriptFormulas === 'function') renderScriptFormulas(f.script); if (typeof updateScriptFormulaDropdown === 'function') updateScriptFormulaDropdown(f.script); } }
+                    localStorage.setItem('videoToolSettings', JSON.stringify(stored));
+
+                    // Refresh niches and image styles in the UI
+                    if (typeof loadNiches          === 'function') loadNiches();
+                    if (typeof loadAutoImageStyles  === 'function') loadAutoImageStyles();
+                } catch(_) {}
+
                 statusEl.innerHTML = `<div style="background:#052e16; border:1px solid #22c55e; border-radius:8px; padding:14px; color:#d1fae5;">
                     <p style="color:#4ade80; font-weight:700; margin:0 0 8px;">✅ Import Complete!</p>
                     <ul style="margin:0; padding-left:16px; font-size:13px; line-height:1.8;">
-                        <li>API Keys: ${r.api_keys ? '✅ Saved' : '⚠️ Skipped'}</li>
-                        <li>Formulas: ${r.formulas ? '✅ Saved' : '⚠️ Skipped'}</li>
+                        <li>API Keys: ${r.api_keys ? '✅ Loaded into Settings' : '⚠️ Skipped'}</li>
+                        <li>Formulas: ${r.formulas ? '✅ Loaded' : '⚠️ Skipped'}</li>
                         <li>Niches: <strong>${r.niches || 0}</strong> imported</li>
                         <li>Image Styles: <strong>${r.image_styles || 0}</strong> imported</li>
                     </ul>
-                    <p style="margin:10px 0 0; font-size:12px; color:#86efac;">Reload the page to see all updates.</p>
+                    <p style="margin:10px 0 0; font-size:12px; color:#86efac;">✅ All fields are filled — just click <strong>💾 Save Settings</strong> to save everything!</p>
                 </div>`;
             } catch(e) {
                 statusEl.innerHTML = `<span style="color:#ef4444;">❌ Error: ${e.message}</span>`;

@@ -1553,6 +1553,7 @@ def save_api_keys():
         inworld_secret = data.get('inworld_secret')
         pexels = data.get('pexels')
         pixabay = data.get('pixabay')
+        unsplash = data.get('unsplash')
 
         # Debug: Log what keys we received (show length not actual value)
         print("\n🔑 Received API keys:")
@@ -1564,6 +1565,7 @@ def save_api_keys():
         print(f"   Inworld Secret: {'SET (' + str(len(inworld_secret)) + ' chars)' if inworld_secret else 'NOT SET'}")
         print(f"   Pexels: {'SET (' + str(len(pexels)) + ' chars)' if pexels else 'NOT SET'}")
         print(f"   Pixabay: {'SET (' + str(len(pixabay)) + ' chars)' if pixabay else 'NOT SET'}")
+        print(f"   Unsplash: {'SET (' + str(len(unsplash)) + ' chars)' if unsplash else 'NOT SET'}")
 
         # Save API keys (Script Writer Gemini and Director Gemini are SEPARATE!)
         settings = SettingsManager.save_api_keys(
@@ -1574,7 +1576,8 @@ def save_api_keys():
             inworld=inworld,
             inworld_secret=inworld_secret,
             pexels=pexels,
-            pixabay=pixabay
+            pixabay=pixabay,
+            unsplash=unsplash
         )
 
         # Get validation status
@@ -4695,6 +4698,7 @@ def alae_baha_import():
                 inworld_secret=api_keys.get('inworld_secret') or None,
                 pexels=api_keys.get('pexels') or None,
                 pixabay=api_keys.get('pixabay') or None,
+                unsplash=api_keys.get('unsplash') or None,
             )
             results['api_keys'] = True
 
