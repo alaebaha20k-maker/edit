@@ -4617,6 +4617,157 @@ def check_script():
         }), 500
 
 
+ALAE_BAHA_PASSWORD = 'ALAEBMW'
+
+
+@app.route('/api/alae-baha/export', methods=['POST'])
+def alae_baha_export():
+    """Export all settings, niches, styles, and formulas as a single JSON bundle."""
+    from settings_manager import SettingsManager
+    from niche_manager import NicheManager
+    from image_style_manager import ImageStyleManager
+
+    try:
+        data = request.get_json() or {}
+        if data.get('password') != ALAE_BAHA_PASSWORD:
+            return jsonify({'error': 'Incorrect password'}), 403
+
+        settings = SettingsManager.load_settings()
+
+        bundle = {
+            'alae_baha_bundle': True,
+            'version': '1.0',
+            'exported_at': datetime.utcnow().isoformat(),
+            'api_keys': settings.get('api_keys', {}),
+            'voice_settings': settings.get('voice_settings', {}),
+            'video_settings': settings.get('video_settings', {}),
+            'formulas': {
+                'title': SettingsManager.load_formula('title'),
+                'script': SettingsManager.load_formula('script'),
+                'image': SettingsManager.load_formula('image'),
+            },
+            'niches': NicheManager.get_all_niches(),
+            'image_styles': ImageStyleManager.get_all_styles(),
+        }
+
+        # Also include api_config.json if present
+        from config import Config
+        if Config.API_CONFIG_FILE.exists():
+            try:
+                with open(Config.API_CONFIG_FILE, 'r') as f:
+                    bundle['api_config'] = json.load(f)
+            except Exception:
+                bundle['api_config'] = {}
+
+        return jsonify({'success': True, 'bundle': bundle})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/alae-baha/import', methods=['POST'])
+def alae_baha_import():
+    """Import a settings bundle exported from another machine."""
+    from settings_manager import SettingsManager
+    from niche_manager import NicheManager
+    from image_style_manager import ImageStyleManager
+
+    try:
+        data = request.get_json() or {}
+        if data.get('password') != ALAE_BAHA_PASSWORD:
+            return jsonify({'error': 'Incorrect password'}), 403
+
+        bundle = data.get('bundle')
+        if not bundle or not bundle.get('alae_baha_bundle'):
+            return jsonify({'error': 'Invalid bundle format'}), 400
+
+        results = {'api_keys': False, 'formulas': False, 'niches': 0, 'image_styles': 0}
+
+        # --- API Keys ---
+        api_keys = bundle.get('api_keys', {})
+        if api_keys:
+            SettingsManager.save_api_keys(
+                gemini=api_keys.get('gemini') or None,
+                director_gemini=api_keys.get('director_gemini') or None,
+                gemini_image=api_keys.get('gemini_image') or None,
+                replicate=api_keys.get('replicate') or None,
+                inworld=api_keys.get('inworld') or None,
+                inworld_secret=api_keys.get('inworld_secret') or None,
+                pexels=api_keys.get('pexels') or None,
+                pixabay=api_keys.get('pixabay') or None,
+            )
+            results['api_keys'] = True
+
+        # --- Voice & Video Settings ---
+        voice = bundle.get('voice_settings', {})
+        if voice:
+            try:
+                SettingsManager.save_voice_settings(
+                    default_voice=voice.get('default_voice'),
+                    speaking_rate=voice.get('speaking_rate'),
+                )
+            except Exception:
+                pass
+
+        video = bundle.get('video_settings', {})
+        if video:
+            try:
+                SettingsManager.save_video_settings(
+                    enable_timed_zoom=video.get('enable_timed_zoom'),
+                    zoom_direction=video.get('zoom_direction'),
+                    zoom_duration=video.get('zoom_duration'),
+                    zoom_amount=video.get('zoom_amount'),
+                )
+            except Exception:
+                pass
+
+        # --- Formulas ---
+        formulas = bundle.get('formulas', {})
+        if formulas:
+            SettingsManager.save_formulas(
+                title_formula=formulas.get('title'),
+                script_formula=formulas.get('script'),
+                image_formula=formulas.get('image'),
+            )
+            results['formulas'] = True
+
+        # --- Niches (skip duplicates by name) ---
+        existing_niches = {n['name'] for n in NicheManager.get_all_niches()}
+        for niche in bundle.get('niches', []):
+            if niche.get('name') not in existing_niches:
+                try:
+                    NicheManager.create_niche(
+                        name=niche['name'],
+                        language=niche['language'],
+                        writing_guidelines=niche['writing_guidelines'],
+                    )
+                    results['niches'] += 1
+                except Exception:
+                    pass
+
+        # --- Image Styles (skip duplicates by name) ---
+        existing_styles = {s['name'] for s in ImageStyleManager.get_all_styles()}
+        for style in bundle.get('image_styles', []):
+            if style.get('name') not in existing_styles:
+                try:
+                    ImageStyleManager.create_style(
+                        name=style['name'],
+                        prompts=style['prompts'],
+                    )
+                    results['image_styles'] += 1
+                except Exception:
+                    pass
+
+        return jsonify({
+            'success': True,
+            'message': 'All settings imported successfully!',
+            'results': results,
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     print("="*60)
     print("🎬 VIDEO EDITOR API SERVER")
