@@ -2160,8 +2160,8 @@ async function generatePromptsOnly() {
             throw new Error(data.error || 'Prompts generation failed');
         }
 
-        // Join prompts with blank line + [image] separator as user requested
-        const text = data.prompts.join('\n\n[image]\n\n');
+        // Join prompts with a blank line between each — clean, no [image] tokens
+        const text = data.prompts.join('\n\n');
         if (outputEl) outputEl.value = text;
         if (countLabel) countLabel.textContent = `(${data.prompts.length} prompts)`;
 
