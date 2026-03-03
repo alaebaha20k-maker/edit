@@ -328,6 +328,46 @@
                 </div>
             </section>
 
+            <!-- Prompts Generator -->
+            <section class="step" id="promptsGeneratorStep">
+                <h3><span class="step-number" style="background: linear-gradient(135deg, #8b5cf6, #6d28d9); font-size:18px; line-height:1;">🎨</span> Prompts Generator</h3>
+                <p style="color: #888; margin-bottom: 18px; font-size: 14px;">
+                    Generate detailed image prompts from your script using <strong>Director Gemini (gemini-2.5-flash)</strong> + your saved Auto Images styles.
+                    Output is raw text — one prompt per scene, ready to paste into any image generator.
+                </p>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 18px;">
+                    <div class="input-group" style="margin: 0;">
+                        <label>Image Style</label>
+                        <select id="pgStyleSelect" class="input-large">
+                            <option value="">-- Loading styles… --</option>
+                        </select>
+                    </div>
+                    <div class="input-group" style="margin: 0;">
+                        <label>Number of Prompts</label>
+                        <input type="number" id="pgCount" value="20" min="1" max="200" class="input-medium" style="width:100%;">
+                        <small style="color:#888; margin-top:4px; display:block;">Large numbers are sent in chunks of 15 to avoid limits</small>
+                    </div>
+                </div>
+
+                <button onclick="generatePromptsOnly()" class="btn-secondary" style="width:100%; font-size:15px; padding:12px;">
+                    🎨 Generate Prompts
+                </button>
+
+                <div id="pgProgressBox" style="display:none; margin-top:14px; padding:12px; background:rgba(139,92,246,0.08); border-radius:8px; border-left:3px solid #8b5cf6;"></div>
+
+                <div id="pgResultSection" style="display:none; margin-top:16px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <label style="font-weight:600; font-size:14px;">Generated Prompts <span id="pgCountLabel" style="color:#888; font-weight:400;"></span></label>
+                        <button onclick="downloadPromptsText()" class="btn-success" style="padding:6px 18px; font-size:13px;">
+                            📥 Download .txt
+                        </button>
+                    </div>
+                    <textarea id="pgOutputText" rows="20" class="textarea-large" readonly
+                        style="font-family:monospace; font-size:12px; line-height:1.6; background:#111827; color:#d1d5db; border:1px solid #374151; resize:vertical;"></textarea>
+                </div>
+            </section>
+
             <!-- Step 3: Media (Images/Videos) -->
             <section class="step">
                 <h3><span class="step-number">3</span> Media (Images & Videos)</h3>

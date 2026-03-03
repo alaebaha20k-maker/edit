@@ -4772,6 +4772,151 @@ def alae_baha_import():
         return jsonify({'error': str(e)}), 500
 
 
+# =============================================================================
+# PROMPTS GENERATOR — raw image prompts from script + style (no image generation)
+# =============================================================================
+
+@app.route('/api/generate-prompts-only', methods=['POST'])
+def generate_prompts_only():
+    """
+    Generate detailed image prompts using Director Gemini + Auto Images style.
+    No image generation — output is plain text prompts separated by [image].
+
+    Request JSON:
+        { "script": "...", "style_id": "cinematic", "count": 20 }
+
+    Response:
+        { "success": True, "prompts": ["prompt1", "prompt2", ...], "count": N }
+    """
+    from auto_images_style_manager import AutoImagesStyleManager
+    from config import Config
+    import google.generativeai as genai
+
+    CHUNK_SIZE = 15  # Max prompts per Gemini call to avoid token limits
+
+    def build_prompt(script_text, style, chunk_start, chunk_size, total_count):
+        style_name        = style.get('name', 'Cinematic')
+        style_desc        = style.get('description', '')
+        visual_rules      = style.get('visual_rules', [])
+        negative_rules    = style.get('negative_rules', [])
+        composition       = style.get('composition', '')
+        lighting          = style.get('lighting', '')
+        color_palette     = style.get('color_palette', [])
+
+        visual_rules_text  = '\n'.join([f"- {r}" for r in visual_rules]) if visual_rules else style_desc
+        color_palette_text = ', '.join(color_palette) if color_palette else 'rich, vivid colors'
+        chunk_end = chunk_start + chunk_size - 1
+
+        return f"""You are a professional image prompt writer for AI image generators (Flux, Midjourney, SDXL).
+
+TASK: Generate prompts {chunk_start} to {chunk_end} (out of {total_count} total) for scenes from this script.
+
+═══════════════ SCRIPT ═══════════════
+{script_text}
+══════════════════════════════════════
+
+═══════════════ STYLE BIBLE: {style_name} ═══════════════
+{style_desc}
+
+VISUAL RULES:
+{visual_rules_text}
+
+Composition: {composition}
+Lighting: {lighting}
+Color Palette: {color_palette_text}
+══════════════════════════════════════
+
+STRICT OUTPUT RULES — READ EVERY RULE:
+
+1. Generate EXACTLY {chunk_size} prompts (scenes {chunk_start} to {chunk_end} of {total_count} total).
+2. Separate prompts ONLY with the token: [image]
+3. NO numbering — do NOT write "Prompt 1", "1.", "#1", or any label before a prompt.
+4. NO headers, NO section titles, NO intro sentence like "Here are the prompts…".
+5. Each prompt is ONE single continuous paragraph — NO line breaks inside a prompt.
+6. Every prompt MUST start with the style name: "{style_name} style,"
+7. Each prompt MUST be extremely detailed (minimum 150 words, single paragraph).
+8. Prompts {chunk_start}–{chunk_end} cover scenes {chunk_start}–{chunk_end} of {total_count} total,
+   spread evenly across the script from beginning to end (chronological order).
+9. Each scene describes a DISTINCT, SPECIFIC narrative moment — no two scenes are the same.
+10. Include in every prompt: character/subject details, exact pose and expression,
+    environment description, camera angle, lighting mood, color palette.
+11. ABSOLUTELY NO text, words, letters, captions, numbers, or labels inside the described image.
+12. End every prompt with: --no text, no captions, no watermarks, no labels
+13. Negative elements to avoid in every scene: blurry, low quality, distorted, amateur.
+
+OUTPUT FORMAT — START IMMEDIATELY WITH THE FIRST PROMPT, NO PREAMBLE:
+
+{style_name} style, [full scene {chunk_start} description here] --no text, no captions, no watermarks, no labels[image]{style_name} style, [full scene {chunk_start+1} description here] --no text, no captions, no watermarks, no labels[image]...{style_name} style, [full scene {chunk_end} description here] --no text, no captions, no watermarks, no labels
+
+Do NOT add anything after the last prompt. Do NOT add a trailing [image]."""
+
+    try:
+        data = request.get_json() or {}
+        script   = data.get('script', '').strip()
+        style_id = data.get('style_id', 'cinematic')
+        count    = int(data.get('count', 20))
+
+        if not script:
+            return jsonify({'error': 'Script is required'}), 400
+        if count < 1 or count > 200:
+            return jsonify({'error': 'count must be between 1 and 200'}), 400
+
+        director_api_key = Config.get_director_gemini_api_key()
+        if not director_api_key:
+            return jsonify({'error': 'Director Gemini API key not configured. Set it in Settings → Director Gemini API Key.'}), 500
+
+        style = AutoImagesStyleManager.get_style(style_id)
+        if not style:
+            return jsonify({'error': f'Style not found: {style_id}'}), 404
+
+        genai.configure(api_key=director_api_key)
+        model = genai.GenerativeModel(
+            model_name=Config.get_director_gemini_model(),
+            generation_config={
+                'temperature': 0.85,
+                'top_p': 0.95,
+                'max_output_tokens': 32768,
+            }
+        )
+
+        all_prompts = []
+        remaining   = count
+        chunk_start = 1
+
+        while remaining > 0:
+            chunk_size = min(CHUNK_SIZE, remaining)
+            prompt_text = build_prompt(script, style, chunk_start, chunk_size, count)
+
+            print(f'\n🎨 Prompts Generator: chunk {chunk_start}–{chunk_start + chunk_size - 1} / {count}')
+            response = model.generate_content(prompt_text)
+            raw = response.text.strip()
+
+            # Split on [image] separator
+            parts = [p.strip() for p in raw.split('[image]') if p.strip()]
+            all_prompts.extend(parts[:chunk_size])
+
+            chunk_start += chunk_size
+            remaining   -= chunk_size
+
+            # Small pause between chunks to respect rate limits
+            if remaining > 0:
+                import time as _time
+                _time.sleep(2)
+
+        print(f'✅ Prompts Generator: {len(all_prompts)} prompts generated')
+        return jsonify({
+            'success': True,
+            'prompts': all_prompts,
+            'count':   len(all_prompts),
+            'style_name': style.get('name', style_id),
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     print("="*60)
     print("🎬 VIDEO EDITOR API SERVER")

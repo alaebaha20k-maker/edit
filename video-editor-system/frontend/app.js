@@ -2087,8 +2087,8 @@ async function loadAutoImageStyles() {
             // Cache the full style objects
             window._cachedAutoImageStyles = data.styles;
 
-            // Populate both dropdowns: Auto Images AI and Auto Avatar Mix
-            ['autoImageStyle', 'autoAvatarImageStyle'].forEach(selectId => {
+            // Populate all style dropdowns: Auto Images AI, Auto Avatar Mix, Prompts Generator
+            ['autoImageStyle', 'autoAvatarImageStyle', 'pgStyleSelect'].forEach(selectId => {
                 const styleSelect = document.getElementById(selectId);
                 if (styleSelect) {
                     const currentVal = styleSelect.value;
@@ -2111,6 +2111,80 @@ async function loadAutoImageStyles() {
     } catch (error) {
         console.error('Error loading styles:', error);
     }
+}
+
+// =============================================================================
+// PROMPTS GENERATOR — raw image prompts from script + style (no image generation)
+// =============================================================================
+
+async function generatePromptsOnly() {
+    const script = (document.getElementById('scriptInput')?.value || window.videoData?.script || '').trim();
+    if (!script) {
+        showNotification('⚠️ Please enter or generate a script first', 'warning');
+        return;
+    }
+
+    const styleId = document.getElementById('pgStyleSelect')?.value;
+    if (!styleId) {
+        showNotification('⚠️ Please select an image style', 'warning');
+        return;
+    }
+
+    const count = parseInt(document.getElementById('pgCount')?.value) || 20;
+    if (count < 1 || count > 200) {
+        showNotification('⚠️ Number of prompts must be between 1 and 200', 'warning');
+        return;
+    }
+
+    const progressBox   = document.getElementById('pgProgressBox');
+    const resultSection = document.getElementById('pgResultSection');
+    const outputEl      = document.getElementById('pgOutputText');
+    const countLabel    = document.getElementById('pgCountLabel');
+
+    progressBox.style.display = 'block';
+    progressBox.innerHTML = `<p>🎨 Generating <strong>${count}</strong> prompts with Director Gemini…<br>
+        <small style="color:#888;">${count > 15 ? `Sending in chunks of 15 — please wait` : 'Single call — almost done'}</small></p>`;
+    resultSection.style.display = 'none';
+    if (outputEl) outputEl.value = '';
+
+    try {
+        const response = await fetch('/api/generate-prompts-only', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ script, style_id: styleId, count })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Prompts generation failed');
+        }
+
+        // Join prompts with blank line + [image] separator as user requested
+        const text = data.prompts.join('\n\n[image]\n\n');
+        if (outputEl) outputEl.value = text;
+        if (countLabel) countLabel.textContent = `(${data.prompts.length} prompts)`;
+
+        progressBox.innerHTML = `<p style="color:#22c55e;">✅ ${data.prompts.length} prompts generated!</p>`;
+        resultSection.style.display = 'block';
+        showNotification(`✅ ${data.prompts.length} prompts ready!`, 'success');
+
+    } catch (error) {
+        progressBox.innerHTML = `<p style="color:#ef4444;">❌ ${error.message}</p>`;
+        showNotification('❌ Prompts generation failed: ' + error.message, 'error');
+    }
+}
+
+function downloadPromptsText() {
+    const text = document.getElementById('pgOutputText')?.value;
+    if (!text) return;
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = 'image_prompts.txt';
+    a.click();
+    URL.revokeObjectURL(url);
 }
 
 async function generateAutoImages() {
