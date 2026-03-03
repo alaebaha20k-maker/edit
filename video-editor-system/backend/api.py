@@ -4628,7 +4628,7 @@ def alae_baha_export():
     """Export all settings, niches, styles, and formulas as a single JSON bundle."""
     from settings_manager import SettingsManager
     from niche_manager import NicheManager
-    from image_style_manager import ImageStyleManager
+    from auto_images_style_manager import AutoImagesStyleManager
 
     try:
         data = request.get_json() or {}
@@ -4639,7 +4639,7 @@ def alae_baha_export():
 
         bundle = {
             'alae_baha_bundle': True,
-            'version': '1.0',
+            'version': '2.0',
             'exported_at': datetime.utcnow().isoformat(),
             'api_keys': settings.get('api_keys', {}),
             'voice_settings': settings.get('voice_settings', {}),
@@ -4650,7 +4650,7 @@ def alae_baha_export():
                 'image': SettingsManager.load_formula('image'),
             },
             'niches': NicheManager.get_all_niches(),
-            'image_styles': ImageStyleManager.get_all_styles(),
+            'image_styles': AutoImagesStyleManager.get_all_styles(),
         }
 
         # Also include api_config.json if present
@@ -4662,9 +4662,11 @@ def alae_baha_export():
             except Exception:
                 bundle['api_config'] = {}
 
+        print(f"✅ Export bundle: {len(bundle['niches'])} niches, {len(bundle['image_styles'])} styles")
         return jsonify({'success': True, 'bundle': bundle})
 
     except Exception as e:
+        import traceback; traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
@@ -4673,7 +4675,9 @@ def alae_baha_import():
     """Import a settings bundle exported from another machine."""
     from settings_manager import SettingsManager
     from niche_manager import NicheManager
-    from image_style_manager import ImageStyleManager
+    from auto_images_style_manager import AutoImagesStyleManager
+
+    BUILTIN_STYLE_IDS = {'cinematic', 'photorealistic', 'artistic', 'animated'}
 
     try:
         data = request.get_json() or {}
@@ -4684,7 +4688,12 @@ def alae_baha_import():
         if not bundle or not bundle.get('alae_baha_bundle'):
             return jsonify({'error': 'Invalid bundle format'}), 400
 
-        results = {'api_keys': False, 'formulas': False, 'niches': 0, 'image_styles': 0}
+        results = {
+            'api_keys': False, 'formulas': False,
+            'niches': 0, 'niches_skipped': 0,
+            'image_styles': 0, 'image_styles_skipped': 0,
+            'errors': []
+        }
 
         # --- API Keys ---
         api_keys = bundle.get('api_keys', {})
@@ -4736,32 +4745,67 @@ def alae_baha_import():
             results['formulas'] = True
 
         # --- Niches (skip duplicates by name) ---
-        existing_niches = {n['name'] for n in NicheManager.get_all_niches()}
+        existing_niche_names = {n['name'] for n in NicheManager.get_all_niches()}
         for niche in bundle.get('niches', []):
-            if niche.get('name') not in existing_niches:
-                try:
-                    NicheManager.create_niche(
-                        name=niche['name'],
-                        language=niche['language'],
-                        writing_guidelines=niche['writing_guidelines'],
-                    )
-                    results['niches'] += 1
-                except Exception:
-                    pass
+            name = niche.get('name', '').strip()
+            if not name:
+                continue
+            if name in existing_niche_names:
+                results['niches_skipped'] += 1
+                continue
+            try:
+                NicheManager.create_niche(
+                    name=name,
+                    language=niche.get('language', 'English'),
+                    writing_guidelines=niche.get('writing_guidelines', ''),
+                )
+                results['niches'] += 1
+                existing_niche_names.add(name)
+                print(f"   ✅ Niche imported: {name}")
+            except Exception as e:
+                err = f"Niche '{name}': {e}"
+                results['errors'].append(err)
+                print(f"   ❌ {err}")
 
-        # --- Image Styles (skip duplicates by name) ---
-        existing_styles = {s['name'] for s in ImageStyleManager.get_all_styles()}
+        # --- Auto Image Styles (AutoImagesStyleManager — skip built-ins & duplicates) ---
+        existing_style_names = {s['name'] for s in AutoImagesStyleManager.get_all_styles()}
         for style in bundle.get('image_styles', []):
-            if style.get('name') not in existing_styles:
-                try:
-                    ImageStyleManager.create_style(
-                        name=style['name'],
-                        prompts=style['prompts'],
-                    )
-                    results['image_styles'] += 1
-                except Exception:
-                    pass
+            name = style.get('name', '').strip()
+            style_id = style.get('id', '')
+            if not name:
+                continue
+            # Skip built-in styles — they already exist on every machine
+            if style_id in BUILTIN_STYLE_IDS:
+                results['image_styles_skipped'] += 1
+                continue
+            if name in existing_style_names:
+                results['image_styles_skipped'] += 1
+                continue
+            try:
+                visual_rules = style.get('visual_rules', [])
+                # If exported from old format (no visual_rules), build from description
+                if len(visual_rules) < 3:
+                    desc = style.get('description', 'Professional style')
+                    visual_rules = [desc, 'High quality output', 'Consistent visual style']
 
+                AutoImagesStyleManager.create_style(
+                    name=name,
+                    description=style.get('description', ''),
+                    visual_rules=visual_rules[:10],
+                    negative_rules=style.get('negative_rules', ['Low quality', 'Blurry'])[:10],
+                    composition=style.get('composition', ''),
+                    lighting=style.get('lighting', ''),
+                    color_palette=style.get('color_palette', [])[:10],
+                )
+                results['image_styles'] += 1
+                existing_style_names.add(name)
+                print(f"   ✅ Style imported: {name}")
+            except Exception as e:
+                err = f"Style '{name}': {e}"
+                results['errors'].append(err)
+                print(f"   ❌ {err}")
+
+        print(f"✅ Import complete: {results['niches']} niches, {results['image_styles']} styles, {len(results['errors'])} errors")
         return jsonify({
             'success': True,
             'message': 'All settings imported successfully!',
@@ -4769,6 +4813,7 @@ def alae_baha_import():
         })
 
     except Exception as e:
+        import traceback; traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
