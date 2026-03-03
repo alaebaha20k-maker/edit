@@ -222,6 +222,11 @@ function ensureGenerationMode() {
 function openSettings() {
     const modal = document.getElementById('settingsModal');
     modal.classList.add('show');
+    // Always re-sync API keys from backend when opening settings
+    fetch('/api/alae-baha/saved-settings')
+        .then(r => r.ok ? r.json() : null)
+        .then(data => { if (data && data.success && data.api_keys) _applyApiKeysToForm(data.api_keys); })
+        .catch(() => {});
     loadSettings();
 }
 
@@ -230,37 +235,27 @@ function closeSettings() {
     modal.classList.remove('show');
 }
 
+function _applyApiKeysToForm(api_keys) {
+    const setField = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+    setField('geminiKey',        api_keys.gemini);
+    setField('directorGeminiKey',api_keys.director_gemini);
+    setField('geminiImageKey',   api_keys.gemini_image);
+    setField('replicateKey',     api_keys.replicate);
+    setField('inworldKey',       api_keys.inworld);
+    setField('inworldSecret',    api_keys.inworld_secret);
+    setField('pexelsKey',        api_keys.pexels);
+    setField('pixabayKey',       api_keys.pixabay);
+    setField('unsplashKey',      api_keys.unsplash);
+}
+
 const loadSettings = () => {
+    // Step 1: Load formulas + niche selection from localStorage (fast, local-only data)
     try {
         const saved = localStorage.getItem('videoToolSettings');
         if (saved) {
             const settings = JSON.parse(saved);
             appState.settings = settings;
 
-            // Restore API keys
-            if (settings.api_keys) {
-                const geminiKey = document.getElementById('geminiKey');
-                const directorGeminiKey = document.getElementById('directorGeminiKey');
-                const geminiImageKey = document.getElementById('geminiImageKey');
-                const replicateKey = document.getElementById('replicateKey');
-                const inworldKey = document.getElementById('inworldKey');
-                const inworldSecret = document.getElementById('inworldSecret');
-                const pexelsKey = document.getElementById('pexelsKey');
-                const pixabayKey = document.getElementById('pixabayKey');
-                const unsplashKey = document.getElementById('unsplashKey');
-
-                if (geminiKey) geminiKey.value = settings.api_keys.gemini || '';
-                if (directorGeminiKey) directorGeminiKey.value = settings.api_keys.director_gemini || '';
-                if (geminiImageKey) geminiImageKey.value = settings.api_keys.gemini_image || '';
-                if (replicateKey) replicateKey.value = settings.api_keys.replicate || '';
-                if (inworldKey) inworldKey.value = settings.api_keys.inworld || '';
-                if (inworldSecret) inworldSecret.value = settings.api_keys.inworld_secret || '';
-                if (pexelsKey) pexelsKey.value = settings.api_keys.pexels || '';
-                if (pixabayKey) pixabayKey.value = settings.api_keys.pixabay || '';
-                if (unsplashKey) unsplashKey.value = settings.api_keys.unsplash || '';
-            }
-
-            // Load formula lists
             if (settings.title_formulas) {
                 appState.titleFormulas = settings.title_formulas;
                 renderTitleFormulas(settings.title_formulas);
@@ -271,21 +266,32 @@ const loadSettings = () => {
                 renderScriptFormulas(settings.script_formulas);
                 updateScriptFormulaDropdown(settings.script_formulas);
             }
-
-            // Load selected niche
             if (settings.selectedNiche) {
                 appState.selectedNiche = settings.selectedNiche;
             }
-
-            // Load niches from backend
-            loadNiches();
-
-            console.log('✅ Settings loaded from localStorage');
         }
     } catch (error) {
-        console.error('Load settings failed:', error);
-        showNotification('⚠️ Error loading settings', 'warning');
+        console.warn('localStorage read failed:', error);
     }
+
+    // Step 2: Always fetch API keys from backend — they are permanently saved on the server.
+    // This means settings survive localStorage clearing, browser changes, or new machines.
+    fetch('/api/alae-baha/saved-settings')
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+            if (data && data.success && data.api_keys) {
+                _applyApiKeysToForm(data.api_keys);
+                // Keep localStorage in sync so saveSettings() has correct values
+                const stored = JSON.parse(localStorage.getItem('videoToolSettings') || '{}');
+                stored.api_keys = Object.assign(stored.api_keys || {}, data.api_keys);
+                localStorage.setItem('videoToolSettings', JSON.stringify(stored));
+                console.log('✅ API keys synced from server');
+            }
+        })
+        .catch(() => {});   // silent — form stays blank if server is unreachable
+
+    // Step 3: Load dynamic data from backend
+    loadNiches();
 };
 
 const saveSettings = async () => {

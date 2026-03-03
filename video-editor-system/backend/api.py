@@ -4623,6 +4623,32 @@ def check_script():
 ALAE_BAHA_PASSWORD = 'ALAEBMW'
 
 
+@app.route('/api/alae-baha/saved-settings', methods=['GET'])
+def alae_baha_saved_settings():
+    """Return the actual saved API keys + formulas so the frontend form can be populated on startup.
+    This runs on every page load so settings persist even if localStorage is cleared."""
+    from settings_manager import SettingsManager
+    try:
+        settings = SettingsManager.load_settings()
+        api_keys = settings.get('api_keys', {})
+        return jsonify({
+            'success': True,
+            'api_keys': {
+                'gemini':           api_keys.get('gemini', ''),
+                'director_gemini':  api_keys.get('director_gemini', ''),
+                'gemini_image':     api_keys.get('gemini_image', ''),
+                'replicate':        api_keys.get('replicate', ''),
+                'inworld':          api_keys.get('inworld', ''),
+                'inworld_secret':   api_keys.get('inworld_secret', ''),
+                'pexels':           api_keys.get('pexels', ''),
+                'pixabay':          api_keys.get('pixabay', ''),
+                'unsplash':         api_keys.get('unsplash', ''),
+            },
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/alae-baha/export', methods=['POST'])
 def alae_baha_export():
     """Export all settings, niches, styles, and formulas as a single JSON bundle."""
