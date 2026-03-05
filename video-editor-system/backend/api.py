@@ -3548,7 +3548,8 @@ def auto_images_create_style():
             negative_rules=data.get('negative_rules', []),
             composition=data.get('composition', ''),
             lighting=data.get('lighting', ''),
-            color_palette=data.get('color_palette', [])
+            color_palette=data.get('color_palette', []),
+            style_formula=data.get('style_formula', ''),
         )
 
         return jsonify({
@@ -3600,7 +3601,8 @@ def auto_images_update_style(style_id):
             negative_rules=data.get('negative_rules'),
             composition=data.get('composition'),
             lighting=data.get('lighting'),
-            color_palette=data.get('color_palette')
+            color_palette=data.get('color_palette'),
+            style_formula=data.get('style_formula'),
         )
 
         if style:
@@ -4907,6 +4909,7 @@ def generate_prompts_only():
     def build_prompt(script_text, style, chunk_start, chunk_size, total_count):
         style_name        = style.get('name', 'Cinematic')
         style_desc        = style.get('description', '')
+        style_formula_raw = style.get('style_formula', '').strip()
         visual_rules      = style.get('visual_rules', [])
         negative_rules    = style.get('negative_rules', [])
         composition       = style.get('composition', '')
@@ -4918,7 +4921,27 @@ def generate_prompts_only():
         color_palette_text = ', '.join(color_palette) if color_palette else 'rich, vivid colors'
         chunk_end = chunk_start + chunk_size - 1
 
-        # Render the formula with style context (same formula used by Auto Images)
+        # Style section: use style_formula if set, else structured fields
+        if style_formula_raw:
+            style_section = f"""═══════════════ STYLE: {style_name} ═══════════════
+{style_formula_raw}
+════════════════════════════════════════"""
+        else:
+            style_section = f"""═══════════════ STYLE BIBLE: {style_name} ═══════════════
+{style_desc}
+
+VISUAL RULES:
+{visual_rules_text}
+
+NEGATIVE RULES:
+{negative_rules_text}
+
+Composition: {composition}
+Lighting: {lighting}
+Color Palette: {color_palette_text}
+════════════════════════════════════════"""
+
+        # Render the shared Auto Images Formula (creative instructions)
         formula_rendered = _auto_images_formula.format_map(_SafeDict(
             n_images=chunk_size,
             style_name=style_name,
@@ -4936,19 +4959,8 @@ ALL prompts MUST be in ENGLISH regardless of the script language.
 {script_text}
 ══════════════════════════════════════
 
-═══════════════ STYLE BIBLE: {style_name} ═══════════════
-{style_desc}
+{style_section}
 
-VISUAL RULES:
-{visual_rules_text}
-
-NEGATIVE RULES:
-{negative_rules_text}
-
-Composition: {composition}
-Lighting: {lighting}
-Color Palette: {color_palette_text}
-══════════════════════════════════════
 
 {formula_rendered}
 

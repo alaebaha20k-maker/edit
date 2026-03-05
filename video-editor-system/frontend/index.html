@@ -1053,45 +1053,72 @@
                         <button onclick="openStyleCreator()" class="btn-primary" style="margin-top: 10px;">➕ Create New Style</button>
                     </div>
 
-                    <div id="styleCreatorSection" style="display: none; margin-top: 20px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
-                        <h4 style="margin: 0 0 15px 0;">Create New Style</h4>
+                    <!-- hidden input tracks which style is being edited (empty = create mode) -->
+                    <input type="hidden" id="editingStyleId" value="">
+
+                    <div id="styleCreatorSection" style="display: none; margin-top: 20px; padding: 20px; background: #1a1a2e; border: 1px solid #7c3aed; border-radius: 10px;">
+                        <h4 id="styleCreatorTitle" style="margin: 0 0 15px 0; color: #a78bfa;">✏️ Create New Style</h4>
 
                         <div class="input-group">
-                            <label>Style Name</label>
-                            <input type="text" id="newStyleName" placeholder="e.g., 'Cyberpunk Neon', 'Vintage Film'" class="input-large">
+                            <label>Style Name <span style="color:#ef4444;">*</span></label>
+                            <input type="text" id="newStyleName" placeholder="e.g., 'Black Robot Trader — Cinematic Cartoon'" class="input-large">
                         </div>
 
-                        <div class="input-group">
-                            <label>Description</label>
-                            <textarea id="newStyleDescription" rows="2" placeholder="Brief description of this style..." class="textarea-large"></textarea>
+                        <!-- BIG FORMULA FIELD -->
+                        <div class="input-group" style="margin-top:14px;">
+                            <label style="font-size:14px; color:#a78bfa; font-weight:700;">
+                                🎨 Style Formula
+                                <span style="font-size:12px; color:#888; font-weight:normal; margin-left:8px;">(one big prompt — write everything here, replaces all fields below)</span>
+                            </label>
+                            <textarea id="newStyleFormula" rows="14" class="textarea-large" style="font-family:monospace; font-size:13px; background:#0f0f1a; color:#e2e8f0; border-color:#7c3aed;"
+                                placeholder="Write your full style formula here. Describe the character, visual approach, rules, what to include/avoid, camera instructions, etc.
+
+Example:
+A consistent anthropomorphic character with a perfectly round black head, large glowing green oval eyes, wearing a dark navy business suit with white shirt and red tie. Semi-realistic cartoon illustration style — not childish, not photorealistic. Think animated film concept art meets financial thriller.
+
+RULES:
+- Character stays identical in every scene
+- Background changes to match the script moment
+- Always include accurate trading/financial details specific to the script
+
+AVOID:
+- Changing the character appearance
+- Generic office backgrounds with no relevance to the script
+- Photorealistic style"></textarea>
                         </div>
 
-                        <div class="input-group">
-                            <label>Visual Rules (3-10 items, one per line)</label>
-                            <textarea id="newStyleVisualRules" rows="4" placeholder="Example:&#10;Neon lights with high contrast&#10;Futuristic cyberpunk aesthetic&#10;Dark urban backgrounds" class="textarea-large"></textarea>
-                        </div>
+                        <!-- ADVANCED FIELDS (optional when formula is filled) -->
+                        <details style="margin-top:12px;">
+                            <summary style="cursor:pointer; color:#888; font-size:13px; padding:6px 0;">⚙️ Advanced fields (optional — used only when Style Formula is empty)</summary>
+                            <div style="margin-top:12px;">
+                                <div class="input-group">
+                                    <label>Description</label>
+                                    <textarea id="newStyleDescription" rows="2" placeholder="Brief description..." class="textarea-large"></textarea>
+                                </div>
+                                <div class="input-group">
+                                    <label>Visual Rules (3+ items, one per line)</label>
+                                    <textarea id="newStyleVisualRules" rows="4" placeholder="Rule 1&#10;Rule 2&#10;Rule 3" class="textarea-large"></textarea>
+                                </div>
+                                <div class="input-group">
+                                    <label>Negative Rules (2+ items, one per line)</label>
+                                    <textarea id="newStyleNegativeRules" rows="3" placeholder="Avoid 1&#10;Avoid 2" class="textarea-large"></textarea>
+                                </div>
+                                <div class="input-group">
+                                    <label>Composition Style</label>
+                                    <input type="text" id="newStyleComposition" placeholder="e.g., 'Dynamic angles with rule of thirds'" class="input-large">
+                                </div>
+                                <div class="input-group">
+                                    <label>Lighting Style</label>
+                                    <input type="text" id="newStyleLighting" placeholder="e.g., 'Neon rim lighting with deep shadows'" class="input-large">
+                                </div>
+                                <div class="input-group">
+                                    <label>Color Palette (3+ colors, one per line)</label>
+                                    <textarea id="newStyleColors" rows="3" placeholder="Electric blue&#10;Hot pink&#10;Deep purple" class="textarea-large"></textarea>
+                                </div>
+                            </div>
+                        </details>
 
-                        <div class="input-group">
-                            <label>Negative Rules (2-10 items, one per line)</label>
-                            <textarea id="newStyleNegativeRules" rows="3" placeholder="Example:&#10;No bright daylight scenes&#10;Avoid natural landscapes" class="textarea-large"></textarea>
-                        </div>
-
-                        <div class="input-group">
-                            <label>Composition Style</label>
-                            <input type="text" id="newStyleComposition" placeholder="e.g., 'Dynamic angles with rule of thirds'" class="input-large">
-                        </div>
-
-                        <div class="input-group">
-                            <label>Lighting Style</label>
-                            <input type="text" id="newStyleLighting" placeholder="e.g., 'Neon rim lighting with deep shadows'" class="input-large">
-                        </div>
-
-                        <div class="input-group">
-                            <label>Color Palette (3-10 colors, one per line)</label>
-                            <textarea id="newStyleColors" rows="3" placeholder="Example:&#10;Electric blue&#10;Hot pink&#10;Deep purple" class="textarea-large"></textarea>
-                        </div>
-
-                        <div style="display: flex; gap: 10px; margin-top: 15px;">
+                        <div style="display: flex; gap: 10px; margin-top: 16px;">
                             <button onclick="saveNewStyle()" class="btn-success">💾 Save Style</button>
                             <button onclick="closeStyleCreator()" class="btn-secondary">Cancel</button>
                         </div>

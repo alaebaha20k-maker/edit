@@ -133,20 +133,16 @@ IMPORTANT:
 - This ensures PERFECT synchronization between voice and images
 ═══════════════════════════════════════════════════════════'''
 
-        prompt = f"""You are an AI Director planning visual scenes for a video. You MUST create HIGHLY DETAILED, PROFESSIONAL QUALITY prompts that EXACTLY match the chosen style.
-
-TASK: Create {n_images} DETAILED image generation prompts from this script.
-
-IMPORTANT - MULTILINGUAL SUPPORT:
-- The script may be in ANY language (English, Arabic, French, Spanish, Chinese, etc.)
-- You MUST understand the script content in its original language
-- BUT: ALL image prompts MUST be written in ENGLISH (for optimal image generation quality)
-- Translate/adapt the visual concepts while keeping cultural and contextual accuracy
-
-SCRIPT:
-{script_text}{timing_section}
-
+        # If the style has a custom formula, use it directly as the style section
+        style_formula = style.get('style_formula', '').strip()
+        if style_formula:
+            style_section = f"""═══════════════════════════════════════════════════════════
+STYLE: {style_name}
 ═══════════════════════════════════════════════════════════
+{style_formula}
+═══════════════════════════════════════════════════════════"""
+        else:
+            style_section = f"""═══════════════════════════════════════════════════════════
 STYLE BIBLE: {style_name}
 ═══════════════════════════════════════════════════════════
 Description: {style_description}
@@ -160,7 +156,22 @@ NEGATIVE RULES (MUST AVOID):
 Composition: {composition_style}
 Lighting: {lighting_style}
 Color Palette: {color_palette_text}
-═══════════════════════════════════════════════════════════
+═══════════════════════════════════════════════════════════"""
+
+        prompt = f"""You are an AI Director planning visual scenes for a video. You MUST create HIGHLY DETAILED, PROFESSIONAL QUALITY prompts that EXACTLY match the chosen style.
+
+TASK: Create {n_images} DETAILED image generation prompts from this script.
+
+IMPORTANT - MULTILINGUAL SUPPORT:
+- The script may be in ANY language (English, Arabic, French, Spanish, Chinese, etc.)
+- You MUST understand the script content in its original language
+- BUT: ALL image prompts MUST be written in ENGLISH (for optimal image generation quality)
+- Translate/adapt the visual concepts while keeping cultural and contextual accuracy
+
+SCRIPT:
+{script_text}{timing_section}
+
+{style_section}
 
 {formula_rendered}
 

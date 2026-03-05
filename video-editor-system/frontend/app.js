@@ -4376,85 +4376,110 @@ function renderCustomStyles(styles) {
         return;
     }
 
-    container.innerHTML = customStyles.map(style => `
-        <div style="padding: 10px; margin: 5px 0; background: #fff; border: 1px solid #ddd; border-radius: 5px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-                <strong>${style.name}</strong>
-                <p style="margin: 5px 0 0 0; color: #666; font-size: 13px;">${style.description}</p>
+    container.innerHTML = customStyles.map(style => {
+        const preview = style.style_formula
+            ? style.style_formula.substring(0, 120).replace(/\n/g, ' ') + (style.style_formula.length > 120 ? '…' : '')
+            : (style.description || '');
+        return `
+        <div style="padding: 12px; margin: 6px 0; background: #1a1a2e; border: 1px solid #4c1d95; border-radius: 8px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                <div style="flex:1; min-width:0;">
+                    <strong style="color:#a78bfa;">${style.name}</strong>
+                    ${style.style_formula ? '<span style="font-size:11px; color:#7c3aed; margin-left:8px; background:#2d1b69; padding:1px 6px; border-radius:10px;">formula</span>' : ''}
+                    <p style="margin: 4px 0 0; color:#888; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${preview}</p>
+                </div>
+                <div style="display:flex; gap:6px; margin-left:10px; flex-shrink:0;">
+                    <button onclick="editCustomStyle('${style.id}')" style="background:#4c1d95; color:#e2e8f0; border:none; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">✏️ Edit</button>
+                    <button onclick="deleteCustomStyle('${style.id}')" style="background:#7f1d1d; color:#fca5a5; border:none; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">🗑️</button>
+                </div>
             </div>
-            <button onclick="deleteCustomStyle('${style.id}')" class="btn-secondary" style="padding: 5px 10px; font-size: 13px;">🗑️ Delete</button>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 }
 
 function openStyleCreator() {
-    const section = document.getElementById('styleCreatorSection');
-    if (section) {
-        section.style.display = 'block';
-        // Clear form
-        document.getElementById('newStyleName').value = '';
-        document.getElementById('newStyleDescription').value = '';
-        document.getElementById('newStyleVisualRules').value = '';
-        document.getElementById('newStyleNegativeRules').value = '';
-        document.getElementById('newStyleComposition').value = '';
-        document.getElementById('newStyleLighting').value = '';
-        document.getElementById('newStyleColors').value = '';
-    }
+    document.getElementById('editingStyleId').value = '';
+    document.getElementById('styleCreatorTitle').textContent = '✏️ Create New Style';
+    document.getElementById('newStyleName').value = '';
+    document.getElementById('newStyleFormula').value = '';
+    document.getElementById('newStyleDescription').value = '';
+    document.getElementById('newStyleVisualRules').value = '';
+    document.getElementById('newStyleNegativeRules').value = '';
+    document.getElementById('newStyleComposition').value = '';
+    document.getElementById('newStyleLighting').value = '';
+    document.getElementById('newStyleColors').value = '';
+    document.getElementById('styleCreatorSection').style.display = 'block';
+    document.getElementById('styleCreatorSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function editCustomStyle(styleId) {
+    // Find the style in the loaded list
+    fetch(`/api/auto-images/styles/${styleId}`)
+        .then(r => r.json())
+        .then(data => {
+            const s = data.style;
+            if (!s) return;
+            document.getElementById('editingStyleId').value = styleId;
+            document.getElementById('styleCreatorTitle').textContent = '✏️ Edit Style: ' + s.name;
+            document.getElementById('newStyleName').value = s.name || '';
+            document.getElementById('newStyleFormula').value = s.style_formula || '';
+            document.getElementById('newStyleDescription').value = s.description || '';
+            document.getElementById('newStyleVisualRules').value = (s.visual_rules || []).join('\n');
+            document.getElementById('newStyleNegativeRules').value = (s.negative_rules || []).join('\n');
+            document.getElementById('newStyleComposition').value = s.composition || '';
+            document.getElementById('newStyleLighting').value = s.lighting || '';
+            document.getElementById('newStyleColors').value = (s.color_palette || []).join('\n');
+            document.getElementById('styleCreatorSection').style.display = 'block';
+            document.getElementById('styleCreatorSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        })
+        .catch(() => showNotification('❌ Could not load style', 'error'));
 }
 
 function closeStyleCreator() {
-    const section = document.getElementById('styleCreatorSection');
-    if (section) {
-        section.style.display = 'none';
-    }
+    document.getElementById('styleCreatorSection').style.display = 'none';
+    document.getElementById('editingStyleId').value = '';
 }
 
 async function saveNewStyle() {
-    const name = document.getElementById('newStyleName').value.trim();
-    const description = document.getElementById('newStyleDescription').value.trim();
-    const visualRulesText = document.getElementById('newStyleVisualRules').value.trim();
-    const negativeRulesText = document.getElementById('newStyleNegativeRules').value.trim();
-    const composition = document.getElementById('newStyleComposition').value.trim();
-    const lighting = document.getElementById('newStyleLighting').value.trim();
-    const colorsText = document.getElementById('newStyleColors').value.trim();
+    const editingId = document.getElementById('editingStyleId').value.trim();
+    const name         = document.getElementById('newStyleName').value.trim();
+    const style_formula = document.getElementById('newStyleFormula').value.trim();
+    const description  = document.getElementById('newStyleDescription').value.trim();
+    const visual_rules = document.getElementById('newStyleVisualRules').value.trim().split('\n').map(s=>s.trim()).filter(Boolean);
+    const negative_rules = document.getElementById('newStyleNegativeRules').value.trim().split('\n').map(s=>s.trim()).filter(Boolean);
+    const composition  = document.getElementById('newStyleComposition').value.trim();
+    const lighting     = document.getElementById('newStyleLighting').value.trim();
+    const color_palette = document.getElementById('newStyleColors').value.trim().split('\n').map(s=>s.trim()).filter(Boolean);
 
-    // Parse textarea inputs (one per line)
-    const visual_rules = visualRulesText.split('\n').map(s => s.trim()).filter(s => s.length > 0);
-    const negative_rules = negativeRulesText.split('\n').map(s => s.trim()).filter(s => s.length > 0);
-    const color_palette = colorsText.split('\n').map(s => s.trim()).filter(s => s.length > 0);
-
-    // Validation
-    if (!name || !description || visual_rules.length < 3 || negative_rules.length < 2 || !composition || !lighting || color_palette.length < 3) {
-        showNotification('❌ Please fill all fields. Min: 3 visual rules, 2 negative rules, 3 colors', 'error');
+    if (!name) { showNotification('❌ Style Name is required', 'error'); return; }
+    if (!style_formula && (visual_rules.length < 3 || negative_rules.length < 2)) {
+        showNotification('❌ Fill the Style Formula OR provide 3+ visual rules and 2+ negative rules', 'error');
         return;
     }
 
-    try {
-        const response = await fetch('/api/auto-images/styles', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                name,
-                description,
-                visual_rules,
-                negative_rules,
-                composition,
-                lighting,
-                color_palette
-            })
-        });
+    const body = { name, style_formula, description, visual_rules, negative_rules, composition, lighting, color_palette };
 
+    try {
+        const isEdit = editingId !== '';
+        const url    = isEdit ? `/api/auto-images/styles/${editingId}` : '/api/auto-images/styles';
+        const method = isEdit ? 'PUT' : 'POST';
+
+        const response = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
         const data = await response.json();
 
         if (data.success) {
-            showNotification('✅ Style created successfully!', 'success');
+            showNotification(isEdit ? '✅ Style updated!' : '✅ Style created!', 'success');
             closeStyleCreator();
             await loadCustomStyles();
         } else {
-            showNotification('❌ Error: ' + data.error, 'error');
+            showNotification('❌ ' + (data.error || 'Unknown error'), 'error');
         }
     } catch (error) {
-        showNotification('❌ Error creating style: ' + error.message, 'error');
+        showNotification('❌ ' + error.message, 'error');
     }
 }
 
