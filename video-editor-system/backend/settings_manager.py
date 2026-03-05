@@ -22,6 +22,7 @@ class SettingsManager:
     TITLE_FORMULA_FILE = FORMULAS_DIR / 'title_formula.txt'
     SCRIPT_FORMULA_FILE = FORMULAS_DIR / 'script_formula.txt'
     IMAGE_FORMULA_FILE = FORMULAS_DIR / 'image_formula.txt'
+    AUTO_IMAGES_FORMULA_FILE = FORMULAS_DIR / 'auto_images_formula.txt'
 
     # Default formulas
     DEFAULT_TITLE_FORMULA = """═══════════════════════════════════════════════════════
@@ -141,6 +142,112 @@ Output format (JSON array):
 ]
 
 Output ONLY the JSON array, no extra text."""
+
+    DEFAULT_AUTO_IMAGES_FORMULA = """═══════════════════════════════════════════════════════════
+AUTO IMAGES FORMULA — CREATIVE INSTRUCTIONS
+═══════════════════════════════════════════════════════════
+Available placeholders: {n_images} {style_name} {lighting} {composition} {color_palette}
+These are automatically replaced when generating prompts.
+═══════════════════════════════════════════════════════════
+
+CRITICAL REQUIREMENTS:
+1. Generate EXACTLY {n_images} scenes (NO MORE, NO LESS)
+2. Scenes MUST be CHRONOLOGICAL (beginning → end of script)
+3. Each scene covers a DISTINCT part of the story
+4. NO REPETITION — each scene is completely unique
+5. Each prompt MUST be 300+ CHARACTERS with EXTREME DETAIL
+6. Focus on VISUAL STORYTELLING — images tell the story without text
+7. ALL image prompts MUST be written in ENGLISH (regardless of script language)
+
+═══════════════════════════════════════════════════════════
+CREATIVE SCENE PRINCIPLES
+═══════════════════════════════════════════════════════════
+
+1. SHOW, DON'T TELL
+   - Instead of "person looking sad" → "woman in her 30s with red-rimmed eyes and tear-stained cheeks, shoulders slumped, staring blankly at an empty coffee cup on a rain-streaked window sill"
+   - Instead of "office workspace" → "cluttered mahogany desk with scattered papers, overflowing inbox, cold half-finished coffee, illuminated by harsh fluorescent overhead lights"
+
+2. EMOTIONAL DEPTH THROUGH DETAILS
+   - Small details reveal emotion: trembling hands, clenched jaw, forced smile, distant gaze
+   - Environment reflects mood: warm golden hour for hope, harsh shadows for tension, soft diffused light for peace
+   - Body language tells stories: confident stance vs defensive posture, open arms vs crossed arms
+
+3. CINEMATIC COMPOSITION TECHNIQUES
+   - Rule of thirds: Position key elements at intersection points for dynamic composition
+   - Leading lines: Use roads, railings, shadows to guide viewer's eye to subject
+   - Depth layers: Foreground, mid-ground, background create immersive 3D feeling
+   - Frame within frame: Doorways, windows, arches focus attention on subject
+
+4. LIGHTING AS EMOTION
+   - Golden hour: Warmth, hope, nostalgia, romance
+   - Blue hour: Mystery, contemplation, transition, melancholy
+   - Harsh noon sun: Clarity, exposure, harsh reality, intensity
+   - Dramatic side lighting: Tension, conflict, duality, revelation
+   - Backlight/rim light: Heroic, ethereal, mysterious, dramatic
+
+5. COLOR PSYCHOLOGY FOR MOOD
+   - Warm tones (red, orange, yellow): Energy, passion, urgency, excitement
+   - Cool tones (blue, cyan, teal): Calm, technology, sadness, distance
+   - Desaturated/muted: Serious, documentary, realistic, somber
+   - Complementary colors: Visual tension and energy (blue/orange, purple/yellow)
+
+6. MATCH SCENES TO SCRIPT CONTENT TYPE
+   - Educational/Tutorial content → Clean, bright, organized visuals with clear focus
+   - Dramatic/Story content → Cinematic lighting, emotional expressions, narrative moments
+   - Tech/Business content → Modern, sleek, professional environments with cool tones
+   - Nature/Travel content → Epic landscapes, golden hour lighting, sense of scale
+
+7. CAMERA ANGLE PSYCHOLOGY
+   - Eye level: Neutral, relatable, documentary style
+   - Low angle (looking up): Power, dominance, heroic, impressive
+   - High angle (looking down): Vulnerability, weakness, overview, context
+   - Dutch angle (tilted): Unease, tension, disorientation, chaos
+   - Bird's eye view: Scale, pattern, planning, overview
+
+8. DEPTH OF FIELD STORYTELLING
+   - Shallow (blurred background): Focus on subject, intimacy, isolation
+   - Deep (everything sharp): Context importance, environment as character
+
+9. VISUAL METAPHORS AND SYMBOLISM
+   - Weather matches emotion: Storm = turmoil, sunshine = happiness, fog = confusion
+   - Objects tell stories: Wilted flower = lost hope, rising smoke = fleeting time
+   - Positioning shows relationships: Close = connection, separated = distance
+
+10. PROFESSIONAL POLISH
+    - Specific materials and textures: "brushed aluminum", "weathered leather", "glossy marble"
+    - Exact time of day: "early morning mist at 6am", "golden hour at 7:30pm"
+    - Precise clothing details: "navy blue suit with white pocket square"
+    - Technical camera terms: "85mm lens at f/1.4", "35mm wide angle", "macro close-up"
+
+═══════════════════════════════════════════════════════════
+PROMPT QUALITY RULES (MANDATORY)
+═══════════════════════════════════════════════════════════
+
+Each image_prompt MUST include ALL of these elements:
+1. SUBJECT: Who/what — age, appearance, clothing, expression, body language
+2. SETTING: Specific environment — location, time of day, background elements, atmosphere
+3. ACTION: Exact moment — pose, movement, interaction, emotion
+4. CAMERA: Shot type and angle (wide shot, close-up, dutch angle, over-shoulder, bird's eye, etc.)
+5. LIGHTING: Detailed lighting matching style ({lighting})
+6. COMPOSITION: Framing matching style ({composition})
+7. STYLE TOKENS: Include "{style_name}" style
+8. COLOR GUIDANCE: Use colors from palette ({color_palette}) with color psychology
+9. QUALITY: "professional photography, high resolution, sharp focus, detailed"
+10. TEXTURE & DETAILS: Materials, surfaces, depth of field, reflections
+
+EXAMPLE EXCELLENT PROMPT:
+"A determined young trader in his late 20s with short dark hair and focused expression, wearing a pressed white shirt with rolled sleeves, sitting at a modern glass desk in a corner office with floor-to-ceiling windows overlooking a golden-hour city skyline, leaning forward studying three glowing monitors with candlestick charts, medium close-up from 45-degree angle, warm golden sunlight creating dramatic rim lighting mixed with cool blue monitor glow, {style_name} style, 85mm lens f/2.8, rich warm golds and cool blues, professional photography, 8k quality, cinematic"
+
+═══════════════════════════════════════════════════════════
+SCENE DISTRIBUTION STRATEGY
+═══════════════════════════════════════════════════════════
+- If N = 1: ONLY the very first opening scene
+- If N = 2: Opening scene + final conclusion scene
+- If N = 3-5: Major story beats only (intro, climax, conclusion)
+- If N = 6-10: Key moments from each story section
+- If N = 11-20: Detailed coverage with transitions
+- If N = 21-50: Granular scene-by-scene progression
+- If N = 51+: Nearly every sentence gets a visual"""
 
     # Inworld AI voice configurations (Official Inworld TTS-1.5 Voices)
     INWORLD_VOICES = {
@@ -481,26 +588,12 @@ Each title must be distinctive, high-quality, and optimized for CTR.
 
     @classmethod
     def save_formulas(cls, title_formula: str = None, script_formula: str = None,
-                     image_formula: str = None) -> bool:
-        """
-        Save generation formulas to text files
-
-        AUTO-TRANSFORMS title formulas into proven high-quality structure
-        before saving, ensuring Gemini always produces excellent results.
-
-        Args:
-            title_formula: Template for title generation (any format - will be auto-transformed)
-            script_formula: Template for script generation
-            image_formula: Template for image prompt generation
-
-        Returns:
-            True if successful
-        """
+                     image_formula: str = None, auto_images_formula: str = None) -> bool:
+        """Save generation formulas to text files."""
         cls.ensure_directories()
 
         try:
             if title_formula is not None:
-                # AUTO-TRANSFORM title formula into proven structure
                 transformed = cls._transform_title_formula(title_formula)
                 with open(cls.TITLE_FORMULA_FILE, 'w') as f:
                     f.write(transformed)
@@ -513,6 +606,10 @@ Each title must be distinctive, high-quality, and optimized for CTR.
             if image_formula is not None:
                 with open(cls.IMAGE_FORMULA_FILE, 'w') as f:
                     f.write(image_formula)
+
+            if auto_images_formula is not None:
+                with open(cls.AUTO_IMAGES_FORMULA_FILE, 'w') as f:
+                    f.write(auto_images_formula)
 
             return True
         except Exception as e:
@@ -533,9 +630,10 @@ Each title must be distinctive, high-quality, and optimized for CTR.
         cls.ensure_directories()
 
         formula_map = {
-            'title': (cls.TITLE_FORMULA_FILE, cls.DEFAULT_TITLE_FORMULA),
-            'script': (cls.SCRIPT_FORMULA_FILE, cls.DEFAULT_SCRIPT_FORMULA),
-            'image': (cls.IMAGE_FORMULA_FILE, cls.DEFAULT_IMAGE_FORMULA)
+            'title':       (cls.TITLE_FORMULA_FILE,       cls.DEFAULT_TITLE_FORMULA),
+            'script':      (cls.SCRIPT_FORMULA_FILE,      cls.DEFAULT_SCRIPT_FORMULA),
+            'image':       (cls.IMAGE_FORMULA_FILE,       cls.DEFAULT_IMAGE_FORMULA),
+            'auto_images': (cls.AUTO_IMAGES_FORMULA_FILE, cls.DEFAULT_AUTO_IMAGES_FORMULA),
         }
 
         if formula_type not in formula_map:

@@ -1604,15 +1604,17 @@ def save_formulas():
         if not data:
             return jsonify({'error': 'No data provided'}), 400
 
-        title_formula = data.get('title_formula')
-        script_formula = data.get('script_formula')
-        image_formula = data.get('image_formula')
+        title_formula       = data.get('title_formula')
+        script_formula      = data.get('script_formula')
+        image_formula       = data.get('image_formula')
+        auto_images_formula = data.get('auto_images_formula')
 
         # Save formulas
         success = SettingsManager.save_formulas(
             title_formula=title_formula,
             script_formula=script_formula,
-            image_formula=image_formula
+            image_formula=image_formula,
+            auto_images_formula=auto_images_formula,
         )
 
         if success:
@@ -1633,8 +1635,8 @@ def get_formula(formula_type):
     from settings_manager import SettingsManager
 
     try:
-        if formula_type not in ['title', 'script', 'image']:
-            return jsonify({'error': 'Invalid formula type. Must be: title, script, or image'}), 400
+        if formula_type not in ['title', 'script', 'image', 'auto_images']:
+            return jsonify({'error': 'Invalid formula type. Must be: title, script, image, or auto_images'}), 400
 
         formula = SettingsManager.load_formula(formula_type)
 
@@ -1644,6 +1646,28 @@ def get_formula(formula_type):
             'formula': formula
         })
 
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/settings/formulas/<formula_type>/reset', methods=['POST'])
+def reset_formula(formula_type):
+    """Delete saved formula file so it falls back to the built-in default."""
+    from settings_manager import SettingsManager
+    file_map = {
+        'title':       SettingsManager.TITLE_FORMULA_FILE,
+        'script':      SettingsManager.SCRIPT_FORMULA_FILE,
+        'image':       SettingsManager.IMAGE_FORMULA_FILE,
+        'auto_images': SettingsManager.AUTO_IMAGES_FORMULA_FILE,
+    }
+    if formula_type not in file_map:
+        return jsonify({'error': 'Invalid formula type'}), 400
+    try:
+        f = file_map[formula_type]
+        if f.exists():
+            f.unlink()
+        default = SettingsManager.load_formula(formula_type)
+        return jsonify({'success': True, 'formula': default})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -3179,13 +3203,18 @@ def auto_images_generate():
             model_name=Config.get_director_gemini_model()
         )
 
+        # Load the editable Auto Images Formula
+        from settings_manager import SettingsManager as _SM
+        auto_images_formula = _SM.load_formula('auto_images')
+
         plan = director.plan_auto_images(
             script_text=script,
             style=style,
             n_images=n_images,
-            scene_timing_hints=scene_timing_hints,  # Pass timing hints to Director
+            scene_timing_hints=scene_timing_hints,
             force_regenerate=force_regenerate,
-            verbose=True
+            verbose=True,
+            formula=auto_images_formula,
         )
 
         # Step 2: Generate images with Replicate
@@ -4671,9 +4700,10 @@ def alae_baha_export():
             'voice_settings': settings.get('voice_settings', {}),
             'video_settings': settings.get('video_settings', {}),
             'formulas': {
-                'title': SettingsManager.load_formula('title'),
-                'script': SettingsManager.load_formula('script'),
-                'image': SettingsManager.load_formula('image'),
+                'title':       SettingsManager.load_formula('title'),
+                'script':      SettingsManager.load_formula('script'),
+                'image':       SettingsManager.load_formula('image'),
+                'auto_images': SettingsManager.load_formula('auto_images'),
             },
             'niches': NicheManager.get_all_niches(),
             'image_styles': AutoImagesStyleManager.get_all_styles(),
@@ -4767,6 +4797,7 @@ def alae_baha_import():
                 title_formula=formulas.get('title'),
                 script_formula=formulas.get('script'),
                 image_formula=formulas.get('image'),
+                auto_images_formula=formulas.get('auto_images'),
             )
             results['formulas'] = True
 
@@ -4860,10 +4891,18 @@ def generate_prompts_only():
         { "success": True, "prompts": ["prompt1", "prompt2", ...], "count": N }
     """
     from auto_images_style_manager import AutoImagesStyleManager
+    from settings_manager import SettingsManager
     from config import Config
     import google.generativeai as genai
 
     CHUNK_SIZE = 15  # Max prompts per Gemini call to avoid token limits
+
+    # Load the shared Auto Images Formula (same as used in Auto Images generator)
+    _auto_images_formula = SettingsManager.load_formula('auto_images')
+
+    class _SafeDict(dict):
+        def __missing__(self, key):
+            return '{' + key + '}'
 
     def build_prompt(script_text, style, chunk_start, chunk_size, total_count):
         style_name        = style.get('name', 'Cinematic')
@@ -4875,12 +4914,23 @@ def generate_prompts_only():
         color_palette     = style.get('color_palette', [])
 
         visual_rules_text  = '\n'.join([f"- {r}" for r in visual_rules]) if visual_rules else style_desc
+        negative_rules_text = '\n'.join([f"- {r}" for r in negative_rules])
         color_palette_text = ', '.join(color_palette) if color_palette else 'rich, vivid colors'
         chunk_end = chunk_start + chunk_size - 1
+
+        # Render the formula with style context (same formula used by Auto Images)
+        formula_rendered = _auto_images_formula.format_map(_SafeDict(
+            n_images=chunk_size,
+            style_name=style_name,
+            lighting=lighting,
+            composition=composition,
+            color_palette=color_palette_text,
+        ))
 
         return f"""You are a professional image prompt writer for AI image generators (Flux, Midjourney, SDXL).
 
 TASK: Generate prompts {chunk_start} to {chunk_end} (out of {total_count} total) for scenes from this script.
+ALL prompts MUST be in ENGLISH regardless of the script language.
 
 ═══════════════ SCRIPT ═══════════════
 {script_text}
@@ -4892,34 +4942,31 @@ TASK: Generate prompts {chunk_start} to {chunk_end} (out of {total_count} total)
 VISUAL RULES:
 {visual_rules_text}
 
+NEGATIVE RULES:
+{negative_rules_text}
+
 Composition: {composition}
 Lighting: {lighting}
 Color Palette: {color_palette_text}
 ══════════════════════════════════════
 
-STRICT OUTPUT RULES — READ EVERY RULE:
+{formula_rendered}
 
+PLAIN TEXT OUTPUT RULES:
 1. Generate EXACTLY {chunk_size} prompts (scenes {chunk_start} to {chunk_end} of {total_count} total).
-2. Separate prompts ONLY with the token: [image]
-3. NO numbering — do NOT write "Prompt 1", "1.", "#1", or any label before a prompt.
-4. NO headers, NO section titles, NO intro sentence like "Here are the prompts…".
-5. Each prompt is ONE single continuous paragraph — NO line breaks inside a prompt.
-6. Every prompt MUST start with the style name: "{style_name} style,"
-7. Each prompt MUST be extremely detailed (minimum 150 words, single paragraph).
-8. Prompts {chunk_start}–{chunk_end} cover scenes {chunk_start}–{chunk_end} of {total_count} total,
-   spread evenly across the script from beginning to end (chronological order).
-9. Each scene describes a DISTINCT, SPECIFIC narrative moment — no two scenes are the same.
-10. Include in every prompt: character/subject details, exact pose and expression,
-    environment description, camera angle, lighting mood, color palette.
-11. ABSOLUTELY NO text, words, letters, captions, numbers, or labels inside the described image.
-12. End every prompt with: --no text, no captions, no watermarks, no labels
-13. Negative elements to avoid in every scene: blurry, low quality, distorted, amateur.
+2. Output prompts separated by a blank line — NO [image] tokens, NO numbering, NO labels.
+3. Each prompt is ONE single continuous paragraph — NO line breaks inside a prompt.
+4. Every prompt MUST start with the style name: "{style_name} style,"
+5. Prompts cover scenes {chunk_start}–{chunk_end} in chronological order.
+6. Each scene describes a DISTINCT, SPECIFIC narrative moment.
+7. End every prompt with: --no text, no captions, no watermarks, no labels
+8. OUTPUT ONLY THE PROMPTS. NO preamble, NO explanation, NO trailing text.
 
-OUTPUT FORMAT — START IMMEDIATELY WITH THE FIRST PROMPT, NO PREAMBLE:
+{style_name} style, [scene {chunk_start} description] --no text, no captions, no watermarks, no labels
 
-{style_name} style, [full scene {chunk_start} description here] --no text, no captions, no watermarks, no labels[image]{style_name} style, [full scene {chunk_start+1} description here] --no text, no captions, no watermarks, no labels[image]...{style_name} style, [full scene {chunk_end} description here] --no text, no captions, no watermarks, no labels
+{style_name} style, [scene {chunk_start+1} description] --no text, no captions, no watermarks, no labels
 
-Do NOT add anything after the last prompt. Do NOT add a trailing [image]."""
+...continue until scene {chunk_end}..."""
 
     try:
         data = request.get_json() or {}

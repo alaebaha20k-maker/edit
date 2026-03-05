@@ -274,23 +274,30 @@ const loadSettings = () => {
         console.warn('localStorage read failed:', error);
     }
 
-    // Step 2: Always fetch API keys from backend — they are permanently saved on the server.
-    // This means settings survive localStorage clearing, browser changes, or new machines.
+    // Step 2: Always fetch API keys from backend — permanently saved on server.
     fetch('/api/alae-baha/saved-settings')
         .then(r => r.ok ? r.json() : null)
         .then(data => {
             if (data && data.success && data.api_keys) {
                 _applyApiKeysToForm(data.api_keys);
-                // Keep localStorage in sync so saveSettings() has correct values
                 const stored = JSON.parse(localStorage.getItem('videoToolSettings') || '{}');
                 stored.api_keys = Object.assign(stored.api_keys || {}, data.api_keys);
                 localStorage.setItem('videoToolSettings', JSON.stringify(stored));
                 console.log('✅ API keys synced from server');
             }
         })
-        .catch(() => {});   // silent — form stays blank if server is unreachable
+        .catch(() => {});
 
-    // Step 3: Load dynamic data from backend
+    // Step 3: Load Auto Images Formula from backend
+    fetch('/api/settings/formulas/auto_images')
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+            const el = document.getElementById('autoImagesFormulaText');
+            if (el && data && data.formula) el.value = data.formula;
+        })
+        .catch(() => {});
+
+    // Step 4: Load dynamic data from backend
     loadNiches();
 };
 
@@ -317,7 +324,7 @@ const saveSettings = async () => {
         localStorage.setItem('videoToolSettings', JSON.stringify(settings));
         appState.settings = settings;
 
-        // Save ALL API keys to backend via the correct endpoint
+        // Save ALL API keys to backend
         try {
             const response = await fetch('/api/settings/api-keys', {
                 method: 'POST',
@@ -334,14 +341,21 @@ const saveSettings = async () => {
                     unsplash: settings.api_keys.unsplash
                 })
             });
-
-            if (!response.ok) {
-                console.warn('Failed to save to backend:', await response.text());
-            } else {
-                console.log('✅ All API keys saved to backend successfully');
-            }
+            if (!response.ok) console.warn('Failed to save API keys to backend');
         } catch (error) {
-            console.warn('Failed to save to backend:', error);
+            console.warn('Failed to save API keys to backend:', error);
+        }
+
+        // Save Auto Images Formula to backend
+        const autoImagesFormulaEl = document.getElementById('autoImagesFormulaText');
+        if (autoImagesFormulaEl && autoImagesFormulaEl.value.trim()) {
+            try {
+                await fetch('/api/settings/formulas', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ auto_images_formula: autoImagesFormulaEl.value })
+                });
+            } catch (e) { console.warn('Failed to save Auto Images Formula:', e); }
         }
 
         showNotification('✅ Settings saved successfully!', 'success');
@@ -352,6 +366,19 @@ const saveSettings = async () => {
         showNotification('❌ Failed to save: ' + error.message, 'error');
     }
 };
+
+async function resetAutoImagesFormula() {
+    if (!confirm('Reset the Auto Images Formula to the built-in default?')) return;
+    try {
+        const r = await fetch('/api/settings/formulas/auto_images/reset', { method: 'POST' });
+        const data = await r.json();
+        const el = document.getElementById('autoImagesFormulaText');
+        if (el && data.formula) el.value = data.formula;
+        showNotification('✅ Auto Images Formula reset to default', 'success');
+    } catch (e) {
+        showNotification('❌ Reset failed: ' + e.message, 'error');
+    }
+}
 
 // =============================================================================
 // NICHE MANAGEMENT SYSTEM

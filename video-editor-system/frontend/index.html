@@ -1020,6 +1020,22 @@
 
                 <!-- Image Styles Section -->
                 <div class="settings-section">
+                    <!-- Auto Images Formula -->
+                    <h3>🎨 Auto Images Formula</h3>
+                    <p style="color: #666; margin-bottom: 10px;">
+                        This formula controls <strong>how</strong> the Director Gemini writes image prompts — the creative principles, quality rules, and scene distribution strategy.
+                        Both <strong>🎨 Auto Images</strong> and the <strong>Prompts Generator</strong> use this formula.<br>
+                        <span style="color:#a78bfa; font-size:13px;">Available placeholders: <code>{n_images}</code> <code>{style_name}</code> <code>{lighting}</code> <code>{composition}</code> <code>{color_palette}</code></span>
+                    </p>
+                    <div class="input-group">
+                        <textarea id="autoImagesFormulaText" rows="16" class="textarea-large" placeholder="Loading Auto Images Formula..."></textarea>
+                    </div>
+                    <div style="display:flex; gap:10px; margin-top:8px;">
+                        <button onclick="resetAutoImagesFormula()" class="btn-secondary" style="font-size:13px; padding:6px 14px;">↺ Reset to Default</button>
+                    </div>
+
+                    <hr style="margin: 24px 0; border-color: #333;">
+
                     <h3>🎨 Auto Images AI - Custom Styles</h3>
                     <p style="color: #666; margin-bottom: 15px;">Create custom image styles for Auto Images AI. Each style defines visual rules, composition, lighting, and colors that the Director Gemini (gemini-2.5-flash) uses to generate detailed prompts.</p>
 
