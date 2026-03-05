@@ -5341,58 +5341,125 @@ async function generateLocalImagesMix() {
 // SEO GENERATOR
 // =============================================================================
 
-async function loadSeoFormula() {
+// ---- Presets management (Settings) ----
+
+async function loadSeoFormulas() {
     try {
-        const r = await fetch('/api/settings/seo-formula');
+        const r = await fetch('/api/seo-formulas');
         const d = await r.json();
-        if (d.success) {
-            const ta = document.getElementById('seoFormulaText');
-            if (ta) ta.value = d.formula;
-        }
-    } catch (e) { console.warn('Could not load SEO formula:', e); }
+        if (!d.success) return;
+        _renderSeoFormulasList(d.formulas);
+        _populateSeoFormulaSelect(d.formulas);
+    } catch (e) { console.warn('Could not load SEO formulas:', e); }
 }
 
-async function saveSeoFormula() {
-    const formula = document.getElementById('seoFormulaText')?.value || '';
-    const defaultLink = document.getElementById('seoDefaultLink')?.value.trim() || '';
+function _renderSeoFormulasList(formulas) {
+    const container = document.getElementById('seoFormulasList');
+    if (!container) return;
+    if (!formulas || formulas.length === 0) {
+        container.innerHTML = '<p style="color:#666; font-size:14px;">No saved formulas yet. Create your first one!</p>';
+        return;
+    }
+    container.innerHTML = formulas.map(f => `
+        <div style="padding:10px 14px; margin:5px 0; background:#0f1a15; border:1px solid #065f46; border-radius:8px; display:flex; justify-content:space-between; align-items:flex-start;">
+            <div style="flex:1; min-width:0;">
+                <strong style="color:#10b981;">${f.name}</strong>
+                <p style="margin:3px 0 0; color:#666; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${f.formula.substring(0,100).replace(/\n/g,' ')}…</p>
+            </div>
+            <div style="display:flex; gap:6px; margin-left:10px; flex-shrink:0;">
+                <button onclick="editSeoFormula('${f.id}')" style="background:#065f46; color:#d1fae5; border:none; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">✏️ Edit</button>
+                <button onclick="deleteSeoFormula('${f.id}')" style="background:#7f1d1d; color:#fca5a5; border:none; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">🗑️</button>
+            </div>
+        </div>`).join('');
+}
 
-    // Save formula
+function _populateSeoFormulaSelect(formulas) {
+    const sel = document.getElementById('seoFormulaSelect');
+    if (!sel) return;
+    const current = sel.value;
+    sel.innerHTML = '<option value="">⚙️ Default formula</option>' +
+        (formulas || []).map(f => `<option value="${f.id}">${f.name}</option>`).join('');
+    if (current) sel.value = current;
+}
+
+function openSeoFormulaCreator() {
+    document.getElementById('editingSeoFormulaId').value = '';
+    document.getElementById('seoFormulaCreatorTitle').textContent = '➕ New SEO Formula';
+    document.getElementById('newSeoFormulaName').value = '';
+    document.getElementById('newSeoFormulaText').value = '';
+    document.getElementById('seoFormulaCreatorSection').style.display = 'block';
+    document.getElementById('seoFormulaCreatorSection').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+function closeSeoFormulaCreator() {
+    document.getElementById('seoFormulaCreatorSection').style.display = 'none';
+    document.getElementById('editingSeoFormulaId').value = '';
+}
+
+async function editSeoFormula(formulaId) {
     try {
-        const r = await fetch('/api/settings/seo-formula', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ formula })
+        const r = await fetch('/api/seo-formulas');
+        const d = await r.json();
+        const f = (d.formulas || []).find(x => x.id === formulaId);
+        if (!f) return;
+        document.getElementById('editingSeoFormulaId').value = formulaId;
+        document.getElementById('seoFormulaCreatorTitle').textContent = '✏️ Edit: ' + f.name;
+        document.getElementById('newSeoFormulaName').value = f.name;
+        document.getElementById('newSeoFormulaText').value = f.formula;
+        document.getElementById('seoFormulaCreatorSection').style.display = 'block';
+        document.getElementById('seoFormulaCreatorSection').scrollIntoView({ behavior:'smooth', block:'start' });
+    } catch (e) { showNotification('❌ Could not load formula', 'error'); }
+}
+
+async function saveSeoFormulaPreset() {
+    const editingId = document.getElementById('editingSeoFormulaId').value.trim();
+    const name    = document.getElementById('newSeoFormulaName').value.trim();
+    const formula = document.getElementById('newSeoFormulaText').value.trim();
+
+    if (!name) { showNotification('❌ Formula name is required', 'error'); return; }
+    if (!formula || formula.length < 10) { showNotification('❌ Formula text is required', 'error'); return; }
+
+    try {
+        const isEdit = editingId !== '';
+        const url    = isEdit ? `/api/seo-formulas/${editingId}` : '/api/seo-formulas';
+        const method = isEdit ? 'PUT' : 'POST';
+        const r = await fetch(url, {
+            method, headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, formula })
         });
         const d = await r.json();
         if (d.success) {
-            // Also persist the default link in localStorage
-            if (defaultLink) localStorage.setItem('seoDefaultLink', defaultLink);
-            showNotification('✅ SEO formula saved!', 'success');
+            showNotification(isEdit ? '✅ Formula updated!' : '✅ Formula saved!', 'success');
+            closeSeoFormulaCreator();
+            await loadSeoFormulas();
         } else {
             showNotification('❌ ' + (d.error || 'Save failed'), 'error');
         }
-    } catch (e) {
-        showNotification('❌ ' + e.message, 'error');
-    }
+    } catch (e) { showNotification('❌ ' + e.message, 'error'); }
 }
 
-async function resetSeoFormula() {
-    if (!confirm('Reset SEO formula to default?')) return;
+async function deleteSeoFormula(formulaId) {
+    if (!confirm('Delete this SEO formula?')) return;
     try {
-        const r = await fetch('/api/settings/seo-formula', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ formula: '' })   // backend saves empty string → next load returns default
-        });
-        await r.json();
-        await loadSeoFormula();
-        showNotification('✅ SEO formula reset to default', 'success');
-    } catch (e) {
-        showNotification('❌ ' + e.message, 'error');
-    }
+        const r = await fetch(`/api/seo-formulas/${formulaId}`, { method: 'DELETE' });
+        const d = await r.json();
+        if (d.success) {
+            showNotification('✅ Formula deleted', 'success');
+            await loadSeoFormulas();
+        } else {
+            showNotification('❌ ' + (d.error || 'Delete failed'), 'error');
+        }
+    } catch (e) { showNotification('❌ ' + e.message, 'error'); }
 }
 
-// Auto-fill SEO fields from the current project's title + script
+function saveSeoDefaultLink() {
+    const link = document.getElementById('seoDefaultLink')?.value.trim() || '';
+    if (link) localStorage.setItem('seoDefaultLink', link);
+    showNotification('✅ Default link saved', 'success');
+}
+
+// ---- SEO Generator (main section) ----
+
 function seoAutoFill() {
     const titleEl  = document.getElementById('videoTitle')
                   || document.getElementById('titleOutput')
@@ -5404,17 +5471,20 @@ function seoAutoFill() {
     if (titleEl  && titleEl.value)  document.getElementById('seoTitle').value  = titleEl.value;
     if (scriptEl && scriptEl.value) document.getElementById('seoScript').value = scriptEl.value;
 
-    // Pre-fill link from localStorage default
     const savedLink = localStorage.getItem('seoDefaultLink');
     if (savedLink && !document.getElementById('seoLink').value) {
         document.getElementById('seoLink').value = savedLink;
     }
+
+    // Reload formula options in case new presets were saved
+    loadSeoFormulas();
 }
 
 async function generateSeo() {
-    const title  = document.getElementById('seoTitle').value.trim();
-    const script = document.getElementById('seoScript').value.trim();
-    const link   = document.getElementById('seoLink').value.trim();
+    const title      = document.getElementById('seoTitle').value.trim();
+    const script     = document.getElementById('seoScript').value.trim();
+    const link       = document.getElementById('seoLink').value.trim();
+    const formula_id = document.getElementById('seoFormulaSelect')?.value || '';
 
     if (!title && !script) {
         showNotification('❌ Enter a title or script first', 'error');
@@ -5430,35 +5500,28 @@ async function generateSeo() {
         const r = await fetch('/api/seo-generator', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title, script, link })
+            body: JSON.stringify({ title, script, link, formula_id })
         });
         const d = await r.json();
-
         progressBox.style.display = 'none';
 
-        if (!d.success) {
-            showNotification('❌ ' + (d.error || 'Generation failed'), 'error');
-            return;
-        }
+        if (!d.success) { showNotification('❌ ' + (d.error || 'Generation failed'), 'error'); return; }
 
         document.getElementById('seoDescription').value = d.description;
         document.getElementById('seoTags').value        = d.tags;
 
-        // Language badge
         const badge = document.getElementById('seoLangBadge');
         if (badge && d.language) badge.textContent = '(' + d.language + ')';
 
-        // Tags length indicator
+        const tlen  = (d.tags || '').length;
         const lenEl = document.getElementById('seoTagsLength');
         const warn  = document.getElementById('seoTagsWarning');
-        const tlen  = (d.tags || '').length;
         if (lenEl) lenEl.textContent = tlen + ' / 400 chars';
         if (warn)  warn.style.display = tlen > 400 ? 'block' : 'none';
 
         resultSection.style.display = 'block';
         resultSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
         showNotification('✅ Description & tags generated!', 'success');
-
     } catch (e) {
         progressBox.style.display = 'none';
         showNotification('❌ ' + e.message, 'error');
@@ -5477,13 +5540,12 @@ function copySeoTags() {
     navigator.clipboard.writeText(v).then(() => showNotification('📋 Tags copied!', 'success'));
 }
 
-// Load SEO formula when settings open, and auto-fill SEO section on view
+// Load SEO formulas when settings open
 (function() {
     const _orig = window.openSettings;
     window.openSettings = function() {
         if (_orig) _orig.apply(this, arguments);
-        loadSeoFormula();
-        // Restore saved default link
+        loadSeoFormulas();
         const saved = localStorage.getItem('seoDefaultLink');
         if (saved) {
             const el = document.getElementById('seoDefaultLink');

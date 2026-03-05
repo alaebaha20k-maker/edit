@@ -3673,29 +3673,39 @@ def seo_generator():
         {
             'title': 'Video title',
             'script': 'Full script text',
-            'link': 'https://...',          (optional, always inserted in description)
-            'formula': 'Custom formula...'  (optional, overrides saved formula)
+            'link': 'https://...',          (optional)
+            'formula_id': 'seo_abc123',     (optional — use a saved preset)
+            'formula': 'Custom formula...'  (optional — inline override, highest priority)
         }
     """
     try:
+        from settings_manager import SettingsManager
+        from seo_formula_manager import SeoFormulaManager
+
         data = request.get_json() or {}
-        title  = data.get('title', '').strip()
-        script = data.get('script', '').strip()
-        link   = data.get('link', '').strip()
+        title            = data.get('title', '').strip()
+        script           = data.get('script', '').strip()
+        link             = data.get('link', '').strip()
+        formula_id       = data.get('formula_id', '').strip()
         formula_override = data.get('formula', '').strip()
 
         if not title and not script:
             return jsonify({'success': False, 'error': 'Provide at least a title or script'}), 400
 
-        # Load formula
-        formula = formula_override or SettingsManager.load_formula('seo')
+        # Resolve formula: inline > named preset > default
+        if formula_override:
+            formula = formula_override
+        elif formula_id:
+            preset = SeoFormulaManager.get(formula_id)
+            formula = preset['formula'] if preset else SeoFormulaManager.get_default_formula_text()
+        else:
+            formula = SeoFormulaManager.get_default_formula_text()
 
-        # Gemini API key (try director key first, fall back to main)
+        # Gemini API key
         gemini_key = Config.get_director_gemini_key() or Config.get_gemini_api_key()
         if not gemini_key:
             return jsonify({'success': False, 'error': 'No Gemini API key configured. Add one in Settings.'}), 400
 
-        # Build prompt
         link_instruction = f'Include this link naturally in the description: {link}' if link else 'No product link provided — skip the CTA/link section.'
 
         prompt = f"""You are a professional YouTube SEO copywriter.
@@ -3731,7 +3741,6 @@ CRITICAL RULES:
         response = model.generate_content(prompt)
         raw = response.text.strip()
 
-        # Strip markdown code fences if present
         if raw.startswith('```'):
             raw = raw.split('```')[1]
             if raw.startswith('json'):
@@ -3745,9 +3754,7 @@ CRITICAL RULES:
         tags        = result.get('tags', '')
         language    = result.get('language', 'Unknown')
 
-        # Enforce tags < 400 chars
         if len(tags) > 400:
-            # Trim from the end
             tags = tags[:397].rsplit(',', 1)[0]
 
         return jsonify({
@@ -3762,28 +3769,59 @@ CRITICAL RULES:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/api/settings/seo-formula', methods=['GET'])
-def get_seo_formula():
-    """Get the SEO formula"""
+# SEO Formula Presets CRUD
+@app.route('/api/seo-formulas', methods=['GET'])
+def seo_formulas_list():
+    """Get all saved SEO formula presets"""
     try:
-        formula = SettingsManager.load_formula('seo')
-        return jsonify({'success': True, 'formula': formula})
+        from seo_formula_manager import SeoFormulaManager
+        return jsonify({'success': True, 'formulas': SeoFormulaManager.get_all()})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-@app.route('/api/settings/seo-formula', methods=['POST'])
-def save_seo_formula():
-    """Save the SEO formula (empty string resets to default)"""
+@app.route('/api/seo-formulas', methods=['POST'])
+def seo_formulas_create():
+    """Create a new SEO formula preset"""
     try:
+        from seo_formula_manager import SeoFormulaManager
         data = request.get_json() or {}
-        formula = data.get('formula', '').strip()
-        if not formula:
-            # Delete the file so load_formula falls back to DEFAULT_SEO_FORMULA
-            SettingsManager.SEO_FORMULA_FILE.unlink(missing_ok=True)
-        else:
-            SettingsManager.save_formulas(seo_formula=formula)
-        return jsonify({'success': True})
+        preset = SeoFormulaManager.create(
+            name=data.get('name', ''),
+            formula=data.get('formula', ''),
+        )
+        return jsonify({'success': True, 'formula': preset})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/seo-formulas/<formula_id>', methods=['PUT'])
+def seo_formulas_update(formula_id):
+    """Update an existing SEO formula preset"""
+    try:
+        from seo_formula_manager import SeoFormulaManager
+        data = request.get_json() or {}
+        preset = SeoFormulaManager.update(
+            formula_id=formula_id,
+            name=data.get('name'),
+            formula=data.get('formula'),
+        )
+        if preset:
+            return jsonify({'success': True, 'formula': preset})
+        return jsonify({'success': False, 'error': 'Preset not found'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/seo-formulas/<formula_id>', methods=['DELETE'])
+def seo_formulas_delete(formula_id):
+    """Delete an SEO formula preset"""
+    try:
+        from seo_formula_manager import SeoFormulaManager
+        ok = SeoFormulaManager.delete(formula_id)
+        return jsonify({'success': ok, 'error': None if ok else 'Not found'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 

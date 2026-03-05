@@ -392,6 +392,13 @@
                     <textarea id="seoScript" rows="5" class="textarea-large" style="font-size:13px;" placeholder="Paste or auto-fill your script here..."></textarea>
                 </div>
 
+                <div class="input-group" style="margin-bottom:14px;">
+                    <label>SEO Formula <span style="color:#888; font-size:12px;">(choose your saved formula preset — manage them in Settings)</span></label>
+                    <select id="seoFormulaSelect" class="input-large" style="background:#0f1a15; color:#d1fae5; border-color:#065f46;">
+                        <option value="">⚙️ Default formula</option>
+                    </select>
+                </div>
+
                 <button onclick="generateSeo()" class="btn-primary" style="width:100%; font-size:15px; padding:12px; background: linear-gradient(135deg, #10b981, #065f46);">
                     🔍 Generate Description & Tags
                 </button>
@@ -1181,26 +1188,61 @@ AVOID:
                     </div>
                 </div>
 
-                <!-- SEO Generator Formula -->
+                <!-- SEO Generator Formulas -->
                 <div class="settings-section" style="border-top:2px solid #065f46; padding-top:24px; margin-top:8px;">
-                    <h3 style="color:#10b981;">🔍 SEO Generator</h3>
-                    <p style="color:#666; margin-bottom:10px; font-size:14px;">
-                        Formula that controls how the AI writes your YouTube description and tags.
-                        Used every time you click <strong>Generate Description & Tags</strong>.<br>
-                        <span style="color:#10b981; font-size:13px;">Placeholder: <code>{link}</code> — replaced with the link you enter in the SEO Generator section.</span>
+                    <h3 style="color:#10b981;">🔍 SEO Generator — Formulas</h3>
+                    <p style="color:#666; margin-bottom:14px; font-size:14px;">
+                        Save multiple SEO formula presets. Each formula controls how the AI structures your description and tags.
+                        Choose which one to use each time you generate — different niches, different structures.<br>
+                        <span style="color:#10b981; font-size:13px;">Placeholder: <code>{link}</code> — replaced with the link you enter when generating.</span>
                     </p>
 
-                    <div class="input-group" style="margin-bottom:10px;">
-                        <label>Default Product / Affiliate Link <span style="color:#888; font-size:12px;">(pre-fills the SEO Generator link field)</span></label>
+                    <div class="input-group" style="margin-bottom:14px;">
+                        <label>Default Product / Affiliate Link <span style="color:#888; font-size:12px;">(pre-fills the link field in the SEO Generator)</span></label>
                         <input type="text" id="seoDefaultLink" class="input-large" placeholder="https://yourlink.com/product">
+                        <button onclick="saveSeoDefaultLink()" class="btn-secondary" style="margin-top:6px; font-size:13px; padding:5px 14px;">💾 Save Link</button>
                     </div>
 
-                    <div class="input-group">
-                        <textarea id="seoFormulaText" rows="16" class="textarea-large" style="font-family:monospace; font-size:13px;" placeholder="Loading SEO formula…"></textarea>
+                    <!-- Saved presets list -->
+                    <div id="seoFormulasList" style="margin-bottom:14px;">
+                        <p style="color:#666; font-size:14px;">Loading formulas…</p>
                     </div>
-                    <div style="display:flex; gap:10px; margin-top:8px;">
-                        <button onclick="saveSeoFormula()" class="btn-success" style="font-size:13px; padding:6px 18px;">💾 Save SEO Formula</button>
-                        <button onclick="resetSeoFormula()" class="btn-secondary" style="font-size:13px; padding:6px 14px;">↺ Reset to Default</button>
+
+                    <button onclick="openSeoFormulaCreator()" class="btn-primary" style="font-size:13px; padding:8px 18px;">➕ Create New Formula</button>
+
+                    <!-- Create / Edit form -->
+                    <input type="hidden" id="editingSeoFormulaId" value="">
+                    <div id="seoFormulaCreatorSection" style="display:none; margin-top:18px; padding:18px; background:#0f1a15; border:1px solid #065f46; border-radius:10px;">
+                        <h4 id="seoFormulaCreatorTitle" style="margin:0 0 14px; color:#10b981;">➕ New SEO Formula</h4>
+
+                        <div class="input-group">
+                            <label>Formula Name <span style="color:#ef4444;">*</span></label>
+                            <input type="text" id="newSeoFormulaName" class="input-large" placeholder="e.g., Trading French, Book Review English, Arabic Niche">
+                        </div>
+
+                        <div class="input-group" style="margin-top:12px;">
+                            <label style="color:#10b981; font-weight:700;">Formula / Instructions <span style="color:#ef4444;">*</span>
+                                <span style="font-size:12px; color:#888; font-weight:normal; margin-left:6px;">Use <code>{link}</code> where the link should appear</span>
+                            </label>
+                            <textarea id="newSeoFormulaText" rows="14" class="textarea-large"
+                                style="font-family:monospace; font-size:13px; background:#091210; color:#d1fae5; border-color:#065f46;"
+                                placeholder="Write your complete formula here.
+
+Example:
+Write a YouTube description in the video language with:
+1. Hook (2-3 lines) that connects to the title
+2. 4 bullet points with •
+3. CTA section: 👉 {link}
+4. ⏱ CHAPITRES with timestamps
+5. Subscribe call-to-action
+
+TAGS: comma-separated, under 400 chars, match the title keywords"></textarea>
+                        </div>
+
+                        <div style="display:flex; gap:10px; margin-top:14px;">
+                            <button onclick="saveSeoFormulaPreset()" class="btn-success">💾 Save Formula</button>
+                            <button onclick="closeSeoFormulaCreator()" class="btn-secondary">Cancel</button>
+                        </div>
                     </div>
                 </div>
 
