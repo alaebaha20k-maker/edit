@@ -5335,3 +5335,169 @@ async function generateLocalImagesMix() {
         showNotification('❌ Failed to generate Local Images Mix', 'error');
     }
 }
+
+
+// =============================================================================
+// SEO GENERATOR
+// =============================================================================
+
+async function loadSeoFormula() {
+    try {
+        const r = await fetch('/api/settings/seo-formula');
+        const d = await r.json();
+        if (d.success) {
+            const ta = document.getElementById('seoFormulaText');
+            if (ta) ta.value = d.formula;
+        }
+    } catch (e) { console.warn('Could not load SEO formula:', e); }
+}
+
+async function saveSeoFormula() {
+    const formula = document.getElementById('seoFormulaText')?.value || '';
+    const defaultLink = document.getElementById('seoDefaultLink')?.value.trim() || '';
+
+    // Save formula
+    try {
+        const r = await fetch('/api/settings/seo-formula', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ formula })
+        });
+        const d = await r.json();
+        if (d.success) {
+            // Also persist the default link in localStorage
+            if (defaultLink) localStorage.setItem('seoDefaultLink', defaultLink);
+            showNotification('✅ SEO formula saved!', 'success');
+        } else {
+            showNotification('❌ ' + (d.error || 'Save failed'), 'error');
+        }
+    } catch (e) {
+        showNotification('❌ ' + e.message, 'error');
+    }
+}
+
+async function resetSeoFormula() {
+    if (!confirm('Reset SEO formula to default?')) return;
+    try {
+        const r = await fetch('/api/settings/seo-formula', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ formula: '' })   // backend saves empty string → next load returns default
+        });
+        await r.json();
+        await loadSeoFormula();
+        showNotification('✅ SEO formula reset to default', 'success');
+    } catch (e) {
+        showNotification('❌ ' + e.message, 'error');
+    }
+}
+
+// Auto-fill SEO fields from the current project's title + script
+function seoAutoFill() {
+    const titleEl  = document.getElementById('videoTitle')
+                  || document.getElementById('titleOutput')
+                  || document.getElementById('generatedTitle');
+    const scriptEl = document.getElementById('scriptText')
+                  || document.getElementById('scriptOutput')
+                  || document.getElementById('generatedScript');
+
+    if (titleEl  && titleEl.value)  document.getElementById('seoTitle').value  = titleEl.value;
+    if (scriptEl && scriptEl.value) document.getElementById('seoScript').value = scriptEl.value;
+
+    // Pre-fill link from localStorage default
+    const savedLink = localStorage.getItem('seoDefaultLink');
+    if (savedLink && !document.getElementById('seoLink').value) {
+        document.getElementById('seoLink').value = savedLink;
+    }
+}
+
+async function generateSeo() {
+    const title  = document.getElementById('seoTitle').value.trim();
+    const script = document.getElementById('seoScript').value.trim();
+    const link   = document.getElementById('seoLink').value.trim();
+
+    if (!title && !script) {
+        showNotification('❌ Enter a title or script first', 'error');
+        return;
+    }
+
+    const progressBox   = document.getElementById('seoProgressBox');
+    const resultSection = document.getElementById('seoResultSection');
+    progressBox.style.display   = 'block';
+    resultSection.style.display = 'none';
+
+    try {
+        const r = await fetch('/api/seo-generator', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, script, link })
+        });
+        const d = await r.json();
+
+        progressBox.style.display = 'none';
+
+        if (!d.success) {
+            showNotification('❌ ' + (d.error || 'Generation failed'), 'error');
+            return;
+        }
+
+        document.getElementById('seoDescription').value = d.description;
+        document.getElementById('seoTags').value        = d.tags;
+
+        // Language badge
+        const badge = document.getElementById('seoLangBadge');
+        if (badge && d.language) badge.textContent = '(' + d.language + ')';
+
+        // Tags length indicator
+        const lenEl = document.getElementById('seoTagsLength');
+        const warn  = document.getElementById('seoTagsWarning');
+        const tlen  = (d.tags || '').length;
+        if (lenEl) lenEl.textContent = tlen + ' / 400 chars';
+        if (warn)  warn.style.display = tlen > 400 ? 'block' : 'none';
+
+        resultSection.style.display = 'block';
+        resultSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        showNotification('✅ Description & tags generated!', 'success');
+
+    } catch (e) {
+        progressBox.style.display = 'none';
+        showNotification('❌ ' + e.message, 'error');
+    }
+}
+
+function copySeoDescription() {
+    const v = document.getElementById('seoDescription')?.value;
+    if (!v) return;
+    navigator.clipboard.writeText(v).then(() => showNotification('📋 Description copied!', 'success'));
+}
+
+function copySeoTags() {
+    const v = document.getElementById('seoTags')?.value;
+    if (!v) return;
+    navigator.clipboard.writeText(v).then(() => showNotification('📋 Tags copied!', 'success'));
+}
+
+// Load SEO formula when settings open, and auto-fill SEO section on view
+(function() {
+    const _orig = window.openSettings;
+    window.openSettings = function() {
+        if (_orig) _orig.apply(this, arguments);
+        loadSeoFormula();
+        // Restore saved default link
+        const saved = localStorage.getItem('seoDefaultLink');
+        if (saved) {
+            const el = document.getElementById('seoDefaultLink');
+            if (el && !el.value) el.value = saved;
+        }
+    };
+})();
+
+// Auto-fill SEO fields when the section scrolls into view
+(function() {
+    const seoSection = document.getElementById('seoGeneratorStep');
+    if (!seoSection || !('IntersectionObserver' in window)) return;
+    const io = new IntersectionObserver(entries => {
+        if (entries[0].isIntersecting) seoAutoFill();
+    }, { threshold: 0.1 });
+    io.observe(seoSection);
+})();

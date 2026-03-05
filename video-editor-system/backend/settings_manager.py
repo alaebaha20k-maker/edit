@@ -23,6 +23,7 @@ class SettingsManager:
     SCRIPT_FORMULA_FILE = FORMULAS_DIR / 'script_formula.txt'
     IMAGE_FORMULA_FILE = FORMULAS_DIR / 'image_formula.txt'
     AUTO_IMAGES_FORMULA_FILE = FORMULAS_DIR / 'auto_images_formula.txt'
+    SEO_FORMULA_FILE = FORMULAS_DIR / 'seo_formula.txt'
 
     # Default formulas
     DEFAULT_TITLE_FORMULA = """═══════════════════════════════════════════════════════
@@ -248,6 +249,27 @@ SCENE DISTRIBUTION STRATEGY
 - If N = 11-20: Detailed coverage with transitions
 - If N = 21-50: Granular scene-by-scene progression
 - If N = 51+: Nearly every sentence gets a visual"""
+
+    DEFAULT_SEO_FORMULA = """INSTRUCTIONS:
+Write a high-quality YouTube description and tags for a video in the detected language.
+
+DESCRIPTION STRUCTURE:
+1. OPENING (2-3 sentences): Hook directly connected to the video title. Identify the viewer's problem.
+2. BODY (3-5 bullet points with •): Key things the viewer will learn or discover from the video.
+3. CTA SECTION: Natural mention of the product/link with a short compelling sentence about what's behind it.
+   Format: 👉 {link}
+4. CHAPTERS SECTION (⏱ CHAPITRES / ⏱ CHAPTERS):
+   Format each chapter as: 00:00 — Chapter title
+   Create 5-10 logical chapters from the script content.
+5. CLOSING LINE: One line inviting to subscribe / follow.
+
+TAGS RULES:
+- Comma-separated, total MUST be under 400 characters
+- Start with the most specific tags (exact title keywords), then broader related terms
+- Mix short tags (2-3 words) and long-tail tags (4-5 words)
+- All tags in the same language as the video
+
+LANGUAGE: Auto-detect from title and script. Write EVERYTHING in that language."""
 
     # Inworld AI voice configurations (Official Inworld TTS-1.5 Voices)
     INWORLD_VOICES = {
@@ -588,7 +610,8 @@ Each title must be distinctive, high-quality, and optimized for CTR.
 
     @classmethod
     def save_formulas(cls, title_formula: str = None, script_formula: str = None,
-                     image_formula: str = None, auto_images_formula: str = None) -> bool:
+                     image_formula: str = None, auto_images_formula: str = None,
+                     seo_formula: str = None) -> bool:
         """Save generation formulas to text files."""
         cls.ensure_directories()
 
@@ -610,6 +633,10 @@ Each title must be distinctive, high-quality, and optimized for CTR.
             if auto_images_formula is not None:
                 with open(cls.AUTO_IMAGES_FORMULA_FILE, 'w') as f:
                     f.write(auto_images_formula)
+
+            if seo_formula is not None:
+                with open(cls.SEO_FORMULA_FILE, 'w') as f:
+                    f.write(seo_formula)
 
             return True
         except Exception as e:
@@ -634,6 +661,7 @@ Each title must be distinctive, high-quality, and optimized for CTR.
             'script':      (cls.SCRIPT_FORMULA_FILE,      cls.DEFAULT_SCRIPT_FORMULA),
             'image':       (cls.IMAGE_FORMULA_FILE,       cls.DEFAULT_IMAGE_FORMULA),
             'auto_images': (cls.AUTO_IMAGES_FORMULA_FILE, cls.DEFAULT_AUTO_IMAGES_FORMULA),
+            'seo':         (cls.SEO_FORMULA_FILE,         cls.DEFAULT_SEO_FORMULA),
         }
 
         if formula_type not in formula_map:

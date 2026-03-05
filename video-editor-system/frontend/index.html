@@ -368,6 +368,62 @@
                 </div>
             </section>
 
+            <!-- SEO Generator -->
+            <section class="step" id="seoGeneratorStep">
+                <h3><span class="step-number" style="background: linear-gradient(135deg, #10b981, #065f46); font-size:18px; line-height:1;">🔍</span> SEO Generator</h3>
+                <p style="color: #888; margin-bottom: 18px; font-size: 14px;">
+                    Generate a high-quality YouTube <strong>description</strong> and <strong>tags</strong> from your title and script using Gemini.
+                    Language is auto-detected — Arabic script gets Arabic description, French gets French, etc.
+                </p>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 14px;">
+                    <div class="input-group" style="margin:0;">
+                        <label>Video Title <span style="color:#888; font-size:12px;">(auto-filled from your title above)</span></label>
+                        <input type="text" id="seoTitle" class="input-large" placeholder="Your video title...">
+                    </div>
+                    <div class="input-group" style="margin:0;">
+                        <label>Product / Affiliate Link <span style="color:#888; font-size:12px;">(always included in description)</span></label>
+                        <input type="text" id="seoLink" class="input-large" placeholder="https://...">
+                    </div>
+                </div>
+
+                <div class="input-group" style="margin-bottom:14px;">
+                    <label>Script <span style="color:#888; font-size:12px;">(auto-filled · you can edit)</span></label>
+                    <textarea id="seoScript" rows="5" class="textarea-large" style="font-size:13px;" placeholder="Paste or auto-fill your script here..."></textarea>
+                </div>
+
+                <button onclick="generateSeo()" class="btn-primary" style="width:100%; font-size:15px; padding:12px; background: linear-gradient(135deg, #10b981, #065f46);">
+                    🔍 Generate Description & Tags
+                </button>
+
+                <div id="seoProgressBox" style="display:none; margin-top:14px; padding:12px; background:rgba(16,185,129,0.08); border-radius:8px; border-left:3px solid #10b981; color:#10b981; font-size:14px;">
+                    ⏳ Generating with Gemini…
+                </div>
+
+                <div id="seoResultSection" style="display:none; margin-top:18px;">
+                    <!-- Description -->
+                    <div style="margin-bottom:16px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <label style="font-weight:600; font-size:14px;">📝 Description <span id="seoLangBadge" style="font-size:12px; color:#10b981; font-weight:400; margin-left:8px;"></span></label>
+                            <button onclick="copySeoDescription()" style="background:#065f46; color:#d1fae5; border:none; border-radius:6px; padding:5px 14px; font-size:12px; cursor:pointer;">📋 Copy</button>
+                        </div>
+                        <textarea id="seoDescription" rows="18" class="textarea-large"
+                            style="font-family:monospace; font-size:13px; line-height:1.6; background:#0f1a15; color:#d1fae5; border:1px solid #065f46; resize:vertical;"></textarea>
+                    </div>
+
+                    <!-- Tags -->
+                    <div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <label style="font-weight:600; font-size:14px;">🏷️ Tags <span id="seoTagsLength" style="font-size:12px; color:#888; font-weight:400; margin-left:8px;"></span></label>
+                            <button onclick="copySeoTags()" style="background:#065f46; color:#d1fae5; border:none; border-radius:6px; padding:5px 14px; font-size:12px; cursor:pointer;">📋 Copy</button>
+                        </div>
+                        <textarea id="seoTags" rows="4" class="textarea-large"
+                            style="font-family:monospace; font-size:13px; background:#0f1a15; color:#d1fae5; border:1px solid #065f46; resize:vertical;"></textarea>
+                        <small id="seoTagsWarning" style="display:none; color:#ef4444; font-size:12px; margin-top:4px;">⚠️ Tags exceed 400 characters — trim before uploading to YouTube</small>
+                    </div>
+                </div>
+            </section>
+
             <!-- Step 3: Media (Images/Videos) -->
             <section class="step">
                 <h3><span class="step-number">3</span> Media (Images & Videos)</h3>
@@ -1122,6 +1178,29 @@ AVOID:
                             <button onclick="saveNewStyle()" class="btn-success">💾 Save Style</button>
                             <button onclick="closeStyleCreator()" class="btn-secondary">Cancel</button>
                         </div>
+                    </div>
+                </div>
+
+                <!-- SEO Generator Formula -->
+                <div class="settings-section" style="border-top:2px solid #065f46; padding-top:24px; margin-top:8px;">
+                    <h3 style="color:#10b981;">🔍 SEO Generator</h3>
+                    <p style="color:#666; margin-bottom:10px; font-size:14px;">
+                        Formula that controls how the AI writes your YouTube description and tags.
+                        Used every time you click <strong>Generate Description & Tags</strong>.<br>
+                        <span style="color:#10b981; font-size:13px;">Placeholder: <code>{link}</code> — replaced with the link you enter in the SEO Generator section.</span>
+                    </p>
+
+                    <div class="input-group" style="margin-bottom:10px;">
+                        <label>Default Product / Affiliate Link <span style="color:#888; font-size:12px;">(pre-fills the SEO Generator link field)</span></label>
+                        <input type="text" id="seoDefaultLink" class="input-large" placeholder="https://yourlink.com/product">
+                    </div>
+
+                    <div class="input-group">
+                        <textarea id="seoFormulaText" rows="16" class="textarea-large" style="font-family:monospace; font-size:13px;" placeholder="Loading SEO formula…"></textarea>
+                    </div>
+                    <div style="display:flex; gap:10px; margin-top:8px;">
+                        <button onclick="saveSeoFormula()" class="btn-success" style="font-size:13px; padding:6px 18px;">💾 Save SEO Formula</button>
+                        <button onclick="resetSeoFormula()" class="btn-secondary" style="font-size:13px; padding:6px 14px;">↺ Reset to Default</button>
                     </div>
                 </div>
 

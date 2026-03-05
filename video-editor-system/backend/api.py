@@ -3660,6 +3660,135 @@ def auto_images_delete_style(style_id):
 
 
 # =============================================================================
+# SEO GENERATOR
+# =============================================================================
+
+
+@app.route('/api/seo-generator', methods=['POST'])
+def seo_generator():
+    """
+    Generate YouTube description + tags from title + script using Gemini.
+
+    Request JSON:
+        {
+            'title': 'Video title',
+            'script': 'Full script text',
+            'link': 'https://...',          (optional, always inserted in description)
+            'formula': 'Custom formula...'  (optional, overrides saved formula)
+        }
+    """
+    try:
+        data = request.get_json() or {}
+        title  = data.get('title', '').strip()
+        script = data.get('script', '').strip()
+        link   = data.get('link', '').strip()
+        formula_override = data.get('formula', '').strip()
+
+        if not title and not script:
+            return jsonify({'success': False, 'error': 'Provide at least a title or script'}), 400
+
+        # Load formula
+        formula = formula_override or SettingsManager.load_formula('seo')
+
+        # Gemini API key (try director key first, fall back to main)
+        gemini_key = Config.get_director_gemini_key() or Config.get_gemini_api_key()
+        if not gemini_key:
+            return jsonify({'success': False, 'error': 'No Gemini API key configured. Add one in Settings.'}), 400
+
+        # Build prompt
+        link_instruction = f'Include this link naturally in the description: {link}' if link else 'No product link provided — skip the CTA/link section.'
+
+        prompt = f"""You are a professional YouTube SEO copywriter.
+
+VIDEO TITLE: {title}
+
+SCRIPT / CONTENT:
+{script if script else '(no script provided — base description on the title only)'}
+
+YOUR FORMULA / INSTRUCTIONS:
+{formula}
+
+LINK: {link_instruction}
+
+OUTPUT: Return ONLY valid JSON — no markdown, no backticks, no extra text.
+{{
+  "description": "Full YouTube description following the formula",
+  "tags": "tag1, tag2, tag3, ...",
+  "language": "name of detected language (e.g. French, English, Arabic)"
+}}
+
+CRITICAL RULES:
+- Tags MUST be comma-separated, total under 400 characters
+- Description MUST directly reference and match the exact title
+- Write description AND tags in the same language as the title/script
+- If a link was provided, it MUST appear in the description
+- Include realistic chapter timestamps (based on script flow)
+"""
+
+        import google.generativeai as genai
+        genai.configure(api_key=gemini_key)
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        response = model.generate_content(prompt)
+        raw = response.text.strip()
+
+        # Strip markdown code fences if present
+        if raw.startswith('```'):
+            raw = raw.split('```')[1]
+            if raw.startswith('json'):
+                raw = raw[4:]
+        raw = raw.strip().rstrip('`').strip()
+
+        import json as _json
+        result = _json.loads(raw)
+
+        description = result.get('description', '')
+        tags        = result.get('tags', '')
+        language    = result.get('language', 'Unknown')
+
+        # Enforce tags < 400 chars
+        if len(tags) > 400:
+            # Trim from the end
+            tags = tags[:397].rsplit(',', 1)[0]
+
+        return jsonify({
+            'success': True,
+            'description': description,
+            'tags': tags,
+            'language': language,
+            'tags_length': len(tags),
+        })
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/settings/seo-formula', methods=['GET'])
+def get_seo_formula():
+    """Get the SEO formula"""
+    try:
+        formula = SettingsManager.load_formula('seo')
+        return jsonify({'success': True, 'formula': formula})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/settings/seo-formula', methods=['POST'])
+def save_seo_formula():
+    """Save the SEO formula (empty string resets to default)"""
+    try:
+        data = request.get_json() or {}
+        formula = data.get('formula', '').strip()
+        if not formula:
+            # Delete the file so load_formula falls back to DEFAULT_SEO_FORMULA
+            SettingsManager.SEO_FORMULA_FILE.unlink(missing_ok=True)
+        else:
+            SettingsManager.save_formulas(seo_formula=formula)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# =============================================================================
 # ERROR HANDLERS
 # =============================================================================
 
