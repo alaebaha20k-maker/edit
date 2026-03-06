@@ -2120,8 +2120,8 @@ async function loadAutoImageStyles() {
             // Cache the full style objects
             window._cachedAutoImageStyles = data.styles;
 
-            // Populate all style dropdowns: Auto Images AI, Auto Avatar Mix, Prompts Generator
-            ['autoImageStyle', 'autoAvatarImageStyle', 'pgStyleSelect'].forEach(selectId => {
+            // Populate all style dropdowns: Auto Images AI, Auto Avatar Mix, Prompts Generator, Mixed
+            ['autoImageStyle', 'autoAvatarImageStyle', 'pgStyleSelect', 'mixedImageStyleSelect'].forEach(selectId => {
                 const styleSelect = document.getElementById(selectId);
                 if (styleSelect) {
                     const currentVal = styleSelect.value;
@@ -2150,36 +2150,53 @@ async function loadAutoImageStyles() {
 // PROMPTS GENERATOR — image or video prompts, scene-by-scene from script
 // =============================================================================
 
-let _pgMode = 'image'; // 'image' | 'video'
+let _pgMode = 'image'; // 'image' | 'video' | 'mixed'
 
 function pgSetMode(mode) {
     _pgMode = mode;
+    const isMixed = mode === 'mixed';
     const isVideo = mode === 'video';
 
     // Tabs
-    document.getElementById('pgTabImage').style.background = isVideo ? '#1e1e2e' : 'linear-gradient(135deg,#8b5cf6,#6d28d9)';
-    document.getElementById('pgTabImage').style.color      = isVideo ? '#888' : '#fff';
-    document.getElementById('pgTabVideo').style.background = isVideo ? 'linear-gradient(135deg,#dc2626,#7f1d1d)' : '#1e1e2e';
-    document.getElementById('pgTabVideo').style.color      = isVideo ? '#fff' : '#888';
+    const tabCfg = {
+        image: { bg: 'linear-gradient(135deg,#8b5cf6,#6d28d9)', col: '#fff' },
+        video: { bg: 'linear-gradient(135deg,#dc2626,#7f1d1d)', col: '#fff' },
+        mixed: { bg: 'linear-gradient(135deg,#f59e0b,#92400e)', col: '#fff' },
+        off:   { bg: '#1e1e2e', col: '#888' },
+    };
+    ['image','video','mixed'].forEach(t => {
+        const el = document.getElementById(`pgTab${t.charAt(0).toUpperCase()+t.slice(1)}`);
+        if (!el) return;
+        const active = t === mode ? tabCfg[t] : tabCfg.off;
+        el.style.background = active.bg;
+        el.style.color      = active.col;
+    });
 
-    // Style selectors
-    document.getElementById('pgImageStyleWrap').style.display = isVideo ? 'none' : '';
-    document.getElementById('pgVideoStyleWrap').style.display = isVideo ? '' : 'none';
+    // Show/hide single-mode vs mixed-mode panels
+    document.getElementById('pgSingleModeWrap').style.display = isMixed ? 'none' : '';
+    document.getElementById('pgMixedModeWrap').style.display  = isMixed ? '' : 'none';
 
-    // Generate button label
-    const btn = document.getElementById('pgGenerateBtn');
-    if (btn) {
-        btn.textContent = isVideo ? '🎬 Generate Video Prompts' : '🎨 Generate Image Prompts';
-        btn.style.background = isVideo
-            ? 'linear-gradient(135deg,#dc2626,#7f1d1d)'
-            : 'linear-gradient(135deg,#8b5cf6,#6d28d9)';
+    if (!isMixed) {
+        // Style selectors in single mode
+        document.getElementById('pgImageStyleWrap').style.display = isVideo ? 'none' : '';
+        document.getElementById('pgVideoStyleWrap').style.display = isVideo ? '' : 'none';
+
+        const btn = document.getElementById('pgGenerateBtn');
+        if (btn) {
+            btn.textContent = isVideo ? '🎬 Generate Video Prompts' : '🎨 Generate Image Prompts';
+            btn.style.background = isVideo
+                ? 'linear-gradient(135deg,#dc2626,#7f1d1d)'
+                : 'linear-gradient(135deg,#8b5cf6,#6d28d9)';
+        }
+        const lbl = document.getElementById('pgResultLabel');
+        if (lbl) lbl.childNodes[0].textContent = isVideo ? 'Generated Video Prompts ' : 'Generated Image Prompts ';
+    } else {
+        // Mixed mode: populate both dropdowns and update stats
+        _populateMixedDropdowns();
+        mixedUpdateSplit(document.getElementById('mixedSplitSlider')?.value || 50);
+        mixedUpdateStats();
     }
 
-    // Label
-    const lbl = document.getElementById('pgResultLabel');
-    if (lbl) lbl.childNodes[0].textContent = isVideo ? 'Generated Video Prompts ' : 'Generated Image Prompts ';
-
-    // Reset output
     document.getElementById('pgResultSection').style.display = 'none';
     document.getElementById('pgProgressBox').style.display   = 'none';
 
@@ -2191,14 +2208,133 @@ async function loadVideoStylesSelect() {
         const r = await fetch('/api/video-styles');
         const d = await r.json();
         if (!d.success) return;
+        // Single-mode selector
         const sel = document.getElementById('pgVideoStyleSelect');
-        if (!sel) return;
-        const cur = sel.value;
-        sel.innerHTML = d.styles.map(s =>
-            `<option value="${s.id}">${s.built_in ? '🎬' : '✨'} ${s.name}</option>`
-        ).join('');
-        if (cur) sel.value = cur;
+        if (sel) {
+            const cur = sel.value;
+            sel.innerHTML = d.styles.map(s =>
+                `<option value="${s.id}">${s.built_in ? '🎬' : '✨'} ${s.name}</option>`
+            ).join('');
+            if (cur) sel.value = cur;
+        }
+        // Mixed-mode video selector
+        const msel = document.getElementById('mixedVideoStyleSelect');
+        if (msel) {
+            const cur2 = msel.value;
+            msel.innerHTML = d.styles.map(s =>
+                `<option value="${s.id}">${s.built_in ? '🎬' : '✨'} ${s.name}</option>`
+            ).join('');
+            if (cur2) msel.value = cur2;
+        }
     } catch (e) { console.warn('Could not load video styles:', e); }
+}
+
+async function _populateMixedDropdowns() {
+    // Populate video styles
+    await loadVideoStylesSelect();
+    // Populate image styles in mixed image selector
+    if (window._cachedAutoImageStyles) {
+        const sel = document.getElementById('mixedImageStyleSelect');
+        if (sel) {
+            const cur = sel.value;
+            sel.innerHTML = window._cachedAutoImageStyles.map(s => {
+                const icon = s.id === 'cinematic' ? '🎬' : s.id === 'photorealistic' ? '📷' : s.id === 'artistic' ? '🎨' : s.id === 'animated' ? '🎭' : '✨';
+                return `<option value="${s.id}">${icon} ${s.name}</option>`;
+            }).join('');
+            if (cur) sel.value = cur;
+        }
+    }
+}
+
+function mixedUpdateSplit(pct) {
+    const script = document.getElementById('scriptInput')?.value || '';
+    const totalChars = script.length;
+    const splitPos   = Math.round(totalChars * (pct / 100));
+    document.getElementById('mixedSplitLabel').textContent = pct + '%';
+    if (totalChars > 0) {
+        document.getElementById('mixedSplitChars').textContent =
+            ` · first ${splitPos.toLocaleString()} chars → video · last ${(totalChars - splitPos).toLocaleString()} chars → images`;
+    }
+    mixedUpdateStats();
+}
+
+function mixedUpdateStats() {
+    const vCount = parseInt(document.getElementById('mixedVideoCount')?.value) || 0;
+    const durMin = ((vCount * 10) / 60).toFixed(1);
+    const el = document.getElementById('mixedVideoDuration');
+    if (el) el.textContent = `≈ ${durMin} min of video (${vCount} × 10s)`;
+}
+
+async function generateMixedPrompts() {
+    const script = (document.getElementById('scriptInput')?.value || '').trim();
+    if (!script) { showNotification('⚠️ Enter or generate a script first', 'warning'); return; }
+
+    const pct            = parseInt(document.getElementById('mixedSplitSlider')?.value) || 50;
+    const splitPos       = Math.round(script.length * (pct / 100));
+    const vidStyleId     = document.getElementById('mixedVideoStyleSelect')?.value;
+    const imgStyleId     = document.getElementById('mixedImageStyleSelect')?.value;
+    const videoCount     = parseInt(document.getElementById('mixedVideoCount')?.value) || 20;
+    const imageCount     = parseInt(document.getElementById('mixedImageCount')?.value) || 20;
+
+    if (!vidStyleId) { showNotification('⚠️ Select a video style', 'warning'); return; }
+    if (!imgStyleId) { showNotification('⚠️ Select an image style', 'warning'); return; }
+
+    const progressBox   = document.getElementById('pgProgressBox');
+    const resultSection = document.getElementById('pgResultSection');
+    progressBox.style.display = 'block';
+    progressBox.style.borderLeftColor = '#f59e0b';
+    const durMin = ((videoCount * 10) / 60).toFixed(1);
+    progressBox.innerHTML = `<p>🎬+🖼️ Generating mixed prompts…<br>
+        <small style="color:#888;">Step 1/2: ${videoCount} video prompts (first ${pct}% of script = ~${durMin} min) → then ${imageCount} image prompts</small></p>`;
+    resultSection.style.display = 'none';
+    document.getElementById('pgOutputText').value = '';
+
+    try {
+        const r = await fetch('/api/generate-mixed-prompts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                script,
+                split_char_pos: splitPos,
+                video_style_id: vidStyleId,
+                video_count:    videoCount,
+                style_id:       imgStyleId,
+                image_count:    imageCount,
+            })
+        });
+        const d = await r.json();
+        if (!r.ok || !d.success) throw new Error(d.error || 'Generation failed');
+
+        // Build combined output
+        const lines = [
+            `${'═'.repeat(60)}`,
+            `🎬 VIDEO PROMPTS (${d.video_count}) — Style: ${d.vid_style_name}`,
+            `Script: first ${pct}% (${d.split_pos.toLocaleString()} chars) · ≈ ${d.video_duration_min} min of video (each ~10s)`,
+            `${'═'.repeat(60)}`,
+            '',
+            d.video_prompts.join('\n\n'),
+            '',
+            `${'═'.repeat(60)}`,
+            `🖼️ IMAGE PROMPTS (${d.image_count}) — Style: ${d.img_style_name}`,
+            `Script: last ${100-pct}% (${(d.total_chars - d.split_pos).toLocaleString()} chars)`,
+            `${'═'.repeat(60)}`,
+            '',
+            d.image_prompts.join('\n\n'),
+        ];
+        const combined = lines.join('\n');
+        document.getElementById('pgOutputText').value = combined;
+        document.getElementById('pgCountLabel').textContent =
+            `(${d.video_count} video + ${d.image_count} image prompts)`;
+        document.getElementById('pgResultLabel').childNodes[0].textContent = '🎬+🖼️ Mixed Prompts ';
+
+        progressBox.innerHTML = `<p style="color:#22c55e;">✅ ${d.video_count} video + ${d.image_count} image prompts ready!</p>`;
+        resultSection.style.display = 'block';
+        resultSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        showNotification(`✅ Mixed: ${d.video_count} video + ${d.image_count} image prompts!`, 'success');
+    } catch (e) {
+        progressBox.innerHTML = `<p style="color:#ef4444;">❌ ${e.message}</p>`;
+        showNotification('❌ ' + e.message, 'error');
+    }
 }
 
 async function generatePromptsOnly() {

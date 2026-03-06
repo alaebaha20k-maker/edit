@@ -5316,6 +5316,195 @@ def video_styles_delete(style_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+# =============================================================================
+# MIXED GENERATOR — first half: video prompts, second half: image prompts
+# =============================================================================
+
+@app.route('/api/generate-mixed-prompts', methods=['POST'])
+def generate_mixed_prompts():
+    """
+    Split script in two at split_char_pos, generate:
+      - video prompts for the first part  (video_style_id, video_count)
+      - image prompts for the second part (style_id,       image_count)
+
+    Request JSON:
+        {
+            "script":         "full script text",
+            "split_char_pos": 6000,          # char index where split happens
+            "video_style_id": "cinematic_video",
+            "video_count":    30,
+            "style_id":       "cinematic",
+            "image_count":    20
+        }
+    """
+    from auto_images_style_manager import AutoImagesStyleManager
+    from video_style_manager import VideoStyleManager
+    from settings_manager import SettingsManager
+    from config import Config
+    import google.generativeai as genai
+    import time as _time
+
+    CHUNK_SIZE = 15
+
+    _auto_images_formula = SettingsManager.load_formula('auto_images')
+
+    class _SafeDict(dict):
+        def __missing__(self, key):
+            return '{' + key + '}'
+
+    # ---- prompt builders (same logic as generate_prompts_only) ---------------
+    def build_image_prompt(script_text, style, chunk_start, chunk_size, total_count):
+        style_name        = style.get('name', 'Cinematic')
+        style_desc        = style.get('description', '')
+        style_formula_raw = style.get('style_formula', '').strip()
+        visual_rules      = style.get('visual_rules', [])
+        negative_rules    = style.get('negative_rules', [])
+        composition       = style.get('composition', '')
+        lighting          = style.get('lighting', '')
+        color_palette     = style.get('color_palette', [])
+        vr  = '\n'.join([f"- {r}" for r in visual_rules]) if visual_rules else style_desc
+        nr  = '\n'.join([f"- {r}" for r in negative_rules])
+        cp  = ', '.join(color_palette) if color_palette else 'rich, vivid colors'
+        end = chunk_start + chunk_size - 1
+
+        if style_formula_raw:
+            style_sec = f"═══ STYLE: {style_name} ═══\n{style_formula_raw}\n══════════════════════"
+        else:
+            style_sec = f"═══ STYLE BIBLE: {style_name} ═══\n{style_desc}\nVISUAL RULES:\n{vr}\nNEGATIVE RULES:\n{nr}\nComposition: {composition}\nLighting: {lighting}\nColor Palette: {cp}\n══════════════════════"
+
+        formula_rendered = _auto_images_formula.format_map(_SafeDict(
+            n_images=chunk_size, style_name=style_name,
+            lighting=lighting, composition=composition, color_palette=cp,
+        ))
+        return f"""You are a professional image prompt writer (Flux, Midjourney, SDXL).
+TASK: Generate EXACTLY {chunk_size} image prompts — scenes {chunk_start} to {end} of {total_count} total.
+Script section: this is the SECOND HALF of the full video — generate the final {total_count} scenes from this script segment.
+ALL prompts in ENGLISH. Chronological order. Each = a distinct script moment.
+
+═══ SCRIPT SEGMENT ═══
+{script_text}
+═══════════════════════
+
+{style_sec}
+
+{formula_rendered}
+
+OUTPUT RULES:
+1. EXACTLY {chunk_size} prompts separated by ONE blank line.
+2. NO labels, NO numbering, NO preamble, NO explanation.
+3. One continuous paragraph per prompt — no internal line breaks.
+4. Start each: "{style_name} style,"
+5. End each: --no text, no captions, no watermarks, no labels
+OUTPUT ONLY THE {chunk_size} PROMPTS."""
+
+    def build_video_prompt(script_text, style, chunk_start, chunk_size, total_count):
+        style_name    = style.get('name', 'Cinematic')
+        style_formula = style.get('style_formula', '').strip()
+        end = chunk_start + chunk_size - 1
+        style_sec = f"═══ VIDEO STYLE: {style_name} ═══\n{style_formula or 'Cinematic quality, smooth camera movement'}\n══════════════════════"
+        return f"""You are a professional video prompt writer (Sora, Runway, Kling, Pika).
+TASK: Generate EXACTLY {chunk_size} video prompts — scenes {chunk_start} to {end} of {total_count} total.
+Script section: this is the FIRST HALF of the full video — generate the opening {total_count} scenes from this script segment.
+ALL prompts in ENGLISH. Chronological order. Each = a distinct script moment (5–10 seconds each).
+
+═══ SCRIPT SEGMENT ═══
+{script_text}
+═══════════════════════
+
+{style_sec}
+
+OUTPUT RULES:
+1. EXACTLY {chunk_size} prompts separated by ONE blank line.
+2. NO labels, NO numbering, NO preamble, NO explanation.
+3. One continuous paragraph per prompt — no internal line breaks.
+4. Each prompt MUST include: duration ("X seconds,"), camera movement, subject + action from that script moment, mood/lighting, render quality suffix.
+5. End each: high quality, smooth motion, --no text --no subtitles --no watermarks
+OUTPUT ONLY THE {chunk_size} PROMPTS."""
+
+    # ---- main logic ----------------------------------------------------------
+    def run_chunks(script_segment, style, total_count, prompt_builder, model):
+        results = []
+        remaining = total_count
+        chunk_start = 1
+        while remaining > 0:
+            chunk_size = min(CHUNK_SIZE, remaining)
+            pt = prompt_builder(script_segment, style, chunk_start, chunk_size, total_count)
+            response = model.generate_content(pt)
+            parts = [p.strip() for p in response.text.strip().split('\n\n') if p.strip() and len(p.strip()) > 40]
+            results.extend(parts[:chunk_size])
+            chunk_start += chunk_size
+            remaining   -= chunk_size
+            if remaining > 0:
+                _time.sleep(2)
+        return results
+
+    try:
+        data = request.get_json() or {}
+        script        = data.get('script', '').strip()
+        split_pos     = int(data.get('split_char_pos', len(script) // 2))
+        vid_style_id  = data.get('video_style_id', 'cinematic_video')
+        video_count   = int(data.get('video_count', 20))
+        img_style_id  = data.get('style_id', 'cinematic')
+        image_count   = int(data.get('image_count', 20))
+
+        if not script:
+            return jsonify({'error': 'Script is required'}), 400
+
+        # Clamp split
+        split_pos = max(100, min(split_pos, len(script) - 100))
+
+        script_first  = script[:split_pos].strip()
+        script_second = script[split_pos:].strip()
+
+        vid_style = VideoStyleManager.get(vid_style_id)
+        if not vid_style:
+            return jsonify({'error': f'Video style not found: {vid_style_id}'}), 404
+        img_style = AutoImagesStyleManager.get_style(img_style_id)
+        if not img_style:
+            return jsonify({'error': f'Image style not found: {img_style_id}'}), 404
+
+        api_key = Config.get_director_gemini_api_key()
+        if not api_key:
+            return jsonify({'error': 'Director Gemini API key not configured'}), 500
+
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(
+            model_name=Config.get_director_gemini_model(),
+            generation_config={'temperature': 0.85, 'top_p': 0.95, 'max_output_tokens': 32768}
+        )
+
+        # --- generate video prompts (first half) ---
+        print(f'\n🎬 Mixed: generating {video_count} video prompts (first {split_pos} chars)…')
+        video_prompts = run_chunks(script_first, vid_style, video_count, build_video_prompt, model)
+
+        # pause between halves
+        _time.sleep(3)
+
+        # --- generate image prompts (second half) ---
+        print(f'\n🖼️  Mixed: generating {image_count} image prompts (remaining {len(script)-split_pos} chars)…')
+        image_prompts = run_chunks(script_second, img_style, image_count, build_image_prompt, model)
+
+        video_duration_min = round((video_count * 10) / 60, 1)
+
+        return jsonify({
+            'success':       True,
+            'video_prompts': video_prompts,
+            'image_prompts': image_prompts,
+            'video_count':   len(video_prompts),
+            'image_count':   len(image_prompts),
+            'split_pos':     split_pos,
+            'total_chars':   len(script),
+            'video_duration_min': video_duration_min,
+            'vid_style_name': vid_style.get('name'),
+            'img_style_name': img_style.get('name'),
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     print("="*60)
     print("🎬 VIDEO EDITOR API SERVER")
