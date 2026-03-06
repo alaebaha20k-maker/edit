@@ -219,8 +219,8 @@ class ScriptGenerator3Chunk:
         full_script = self._clean_script(full_script)
 
         # ── Length enforcement ───────────────────────────────────────────
-        # Goal: result must be ≥ target, and at most target + 5 000 chars.
-        MAX_OVERSHOOT = 5000
+        # Goal: result must be ≥ target, and at most target + 300 chars.
+        MAX_OVERSHOOT = 300
 
         char_count = len(full_script)
         if verbose:
@@ -244,10 +244,10 @@ class ScriptGenerator3Chunk:
             if verbose:
                 print(f"   ✅ After extension: {char_count:,} chars")
 
-        # --- Trim if over by more than 5 000 chars ---
+        # --- Trim to target + 300 chars (sentence-boundary-aware) ---
         if char_count > length + MAX_OVERSHOOT:
             if verbose:
-                print(f"   ✂️  Over by {char_count - length:,} — trimming to {length + MAX_OVERSHOOT:,}...")
+                print(f"   ✂️  Over by {char_count - length:,} — trimming to ~{length:,}...")
             full_script = self._trim_to_length(full_script, length + MAX_OVERSHOOT)
             char_count = len(full_script)
             if verbose:
@@ -591,9 +591,9 @@ START WRITING IN {language.upper()} NOW:"""
         """
         errors = []
 
-        # Check length: must be ≥ target and ≤ target + 5 000
+        # Check length: must be ≥ target and ≤ target + 300
         actual_length = len(script)
-        max_length = target_length + 5000
+        max_length = target_length + 300
 
         if actual_length < target_length:
             errors.append(f"Too short: {actual_length:,} < {target_length:,}")
