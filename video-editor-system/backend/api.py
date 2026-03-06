@@ -4853,6 +4853,8 @@ def alae_baha_export():
     from settings_manager import SettingsManager
     from niche_manager import NicheManager
     from auto_images_style_manager import AutoImagesStyleManager
+    from seo_formula_manager import SeoFormulaManager
+    from video_style_manager import VideoStyleManager
 
     try:
         data = request.get_json() or {}
@@ -4863,7 +4865,7 @@ def alae_baha_export():
 
         bundle = {
             'alae_baha_bundle': True,
-            'version': '2.0',
+            'version': '3.0',
             'exported_at': datetime.utcnow().isoformat(),
             'api_keys': settings.get('api_keys', {}),
             'voice_settings': settings.get('voice_settings', {}),
@@ -4873,9 +4875,12 @@ def alae_baha_export():
                 'script':      SettingsManager.load_formula('script'),
                 'image':       SettingsManager.load_formula('image'),
                 'auto_images': SettingsManager.load_formula('auto_images'),
+                'seo':         SettingsManager.load_formula('seo'),
             },
-            'niches': NicheManager.get_all_niches(),
+            'niches':       NicheManager.get_all_niches(),
             'image_styles': AutoImagesStyleManager.get_all_styles(),
+            'seo_formulas': SeoFormulaManager.get_all(),          # named SEO presets
+            'video_styles': [s for s in VideoStyleManager.get_all() if not s.get('built_in')],  # custom only
         }
 
         # Also include api_config.json if present
@@ -4887,7 +4892,10 @@ def alae_baha_export():
             except Exception:
                 bundle['api_config'] = {}
 
-        print(f"✅ Export bundle: {len(bundle['niches'])} niches, {len(bundle['image_styles'])} styles")
+        print(f"✅ Export bundle v3.0: {len(bundle['niches'])} niches, "
+              f"{len(bundle['image_styles'])} image styles, "
+              f"{len(bundle['video_styles'])} video styles, "
+              f"{len(bundle['seo_formulas'])} SEO formulas")
         return jsonify({'success': True, 'bundle': bundle})
 
     except Exception as e:
@@ -4901,8 +4909,11 @@ def alae_baha_import():
     from settings_manager import SettingsManager
     from niche_manager import NicheManager
     from auto_images_style_manager import AutoImagesStyleManager
+    from seo_formula_manager import SeoFormulaManager
+    from video_style_manager import VideoStyleManager
 
-    BUILTIN_STYLE_IDS = {'cinematic', 'photorealistic', 'artistic', 'animated'}
+    BUILTIN_IMAGE_IDS = {'cinematic', 'photorealistic', 'artistic', 'animated'}
+    BUILTIN_VIDEO_IDS = {'cinematic_video', 'documentary_video', 'animated_video'}
 
     try:
         data = request.get_json() or {}
@@ -4917,6 +4928,8 @@ def alae_baha_import():
             'api_keys': False, 'formulas': False,
             'niches': 0, 'niches_skipped': 0,
             'image_styles': 0, 'image_styles_skipped': 0,
+            'video_styles': 0, 'video_styles_skipped': 0,
+            'seo_formulas': 0, 'seo_formulas_skipped': 0,
             'errors': []
         }
 
@@ -4947,19 +4960,19 @@ def alae_baha_import():
             except Exception:
                 pass
 
-        video = bundle.get('video_settings', {})
-        if video:
+        video_set = bundle.get('video_settings', {})
+        if video_set:
             try:
                 SettingsManager.save_video_settings(
-                    enable_timed_zoom=video.get('enable_timed_zoom'),
-                    zoom_direction=video.get('zoom_direction'),
-                    zoom_duration=video.get('zoom_duration'),
-                    zoom_amount=video.get('zoom_amount'),
+                    enable_timed_zoom=video_set.get('enable_timed_zoom'),
+                    zoom_direction=video_set.get('zoom_direction'),
+                    zoom_duration=video_set.get('zoom_duration'),
+                    zoom_amount=video_set.get('zoom_amount'),
                 )
             except Exception:
                 pass
 
-        # --- Formulas ---
+        # --- Formulas (title, script, image, auto_images, seo) ---
         formulas = bundle.get('formulas', {})
         if formulas:
             SettingsManager.save_formulas(
@@ -4967,6 +4980,7 @@ def alae_baha_import():
                 script_formula=formulas.get('script'),
                 image_formula=formulas.get('image'),
                 auto_images_formula=formulas.get('auto_images'),
+                seo_formula=formulas.get('seo'),
             )
             results['formulas'] = True
 
@@ -4987,36 +5001,33 @@ def alae_baha_import():
                 )
                 results['niches'] += 1
                 existing_niche_names.add(name)
-                print(f"   ✅ Niche imported: {name}")
+                print(f"   ✅ Niche: {name}")
             except Exception as e:
-                err = f"Niche '{name}': {e}"
-                results['errors'].append(err)
-                print(f"   ❌ {err}")
+                results['errors'].append(f"Niche '{name}': {e}")
 
-        # --- Auto Image Styles (AutoImagesStyleManager — skip built-ins & duplicates) ---
-        existing_style_names = {s['name'] for s in AutoImagesStyleManager.get_all_styles()}
+        # --- Auto Image Styles (skip built-ins & name duplicates) ---
+        existing_img_names = {s['name'] for s in AutoImagesStyleManager.get_all_styles()}
         for style in bundle.get('image_styles', []):
-            name = style.get('name', '').strip()
+            name     = style.get('name', '').strip()
             style_id = style.get('id', '')
-            if not name:
-                continue
-            # Skip built-in styles — they already exist on every machine
-            if style_id in BUILTIN_STYLE_IDS:
+            if not name or style_id in BUILTIN_IMAGE_IDS:
                 results['image_styles_skipped'] += 1
                 continue
-            if name in existing_style_names:
+            if name in existing_img_names:
                 results['image_styles_skipped'] += 1
                 continue
             try:
-                visual_rules = style.get('visual_rules', [])
-                # If exported from old format (no visual_rules), build from description
-                if len(visual_rules) < 3:
+                style_formula = style.get('style_formula', '')
+                visual_rules  = style.get('visual_rules', [])
+                # If no formula and no rules, build minimal rules from description
+                if not style_formula and len(visual_rules) < 3:
                     desc = style.get('description', 'Professional style')
                     visual_rules = [desc, 'High quality output', 'Consistent visual style']
 
                 AutoImagesStyleManager.create_style(
                     name=name,
                     description=style.get('description', ''),
+                    style_formula=style_formula,
                     visual_rules=visual_rules[:10],
                     negative_rules=style.get('negative_rules', ['Low quality', 'Blurry'])[:10],
                     composition=style.get('composition', ''),
@@ -5024,14 +5035,57 @@ def alae_baha_import():
                     color_palette=style.get('color_palette', [])[:10],
                 )
                 results['image_styles'] += 1
-                existing_style_names.add(name)
-                print(f"   ✅ Style imported: {name}")
+                existing_img_names.add(name)
+                print(f"   ✅ Image style: {name}")
             except Exception as e:
-                err = f"Style '{name}': {e}"
-                results['errors'].append(err)
-                print(f"   ❌ {err}")
+                results['errors'].append(f"Image style '{name}': {e}")
 
-        print(f"✅ Import complete: {results['niches']} niches, {results['image_styles']} styles, {len(results['errors'])} errors")
+        # --- Video Styles (skip built-ins & name duplicates) ---
+        existing_vid_names = {s['name'] for s in VideoStyleManager.get_all() if not s.get('built_in')}
+        for style in bundle.get('video_styles', []):
+            name     = style.get('name', '').strip()
+            style_id = style.get('id', '')
+            if not name or style_id in BUILTIN_VIDEO_IDS:
+                results['video_styles_skipped'] += 1
+                continue
+            if name in existing_vid_names:
+                results['video_styles_skipped'] += 1
+                continue
+            try:
+                VideoStyleManager.create(
+                    name=name,
+                    style_formula=style.get('style_formula', ''),
+                    description=style.get('description', ''),
+                )
+                results['video_styles'] += 1
+                existing_vid_names.add(name)
+                print(f"   ✅ Video style: {name}")
+            except Exception as e:
+                results['errors'].append(f"Video style '{name}': {e}")
+
+        # --- SEO Formula Presets (skip name duplicates) ---
+        existing_seo_names = {f['name'] for f in SeoFormulaManager.get_all()}
+        for preset in bundle.get('seo_formulas', []):
+            name    = preset.get('name', '').strip()
+            formula = preset.get('formula', '').strip()
+            if not name or not formula:
+                continue
+            if name in existing_seo_names:
+                results['seo_formulas_skipped'] += 1
+                continue
+            try:
+                SeoFormulaManager.create(name=name, formula=formula)
+                results['seo_formulas'] += 1
+                existing_seo_names.add(name)
+                print(f"   ✅ SEO formula: {name}")
+            except Exception as e:
+                results['errors'].append(f"SEO formula '{name}': {e}")
+
+        print(f"✅ Import complete: {results['niches']} niches, "
+              f"{results['image_styles']} image styles, "
+              f"{results['video_styles']} video styles, "
+              f"{results['seo_formulas']} SEO formulas, "
+              f"{len(results['errors'])} errors")
         return jsonify({
             'success': True,
             'message': 'All settings imported successfully!',

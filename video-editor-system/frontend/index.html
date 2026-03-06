@@ -1569,9 +1569,13 @@ TAGS: comma-separated, under 400 chars, match the title keywords"></textarea>
                     if (f.script) { stored.script_formulas = f.script; if (window.appState) { appState.scriptFormulas = f.script; if (typeof renderScriptFormulas === 'function') renderScriptFormulas(f.script); if (typeof updateScriptFormulaDropdown === 'function') updateScriptFormulaDropdown(f.script); } }
                     localStorage.setItem('videoToolSettings', JSON.stringify(stored));
 
-                    // Refresh niches and image styles in the UI
-                    if (typeof loadNiches          === 'function') loadNiches();
-                    if (typeof loadAutoImageStyles  === 'function') loadAutoImageStyles();
+                    // Refresh all UI lists
+                    if (typeof loadNiches           === 'function') loadNiches();
+                    if (typeof loadAutoImageStyles   === 'function') loadAutoImageStyles();
+                    if (typeof loadCustomStyles      === 'function') loadCustomStyles();
+                    if (typeof loadVideoStylesList   === 'function') loadVideoStylesList();
+                    if (typeof loadSeoFormulas       === 'function') loadSeoFormulas();
+                    if (typeof loadVideoStylesSelect === 'function') loadVideoStylesSelect();
                 } catch(_) {}
 
                 const errs = r.errors || [];
@@ -1579,12 +1583,14 @@ TAGS: comma-separated, under 400 chars, match the title keywords"></textarea>
                     <p style="color:#4ade80; font-weight:700; margin:0 0 8px;">✅ Import Complete!</p>
                     <ul style="margin:0; padding-left:16px; font-size:13px; line-height:1.8;">
                         <li>API Keys: ${r.api_keys ? '✅ Loaded into Settings' : '⚠️ Skipped'}</li>
-                        <li>Formulas: ${r.formulas ? '✅ Loaded' : '⚠️ Skipped'}</li>
+                        <li>Formulas (title/script/image/auto-images/SEO): ${r.formulas ? '✅ Loaded' : '⚠️ Skipped'}</li>
                         <li>Niches: <strong>${r.niches || 0}</strong> imported${r.niches_skipped ? `, ${r.niches_skipped} already existed` : ''}</li>
                         <li>Image Styles: <strong>${r.image_styles || 0}</strong> imported${r.image_styles_skipped ? `, ${r.image_styles_skipped} already existed` : ''}</li>
+                        <li>Video Styles: <strong>${r.video_styles || 0}</strong> imported${r.video_styles_skipped ? `, ${r.video_styles_skipped} already existed` : ''}</li>
+                        <li>SEO Formula Presets: <strong>${r.seo_formulas || 0}</strong> imported${r.seo_formulas_skipped ? `, ${r.seo_formulas_skipped} already existed` : ''}</li>
                     </ul>
                     ${errs.length ? `<div style="margin-top:8px; padding:8px; background:#1e0a0a; border-radius:6px; font-size:11px; color:#fca5a5;"><strong>Errors:</strong><br>${errs.join('<br>')}</div>` : ''}
-                    <p style="margin:10px 0 0; font-size:12px; color:#86efac;">✅ All fields are filled — just click <strong>💾 Save Settings</strong> to save everything!</p>
+                    <p style="margin:10px 0 0; font-size:12px; color:#86efac;">✅ All fields loaded — click <strong>💾 Save Settings</strong> to save API keys!</p>
                 </div>`;
             } catch(e) {
                 statusEl.innerHTML = `<span style="color:#ef4444;">❌ Error: ${e.message}</span>`;
