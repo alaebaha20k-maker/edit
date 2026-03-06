@@ -3701,10 +3701,10 @@ def seo_generator():
         else:
             formula = SeoFormulaManager.get_default_formula_text()
 
-        # Gemini API key
-        gemini_key = Config.get_director_gemini_key() or Config.get_gemini_api_key()
+        # Gemini API key — use Gemini Imagen 3 key, fall back to main Gemini key
+        gemini_key = Config.get_gemini_image_api_key() or Config.get_gemini_api_key()
         if not gemini_key:
-            return jsonify({'success': False, 'error': 'No Gemini API key configured. Add one in Settings.'}), 400
+            return jsonify({'success': False, 'error': 'No Gemini API key configured. Add the Gemini Imagen 3 key in Settings.'}), 400
 
         link_instruction = f'Include this link naturally in the description: {link}' if link else 'No product link provided — skip the CTA/link section.'
 

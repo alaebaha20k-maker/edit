@@ -5461,22 +5461,24 @@ function saveSeoDefaultLink() {
 // ---- SEO Generator (main section) ----
 
 function seoAutoFill() {
-    const titleEl  = document.getElementById('videoTitle')
-                  || document.getElementById('titleOutput')
-                  || document.getElementById('generatedTitle');
-    const scriptEl = document.getElementById('scriptText')
-                  || document.getElementById('scriptOutput')
-                  || document.getElementById('generatedScript');
+    // Use the real element IDs from the main page
+    const titleEl  = document.getElementById('titleInput');
+    const scriptEl = document.getElementById('scriptInput');
 
-    if (titleEl  && titleEl.value)  document.getElementById('seoTitle').value  = titleEl.value;
-    if (scriptEl && scriptEl.value) document.getElementById('seoScript').value = scriptEl.value;
+    const seoTitleEl  = document.getElementById('seoTitle');
+    const seoScriptEl = document.getElementById('seoScript');
 
-    const savedLink = localStorage.getItem('seoDefaultLink');
-    if (savedLink && !document.getElementById('seoLink').value) {
-        document.getElementById('seoLink').value = savedLink;
+    if (seoTitleEl  && titleEl  && titleEl.value)  seoTitleEl.value  = titleEl.value;
+    if (seoScriptEl && scriptEl && scriptEl.value) seoScriptEl.value = scriptEl.value;
+
+    // Pre-fill link from saved default (only when empty)
+    const seoLinkEl = document.getElementById('seoLink');
+    if (seoLinkEl && !seoLinkEl.value) {
+        const savedLink = localStorage.getItem('seoDefaultLink');
+        if (savedLink) seoLinkEl.value = savedLink;
     }
 
-    // Reload formula options in case new presets were saved
+    // Reload formula dropdown in case new presets were saved
     loadSeoFormulas();
 }
 
