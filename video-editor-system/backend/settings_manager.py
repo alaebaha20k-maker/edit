@@ -373,6 +373,50 @@ LANGUAGE: Auto-detect from title and script. Write EVERYTHING in that language."
             'gender': 'Male',
             'description': 'Voix masculine profonde et autoritaire - idéale pour les documentaires',
             'preview_url': ''
+        },
+        # German voices (de-DE)
+        'johanna': {
+            'name': 'Johanna',
+            'language': 'de-DE',
+            'gender': 'Female',
+            'description': 'Ruhige ältere deutsche Stimme, tief und rauchig',
+            'preview_url': ''
+        },
+        'josef': {
+            'name': 'Josef',
+            'language': 'de-DE',
+            'gender': 'Male',
+            'description': 'Männliche deutsche Stimme, klar und professionell',
+            'preview_url': ''
+        },
+        # Spanish voices (es-ES)
+        'diego': {
+            'name': 'Diego',
+            'language': 'es-ES',
+            'gender': 'Male',
+            'description': 'Voz masculina suave y calmada, perfecta para narración',
+            'preview_url': ''
+        },
+        'lupita': {
+            'name': 'Lupita',
+            'language': 'es-ES',
+            'gender': 'Female',
+            'description': 'Voz femenina joven, vibrante y enérgica',
+            'preview_url': ''
+        },
+        'miguel': {
+            'name': 'Miguel',
+            'language': 'es-ES',
+            'gender': 'Male',
+            'description': 'Voz masculina adulta calmada, perfecta para storytelling',
+            'preview_url': ''
+        },
+        'rafael': {
+            'name': 'Rafael',
+            'language': 'es-ES',
+            'gender': 'Male',
+            'description': 'Voz masculina profunda y serena, ideal para narración',
+            'preview_url': ''
         }
     }
 
@@ -426,7 +470,8 @@ LANGUAGE: Auto-detect from title and script. Write EVERYTHING in that language."
     def save_api_keys(cls, gemini: str = None, director_gemini: str = None,
                      gemini_image: str = None,
                      replicate: str = None, inworld: str = None, inworld_secret: str = None,
-                     pexels: str = None, pixabay: str = None, unsplash: str = None) -> Dict:
+                     pexels: str = None, pixabay: str = None, unsplash: str = None,
+                     gemini_translate_1: str = None, gemini_translate_2: str = None) -> Dict:
         """
         Save API keys to settings file
 
@@ -469,6 +514,10 @@ LANGUAGE: Auto-detect from title and script. Write EVERYTHING in that language."
             settings['api_keys']['pixabay'] = pixabay
         if unsplash is not None and unsplash != '':
             settings['api_keys']['unsplash'] = unsplash
+        if gemini_translate_1 is not None and gemini_translate_1 != '':
+            settings['api_keys']['gemini_translate_1'] = gemini_translate_1
+        if gemini_translate_2 is not None and gemini_translate_2 != '':
+            settings['api_keys']['gemini_translate_2'] = gemini_translate_2
 
         # Save to file
         with open(cls.SETTINGS_FILE, 'w') as f:
@@ -482,7 +531,9 @@ LANGUAGE: Auto-detect from title and script. Write EVERYTHING in that language."
             gemini_image_key=gemini_image if gemini_image else None,
             replicate_token=replicate if replicate else None,
             inworld_key=inworld if inworld else None,
-            inworld_secret=inworld_secret if inworld_secret else None
+            inworld_secret=inworld_secret if inworld_secret else None,
+            gemini_translate_1=gemini_translate_1 if gemini_translate_1 else None,
+            gemini_translate_2=gemini_translate_2 if gemini_translate_2 else None
         )
 
         return settings

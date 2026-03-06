@@ -237,15 +237,17 @@ function closeSettings() {
 
 function _applyApiKeysToForm(api_keys) {
     const setField = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
-    setField('geminiKey',        api_keys.gemini);
-    setField('directorGeminiKey',api_keys.director_gemini);
-    setField('geminiImageKey',   api_keys.gemini_image);
-    setField('replicateKey',     api_keys.replicate);
-    setField('inworldKey',       api_keys.inworld);
-    setField('inworldSecret',    api_keys.inworld_secret);
-    setField('pexelsKey',        api_keys.pexels);
-    setField('pixabayKey',       api_keys.pixabay);
-    setField('unsplashKey',      api_keys.unsplash);
+    setField('geminiKey',           api_keys.gemini);
+    setField('directorGeminiKey',   api_keys.director_gemini);
+    setField('geminiImageKey',      api_keys.gemini_image);
+    setField('replicateKey',        api_keys.replicate);
+    setField('inworldKey',          api_keys.inworld);
+    setField('inworldSecret',       api_keys.inworld_secret);
+    setField('pexelsKey',           api_keys.pexels);
+    setField('pixabayKey',          api_keys.pixabay);
+    setField('unsplashKey',         api_keys.unsplash);
+    setField('geminiTranslate1Key', api_keys.gemini_translate_1);
+    setField('geminiTranslate2Key', api_keys.gemini_translate_2);
 }
 
 const loadSettings = () => {
@@ -313,7 +315,9 @@ const saveSettings = async () => {
                 inworld_secret: document.getElementById('inworldSecret')?.value || '',
                 pexels: document.getElementById('pexelsKey')?.value || '',
                 pixabay: document.getElementById('pixabayKey')?.value || '',
-                unsplash: document.getElementById('unsplashKey')?.value || ''
+                unsplash: document.getElementById('unsplashKey')?.value || '',
+                gemini_translate_1: document.getElementById('geminiTranslate1Key')?.value || '',
+                gemini_translate_2: document.getElementById('geminiTranslate2Key')?.value || ''
             },
             title_formulas: appState.titleFormulas || [],
             script_formulas: appState.scriptFormulas || [],
@@ -338,7 +342,9 @@ const saveSettings = async () => {
                     inworld_secret: settings.api_keys.inworld_secret,
                     pexels: settings.api_keys.pexels,
                     pixabay: settings.api_keys.pixabay,
-                    unsplash: settings.api_keys.unsplash
+                    unsplash: settings.api_keys.unsplash,
+                    gemini_translate_1: settings.api_keys.gemini_translate_1,
+                    gemini_translate_2: settings.api_keys.gemini_translate_2
                 })
             });
             if (!response.ok) console.warn('Failed to save API keys to backend');
@@ -998,24 +1004,9 @@ async function generateScript() {
                 throw new Error(data.error || 'Script generation failed');
             }
 
-            // Store script in both window.videoData AND the textarea input
+            // Store script internally (not displayed — user downloads it)
             window.videoData.script = data.script;
             appState.generatedScript = data.script;
-
-            // Populate the scriptInput textarea and flash it so user can see it updated
-            const scriptInput = document.getElementById('scriptInput');
-            if (scriptInput) {
-                scriptInput.value = data.script;
-                // Visual flash: green border for 1.5s so user knows the textarea updated
-                scriptInput.style.transition = 'border-color 0.3s';
-                scriptInput.style.borderColor = '#4CAF50';
-                scriptInput.style.borderWidth = '3px';
-                setTimeout(() => {
-                    scriptInput.style.borderColor = '';
-                    scriptInput.style.borderWidth = '';
-                }, 1500);
-                scriptInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
 
             // DON'T display full script (can be very long - just show success message)
             if (resultBox) {
@@ -1677,6 +1668,70 @@ function downloadScript() {
     URL.revokeObjectURL(url);
 
     showNotification(`✅ Script downloaded: ${filename}`, 'success');
+}
+
+async function translateAndDownload() {
+    const script = window.videoData.script || appState.generatedScript || document.getElementById('scriptInput')?.value;
+    if (!script || script.trim().length === 0) {
+        showNotification('⚠️ No script available to translate', 'warning');
+        return;
+    }
+
+    const langMap = { fr: 'translateFR', es: 'translateES', de: 'translateDE' };
+    const selected = Object.entries(langMap)
+        .filter(([, id]) => document.getElementById(id)?.checked)
+        .map(([code]) => code);
+
+    if (selected.length === 0) {
+        showNotification('⚠️ Select at least one language to translate', 'warning');
+        return;
+    }
+
+    const progressEl = document.getElementById('translateProgress');
+    if (progressEl) {
+        progressEl.style.display = 'block';
+        progressEl.textContent = `⏳ Translating to ${selected.map(l => l.toUpperCase()).join(', ')}… This may take a minute.`;
+    }
+
+    try {
+        const res = await fetch('/api/translate-script', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ script, languages: selected })
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+            throw new Error(data.error || 'Translation failed');
+        }
+
+        const title = document.getElementById('titleInput')?.value || window.videoData.title || 'script';
+        const baseFilename = title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+
+        const langLabels = { fr: 'french', es: 'spanish', de: 'german' };
+        let downloaded = 0;
+        for (const [lang, text] of Object.entries(data.translations)) {
+            if (!text) continue;
+            const filename = `${baseFilename}_${langLabels[lang] || lang}.txt`;
+            const blob = new Blob([text], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = filename;
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a); URL.revokeObjectURL(url);
+            downloaded++;
+        }
+
+        const errCount = Object.keys(data.errors || {}).length;
+        if (progressEl) {
+            progressEl.textContent = `✅ Downloaded ${downloaded} translated script(s)${errCount ? ` · ⚠️ ${errCount} error(s)` : ''}`;
+        }
+        showNotification(`✅ ${downloaded} translated scripts downloaded!`, 'success');
+
+    } catch (err) {
+        if (progressEl) progressEl.textContent = `❌ ${err.message}`;
+        showNotification('❌ Translation failed: ' + err.message, 'error');
+    }
 }
 
 // =============================================================================
@@ -5353,34 +5408,48 @@ console.log('✅ Avatar AI functionality loaded');
 // Loaded from API on init; fallback to this if API fails.
 const VOICE_CATALOGUE = {
     male: [
-        { id: 'Dennis',   desc: 'Deep · Authoritative · News anchor' },
-        { id: 'Mark',     desc: 'Professional · Clear · Corporate' },
-        { id: 'Theodore', desc: 'Warm · Friendly · Storytelling' },
-        { id: 'Craig',    desc: 'Strong · Confident · Documentary' },
-        { id: 'Edward',   desc: 'Refined · Calm · Narration' },
-        { id: 'Timothy',  desc: 'Young · Energetic · Casual' },
-        { id: 'Simon',    desc: 'Smooth · Articulate · Podcast' },
-        { id: 'Oliver',   desc: 'Clear · Engaging · Explainer' },
-        { id: 'Elliott',  desc: 'Rich · Measured · Drama' },
-        { id: 'James',    desc: 'Classic · Trustworthy · Broadcast' },
-        { id: 'Liam',     desc: 'Bright · Conversational · Friendly' },
-        { id: 'Noah',     desc: 'Deep · Calm · Meditation' },
-        { id: 'Ethan',    desc: 'Upbeat · Modern · Tech' },
-        { id: 'Ryan',     desc: 'Casual · Relatable · Everyday' },
-        { id: 'Logan',    desc: 'Bold · Dynamic · Promo' },
-        { id: 'Blake',    desc: 'Smooth · Cool · Modern' },
-        { id: 'Clive',    desc: 'Deep · Calm · Authoritative' },
-        { id: 'Mathieu',  desc: 'Naturel · Professionnel · FR', lang: 'fr-FR' },
-        { id: 'Étienne',  desc: 'Chaleureux · Storytelling · FR', lang: 'fr-FR' },
-        { id: 'Alain',    desc: 'Profond · Autoritaire · FR',    lang: 'fr-FR' },
+        // English
+        { id: 'Dennis',   desc: 'Deep · Authoritative · News anchor',   lang: 'en-US' },
+        { id: 'Mark',     desc: 'Professional · Clear · Corporate',      lang: 'en-US' },
+        { id: 'Theodore', desc: 'Warm · Friendly · Storytelling',        lang: 'en-US' },
+        { id: 'Craig',    desc: 'Strong · Confident · Documentary',      lang: 'en-US' },
+        { id: 'Edward',   desc: 'Refined · Calm · Narration',            lang: 'en-US' },
+        { id: 'Timothy',  desc: 'Young · Energetic · Casual',            lang: 'en-US' },
+        { id: 'Simon',    desc: 'Smooth · Articulate · Podcast',         lang: 'en-US' },
+        { id: 'Oliver',   desc: 'Clear · Engaging · Explainer',          lang: 'en-US' },
+        { id: 'Elliott',  desc: 'Rich · Measured · Drama',               lang: 'en-US' },
+        { id: 'James',    desc: 'Classic · Trustworthy · Broadcast',     lang: 'en-US' },
+        { id: 'Liam',     desc: 'Bright · Conversational · Friendly',    lang: 'en-US' },
+        { id: 'Noah',     desc: 'Deep · Calm · Meditation',              lang: 'en-US' },
+        { id: 'Ethan',    desc: 'Upbeat · Modern · Tech',                lang: 'en-US' },
+        { id: 'Ryan',     desc: 'Casual · Relatable · Everyday',         lang: 'en-US' },
+        { id: 'Logan',    desc: 'Bold · Dynamic · Promo',                lang: 'en-US' },
+        { id: 'Blake',    desc: 'Smooth · Cool · Modern',                lang: 'en-US' },
+        { id: 'Clive',    desc: 'Deep · Calm · Authoritative',           lang: 'en-US' },
+        // French
+        { id: 'Mathieu',  desc: 'Naturel · Professionnel · FR',          lang: 'fr-FR' },
+        { id: 'Étienne',  desc: 'Chaleureux · Storytelling · FR',        lang: 'fr-FR' },
+        { id: 'Alain',    desc: 'Profond · Autoritaire · FR',            lang: 'fr-FR' },
+        // German
+        { id: 'Josef',    desc: 'Klar · Professionell · DE',             lang: 'de-DE' },
+        // Spanish
+        { id: 'Diego',    desc: 'Suave · Calmado · Narración · ES',      lang: 'es-ES' },
+        { id: 'Miguel',   desc: 'Cálido · Storytelling · ES',            lang: 'es-ES' },
+        { id: 'Rafael',   desc: 'Profundo · Sereno · Narración · ES',    lang: 'es-ES' },
     ],
     female: [
-        { id: 'Olivia',    desc: 'Elegant · Smooth · Premium' },
-        { id: 'Sarah',     desc: 'Warm · Engaging · Conversational' },
-        { id: 'Ashley',    desc: 'Energetic · Bright · Upbeat' },
-        { id: 'Elizabeth', desc: 'Professional · Clear · Corporate' },
-        { id: 'Wendy',     desc: 'Soft · Gentle · Soothing' },
-        { id: 'Hélène',   desc: 'Douce · Élégante · FR',        lang: 'fr-FR' },
+        // English
+        { id: 'Olivia',    desc: 'Elegant · Smooth · Premium',           lang: 'en-US' },
+        { id: 'Sarah',     desc: 'Warm · Engaging · Conversational',     lang: 'en-US' },
+        { id: 'Ashley',    desc: 'Energetic · Bright · Upbeat',          lang: 'en-US' },
+        { id: 'Elizabeth', desc: 'Professional · Clear · Corporate',     lang: 'en-US' },
+        { id: 'Wendy',     desc: 'Soft · Gentle · Soothing',             lang: 'en-US' },
+        // French
+        { id: 'Hélène',   desc: 'Douce · Élégante · FR',                lang: 'fr-FR' },
+        // German
+        { id: 'Johanna',   desc: 'Ruhig · Tief · Smoky · DE',           lang: 'de-DE' },
+        // Spanish
+        { id: 'Lupita',    desc: 'Vibrante · Energética · ES',           lang: 'es-ES' },
     ],
 };
 
@@ -5390,8 +5459,9 @@ function getVoiceLang(voiceId) {
     return (entry && entry.lang) ? entry.lang : 'en-US';
 }
 
-// Track which gender is currently active
+// Track active language/gender filters
 let _activeGender = 'male';
+let _activeLang = 'en';  // 'en' | 'fr' | 'de' | 'es'
 // Full voice list fetched from API (keyed by id)
 let _apiVoiceMap = {};
 
@@ -5411,23 +5481,39 @@ async function loadVoiceList() {
     if (statusEl) { statusEl.textContent = ''; }
 }
 
-function renderVoiceDropdown(gender) {
-    _activeGender = gender;
+function renderVoiceDropdown(gender, lang) {
+    if (gender) _activeGender = gender;
+    if (lang)   _activeLang   = lang;
 
     const voiceSelect = document.getElementById('voiceId');
     if (!voiceSelect) return;
 
-    // Update toggle button styles
+    // Update gender button styles
     const btnMale   = document.getElementById('genderBtnMale');
     const btnFemale = document.getElementById('genderBtnFemale');
     if (btnMale && btnFemale) {
         const activeStyle   = 'flex:1; padding:7px 0; border-radius:6px; border:2px solid #667eea; background:#667eea; color:#fff; font-weight:600; cursor:pointer; font-size:0.9em;';
         const inactiveStyle = 'flex:1; padding:7px 0; border-radius:6px; border:2px solid #667eea; background:transparent; color:#667eea; font-weight:600; cursor:pointer; font-size:0.9em;';
-        btnMale.style.cssText   = gender === 'male'   ? activeStyle : inactiveStyle;
-        btnFemale.style.cssText = gender === 'female' ? activeStyle : inactiveStyle;
+        btnMale.style.cssText   = _activeGender === 'male'   ? activeStyle : inactiveStyle;
+        btnFemale.style.cssText = _activeGender === 'female' ? activeStyle : inactiveStyle;
     }
 
-    const voices = VOICE_CATALOGUE[gender] || [];
+    // Update language button styles
+    const langMap = { en: 'voiceLangEn', fr: 'voiceLangFr', de: 'voiceLangDe', es: 'voiceLangEs' };
+    Object.entries(langMap).forEach(([lc, btnId]) => {
+        const btn = document.getElementById(btnId);
+        if (btn) {
+            btn.style.background = (_activeLang === lc) ? '#667eea' : 'transparent';
+            btn.style.color      = (_activeLang === lc) ? '#fff'    : '#667eea';
+        }
+    });
+
+    // Filter voices by language
+    const langPrefixMap = { en: 'en-', fr: 'fr-', de: 'de-', es: 'es-' };
+    const prefix = langPrefixMap[_activeLang] || 'en-';
+    const allForGender = VOICE_CATALOGUE[_activeGender] || [];
+    const voices = allForGender.filter(v => (v.lang || 'en-US').startsWith(prefix));
+
     voiceSelect.innerHTML = '';
     voices.forEach(v => {
         const opt = document.createElement('option');
@@ -5436,12 +5522,23 @@ function renderVoiceDropdown(gender) {
         voiceSelect.appendChild(opt);
     });
 
-    if (voiceSelect.options.length > 0) voiceSelect.selectedIndex = 0;
+    if (voiceSelect.options.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = '— No voices for this combination —';
+        voiceSelect.appendChild(opt);
+    } else {
+        voiceSelect.selectedIndex = 0;
+    }
     updateVoiceDescription();
 }
 
 function filterVoicesByGender(gender) {
-    renderVoiceDropdown(gender);
+    renderVoiceDropdown(gender, null);
+}
+
+function filterVoicesByLang(lang) {
+    renderVoiceDropdown(null, lang);
 }
 
 function updateVoiceDescription() {
@@ -5450,8 +5547,8 @@ function updateVoiceDescription() {
     if (!voiceSelect || !descEl) return;
 
     const selected = voiceSelect.value;
-    const list = VOICE_CATALOGUE[_activeGender] || [];
-    const entry = list.find(v => v.id === selected);
+    const allVoices = [...(VOICE_CATALOGUE.male || []), ...(VOICE_CATALOGUE.female || [])];
+    const entry = allVoices.find(v => v.id === selected);
     descEl.textContent = entry ? entry.desc : '';
 
     // Keep the hidden language input in sync so generation uses the right locale

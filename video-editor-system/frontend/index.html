@@ -175,9 +175,32 @@
                 <div id="scriptResult" class="result-box" style="display: none;"></div>
                 <div id="scriptStats" class="stats-box" style="display: none;"></div>
 
-                <!-- Download Button -->
+                <!-- Download + Translation Section -->
                 <div id="scriptDownloadSection" style="display: none; margin-top: 15px;">
                     <button onclick="downloadScript()" class="btn-success">📥 Download Script (.txt)</button>
+
+                    <!-- Multi-language Translation -->
+                    <div style="margin-top: 14px; padding: 14px; background: rgba(102, 126, 234, 0.08); border: 1px solid #374151; border-radius: 10px;">
+                        <div style="font-weight: 600; font-size: 13px; margin-bottom: 10px; color: #a78bfa;">🌍 Translate Script to Other Languages</div>
+                        <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 12px;">
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px;">
+                                <input type="checkbox" id="translateFR" style="width:15px;height:15px;">
+                                <span>🇫🇷 French (FR)</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px;">
+                                <input type="checkbox" id="translateES" style="width:15px;height:15px;">
+                                <span>🇪🇸 Spanish (ES)</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px;">
+                                <input type="checkbox" id="translateDE" style="width:15px;height:15px;">
+                                <span>🇩🇪 German (DE)</span>
+                            </label>
+                        </div>
+                        <button onclick="translateAndDownload()" class="btn-secondary" style="font-size: 13px; padding: 8px 18px;">
+                            🌍 Translate &amp; Download All
+                        </button>
+                        <div id="translateProgress" style="display:none; margin-top: 10px; font-size: 13px; color: #a78bfa; padding: 8px; background: rgba(139,92,246,0.08); border-radius: 6px;"></div>
+                    </div>
                 </div>
 
                 <!-- Voice Generation Section -->
@@ -197,23 +220,35 @@
                     </div>
 
                     <!-- AI Voice Generation -->
+                    <!-- Model always mini (fast) — hidden -->
+                    <input type="hidden" id="voiceModel" value="inworld-tts-1.5-mini">
+
                     <div id="aiVoiceSection" style="display: block;">
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                            <!-- Model Selection -->
-                            <div class="input-group">
-                                <label>🎯 Quality Model:</label>
-                                <select id="voiceModel" class="input-medium" style="width: 100%;">
-                                    <option value="inworld-tts-1.5-max" selected>Max Quality (Best, Slower)</option>
-                                    <option value="inworld-tts-1.5-mini">Mini Quality (Fast, Good)</option>
-                                </select>
-                                <small style="color: #888; display: block; margin-top: 5px;">
-                                    <span id="modelDescription">Max: Best quality, takes more time</span>
-                                </small>
-                            </div>
 
                             <!-- Voice Selection -->
                             <div class="input-group" style="grid-column: 1 / -1;">
                                 <label>🎤 Voice Character:</label>
+
+                                <!-- Language selector -->
+                                <div style="display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap;">
+                                    <button id="voiceLangEn" onclick="filterVoicesByLang('en')"
+                                        style="padding: 5px 12px; border-radius: 6px; border: 2px solid #667eea; background: #667eea; color: #fff; font-weight: 600; cursor: pointer; font-size: 0.85em;">
+                                        🇺🇸 English
+                                    </button>
+                                    <button id="voiceLangFr" onclick="filterVoicesByLang('fr')"
+                                        style="padding: 5px 12px; border-radius: 6px; border: 2px solid #667eea; background: transparent; color: #667eea; font-weight: 600; cursor: pointer; font-size: 0.85em;">
+                                        🇫🇷 French
+                                    </button>
+                                    <button id="voiceLangDe" onclick="filterVoicesByLang('de')"
+                                        style="padding: 5px 12px; border-radius: 6px; border: 2px solid #667eea; background: transparent; color: #667eea; font-weight: 600; cursor: pointer; font-size: 0.85em;">
+                                        🇩🇪 German
+                                    </button>
+                                    <button id="voiceLangEs" onclick="filterVoicesByLang('es')"
+                                        style="padding: 5px 12px; border-radius: 6px; border: 2px solid #667eea; background: transparent; color: #667eea; font-weight: 600; cursor: pointer; font-size: 0.85em;">
+                                        🇪🇸 Spanish
+                                    </button>
+                                </div>
 
                                 <!-- Male / Female toggle -->
                                 <div style="display: flex; gap: 8px; margin-bottom: 10px;">
@@ -244,7 +279,7 @@
                                 <audio id="voicePreviewAudio" style="display:none;"></audio>
                             </div>
 
-                            <!-- Language Selection — locked to US English -->
+                            <!-- Language auto-set from selected voice -->
                             <input type="hidden" id="voiceLanguage" value="en-US">
 
                             <!-- Speaking Speed -->
@@ -1095,6 +1130,27 @@
                         </div>
                         <span class="hint">Get from: https://unsplash.com/developers</span>
                     </div>
+
+                    <div style="margin-top: 20px; padding: 14px; background: rgba(139,92,246,0.07); border: 1px solid #4c1d95; border-radius: 8px;">
+                        <div style="font-weight: 700; font-size: 13px; margin-bottom: 12px; color: #a78bfa;">🌍 Script Translation API Keys (Gemini 2.5 Flash)</div>
+                        <p style="color: #888; font-size: 12px; margin-bottom: 12px;">Used to translate your scripts to Spanish, French, German. Two keys run in parallel for speed — Key 2 is optional (falls back to Key 1).</p>
+                        <div class="input-group" style="margin-bottom: 10px;">
+                            <label>Translation API Key 1 (Required for translation)</label>
+                            <div class="password-input">
+                                <input type="password" id="geminiTranslate1Key" placeholder="AIza... (Gemini key for translation)" class="input-large">
+                                <button onclick="togglePassword('geminiTranslate1Key')" class="btn-toggle">👁️</button>
+                            </div>
+                            <span class="hint">Get from: https://aistudio.google.com/app/apikey — use a separate key to avoid rate limits</span>
+                        </div>
+                        <div class="input-group">
+                            <label>Translation API Key 2 (Optional — used in parallel for 2nd language)</label>
+                            <div class="password-input">
+                                <input type="password" id="geminiTranslate2Key" placeholder="AIza... (optional 2nd key for parallel translation)" class="input-large">
+                                <button onclick="togglePassword('geminiTranslate2Key')" class="btn-toggle">👁️</button>
+                            </div>
+                            <span class="hint">If empty, Key 1 handles all languages sequentially</span>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Niche Management Section -->
@@ -1557,9 +1613,11 @@ TAGS: comma-separated, under 400 chars, match the title keywords"></textarea>
                     setField('replicateKey',     ak.replicate);
                     setField('inworldKey',       ak.inworld);
                     setField('inworldSecret',    ak.inworld_secret);
-                    setField('pexelsKey',        ak.pexels);
-                    setField('pixabayKey',       ak.pixabay);
-                    setField('unsplashKey',      ak.unsplash);
+                    setField('pexelsKey',            ak.pexels);
+                    setField('pixabayKey',           ak.pixabay);
+                    setField('unsplashKey',          ak.unsplash);
+                    setField('geminiTranslate1Key',  ak.gemini_translate_1);
+                    setField('geminiTranslate2Key',  ak.gemini_translate_2);
 
                     // Update localStorage so Save Settings won't overwrite with empty values
                     const stored = JSON.parse(localStorage.getItem('videoToolSettings') || '{}');

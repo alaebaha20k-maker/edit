@@ -97,12 +97,24 @@ class Config:
         saved = cls._load_saved_config()
         return saved.get('inworld_api_secret') or os.getenv('INWORLD_API_SECRET', '')
 
+    @classmethod
+    def get_gemini_translate_1_key(cls):
+        """Get Gemini Translation API Key 1 (for parallel script translation)"""
+        saved = cls._load_saved_config()
+        return saved.get('gemini_translate_1') or os.getenv('GEMINI_TRANSLATE_1', '')
+
+    @classmethod
+    def get_gemini_translate_2_key(cls):
+        """Get Gemini Translation API Key 2 (for parallel script translation)"""
+        saved = cls._load_saved_config()
+        return saved.get('gemini_translate_2') or os.getenv('GEMINI_TRANSLATE_2', '')
+
     # For backward compatibility, make them accessible as class attributes
     GEMINI_API_KEY = property(lambda self: self.get_gemini_api_key())
     REPLICATE_API_TOKEN = property(lambda self: self.get_replicate_api_token())
 
     @classmethod
-    def save_api_config(cls, gemini_key=None, director_gemini_key=None, gemini_image_key=None, replicate_token=None, inworld_key=None, inworld_secret=None):
+    def save_api_config(cls, gemini_key=None, director_gemini_key=None, gemini_image_key=None, replicate_token=None, inworld_key=None, inworld_secret=None, gemini_translate_1=None, gemini_translate_2=None):
         """Save API keys to config file"""
         cls.DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -128,6 +140,10 @@ class Config:
             config['inworld_api_key'] = inworld_key
         if inworld_secret:
             config['inworld_api_secret'] = inworld_secret
+        if gemini_translate_1:
+            config['gemini_translate_1'] = gemini_translate_1
+        if gemini_translate_2:
+            config['gemini_translate_2'] = gemini_translate_2
 
         # Save to file
         with open(cls.API_CONFIG_FILE, 'w') as f:

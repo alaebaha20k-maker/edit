@@ -976,6 +976,110 @@ def generate_script():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/translate-script', methods=['POST'])
+def translate_script():
+    """
+    Translate a script to multiple languages using 2 Gemini APIs in parallel.
+    - Chunk size: 8000 chars per API call
+    - 2 languages translated simultaneously (API1 + API2)
+    - 3rd language uses API1 after first two finish
+    Request: { script, languages: ['fr','es','de'] }
+    Response: { success, translations: {fr: '...', es: '...', de: '...'}, errors: {} }
+    """
+    import google.generativeai as genai
+    import threading
+    import time as _time
+    from config import Config
+
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        script = data.get('script', '').strip()
+        languages = data.get('languages', [])
+
+        if not script:
+            return jsonify({'error': 'Script is required'}), 400
+        if not languages:
+            return jsonify({'error': 'At least one language is required'}), 400
+
+        key1 = Config.get_gemini_translate_1_key()
+        key2 = Config.get_gemini_translate_2_key() or key1
+
+        if not key1:
+            return jsonify({'error': 'Translation API Key 1 not configured in Settings'}), 500
+
+        LANG_NAMES = {
+            'fr': 'French (français)',
+            'es': 'Spanish (español)',
+            'de': 'German (Deutsch)',
+            'en': 'English'
+        }
+
+        CHUNK_SIZE = 8000
+
+        def translate_one(api_key, script_text, lang_code):
+            lang_name = LANG_NAMES.get(lang_code, lang_code)
+            chunks = [script_text[i:i+CHUNK_SIZE] for i in range(0, len(script_text), CHUNK_SIZE)]
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel('gemini-2.5-flash')
+            parts = []
+            for idx, chunk in enumerate(chunks):
+                if idx > 0:
+                    _time.sleep(1.5)
+                prompt = (
+                    f"Translate the following script to {lang_name}.\n"
+                    f"Rules:\n"
+                    f"- Keep the EXACT same structure, paragraphs, and flow\n"
+                    f"- For technical/financial/brand terms: keep original + add {lang_name} translation in parentheses if truly needed\n"
+                    f"- Maintain the tone, style, and energy of the original\n"
+                    f"- Output ONLY the translated text, nothing else\n\n"
+                    f"SCRIPT:\n{chunk}"
+                )
+                response = model.generate_content(prompt)
+                parts.append(response.text.strip())
+            return '\n\n'.join(parts)
+
+        results = {}
+        errors = {}
+
+        def worker(key, lang):
+            try:
+                results[lang] = translate_one(key, script, lang)
+                print(f"✅ Translation done: {lang}")
+            except Exception as e:
+                errors[lang] = str(e)
+                print(f"❌ Translation failed ({lang}): {e}")
+
+        # Run first 2 languages in parallel, then remaining sequentially
+        threads = []
+        keys = [key1, key2]
+        for i, lang in enumerate(languages[:2]):
+            t = threading.Thread(target=worker, args=(keys[i % 2], lang))
+            threads.append(t)
+            t.start()
+        for t in threads:
+            t.join()
+
+        # Remaining languages (3+)
+        for i, lang in enumerate(languages[2:]):
+            k = key1 if i % 2 == 0 else key2
+            try:
+                results[lang] = translate_one(k, script, lang)
+                print(f"✅ Translation done: {lang}")
+            except Exception as e:
+                errors[lang] = str(e)
+            if i < len(languages[2:]) - 1:
+                _time.sleep(2)
+
+        return jsonify({'success': True, 'translations': results, 'errors': errors})
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/generate-image-prompts', methods=['POST'])
 def generate_image_prompts_route():
     """Generate image prompts from script using Gemini + Image Formula (NEW SYSTEM)"""
@@ -1554,6 +1658,8 @@ def save_api_keys():
         pexels = data.get('pexels')
         pixabay = data.get('pixabay')
         unsplash = data.get('unsplash')
+        gemini_translate_1 = data.get('gemini_translate_1')
+        gemini_translate_2 = data.get('gemini_translate_2')
 
         # Debug: Log what keys we received (show length not actual value)
         print("\n🔑 Received API keys:")
@@ -1566,6 +1672,8 @@ def save_api_keys():
         print(f"   Pexels: {'SET (' + str(len(pexels)) + ' chars)' if pexels else 'NOT SET'}")
         print(f"   Pixabay: {'SET (' + str(len(pixabay)) + ' chars)' if pixabay else 'NOT SET'}")
         print(f"   Unsplash: {'SET (' + str(len(unsplash)) + ' chars)' if unsplash else 'NOT SET'}")
+        print(f"   Translate 1: {'SET (' + str(len(gemini_translate_1)) + ' chars)' if gemini_translate_1 else 'NOT SET'}")
+        print(f"   Translate 2: {'SET (' + str(len(gemini_translate_2)) + ' chars)' if gemini_translate_2 else 'NOT SET'}")
 
         # Save API keys (Script Writer Gemini and Director Gemini are SEPARATE!)
         settings = SettingsManager.save_api_keys(
@@ -1577,7 +1685,9 @@ def save_api_keys():
             inworld_secret=inworld_secret,
             pexels=pexels,
             pixabay=pixabay,
-            unsplash=unsplash
+            unsplash=unsplash,
+            gemini_translate_1=gemini_translate_1,
+            gemini_translate_2=gemini_translate_2
         )
 
         # Get validation status
@@ -4946,6 +5056,8 @@ def alae_baha_import():
                 pexels=api_keys.get('pexels') or None,
                 pixabay=api_keys.get('pixabay') or None,
                 unsplash=api_keys.get('unsplash') or None,
+                gemini_translate_1=api_keys.get('gemini_translate_1') or None,
+                gemini_translate_2=api_keys.get('gemini_translate_2') or None,
             )
             results['api_keys'] = True
 
