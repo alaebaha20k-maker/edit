@@ -2147,19 +2147,64 @@ async function loadAutoImageStyles() {
 }
 
 // =============================================================================
-// PROMPTS GENERATOR — raw image prompts from script + style (no image generation)
+// PROMPTS GENERATOR — image or video prompts, scene-by-scene from script
 // =============================================================================
+
+let _pgMode = 'image'; // 'image' | 'video'
+
+function pgSetMode(mode) {
+    _pgMode = mode;
+    const isVideo = mode === 'video';
+
+    // Tabs
+    document.getElementById('pgTabImage').style.background = isVideo ? '#1e1e2e' : 'linear-gradient(135deg,#8b5cf6,#6d28d9)';
+    document.getElementById('pgTabImage').style.color      = isVideo ? '#888' : '#fff';
+    document.getElementById('pgTabVideo').style.background = isVideo ? 'linear-gradient(135deg,#dc2626,#7f1d1d)' : '#1e1e2e';
+    document.getElementById('pgTabVideo').style.color      = isVideo ? '#fff' : '#888';
+
+    // Style selectors
+    document.getElementById('pgImageStyleWrap').style.display = isVideo ? 'none' : '';
+    document.getElementById('pgVideoStyleWrap').style.display = isVideo ? '' : 'none';
+
+    // Generate button label
+    const btn = document.getElementById('pgGenerateBtn');
+    if (btn) {
+        btn.textContent = isVideo ? '🎬 Generate Video Prompts' : '🎨 Generate Image Prompts';
+        btn.style.background = isVideo
+            ? 'linear-gradient(135deg,#dc2626,#7f1d1d)'
+            : 'linear-gradient(135deg,#8b5cf6,#6d28d9)';
+    }
+
+    // Label
+    const lbl = document.getElementById('pgResultLabel');
+    if (lbl) lbl.childNodes[0].textContent = isVideo ? 'Generated Video Prompts ' : 'Generated Image Prompts ';
+
+    // Reset output
+    document.getElementById('pgResultSection').style.display = 'none';
+    document.getElementById('pgProgressBox').style.display   = 'none';
+
+    if (isVideo) loadVideoStylesSelect();
+}
+
+async function loadVideoStylesSelect() {
+    try {
+        const r = await fetch('/api/video-styles');
+        const d = await r.json();
+        if (!d.success) return;
+        const sel = document.getElementById('pgVideoStyleSelect');
+        if (!sel) return;
+        const cur = sel.value;
+        sel.innerHTML = d.styles.map(s =>
+            `<option value="${s.id}">${s.built_in ? '🎬' : '✨'} ${s.name}</option>`
+        ).join('');
+        if (cur) sel.value = cur;
+    } catch (e) { console.warn('Could not load video styles:', e); }
+}
 
 async function generatePromptsOnly() {
     const script = (document.getElementById('scriptInput')?.value || window.videoData?.script || '').trim();
     if (!script) {
         showNotification('⚠️ Please enter or generate a script first', 'warning');
-        return;
-    }
-
-    const styleId = document.getElementById('pgStyleSelect')?.value;
-    if (!styleId) {
-        showNotification('⚠️ Please select an image style', 'warning');
         return;
     }
 
@@ -2169,22 +2214,44 @@ async function generatePromptsOnly() {
         return;
     }
 
+    const isVideo     = _pgMode === 'video';
+    const styleId     = document.getElementById('pgStyleSelect')?.value;
+    const vidStyleId  = document.getElementById('pgVideoStyleSelect')?.value;
+
+    if (!isVideo && !styleId) {
+        showNotification('⚠️ Please select an image style', 'warning');
+        return;
+    }
+    if (isVideo && !vidStyleId) {
+        showNotification('⚠️ Please select a video style', 'warning');
+        return;
+    }
+
     const progressBox   = document.getElementById('pgProgressBox');
     const resultSection = document.getElementById('pgResultSection');
     const outputEl      = document.getElementById('pgOutputText');
     const countLabel    = document.getElementById('pgCountLabel');
 
     progressBox.style.display = 'block';
-    progressBox.innerHTML = `<p>🎨 Generating <strong>${count}</strong> prompts with Director Gemini…<br>
-        <small style="color:#888;">${count > 15 ? `Sending in chunks of 15 — please wait` : 'Single call — almost done'}</small></p>`;
+    progressBox.style.borderLeftColor = isVideo ? '#dc2626' : '#8b5cf6';
+    progressBox.innerHTML = `<p>${isVideo ? '🎬' : '🎨'} Generating <strong>${count}</strong> ${isVideo ? 'video' : 'image'} prompts with Director Gemini…<br>
+        <small style="color:#888;">${count > 15 ? 'Sending in chunks of 15 — please wait' : 'Single call — almost done'}</small></p>`;
     resultSection.style.display = 'none';
     if (outputEl) outputEl.value = '';
 
     try {
+        const body = {
+            script,
+            count,
+            mode: _pgMode,
+            style_id:       styleId,
+            video_style_id: vidStyleId,
+        };
+
         const response = await fetch('/api/generate-prompts-only', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ script, style_id: styleId, count })
+            body: JSON.stringify(body)
         });
 
         const data = await response.json();
@@ -2193,12 +2260,11 @@ async function generatePromptsOnly() {
             throw new Error(data.error || 'Prompts generation failed');
         }
 
-        // Join prompts with a blank line between each — clean, no [image] tokens
         const text = data.prompts.join('\n\n');
         if (outputEl) outputEl.value = text;
-        if (countLabel) countLabel.textContent = `(${data.prompts.length} prompts)`;
+        if (countLabel) countLabel.textContent = `(${data.prompts.length} prompts · ${data.style_name})`;
 
-        progressBox.innerHTML = `<p style="color:#22c55e;">✅ ${data.prompts.length} prompts generated!</p>`;
+        progressBox.innerHTML = `<p style="color:#22c55e;">✅ ${data.prompts.length} ${isVideo ? 'video' : 'image'} prompts generated!</p>`;
         resultSection.style.display = 'block';
         showNotification(`✅ ${data.prompts.length} prompts ready!`, 'success');
 
@@ -2215,9 +2281,118 @@ function downloadPromptsText() {
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href     = url;
-    a.download = 'image_prompts.txt';
+    a.download = _pgMode === 'video' ? 'video_prompts.txt' : 'image_prompts.txt';
     a.click();
     URL.revokeObjectURL(url);
+}
+
+// =============================================================================
+// VIDEO STYLES — Settings management
+// =============================================================================
+
+async function loadVideoStylesList() {
+    try {
+        const r = await fetch('/api/video-styles');
+        const d = await r.json();
+        if (!d.success) return;
+        _renderVideoStylesList(d.styles);
+    } catch (e) { console.warn('Could not load video styles:', e); }
+}
+
+function _renderVideoStylesList(styles) {
+    const container = document.getElementById('videoStylesList');
+    if (!container) return;
+    const custom = styles.filter(s => !s.built_in);
+    if (custom.length === 0) {
+        container.innerHTML = '<p style="color:#666; font-size:14px;">No custom video styles yet. Create your first one!</p>';
+        return;
+    }
+    container.innerHTML = custom.map(s => `
+        <div style="padding:10px 14px; margin:5px 0; background:#1a0a0a; border:1px solid #7f1d1d; border-radius:8px; display:flex; justify-content:space-between; align-items:flex-start;">
+            <div style="flex:1; min-width:0;">
+                <strong style="color:#f87171;">✨ ${s.name}</strong>
+                <p style="margin:3px 0 0; color:#666; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${(s.style_formula||'').substring(0,100).replace(/\n/g,' ')}…</p>
+            </div>
+            <div style="display:flex; gap:6px; margin-left:10px; flex-shrink:0;">
+                <button onclick="editVideoStyle('${s.id}')" style="background:#7f1d1d; color:#fca5a5; border:none; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">✏️ Edit</button>
+                <button onclick="deleteVideoStyle('${s.id}')" style="background:#450a0a; color:#fca5a5; border:none; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">🗑️</button>
+            </div>
+        </div>`).join('');
+}
+
+function openVideoStyleCreator() {
+    document.getElementById('editingVideoStyleId').value = '';
+    document.getElementById('videoStyleCreatorTitle').textContent = '➕ New Video Style';
+    document.getElementById('newVideoStyleName').value = '';
+    document.getElementById('newVideoStyleFormula').value = '';
+    document.getElementById('newVideoStyleDesc').value = '';
+    document.getElementById('videoStyleCreatorSection').style.display = 'block';
+    document.getElementById('videoStyleCreatorSection').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+function closeVideoStyleCreator() {
+    document.getElementById('videoStyleCreatorSection').style.display = 'none';
+    document.getElementById('editingVideoStyleId').value = '';
+}
+
+async function editVideoStyle(styleId) {
+    try {
+        const r = await fetch('/api/video-styles');
+        const d = await r.json();
+        const s = (d.styles || []).find(x => x.id === styleId);
+        if (!s) return;
+        document.getElementById('editingVideoStyleId').value = styleId;
+        document.getElementById('videoStyleCreatorTitle').textContent = '✏️ Edit: ' + s.name;
+        document.getElementById('newVideoStyleName').value    = s.name || '';
+        document.getElementById('newVideoStyleFormula').value = s.style_formula || '';
+        document.getElementById('newVideoStyleDesc').value    = s.description || '';
+        document.getElementById('videoStyleCreatorSection').style.display = 'block';
+        document.getElementById('videoStyleCreatorSection').scrollIntoView({ behavior:'smooth', block:'start' });
+    } catch (e) { showNotification('❌ Could not load style', 'error'); }
+}
+
+async function saveVideoStylePreset() {
+    const editingId    = document.getElementById('editingVideoStyleId').value.trim();
+    const name         = document.getElementById('newVideoStyleName').value.trim();
+    const style_formula = document.getElementById('newVideoStyleFormula').value.trim();
+    const description  = document.getElementById('newVideoStyleDesc').value.trim();
+
+    if (!name)         { showNotification('❌ Style name is required', 'error'); return; }
+    if (!style_formula || style_formula.length < 10) { showNotification('❌ Formula is required', 'error'); return; }
+
+    try {
+        const isEdit = editingId !== '';
+        const url    = isEdit ? `/api/video-styles/${editingId}` : '/api/video-styles';
+        const method = isEdit ? 'PUT' : 'POST';
+        const r = await fetch(url, {
+            method, headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, style_formula, description })
+        });
+        const d = await r.json();
+        if (d.success) {
+            showNotification(isEdit ? '✅ Video style updated!' : '✅ Video style saved!', 'success');
+            closeVideoStyleCreator();
+            await loadVideoStylesList();
+            loadVideoStylesSelect();
+        } else {
+            showNotification('❌ ' + (d.error || 'Save failed'), 'error');
+        }
+    } catch (e) { showNotification('❌ ' + e.message, 'error'); }
+}
+
+async function deleteVideoStyle(styleId) {
+    if (!confirm('Delete this video style?')) return;
+    try {
+        const r = await fetch(`/api/video-styles/${styleId}`, { method: 'DELETE' });
+        const d = await r.json();
+        if (d.success) {
+            showNotification('✅ Video style deleted', 'success');
+            await loadVideoStylesList();
+            loadVideoStylesSelect();
+        } else {
+            showNotification('❌ ' + (d.error || 'Delete failed'), 'error');
+        }
+    } catch (e) { showNotification('❌ ' + e.message, 'error'); }
 }
 
 async function generateAutoImages() {
@@ -5542,12 +5717,13 @@ function copySeoTags() {
     navigator.clipboard.writeText(v).then(() => showNotification('📋 Tags copied!', 'success'));
 }
 
-// Load SEO formulas when settings open
+// Load SEO formulas + Video styles when settings open
 (function() {
     const _orig = window.openSettings;
     window.openSettings = function() {
         if (_orig) _orig.apply(this, arguments);
         loadSeoFormulas();
+        loadVideoStylesList();
         const saved = localStorage.getItem('seoDefaultLink');
         if (saved) {
             const el = document.getElementById('seoDefaultLink');

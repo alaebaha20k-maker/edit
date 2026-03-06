@@ -331,34 +331,56 @@
             <!-- Prompts Generator -->
             <section class="step" id="promptsGeneratorStep">
                 <h3><span class="step-number" style="background: linear-gradient(135deg, #8b5cf6, #6d28d9); font-size:18px; line-height:1;">🎨</span> Prompts Generator</h3>
-                <p style="color: #888; margin-bottom: 18px; font-size: 14px;">
-                    Generate detailed image prompts from your script using <strong>Director Gemini (gemini-2.5-flash)</strong> + your saved Auto Images styles.
-                    Output is raw text — one prompt per scene, ready to paste into any image generator.
+                <p style="color: #888; margin-bottom: 14px; font-size: 14px;">
+                    Splits your script into <strong>exact scenes</strong> and generates a prompt for each one — in order, matched to the script moment.
+                    Uses Director Gemini + your chosen style formula. Output is plain text ready to paste into any AI generator.
                 </p>
 
+                <!-- Mode tabs -->
+                <div style="display:flex; gap:0; margin-bottom:18px; border-radius:8px; overflow:hidden; border:1px solid #374151;">
+                    <button id="pgTabImage" onclick="pgSetMode('image')"
+                        style="flex:1; padding:10px; font-size:14px; font-weight:600; border:none; cursor:pointer; background: linear-gradient(135deg,#8b5cf6,#6d28d9); color:#fff; transition:all 0.2s;">
+                        🖼️ Image Prompts
+                    </button>
+                    <button id="pgTabVideo" onclick="pgSetMode('video')"
+                        style="flex:1; padding:10px; font-size:14px; font-weight:600; border:none; cursor:pointer; background:#1e1e2e; color:#888; transition:all 0.2s;">
+                        🎬 Video Prompts
+                    </button>
+                </div>
+
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 18px;">
-                    <div class="input-group" style="margin: 0;">
-                        <label>Image Style</label>
+                    <!-- Image Style (shown in image mode) -->
+                    <div class="input-group" style="margin:0;" id="pgImageStyleWrap">
+                        <label>Image Style <span style="color:#888; font-size:12px;">(manage in Settings → Auto Images)</span></label>
                         <select id="pgStyleSelect" class="input-large">
                             <option value="">-- Loading styles… --</option>
                         </select>
                     </div>
-                    <div class="input-group" style="margin: 0;">
-                        <label>Number of Prompts</label>
+                    <!-- Video Style (shown in video mode) -->
+                    <div class="input-group" style="margin:0; display:none;" id="pgVideoStyleWrap">
+                        <label>Video Style <span style="color:#888; font-size:12px;">(manage in Settings → Video Styles)</span></label>
+                        <select id="pgVideoStyleSelect" class="input-large">
+                            <option value="">-- Loading styles… --</option>
+                        </select>
+                    </div>
+                    <!-- Count (always shown) -->
+                    <div class="input-group" style="margin:0;">
+                        <label>Number of Scenes / Prompts</label>
                         <input type="number" id="pgCount" value="20" min="1" max="200" class="input-medium" style="width:100%;">
-                        <small style="color:#888; margin-top:4px; display:block;">Large numbers are sent in chunks of 15 to avoid limits</small>
+                        <small style="color:#888; margin-top:4px; display:block;">Each prompt = one script scene · chunks of 15 sent to Gemini</small>
                     </div>
                 </div>
 
-                <button onclick="generatePromptsOnly()" class="btn-secondary" style="width:100%; font-size:15px; padding:12px;">
-                    🎨 Generate Prompts
+                <button onclick="generatePromptsOnly()" id="pgGenerateBtn"
+                    style="width:100%; font-size:15px; padding:12px; background:linear-gradient(135deg,#8b5cf6,#6d28d9); color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:600;">
+                    🎨 Generate Image Prompts
                 </button>
 
                 <div id="pgProgressBox" style="display:none; margin-top:14px; padding:12px; background:rgba(139,92,246,0.08); border-radius:8px; border-left:3px solid #8b5cf6;"></div>
 
                 <div id="pgResultSection" style="display:none; margin-top:16px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                        <label style="font-weight:600; font-size:14px;">Generated Prompts <span id="pgCountLabel" style="color:#888; font-weight:400;"></span></label>
+                        <label style="font-weight:600; font-size:14px;" id="pgResultLabel">Generated Prompts <span id="pgCountLabel" style="color:#888; font-weight:400;"></span></label>
                         <button onclick="downloadPromptsText()" class="btn-success" style="padding:6px 18px; font-size:13px;">
                             📥 Download .txt
                         </button>
@@ -1184,6 +1206,57 @@ AVOID:
                         <div style="display: flex; gap: 10px; margin-top: 16px;">
                             <button onclick="saveNewStyle()" class="btn-success">💾 Save Style</button>
                             <button onclick="closeStyleCreator()" class="btn-secondary">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Video Styles -->
+                <div class="settings-section" style="border-top:2px solid #dc2626; padding-top:24px; margin-top:8px;">
+                    <h3 style="color:#f87171;">🎬 Video Styles</h3>
+                    <p style="color:#666; margin-bottom:14px; font-size:14px;">
+                        Create custom styles for the <strong>Video Prompts</strong> mode in Prompts Generator.
+                        Each style has a formula that tells the AI how to write video prompts
+                        (camera movement, duration, motion, mood, render quality).<br>
+                        <span style="color:#f87171; font-size:13px;">Built-in: 🎬 Cinematic · 🎥 Documentary · 🎠 Animated</span>
+                    </p>
+
+                    <div id="videoStylesList" style="margin-bottom:14px;">
+                        <p style="color:#666; font-size:14px;">Loading styles…</p>
+                    </div>
+
+                    <button onclick="openVideoStyleCreator()" class="btn-primary" style="background:linear-gradient(135deg,#dc2626,#7f1d1d); font-size:13px; padding:8px 18px;">➕ Create New Video Style</button>
+
+                    <input type="hidden" id="editingVideoStyleId" value="">
+                    <div id="videoStyleCreatorSection" style="display:none; margin-top:18px; padding:18px; background:#1a0a0a; border:1px solid #dc2626; border-radius:10px;">
+                        <h4 id="videoStyleCreatorTitle" style="margin:0 0 14px; color:#f87171;">➕ New Video Style</h4>
+
+                        <div class="input-group">
+                            <label>Style Name <span style="color:#ef4444;">*</span></label>
+                            <input type="text" id="newVideoStyleName" class="input-large" placeholder="e.g., 'Black Robot Trader Video', 'Epic Nature Documentary'">
+                        </div>
+
+                        <div class="input-group" style="margin-top:12px;">
+                            <label style="color:#f87171; font-weight:700;">🎬 Video Style Formula <span style="color:#ef4444;">*</span>
+                                <span style="font-size:12px; color:#888; font-weight:normal; margin-left:6px;">
+                                    Describe camera, motion, duration, mood, render quality
+                                </span>
+                            </label>
+                            <textarea id="newVideoStyleFormula" rows="12" class="textarea-large"
+                                style="font-family:monospace; font-size:13px; background:#0f0505; color:#fca5a5; border-color:#dc2626;"
+                                placeholder="Write your video style formula here.
+
+Example:
+Semi-realistic cartoon animation style, consistent character design. Camera: slow push-in or medium shot. Duration: 6–8 seconds per scene. Motion: smooth, intentional. Mood: dramatic, financial thriller atmosphere. Color: dark navy palette with green screen glow. Every scene shows the robot character reacting to a specific trading moment from the script. End every prompt with: 4K, smooth animation, professional, --no text --no subtitles --no watermarks"></textarea>
+                        </div>
+
+                        <div class="input-group" style="margin-top:12px;">
+                            <label>Description (optional)</label>
+                            <input type="text" id="newVideoStyleDesc" class="input-large" placeholder="Short description of this style">
+                        </div>
+
+                        <div style="display:flex; gap:10px; margin-top:14px;">
+                            <button onclick="saveVideoStylePreset()" class="btn-success">💾 Save Video Style</button>
+                            <button onclick="closeVideoStyleCreator()" class="btn-secondary">Cancel</button>
                         </div>
                     </div>
                 </div>

@@ -5050,30 +5050,33 @@ def alae_baha_import():
 @app.route('/api/generate-prompts-only', methods=['POST'])
 def generate_prompts_only():
     """
-    Generate detailed image prompts using Director Gemini + Auto Images style.
-    No image generation — output is plain text prompts separated by [image].
+    Generate image OR video prompts scene-by-scene from a script.
 
     Request JSON:
-        { "script": "...", "style_id": "cinematic", "count": 20 }
-
-    Response:
-        { "success": True, "prompts": ["prompt1", "prompt2", ...], "count": N }
+        {
+            "script":         "...",
+            "style_id":       "cinematic",       # image style id  (mode=image)
+            "video_style_id": "cinematic_video", # video style id  (mode=video)
+            "count":          20,
+            "mode":           "image" | "video"  # default: "image"
+        }
     """
     from auto_images_style_manager import AutoImagesStyleManager
+    from video_style_manager import VideoStyleManager
     from settings_manager import SettingsManager
     from config import Config
     import google.generativeai as genai
 
-    CHUNK_SIZE = 15  # Max prompts per Gemini call to avoid token limits
+    CHUNK_SIZE = 15
 
-    # Load the shared Auto Images Formula (same as used in Auto Images generator)
     _auto_images_formula = SettingsManager.load_formula('auto_images')
 
     class _SafeDict(dict):
         def __missing__(self, key):
             return '{' + key + '}'
 
-    def build_prompt(script_text, style, chunk_start, chunk_size, total_count):
+    # ---- IMAGE prompt builder ------------------------------------------------
+    def build_image_prompt(script_text, style, chunk_start, chunk_size, total_count):
         style_name        = style.get('name', 'Cinematic')
         style_desc        = style.get('description', '')
         style_formula_raw = style.get('style_formula', '').strip()
@@ -5083,12 +5086,11 @@ def generate_prompts_only():
         lighting          = style.get('lighting', '')
         color_palette     = style.get('color_palette', [])
 
-        visual_rules_text  = '\n'.join([f"- {r}" for r in visual_rules]) if visual_rules else style_desc
+        visual_rules_text   = '\n'.join([f"- {r}" for r in visual_rules]) if visual_rules else style_desc
         negative_rules_text = '\n'.join([f"- {r}" for r in negative_rules])
-        color_palette_text = ', '.join(color_palette) if color_palette else 'rich, vivid colors'
+        color_palette_text  = ', '.join(color_palette) if color_palette else 'rich, vivid colors'
         chunk_end = chunk_start + chunk_size - 1
 
-        # Style section: use style_formula if set, else structured fields
         if style_formula_raw:
             style_section = f"""═══════════════ STYLE: {style_name} ═══════════════
 {style_formula_raw}
@@ -5108,7 +5110,6 @@ Lighting: {lighting}
 Color Palette: {color_palette_text}
 ════════════════════════════════════════"""
 
-        # Render the shared Auto Images Formula (creative instructions)
         formula_rendered = _auto_images_formula.format_map(_SafeDict(
             n_images=chunk_size,
             style_name=style_name,
@@ -5119,39 +5120,74 @@ Color Palette: {color_palette_text}
 
         return f"""You are a professional image prompt writer for AI image generators (Flux, Midjourney, SDXL).
 
-TASK: Generate prompts {chunk_start} to {chunk_end} (out of {total_count} total) for scenes from this script.
-ALL prompts MUST be in ENGLISH regardless of the script language.
+TASK: Generate EXACTLY {chunk_size} image prompts — scenes {chunk_start} to {chunk_end} of {total_count} total.
+The script is divided into {total_count} scenes. You are generating scenes {chunk_start}–{chunk_end}.
+Each prompt must correspond PRECISELY to that portion of the script. CHRONOLOGICAL ORDER. No skipping.
+ALL prompts MUST be written in ENGLISH regardless of the script language.
 
-═══════════════ SCRIPT ═══════════════
+═══════════════ FULL SCRIPT ═══════════════
 {script_text}
-══════════════════════════════════════
+═══════════════════════════════════════════
 
 {style_section}
 
-
 {formula_rendered}
 
-PLAIN TEXT OUTPUT RULES:
-1. Generate EXACTLY {chunk_size} prompts (scenes {chunk_start} to {chunk_end} of {total_count} total).
-2. Output prompts separated by a blank line — NO [image] tokens, NO numbering, NO labels.
-3. Each prompt is ONE single continuous paragraph — NO line breaks inside a prompt.
-4. Every prompt MUST start with the style name: "{style_name} style,"
-5. Prompts cover scenes {chunk_start}–{chunk_end} in chronological order.
-6. Each scene describes a DISTINCT, SPECIFIC narrative moment.
-7. End every prompt with: --no text, no captions, no watermarks, no labels
-8. OUTPUT ONLY THE PROMPTS. NO preamble, NO explanation, NO trailing text.
+OUTPUT RULES — READ CAREFULLY:
+1. Output EXACTLY {chunk_size} prompts separated by ONE blank line between each.
+2. NO [image] tokens, NO numbering, NO labels, NO preamble, NO explanation after.
+3. Each prompt = ONE continuous paragraph. NO line breaks inside a prompt.
+4. Every prompt MUST start with: "{style_name} style,"
+5. Every prompt MUST end with: --no text, no captions, no watermarks, no labels
+6. Scenes {chunk_start}–{chunk_end} only, in chronological script order.
+7. Each scene is DISTINCT — never repeat the same visual environment back to back.
+OUTPUT ONLY THE {chunk_size} PROMPTS. NOTHING ELSE."""
 
-{style_name} style, [scene {chunk_start} description] --no text, no captions, no watermarks, no labels
+    # ---- VIDEO prompt builder ------------------------------------------------
+    def build_video_prompt(script_text, style, chunk_start, chunk_size, total_count):
+        style_name    = style.get('name', 'Cinematic')
+        style_formula = style.get('style_formula', '').strip()
+        chunk_end = chunk_start + chunk_size - 1
 
-{style_name} style, [scene {chunk_start+1} description] --no text, no captions, no watermarks, no labels
+        style_section = f"""═══════════════ VIDEO STYLE: {style_name} ═══════════════
+{style_formula if style_formula else f'Cinematic quality, smooth camera movement, {style_name} aesthetic'}
+════════════════════════════════════════"""
 
-...continue until scene {chunk_end}..."""
+        return f"""You are a professional video prompt writer for AI video generators (Sora, Runway Gen-3, Kling, Pika).
+
+TASK: Generate EXACTLY {chunk_size} video prompts — scenes {chunk_start} to {chunk_end} of {total_count} total.
+The script is divided into {total_count} scenes. You are generating scenes {chunk_start}–{chunk_end}.
+Each prompt must correspond PRECISELY to that portion of the script. CHRONOLOGICAL ORDER.
+ALL prompts MUST be written in ENGLISH regardless of the script language.
+
+═══════════════ FULL SCRIPT ═══════════════
+{script_text}
+═══════════════════════════════════════════
+
+{style_section}
+
+OUTPUT RULES — READ CAREFULLY:
+1. Output EXACTLY {chunk_size} prompts separated by ONE blank line between each.
+2. NO numbering, NO labels, NO preamble, NO explanation after.
+3. Each prompt = ONE continuous paragraph. NO line breaks inside a prompt.
+4. Each prompt MUST include:
+   - Duration: "X seconds," (5–10 seconds per scene)
+   - Camera movement (slow dolly, pan, zoom, static, handheld, aerial, etc.)
+   - Subject and action EXACTLY matching that script moment
+   - Lighting and mood matching the {style_name} style
+   - End with: high quality, smooth motion, --no text --no subtitles --no watermarks
+5. Scenes {chunk_start}–{chunk_end} only, in chronological script order.
+6. Each scene is visually DISTINCT — vary camera angles and movements.
+7. Be SPECIFIC: describe motion direction, speed, what's in frame, atmosphere.
+OUTPUT ONLY THE {chunk_size} PROMPTS. NOTHING ELSE."""
 
     try:
         data = request.get_json() or {}
-        script   = data.get('script', '').strip()
-        style_id = data.get('style_id', 'cinematic')
-        count    = int(data.get('count', 20))
+        script         = data.get('script', '').strip()
+        mode           = data.get('mode', 'image')           # 'image' or 'video'
+        style_id       = data.get('style_id', 'cinematic')
+        video_style_id = data.get('video_style_id', 'cinematic_video')
+        count          = int(data.get('count', 20))
 
         if not script:
             return jsonify({'error': 'Script is required'}), 400
@@ -5160,11 +5196,19 @@ PLAIN TEXT OUTPUT RULES:
 
         director_api_key = Config.get_director_gemini_api_key()
         if not director_api_key:
-            return jsonify({'error': 'Director Gemini API key not configured. Set it in Settings → Director Gemini API Key.'}), 500
+            return jsonify({'error': 'Director Gemini API key not configured. Set it in Settings.'}), 500
 
-        style = AutoImagesStyleManager.get_style(style_id)
-        if not style:
-            return jsonify({'error': f'Style not found: {style_id}'}), 404
+        # Resolve style
+        if mode == 'video':
+            style = VideoStyleManager.get(video_style_id)
+            if not style:
+                return jsonify({'error': f'Video style not found: {video_style_id}'}), 404
+            prompt_builder = build_video_prompt
+        else:
+            style = AutoImagesStyleManager.get_style(style_id)
+            if not style:
+                return jsonify({'error': f'Image style not found: {style_id}'}), 404
+            prompt_builder = build_image_prompt
 
         genai.configure(api_key=director_api_key)
         model = genai.GenerativeModel(
@@ -5182,29 +5226,31 @@ PLAIN TEXT OUTPUT RULES:
 
         while remaining > 0:
             chunk_size = min(CHUNK_SIZE, remaining)
-            prompt_text = build_prompt(script, style, chunk_start, chunk_size, count)
+            prompt_text = prompt_builder(script, style, chunk_start, chunk_size, count)
 
-            print(f'\n🎨 Prompts Generator: chunk {chunk_start}–{chunk_start + chunk_size - 1} / {count}')
+            print(f'\n{"🎬" if mode=="video" else "🎨"} Prompts [{mode}] chunk {chunk_start}–{chunk_start+chunk_size-1}/{count}')
             response = model.generate_content(prompt_text)
             raw = response.text.strip()
 
-            # Split on [image] separator
-            parts = [p.strip() for p in raw.split('[image]') if p.strip()]
-            all_prompts.extend(parts[:chunk_size])
+            # Split on blank lines — each block is one prompt
+            parts = [p.strip() for p in raw.split('\n\n') if p.strip()]
+            # Filter out obvious preamble/trailing lines (no style keywords)
+            clean = [p for p in parts if len(p) > 40]
+            all_prompts.extend(clean[:chunk_size])
 
             chunk_start += chunk_size
             remaining   -= chunk_size
 
-            # Small pause between chunks to respect rate limits
             if remaining > 0:
                 import time as _time
                 _time.sleep(2)
 
-        print(f'✅ Prompts Generator: {len(all_prompts)} prompts generated')
+        print(f'✅ Prompts [{mode}]: {len(all_prompts)} generated')
         return jsonify({
-            'success': True,
-            'prompts': all_prompts,
-            'count':   len(all_prompts),
+            'success':    True,
+            'prompts':    all_prompts,
+            'count':      len(all_prompts),
+            'mode':       mode,
             'style_name': style.get('name', style_id),
         })
 
@@ -5212,6 +5258,62 @@ PLAIN TEXT OUTPUT RULES:
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
+
+# ---- Video Styles CRUD -------------------------------------------------------
+
+@app.route('/api/video-styles', methods=['GET'])
+def video_styles_list():
+    try:
+        from video_style_manager import VideoStyleManager
+        return jsonify({'success': True, 'styles': VideoStyleManager.get_all()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/video-styles', methods=['POST'])
+def video_styles_create():
+    try:
+        from video_style_manager import VideoStyleManager
+        data = request.get_json() or {}
+        style = VideoStyleManager.create(
+            name=data.get('name', ''),
+            style_formula=data.get('style_formula', ''),
+            description=data.get('description', ''),
+        )
+        return jsonify({'success': True, 'style': style})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/video-styles/<style_id>', methods=['PUT'])
+def video_styles_update(style_id):
+    try:
+        from video_style_manager import VideoStyleManager
+        data = request.get_json() or {}
+        style = VideoStyleManager.update(
+            style_id=style_id,
+            name=data.get('name'),
+            style_formula=data.get('style_formula'),
+            description=data.get('description'),
+        )
+        if style:
+            return jsonify({'success': True, 'style': style})
+        return jsonify({'success': False, 'error': 'Style not found'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/video-styles/<style_id>', methods=['DELETE'])
+def video_styles_delete(style_id):
+    try:
+        from video_style_manager import VideoStyleManager
+        ok = VideoStyleManager.delete(style_id)
+        return jsonify({'success': ok})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 if __name__ == '__main__':
