@@ -1018,6 +1018,9 @@ def translate_script():
         }
 
         CHUNK_SIZE = 8000
+        # Tokens: 8000 chars ÷ 3 chars/token ≈ 2667 tokens input.
+        # Output translation is similar size. Set generous budget.
+        TRANSLATE_MAX_TOKENS = 8192
 
         def translate_one(api_key, script_text, lang_code):
             lang_name = LANG_NAMES.get(lang_code, lang_code)
@@ -1034,12 +1037,24 @@ def translate_script():
                     f"- Keep the EXACT same structure, paragraphs, and flow\n"
                     f"- For technical/financial/brand terms: keep original + add {lang_name} translation in parentheses if truly needed\n"
                     f"- Maintain the tone, style, and energy of the original\n"
-                    f"- Output ONLY the translated text, nothing else\n\n"
+                    f"- Output ONLY the translated text, nothing else — no explanations, no preamble\n\n"
                     f"SCRIPT:\n{chunk}"
                 )
-                response = model.generate_content(prompt)
-                parts.append(response.text.strip())
-            return '\n\n'.join(parts)
+                gen_cfg = {
+                    "temperature": 0.3,
+                    "max_output_tokens": TRANSLATE_MAX_TOKENS,
+                    "top_p": 0.95,
+                }
+                response = model.generate_content(prompt, generation_config=gen_cfg)
+                part = response.text.strip() if response.text else ''
+                if not part:
+                    print(f"   ⚠️  Empty translation for chunk {idx+1}/{len(chunks)} ({lang_code})")
+                else:
+                    print(f"   ✅ Chunk {idx+1}/{len(chunks)} translated: {len(part):,} chars")
+                parts.append(part)
+            result = '\n\n'.join(parts)
+            print(f"✅ Full translation [{lang_code}]: {len(result):,} chars from {len(script_text):,} source chars")
+            return result
 
         results = {}
         errors = {}

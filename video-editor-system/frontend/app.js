@@ -890,9 +890,15 @@ async function loadScriptFile() {
         scriptInput.value = text;
         window.videoData.script = text;
         appState.generatedScript = text;
-        showNotification('✅ Script loaded from file', 'success');
 
-        // Show voice section when script is uploaded
+        // Store in Script Library as English (uploaded scripts default to EN)
+        storeScriptInLibrary('en', text, file.name);
+
+        // Show download + translate section
+        const dlSection = document.getElementById('scriptDownloadSection');
+        if (dlSection) dlSection.style.display = 'block';
+
+        showNotification('✅ Script loaded from file', 'success');
         showVoiceSectionIfScriptAvailable();
     }
 }
@@ -1687,11 +1693,18 @@ function downloadScript() {
 }
 
 async function translateAndDownload() {
-    const script = window.videoData.script || appState.generatedScript || document.getElementById('scriptInput')?.value;
+    // Read from every possible source — library EN, textarea, or videoData
+    const script = (appState.scriptLibrary['en']?.text)
+                || document.getElementById('scriptInput')?.value?.trim()
+                || window.videoData.script
+                || appState.generatedScript;
     if (!script || script.trim().length === 0) {
-        showNotification('⚠️ No script available to translate', 'warning');
+        showNotification('⚠️ No script available to translate. Generate or paste a script first.', 'warning');
         return;
     }
+    // Make sure the full script is synced to videoData before translating
+    window.videoData.script = script;
+    appState.generatedScript = script;
 
     const langMap = { fr: 'translateFR', es: 'translateES', de: 'translateDE' };
     const selected = Object.entries(langMap)
@@ -3901,6 +3914,28 @@ function formatTime(seconds) {
 document.addEventListener('DOMContentLoaded', () => {
     // Load settings from localStorage
     loadSettings();
+
+    // Sync manual scriptInput textarea → videoData + library (debounced)
+    const scriptInputEl = document.getElementById('scriptInput');
+    if (scriptInputEl) {
+        let _scriptSyncTimer = null;
+        scriptInputEl.addEventListener('input', () => {
+            clearTimeout(_scriptSyncTimer);
+            _scriptSyncTimer = setTimeout(() => {
+                const txt = scriptInputEl.value.trim();
+                if (txt.length > 50) {
+                    window.videoData.script = txt;
+                    appState.generatedScript = txt;
+                    // Show download/translate section
+                    const dlSection = document.getElementById('scriptDownloadSection');
+                    if (dlSection) dlSection.style.display = 'block';
+                    // Store in library as EN
+                    storeScriptInLibrary('en', txt, 'manual_script_en.txt');
+                    showVoiceSectionIfScriptAvailable();
+                }
+            }, 1200);
+        });
+    }
 
     // Setup settings button
     const settingsBtn = document.getElementById('settingsBtn');
