@@ -1009,6 +1009,8 @@ def translate_script():
         if not key1:
             return jsonify({'error': 'Translation API Key 1 not configured in Settings'}), 500
 
+        import re as _re
+
         LANG_NAMES = {
             'fr': 'French (français)',
             'es': 'Spanish (español)',
@@ -1016,29 +1018,46 @@ def translate_script():
             'en': 'English'
         }
 
-        # Smaller chunks → each output fits well within the token budget.
-        # Translation can expand text by ~20 %, so keep chunks at 4 000 chars.
+        # 4 000-char chunks keep each translated output well within the token budget.
+        # Translation can expand text by ~20 %, so this is safe.
         CHUNK_SIZE = 4000
-        # gemini-2.0-flash is NOT a thinking model — all output tokens go to text.
-        # 16 384 tokens ≈ 65 000 chars of translated output per chunk, plenty.
-        TRANSLATE_MAX_TOKENS = 16384
-        MODEL_NAME = 'gemini-2.0-flash'
+        # gemini-2.5-flash max output is 8 192 tokens (~32 000 chars) — plenty per chunk.
+        TRANSLATE_MAX_TOKENS = 8192
+        MODEL_NAME = 'gemini-2.5-flash'
+
+        def _parse_retry_delay(err_str):
+            """Extract retry_delay seconds from a 429 error message."""
+            m = _re.search(r'retry_delay\s*\{\s*seconds:\s*(\d+)', err_str)
+            return int(m.group(1)) + 3 if m else 20
+
+        def translate_chunk_with_retry(model, prompt, gen_cfg, max_retries=4):
+            """Call model.generate_content with exponential-backoff retry on 429."""
+            for attempt in range(max_retries):
+                try:
+                    return model.generate_content(prompt, generation_config=gen_cfg)
+                except Exception as e:
+                    err = str(e)
+                    if '429' in err and attempt < max_retries - 1:
+                        wait = _parse_retry_delay(err)
+                        print(f"   ⏳ Rate limit — waiting {wait}s (attempt {attempt+1}/{max_retries})")
+                        _time.sleep(wait)
+                    else:
+                        raise
 
         def translate_one(api_key, script_text, lang_code):
             """Translate script_text to lang_code using the given API key.
             NOTE: genai.configure() is a global call — NOT thread-safe.
-            This function must be called sequentially (no threads).
+            Always call this function sequentially (never from concurrent threads).
             """
             lang_name = LANG_NAMES.get(lang_code, lang_code)
             chunks = [script_text[i:i+CHUNK_SIZE] for i in range(0, len(script_text), CHUNK_SIZE)]
-            # Configure API key right before use (sequential — no race condition)
             genai.configure(api_key=api_key)
             model = genai.GenerativeModel(MODEL_NAME)
             print(f"🌍 Translating [{lang_code}] — {len(chunks)} chunk(s), {len(script_text):,} chars total")
             parts = []
             for idx, chunk in enumerate(chunks):
                 if idx > 0:
-                    _time.sleep(1.0)
+                    _time.sleep(2.0)   # breathe between chunks to stay within RPM
                 prompt = (
                     f"Translate the following script to {lang_name}.\n"
                     f"Rules:\n"
@@ -1053,7 +1072,7 @@ def translate_script():
                     "max_output_tokens": TRANSLATE_MAX_TOKENS,
                     "top_p": 0.95,
                 }
-                response = model.generate_content(prompt, generation_config=gen_cfg)
+                response = translate_chunk_with_retry(model, prompt, gen_cfg)
                 part = response.text.strip() if response.text else ''
                 if not part:
                     print(f"   ⚠️  Empty translation for chunk {idx+1}/{len(chunks)} ({lang_code})")
@@ -1068,8 +1087,9 @@ def translate_script():
         errors = {}
         keys = [key1, key2]
 
-        # Sequential translation — alternating keys.
+        # Sequential translation — alternating between key1 and key2.
         # genai.configure() is global so threads would race; sequential is safe.
+        # Between languages, wait 5 s to let the per-minute quota recover.
         for i, lang in enumerate(languages):
             k = keys[i % 2]
             try:
@@ -1079,7 +1099,8 @@ def translate_script():
                 errors[lang] = str(e)
                 print(f"❌ Translation failed ({lang}): {e}")
             if i < len(languages) - 1:
-                _time.sleep(1.5)
+                print(f"   ⏸️  Cooling down 5 s before next language…")
+                _time.sleep(5)
 
         return jsonify({'success': True, 'translations': results, 'errors': errors})
 
