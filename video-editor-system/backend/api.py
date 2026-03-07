@@ -1099,41 +1099,109 @@ def translate_script():
                 chunks.append(cur.strip())
             return chunks or [text]
 
+        # ── Overlap-aware chunk joiner ─────────────────────────────────────────
+        def join_chunks(parts):
+            """Join translated chunks, trimming any line-level overlap at boundaries.
+
+            Models sometimes echo the last line(s) of chunk N at the start of
+            chunk N+1 to maintain coherence.  We detect and strip that overlap.
+            """
+            if not parts:
+                return ''
+            result = parts[0]
+            for part in parts[1:]:
+                if not part:
+                    continue
+                r_lines = [l for l in result.splitlines() if l.strip()]
+                p_lines = [l for l in part.splitlines()   if l.strip()]
+                overlap = 0
+                for n in range(min(6, len(r_lines), len(p_lines)), 0, -1):
+                    if [l.strip().lower() for l in r_lines[-n:]] == \
+                       [l.strip().lower() for l in p_lines[:n]]:
+                        overlap = n
+                        break
+                if overlap:
+                    # Drop the overlapping lines from the head of `part`
+                    trimmed = part
+                    for _ in range(overlap):
+                        nl = trimmed.find('\n')
+                        trimmed = trimmed[nl + 1:].lstrip('\n') if nl != -1 else ''
+                    result = result.rstrip('\n') + '\n\n' + trimmed
+                else:
+                    result = result.rstrip('\n') + '\n\n' + part
+            return result
+
         # ── Post-processing ────────────────────────────────────────────────────
+        def _norm(s):
+            """Normalise a paragraph for duplicate comparison."""
+            s = _re.sub(r'\s+', ' ', s.strip().lower())
+            return _re.sub(r'[^\w\s]', '', s)
+
         def postprocess(text):
-            # Strip parenthetical glosses the model may have sneaked in
-            # e.g. "term (original term)" → "term"
-            # Only removes short, annotation-like parentheticals (no punctuation inside)
-            text = _re.sub(r'(?<=\w)\s*\([^()\n]{1,60}\)(?=[^\w(]|$)',
-                           lambda m: '' if not _re.search(r'[!?,.]', m.group()) else m.group(),
-                           text)
-            # Remove consecutive duplicate paragraphs
-            paras, seen = _re.split(r'\n{2,}', text), []
+            # 1. Strip parenthetical glosses the model may have sneaked in
+            #    e.g. "term (original term)" — only short ones without punctuation
+            text = _re.sub(
+                r'(?<=\w)\s*\([^()\n]{1,60}\)(?=[^\w(]|$)',
+                lambda m: '' if not _re.search(r'[!?,.]', m.group()) else m.group(),
+                text,
+            )
+            # 2. Strong dedup — normalised comparison against ALL previous paragraphs
+            #    (not just the last one) catches non-adjacent repeats too
+            paras = _re.split(r'\n{2,}', text)
+            seen_norm: set = set()
+            deduped = []
             for p in paras:
-                if not seen or p.strip() != seen[-1].strip():
-                    seen.append(p)
-            return '\n\n'.join(seen)
+                n = _norm(p)
+                if n and n not in seen_norm:
+                    seen_norm.add(n)
+                    deduped.append(p)
+            return '\n\n'.join(deduped)
 
         # ── Single chunk translation ───────────────────────────────────────────
         def translate_chunk(chunk, prev_ctx, next_ctx, lang_name, idx, total):
             ctx = ''
             if prev_ctx:
-                ctx += f'[PRECEDING CONTEXT — for continuity only, do NOT output]:\n{prev_ctx[-400:]}\n\n'
+                ctx += f'[PRECEDING CONTEXT — continuity reference only, do NOT output]:\n{prev_ctx[-400:]}\n\n'
             if next_ctx:
-                ctx += f'[FOLLOWING CONTEXT — for continuity only, do NOT output]:\n{next_ctx[:400]}\n\n'
+                ctx += f'[FOLLOWING CONTEXT — continuity reference only, do NOT output]:\n{next_ctx[:400]}\n\n'
             prompt = (
                 f'You are an expert professional translator specialising in spoken video scripts.\n'
                 f'Translate the [TEXT] section below into {lang_name}.\n\n'
-                f'STRICT RULES — follow every rule, no exceptions:\n'
-                f'1. Output ONLY the translated text — no preamble, no notes, no headings.\n'
-                f'2. NEVER add parenthetical explanations or original-language terms in parentheses.\n'
-                f'3. Translate transition/connective words (however, therefore, meanwhile…) '
-                f'IDIOMATICALLY — use natural {lang_name} equivalents, never word-for-word calques.\n'
-                f'4. Rhetorical questions must be punchy and native-sounding in {lang_name}, '
-                f'not literal translations.\n'
-                f'5. Break any sentence over ~25 words into shorter sentences for natural spoken rhythm.\n'
-                f'6. Preserve paragraph structure and blank lines exactly as in the source.\n'
-                f'7. Context sections are for continuity only — do NOT include them in output.\n\n'
+                f'STRICT RULES — follow every single rule, no exceptions:\n\n'
+
+                f'1. OUTPUT ONLY the translated text — no preamble, no notes, no headings, '
+                f'no section labels.\n\n'
+
+                f'2. NO PARENTHETICALS — never add parenthetical explanations, '
+                f'original-language terms, or any annotation in parentheses.\n\n'
+
+                f'3. DISCOURSE MARKERS & RHETORICAL OPENERS — this is critical:\n'
+                f'   Words like "Here", "Ici", "Aquí", "Hier", "Now,", "So,", "Look,", '
+                f'"Right,", "Think about it", "Here\'s the thing" and similar openers are '
+                f'RHETORICAL FUNCTIONS, not literal location words.\n'
+                f'   → Translate their COMMUNICATIVE FUNCTION, not their literal meaning.\n'
+                f'   → Use whatever a native {lang_name} video-script writer would naturally '
+                f'write to open or transition a sentence with the same energy.\n'
+                f'   Examples of function-preserving adaptations:\n'
+                f'   - Attention-getter opener → native equivalent in {lang_name}\n'
+                f'   - "Here\'s the deal:" → punchy {lang_name} equivalent\n'
+                f'   - "Think about it:" → natural {lang_name} rhetorical equivalent\n\n'
+
+                f'4. TRANSITION WORDS — connectors (however, therefore, meanwhile, '
+                f'besides, actually, basically…) must use the most natural, '
+                f'colloquially correct {lang_name} equivalent — never a word-for-word calque.\n\n'
+
+                f'5. RHETORICAL QUESTIONS — must sound punchy and completely native in '
+                f'{lang_name}. Restructure the question if needed; do not translate literally.\n\n'
+
+                f'6. SENTENCE LENGTH — split any sentence over ~25 words into shorter '
+                f'sentences for natural spoken rhythm.\n\n'
+
+                f'7. STRUCTURE — preserve paragraph breaks and blank lines exactly.\n\n'
+
+                f'8. CONTEXT SECTIONS — if present above, they are read-only references '
+                f'for continuity. Do NOT output them.\n\n'
+
                 f'{ctx}'
                 f'[TEXT]:\n{chunk}'
             )
@@ -1166,7 +1234,7 @@ def translate_script():
                     except Exception as e:
                         parts[futs[f]] = ''
                         print(f'   ❌ [{lang_code}] chunk {futs[f]+1} failed: {e}')
-            joined = postprocess('\n\n'.join(p or '' for p in parts))
+            joined = postprocess(join_chunks([p or '' for p in parts]))
             print(f'✅ [{lang_code}] done: {len(joined):,} chars')
             return joined
 
