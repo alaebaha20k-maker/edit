@@ -23,8 +23,18 @@ const appState = {
     mediaLibrary: [],
     niches: [],
     selectedNiche: '',
-    lastGenerationTime: 0,  // Track last API call for rate limiting
-    generationCooldown: 15000  // 15 seconds cooldown between generations
+    lastGenerationTime: 0,
+    generationCooldown: 15000,
+    scriptLibrary: {},        // { en: {text, filename, chars, title}, fr: {...}, ... }
+    multiLangVoiceConfig: {}  // { en: 'Dennis', fr: 'Mathieu', es: 'Diego', de: 'Josef' }
+};
+
+// Language metadata for multi-language features
+const LANG_META = {
+    en: { label: 'English', flag: '🇺🇸', langCode: 'en-US', prefix: 'en-' },
+    fr: { label: 'French',  flag: '🇫🇷', langCode: 'fr-FR', prefix: 'fr-' },
+    es: { label: 'Spanish', flag: '🇪🇸', langCode: 'es-ES', prefix: 'es-' },
+    de: { label: 'German',  flag: '🇩🇪', langCode: 'de-DE', prefix: 'de-' },
 };
 
 // Global video data
@@ -1008,6 +1018,9 @@ async function generateScript() {
             window.videoData.script = data.script;
             appState.generatedScript = data.script;
 
+            // Add to Script Library as English
+            storeScriptInLibrary('en', data.script, data.script_filename || 'script_en.txt');
+
             // DON'T display full script (can be very long - just show success message)
             if (resultBox) {
                 resultBox.innerHTML = `
@@ -1233,8 +1246,9 @@ function toggleVoiceSection(type) {
 // Add voice to library
 function addVoiceToLibrary(voiceData) {
     window.videoData.voiceLibrary.push(voiceData);
-    window.videoData.selectedVoiceIndex = window.videoData.voiceLibrary.length - 1; // Auto-select new voice
+    window.videoData.selectedVoiceIndex = window.videoData.voiceLibrary.length - 1;
     renderVoiceLibrary();
+    renderMultiLangExportSection();
 }
 
 // Render voice library with ranking (Step 2 only - All-in-one)
@@ -1320,6 +1334,7 @@ function renderVoiceLibrary() {
                             <strong>${typeLabel}</strong>
                             ${voice.voice ? `<span style="color: #667eea;">• ${voice.voice}</span>` : ''}
                             ${voice.language ? `<span style="color: #888;">• ${voice.language}</span>` : ''}
+                            ${voice.langCode ? `<span style="background:#1e3a2e; color:#10b981; padding:1px 6px; border-radius:4px; font-size:11px; font-weight:700;">${(LANG_META[voice.langCode]?.flag || '') + ' ' + (LANG_META[voice.langCode]?.label || voice.langCode.toUpperCase())}</span>` : ''}
                             ${modelLabel ? `<span style="color: #888;">• ${modelLabel}</span>` : ''}
                         </div>
                         <div style="color: #666; font-size: 0.9em;">
@@ -1374,6 +1389,7 @@ function removeVoiceFromLibrary(index) {
     if (confirm('Delete this voice from library?')) {
         window.videoData.voiceLibrary.splice(index, 1);
         renderVoiceLibrary();
+        renderMultiLangExportSection();
         showNotification('✅ Voice deleted', 'success');
     }
 }
@@ -1709,29 +1725,350 @@ async function translateAndDownload() {
         const baseFilename = title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
 
         const langLabels = { fr: 'french', es: 'spanish', de: 'german' };
-        let downloaded = 0;
+        let stored = 0;
         for (const [lang, text] of Object.entries(data.translations)) {
             if (!text) continue;
             const filename = `${baseFilename}_${langLabels[lang] || lang}.txt`;
+            // Store in Script Library (also auto-downloads)
+            storeScriptInLibrary(lang, text, filename);
+            // Also trigger browser download
             const blob = new Blob([text], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url; a.download = filename;
             document.body.appendChild(a); a.click();
             document.body.removeChild(a); URL.revokeObjectURL(url);
-            downloaded++;
+            stored++;
         }
 
         const errCount = Object.keys(data.errors || {}).length;
         if (progressEl) {
-            progressEl.textContent = `✅ Downloaded ${downloaded} translated script(s)${errCount ? ` · ⚠️ ${errCount} error(s)` : ''}`;
+            progressEl.textContent = `✅ ${stored} translated script(s) saved to library${errCount ? ` · ⚠️ ${errCount} error(s)` : ''}`;
         }
-        showNotification(`✅ ${downloaded} translated scripts downloaded!`, 'success');
+        showNotification(`✅ ${stored} translations done — see Script Library below!`, 'success');
 
     } catch (err) {
         if (progressEl) progressEl.textContent = `❌ ${err.message}`;
         showNotification('❌ Translation failed: ' + err.message, 'error');
     }
+}
+
+// =============================================================================
+// SCRIPT LIBRARY
+// =============================================================================
+
+function storeScriptInLibrary(langCode, text, filename) {
+    const title = document.getElementById('titleInput')?.value || window.videoData.title || 'script';
+    appState.scriptLibrary[langCode] = { text, filename, chars: text.length, title };
+    renderScriptLibrary();
+    renderMultiLangVoiceSection();
+    renderMultiLangExportSection();
+}
+
+function renderScriptLibrary() {
+    const section = document.getElementById('scriptLibrarySection');
+    const container = document.getElementById('scriptLibraryList');
+    if (!container) return;
+
+    const langs = Object.keys(appState.scriptLibrary);
+    if (langs.length === 0) {
+        if (section) section.style.display = 'none';
+        return;
+    }
+    if (section) section.style.display = 'block';
+
+    container.innerHTML = langs.map(lang => {
+        const s = appState.scriptLibrary[lang];
+        const meta = LANG_META[lang] || { flag: '🌍', label: lang.toUpperCase() };
+        const previewText = s.text.substring(0, 1500) + (s.text.length > 1500 ? '\n...' : '');
+        return `
+        <div style="border:1px solid #374151; border-radius:9px; padding:13px; margin-bottom:9px; background:rgba(255,255,255,0.02);">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span style="font-size:1.5em;">${meta.flag}</span>
+                    <div>
+                        <strong style="color:#e2e8f0; font-size:13px;">${meta.label}</strong>
+                        <div style="color:#6b7280; font-size:11px;">${s.chars.toLocaleString()} chars · ${s.filename}</div>
+                    </div>
+                </div>
+                <div style="display:flex; gap:5px; flex-shrink:0;">
+                    <button onclick="toggleScriptView('${lang}')" style="padding:5px 10px; background:#374151; border:none; border-radius:5px; color:#e2e8f0; cursor:pointer; font-size:11px;">👁 View</button>
+                    <button onclick="downloadScriptFromLibrary('${lang}')" style="padding:5px 10px; background:#16a34a; border:none; border-radius:5px; color:white; cursor:pointer; font-size:11px;">📥 Download</button>
+                    <button onclick="deleteScriptFromLibrary('${lang}')" style="padding:5px 10px; background:#dc2626; border:none; border-radius:5px; color:white; cursor:pointer; font-size:11px;">🗑</button>
+                </div>
+            </div>
+            <div id="scriptView_${lang}" style="display:none; margin-top:10px;">
+                <textarea readonly style="width:100%; height:140px; resize:vertical; background:#0f172a; color:#d1d5db; border:1px solid #374151; border-radius:6px; padding:8px; font-size:11px; font-family:monospace; box-sizing:border-box;">${previewText}</textarea>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function toggleScriptView(lang) {
+    const el = document.getElementById(`scriptView_${lang}`);
+    if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function downloadScriptFromLibrary(lang) {
+    const s = appState.scriptLibrary[lang];
+    if (!s) return;
+    const blob = new Blob([s.text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = s.filename;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+    showNotification(`📥 Downloaded: ${s.filename}`, 'success');
+}
+
+function deleteScriptFromLibrary(lang) {
+    const meta = LANG_META[lang] || { label: lang };
+    if (!confirm(`Delete ${meta.label} script from library?`)) return;
+    delete appState.scriptLibrary[lang];
+    renderScriptLibrary();
+    renderMultiLangVoiceSection();
+    renderMultiLangExportSection();
+}
+
+// =============================================================================
+// MULTI-LANGUAGE VOICE PACK
+// =============================================================================
+
+function renderMultiLangVoiceSection() {
+    const section = document.getElementById('multiLangVoiceSection');
+    const list = document.getElementById('multiLangVoiceList');
+    if (!section || !list) return;
+
+    const langs = Object.keys(appState.scriptLibrary);
+    if (langs.length === 0) { section.style.display = 'none'; return; }
+    section.style.display = 'block';
+
+    list.innerHTML = langs.map(lang => {
+        const meta = LANG_META[lang] || { flag: '🌍', label: lang.toUpperCase(), prefix: 'en-', langCode: lang };
+        const allVoices = [...(VOICE_CATALOGUE.male || []), ...(VOICE_CATALOGUE.female || [])];
+        const langVoices = allVoices.filter(v => (v.lang || 'en-US').startsWith(meta.prefix));
+        const stored = appState.multiLangVoiceConfig[lang] || (langVoices[0]?.id || '');
+        if (!appState.multiLangVoiceConfig[lang] && langVoices[0]) {
+            appState.multiLangVoiceConfig[lang] = langVoices[0].id;
+        }
+        const options = langVoices.map(v =>
+            `<option value="${v.id}" ${v.id === stored ? 'selected' : ''}>${v.id} — ${v.desc}</option>`
+        ).join('');
+
+        const voiceLibrary = window.videoData.voiceLibrary || [];
+        const hasVoice = voiceLibrary.some(v => v.langCode === lang);
+        const doneTag = hasVoice ? '<span style="color:#10b981; font-size:11px; margin-left:4px;">✅ Done</span>' : '';
+
+        return `
+        <div style="display:flex; align-items:center; gap:10px; padding:9px 10px; background:rgba(255,255,255,0.03); border-radius:7px; margin-bottom:7px; border:1px solid #2d1b69; flex-wrap:wrap;">
+            <span style="font-size:1.2em; flex-shrink:0;">${meta.flag}</span>
+            <strong style="min-width:62px; color:#e2e8f0; font-size:12px;">${meta.label}${doneTag}</strong>
+            <select id="multiLangVoice_${lang}" onchange="appState.multiLangVoiceConfig['${lang}']=this.value"
+                style="flex:1; min-width:140px; background:#1e1e2e; color:#e2e8f0; border:1px solid #374151; border-radius:6px; padding:5px; font-size:12px;">
+                ${options}
+            </select>
+            <button onclick="generateSingleLanguageVoice('${lang}')"
+                style="padding:5px 12px; background:#667eea; border:none; border-radius:6px; color:white; cursor:pointer; font-size:11px; white-space:nowrap; flex-shrink:0;">
+                🎙 Generate
+            </button>
+        </div>`;
+    }).join('');
+}
+
+async function generateSingleLanguageVoice(lang) {
+    const s = appState.scriptLibrary[lang];
+    if (!s) { showNotification(`⚠️ No ${lang} script in library`, 'warning'); return false; }
+
+    const meta = LANG_META[lang] || { label: lang, langCode: lang, flag: '' };
+    const voiceId = document.getElementById(`multiLangVoice_${lang}`)?.value
+                 || appState.multiLangVoiceConfig[lang] || 'Olivia';
+
+    const progressEl = document.getElementById('multiLangVoiceProgress');
+    if (progressEl) { progressEl.style.display = 'block'; progressEl.textContent = `⏳ Generating ${meta.flag} ${meta.label} voice (${voiceId})…`; }
+
+    try {
+        const res = await fetch('/api/generate-voice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                script: s.text,
+                voice_id: voiceId,
+                model_id: 'inworld-tts-1.5-mini',
+                language: meta.langCode,
+                speaking_rate: parseFloat(document.getElementById('speakingRate')?.value || '1.0')
+            })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Voice generation failed');
+
+        addVoiceToLibrary({
+            url: data.audio_url,
+            path: data.audio_path,
+            filename: data.audio_filename,
+            duration: data.duration_seconds,
+            chunks: data.chunks_count,
+            voice: voiceId,
+            language: meta.langCode,
+            model: 'inworld-tts-1.5-mini',
+            speed: parseFloat(document.getElementById('speakingRate')?.value || '1.0'),
+            type: 'ai',
+            langCode: lang
+        });
+
+        const mins = Math.floor(data.duration_seconds / 60);
+        const secs = Math.floor(data.duration_seconds % 60);
+        if (progressEl) progressEl.textContent = `✅ ${meta.flag} ${meta.label} voice done: ${mins}m ${secs}s`;
+        showNotification(`✅ ${meta.label} voice generated!`, 'success');
+        renderMultiLangVoiceSection();
+        renderMultiLangExportSection();
+        return true;
+    } catch (err) {
+        if (progressEl) progressEl.textContent = `❌ ${meta.label} failed: ${err.message}`;
+        showNotification(`❌ ${meta.label} voice failed: ${err.message}`, 'error');
+        return false;
+    }
+}
+
+async function generateAllLanguageVoices() {
+    const langs = Object.keys(appState.scriptLibrary);
+    if (langs.length === 0) { showNotification('⚠️ Generate scripts first', 'warning'); return; }
+
+    const btn = document.getElementById('generateAllVoicesBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating…'; }
+
+    const progressEl = document.getElementById('multiLangVoiceProgress');
+    if (progressEl) { progressEl.style.display = 'block'; progressEl.textContent = ''; }
+
+    let done = 0;
+    for (let i = 0; i < langs.length; i++) {
+        const lang = langs[i];
+        const meta = LANG_META[lang] || { label: lang };
+        if (progressEl) progressEl.textContent = `⏳ [${i+1}/${langs.length}] Generating ${meta.label} voice…`;
+        const ok = await generateSingleLanguageVoice(lang);
+        if (ok) done++;
+        if (i < langs.length - 1) await new Promise(r => setTimeout(r, 3000));
+    }
+
+    if (btn) { btn.disabled = false; btn.textContent = '🎙️ Generate All Language Voices (one by one)'; }
+    if (progressEl) progressEl.textContent = `✅ Finished: ${done}/${langs.length} voices generated.`;
+    showNotification(`✅ ${done}/${langs.length} voices done!`, done > 0 ? 'success' : 'warning');
+}
+
+// =============================================================================
+// MULTI-LANGUAGE VIDEO EXPORT
+// =============================================================================
+
+function renderMultiLangExportSection() {
+    const section = document.getElementById('multiLangExportSection');
+    const list = document.getElementById('multiLangExportList');
+    if (!section || !list) return;
+
+    const scriptLangs = Object.keys(appState.scriptLibrary);
+    const voiceLibrary = window.videoData.voiceLibrary || [];
+    const readyLangs = scriptLangs.filter(lang => voiceLibrary.some(v => v.langCode === lang));
+
+    if (readyLangs.length === 0) { section.style.display = 'none'; return; }
+    section.style.display = 'block';
+
+    list.innerHTML = readyLangs.map(lang => {
+        const meta = LANG_META[lang] || { flag: '🌍', label: lang };
+        const voices = voiceLibrary.filter(v => v.langCode === lang);
+        const totalDur = voices.reduce((s, v) => s + (parseFloat(v.duration) || 0), 0);
+        const durStr = `${Math.floor(totalDur/60)}m ${Math.floor(totalDur%60)}s`;
+        return `
+        <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; background:rgba(255,255,255,0.03); border-radius:7px; margin-bottom:6px; border:1px solid #1e3a2e;">
+            <input type="checkbox" id="exportLang_${lang}" checked style="width:15px; height:15px; cursor:pointer;">
+            <span style="font-size:1.2em;">${meta.flag}</span>
+            <strong style="color:#e2e8f0; font-size:13px;">${meta.label}</strong>
+            <span style="color:#6b7280; font-size:11px;">· ${voices.length} voice(s) · ${durStr}</span>
+        </div>`;
+    }).join('');
+}
+
+async function generateMultiLangVideos() {
+    const mediaLibrary = appState.mediaLibrary || [];
+    if (mediaLibrary.length === 0) {
+        showNotification('⚠️ Add media first (Step 3)', 'warning');
+        return;
+    }
+
+    const qualityRadio = document.querySelector('input[name="quality"]:checked');
+    const quality = qualityRadio ? qualityRadio.value : '720';
+    const resolution = quality === '1080' ? '1920x1080' : '1280x720';
+    const useKenBurns = document.getElementById('useKenBurns')?.checked || false;
+    const mediaPaths = mediaLibrary.map(m => m.path || m.url).filter(Boolean);
+    const voiceLibrary = window.videoData.voiceLibrary || [];
+
+    const scriptLangs = Object.keys(appState.scriptLibrary);
+    const selectedLangs = scriptLangs.filter(lang => {
+        const cb = document.getElementById(`exportLang_${lang}`);
+        return cb ? cb.checked : false;
+    }).filter(lang => voiceLibrary.some(v => v.langCode === lang));
+
+    if (selectedLangs.length === 0) {
+        showNotification('⚠️ No languages ready (need scripts + voices)', 'warning');
+        return;
+    }
+
+    const btn = document.getElementById('generateMultiLangBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating…'; }
+
+    const progressEl = document.getElementById('multiLangExportProgress');
+    const resultsEl = document.getElementById('multiLangExportResults');
+    if (progressEl) { progressEl.style.display = 'block'; progressEl.innerHTML = ''; }
+    if (resultsEl) resultsEl.innerHTML = '';
+
+    let done = 0;
+    const title = document.getElementById('titleInput')?.value || window.videoData.title || 'video';
+
+    for (let i = 0; i < selectedLangs.length; i++) {
+        const lang = selectedLangs[i];
+        const meta = LANG_META[lang] || { flag: '🌍', label: lang };
+        const langVoices = voiceLibrary.filter(v => v.langCode === lang);
+        const voicePaths = langVoices.map(v => v.path).filter(Boolean);
+
+        const logLine = (html) => { if (progressEl) progressEl.innerHTML += `<div>${html}</div>`; };
+        logLine(`⏳ [${i+1}/${selectedLangs.length}] Assembling ${meta.flag} ${meta.label} video…`);
+
+        try {
+            const res = await fetch('/api/assemble-video', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    voice_paths: voicePaths,
+                    media_paths: mediaPaths,
+                    title: `${title} [${meta.label}]`,
+                    resolution,
+                    use_ken_burns: useKenBurns,
+                    background_music_path: window.videoData.backgroundMusic?.path || null
+                })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || 'Assembly failed');
+
+            done++;
+            logLine(`<span style="color:#10b981;">✅ ${meta.flag} ${meta.label} done!</span>`);
+            if (resultsEl) resultsEl.innerHTML += `
+            <div style="padding:11px; border:1px solid #1e3a2e; border-radius:8px; margin-bottom:7px; background:rgba(16,185,129,0.06);">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <strong style="color:#10b981;">${meta.flag} ${meta.label} ✅</strong>
+                    <button onclick="window.location.href='${data.download_url}'"
+                        style="padding:5px 14px; background:#10b981; border:none; border-radius:5px; color:white; cursor:pointer; font-size:12px;">
+                        📥 Download
+                    </button>
+                </div>
+                <div style="color:#6b7280; font-size:11px; margin-top:4px;">
+                    ${data.output_filename} · ${data.duration_formatted} · ${(data.file_size_mb||0).toFixed(1)} MB
+                </div>
+            </div>`;
+        } catch (err) {
+            logLine(`<span style="color:#ef4444;">❌ ${meta.flag} ${meta.label}: ${err.message}</span>`);
+        }
+        if (i < selectedLangs.length - 1) await new Promise(r => setTimeout(r, 2000));
+    }
+
+    if (btn) { btn.disabled = false; btn.textContent = '🚀 Generate All Language Videos'; }
+    showNotification(`✅ ${done}/${selectedLangs.length} videos assembled`, done > 0 ? 'success' : 'warning');
 }
 
 // =============================================================================
