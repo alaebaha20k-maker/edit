@@ -99,6 +99,65 @@ def _gem_parse_retry(text: str) -> int:
     return min(int(m.group(1)) + 2, 90) if m else 20
 
 
+def _gem_all_keys() -> list[str]:
+    """Return every unique, non-empty Gemini API key from Config (deduplicated).
+
+    Priority: dedicated translate keys first (so they're preferred over shared
+    keys); then shared keys so the user gets maximum throughput from whatever
+    they've configured in Settings.
+    """
+    from config import Config
+    raw = [
+        Config.get_gemini_translate_1_key(),
+        Config.get_gemini_translate_2_key(),
+        Config.get_gemini_api_key(),
+        Config.get_director_gemini_api_key(),
+        Config.get_gemini_image_api_key(),
+    ]
+    return list(dict.fromkeys(k for k in raw if k))
+
+
+def _gem_call_sdk(keys: list[str], model_name: str,
+                  generation_config: dict, prompt_text: str,
+                  retries: int = 6) -> str:
+    """Call Gemini via the Python SDK with full rate-limiting and 429 retry.
+
+    Uses _gem_acquire() to enforce the per-key minimum interval so calls are
+    naturally spaced and never burst.  On ResourceExhausted (429) the key is
+    blocked via _gem_block() and the call is retried with a different key.
+
+    Returns the response text string.
+    """
+    import google.generativeai as genai
+    try:
+        from google.api_core.exceptions import ResourceExhausted
+    except ImportError:
+        ResourceExhausted = Exception  # safety fallback
+
+    last_err = None
+    for attempt in range(retries):
+        key = _gem_acquire(keys)
+        try:
+            genai.configure(api_key=key)
+            model = genai.GenerativeModel(
+                model_name=model_name,
+                generation_config=generation_config,
+            )
+            response = model.generate_content(prompt_text)
+            return response.text
+        except ResourceExhausted as e:
+            err_str = str(e)
+            delay = _gem_parse_retry(err_str)
+            print(f'   ⏳ 429 on key …{key[-6:]} — blocking {delay}s '
+                  f'(attempt {attempt + 1}/{retries})')
+            _gem_block(key, delay)
+            last_err = e
+        except Exception:
+            raise
+    raise RuntimeError(f'Gemini SDK: all {retries} retries exhausted. '
+                       f'Last error: {last_err}')
+
+
 # Initialize Flask app
 app = Flask(__name__, static_folder='../frontend', static_url_path='')
 CORS(app)  # Enable CORS for frontend
@@ -5711,9 +5770,12 @@ OUTPUT ONLY THE {chunk_size} PROMPTS. NOTHING ELSE."""
         if count < 1 or count > 200:
             return jsonify({'error': 'count must be between 1 and 200'}), 400
 
-        director_api_key = Config.get_director_gemini_api_key()
-        if not director_api_key:
-            return jsonify({'error': 'Director Gemini API key not configured. Set it in Settings.'}), 500
+        keys = _gem_all_keys()
+        if not keys:
+            return jsonify({'error': 'No Gemini API key configured in Settings'}), 500
+        model_name = Config.get_director_gemini_model()
+        gen_cfg    = {'temperature': 0.85, 'top_p': 0.95, 'max_output_tokens': 32768}
+        print(f'🔑 Prompts generator using {len(keys)} API key(s)')
 
         # Resolve style
         if mode == 'video':
@@ -5727,40 +5789,25 @@ OUTPUT ONLY THE {chunk_size} PROMPTS. NOTHING ELSE."""
                 return jsonify({'error': f'Image style not found: {style_id}'}), 404
             prompt_builder = build_image_prompt
 
-        genai.configure(api_key=director_api_key)
-        model = genai.GenerativeModel(
-            model_name=Config.get_director_gemini_model(),
-            generation_config={
-                'temperature': 0.85,
-                'top_p': 0.95,
-                'max_output_tokens': 32768,
-            }
-        )
-
         all_prompts = []
         remaining   = count
         chunk_start = 1
 
         while remaining > 0:
-            chunk_size = min(CHUNK_SIZE, remaining)
+            chunk_size  = min(CHUNK_SIZE, remaining)
             prompt_text = prompt_builder(script, style, chunk_start, chunk_size, count)
 
-            print(f'\n{"🎬" if mode=="video" else "🎨"} Prompts [{mode}] chunk {chunk_start}–{chunk_start+chunk_size-1}/{count}')
-            response = model.generate_content(prompt_text)
-            raw = response.text.strip()
+            print(f'\n{"🎬" if mode=="video" else "🎨"} Prompts [{mode}] '
+                  f'chunk {chunk_start}–{chunk_start + chunk_size - 1}/{count}')
+            raw = _gem_call_sdk(keys, model_name, gen_cfg, prompt_text).strip()
 
-            # Split on blank lines — each block is one prompt
             parts = [p.strip() for p in raw.split('\n\n') if p.strip()]
-            # Filter out obvious preamble/trailing lines (no style keywords)
             clean = [p for p in parts if len(p) > 40]
             all_prompts.extend(clean[:chunk_size])
 
             chunk_start += chunk_size
             remaining   -= chunk_size
-
-            if remaining > 0:
-                import time as _time
-                _time.sleep(2)
+            # No explicit sleep — _gem_acquire() handles spacing automatically
 
         print(f'✅ Prompts [{mode}]: {len(all_prompts)} generated')
         return jsonify({
@@ -5939,20 +5986,20 @@ OUTPUT RULES:
 OUTPUT ONLY THE {chunk_size} PROMPTS."""
 
     # ---- main logic ----------------------------------------------------------
-    def run_chunks(script_segment, style, total_count, prompt_builder, model):
+    def run_chunks(script_segment, style, total_count, prompt_builder, keys,
+                   model_name, gen_cfg):
         results = []
-        remaining = total_count
+        remaining   = total_count
         chunk_start = 1
         while remaining > 0:
             chunk_size = min(CHUNK_SIZE, remaining)
-            pt = prompt_builder(script_segment, style, chunk_start, chunk_size, total_count)
-            response = model.generate_content(pt)
-            parts = [p.strip() for p in response.text.strip().split('\n\n') if p.strip() and len(p.strip()) > 40]
+            pt  = prompt_builder(script_segment, style, chunk_start, chunk_size, total_count)
+            raw = _gem_call_sdk(keys, model_name, gen_cfg, pt).strip()
+            parts = [p.strip() for p in raw.split('\n\n') if p.strip() and len(p.strip()) > 40]
             results.extend(parts[:chunk_size])
             chunk_start += chunk_size
             remaining   -= chunk_size
-            if remaining > 0:
-                _time.sleep(2)
+            # No explicit sleep — _gem_acquire() handles spacing
         return results
 
     try:
@@ -5980,26 +6027,23 @@ OUTPUT ONLY THE {chunk_size} PROMPTS."""
         if not img_style:
             return jsonify({'error': f'Image style not found: {img_style_id}'}), 404
 
-        api_key = Config.get_director_gemini_api_key()
-        if not api_key:
-            return jsonify({'error': 'Director Gemini API key not configured'}), 500
-
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(
-            model_name=Config.get_director_gemini_model(),
-            generation_config={'temperature': 0.85, 'top_p': 0.95, 'max_output_tokens': 32768}
-        )
+        keys = _gem_all_keys()
+        if not keys:
+            return jsonify({'error': 'No Gemini API key configured in Settings'}), 500
+        model_name = Config.get_director_gemini_model()
+        gen_cfg    = {'temperature': 0.85, 'top_p': 0.95, 'max_output_tokens': 32768}
+        print(f'🔑 Mixed prompts using {len(keys)} API key(s)')
 
         # --- generate video prompts (first half) ---
         print(f'\n🎬 Mixed: generating {video_count} video prompts (first {split_pos} chars)…')
-        video_prompts = run_chunks(script_first, vid_style, video_count, build_video_prompt, model)
-
-        # pause between halves
-        _time.sleep(3)
+        video_prompts = run_chunks(script_first, vid_style, video_count,
+                                   build_video_prompt, keys, model_name, gen_cfg)
 
         # --- generate image prompts (second half) ---
+        # No manual sleep — _gem_acquire() handles key spacing automatically
         print(f'\n🖼️  Mixed: generating {image_count} image prompts (remaining {len(script)-split_pos} chars)…')
-        image_prompts = run_chunks(script_second, img_style, image_count, build_image_prompt, model)
+        image_prompts = run_chunks(script_second, img_style, image_count,
+                                   build_image_prompt, keys, model_name, gen_cfg)
 
         video_duration_min = round((video_count * 10) / 60, 1)
 
