@@ -159,47 +159,17 @@ async function checkForExistingScript() {
 
 // Display existing script in the UI
 function displayExistingScript(scriptData) {
-    // Populate script input
-    const scriptInput = document.getElementById('scriptInput');
-    if (scriptInput) {
-        scriptInput.value = scriptData.script;
-        window.videoData.script = scriptData.script;
-        appState.generatedScript = scriptData.script;
+    // Store script internally but do NOT put it back in the textarea
+    window.videoData.script = scriptData.script;
+    appState.generatedScript = scriptData.script;
+
+    // Store in script library so it can be downloaded / viewed
+    if (scriptData.script) {
+        storeScriptInLibrary('en', scriptData.script, scriptData.script_filename || 'script.txt');
     }
 
-    // Show script stats
-    const statsBox = document.getElementById('scriptStats');
-    if (statsBox) {
-        statsBox.style.display = 'block';
-        statsBox.innerHTML = `
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px;">
-                <div>
-                    <strong>📏 Length:</strong><br>${scriptData.length.toLocaleString()} chars
-                </div>
-                <div>
-                    <strong>📝 Words:</strong><br>${scriptData.words.toLocaleString()}
-                </div>
-                <div>
-                    <strong>📄 File:</strong><br>${scriptData.script_filename || 'script.txt'}
-                </div>
-                <div>
-                    <strong>📅 Modified:</strong><br>${scriptData.modified || 'Recently'}
-                </div>
-            </div>
-        `;
-    }
-
-    // Show download button
-    const downloadSection = document.getElementById('scriptDownloadSection');
-    if (downloadSection) {
-        downloadSection.style.display = 'block';
-    }
-
-    // Show voice generation section
-    const voiceSection = document.getElementById('voiceGenerationSection');
-    if (voiceSection) {
-        voiceSection.style.display = 'block';
-    }
+    // Keep scriptStats, scriptDownloadSection, and voiceGenerationSection hidden —
+    // the user wants a clean page on load; the script is accessible via the library.
 }
 
 // Ensure the UI is in generation mode (when no script exists)
