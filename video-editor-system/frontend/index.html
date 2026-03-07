@@ -181,8 +181,15 @@
 
                     <!-- Multi-language Translation -->
                     <div style="margin-top: 14px; padding: 14px; background: rgba(102, 126, 234, 0.08); border: 1px solid #374151; border-radius: 10px;">
-                        <div style="font-weight: 600; font-size: 13px; margin-bottom: 10px; color: #a78bfa;">🌍 Translate Script to Other Languages</div>
+                        <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
+                            <div style="font-weight: 600; font-size: 13px; color: #a78bfa;">🌍 Translate Script to Other Languages</div>
+                            <span id="detectedLangBadge" style="display:none; font-size:11px; padding:2px 8px; background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.4); border-radius:10px; color:#6ee7b7;"></span>
+                        </div>
                         <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 12px;">
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px;">
+                                <input type="checkbox" id="translateEN" style="width:15px;height:15px;">
+                                <span>🇺🇸 English (EN)</span>
+                            </label>
                             <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px;">
                                 <input type="checkbox" id="translateFR" style="width:15px;height:15px;">
                                 <span>🇫🇷 French (FR)</span>

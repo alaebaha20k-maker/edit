@@ -163,9 +163,9 @@ function displayExistingScript(scriptData) {
     window.videoData.script = scriptData.script;
     appState.generatedScript = scriptData.script;
 
-    // Store in script library so it can be downloaded / viewed
+    // Auto-detect language and store in library (accessible via Script Library cards)
     if (scriptData.script) {
-        storeScriptInLibrary('en', scriptData.script, scriptData.script_filename || 'script.txt');
+        storeScriptAutoDetect(scriptData.script, scriptData.script_filename || 'script.txt');
     }
 
     // Keep scriptStats, scriptDownloadSection, and voiceGenerationSection hidden —
@@ -861,8 +861,8 @@ async function loadScriptFile() {
         window.videoData.script = text;
         appState.generatedScript = text;
 
-        // Store in Script Library as English (uploaded scripts default to EN)
-        storeScriptInLibrary('en', text, file.name);
+        // Auto-detect language and store in Script Library
+        storeScriptAutoDetect(text, file.name);
 
         // Show download + translate section
         const dlSection = document.getElementById('scriptDownloadSection');
@@ -994,8 +994,9 @@ async function generateScript() {
             window.videoData.script = data.script;
             appState.generatedScript = data.script;
 
-            // Add to Script Library as English
+            // AI-generated scripts are always English; update checkboxes accordingly
             storeScriptInLibrary('en', data.script, data.script_filename || 'script_en.txt');
+            updateTranslationCheckboxes('en');
 
             // DON'T display full script (can be very long - just show success message)
             if (resultBox) {
@@ -1662,9 +1663,69 @@ function downloadScript() {
     showNotification(`✅ Script downloaded: ${filename}`, 'success');
 }
 
+// ---------------------------------------------------------------------------
+// Language detection — uses first ~600 chars to score against word lists
+// ---------------------------------------------------------------------------
+function detectScriptLanguage(text) {
+    const sample = text.slice(0, 600).toLowerCase().replace(/[^a-zàâäéèêëîïôùûüœçñáéíóúüß\s]/g, ' ');
+    const words = sample.match(/\b[a-zàâäéèêëîïôùûüœçñáéíóúüß]+\b/g) || [];
+    const wordSet = new Set(words);
+
+    const markers = {
+        fr: ['je', 'vous', 'nous', 'ils', 'elle', 'est', 'les', 'des', 'une', 'ce', 'mais', 'bien', 'pour', 'sur', 'avec', 'dans', 'qui', 'que', 'du', 'au', 'très', 'aussi', 'tout', 'plus', 'cette'],
+        es: ['los', 'las', 'del', 'por', 'como', 'pero', 'más', 'este', 'para', 'también', 'sus', 'muy', 'cuando', 'una', 'usted', 'nosotros', 'ellos', 'ser', 'están', 'si', 'yo', 'hay', 'todo'],
+        de: ['der', 'die', 'das', 'ein', 'eine', 'ist', 'und', 'für', 'auf', 'mit', 'nicht', 'von', 'dem', 'den', 'ich', 'sie', 'wir', 'dass', 'haben', 'auch', 'werden', 'durch', 'nach', 'über'],
+        en: ['the', 'is', 'are', 'was', 'were', 'of', 'and', 'or', 'but', 'it', 'he', 'she', 'they', 'this', 'that', 'for', 'with', 'you', 'your', 'have', 'be', 'can', 'will', 'their', 'from'],
+    };
+
+    const scores = {};
+    for (const [lang, list] of Object.entries(markers)) {
+        scores[lang] = list.filter(w => wordSet.has(w)).length;
+    }
+
+    const best = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+    return best[0][1] > 0 ? best[0][0] : 'en';   // default to 'en' if unclear
+}
+
+// Update translation checkboxes — hide the detected language, show the rest
+function updateTranslationCheckboxes(detectedLang) {
+    const allLangs = { en: 'translateEN', fr: 'translateFR', es: 'translateES', de: 'translateDE' };
+    for (const [lang, checkboxId] of Object.entries(allLangs)) {
+        const label = document.getElementById(checkboxId)?.closest('label');
+        if (!label) continue;
+        if (lang === detectedLang) {
+            label.style.opacity = '0.35';
+            label.style.pointerEvents = 'none';
+            label.title = `Already in ${LANG_META[lang]?.label || lang}`;
+            document.getElementById(checkboxId).checked = false;
+        } else {
+            label.style.opacity = '';
+            label.style.pointerEvents = '';
+            label.title = '';
+        }
+    }
+
+    // Show detected-language badge next to the download button
+    const badge = document.getElementById('detectedLangBadge');
+    if (badge) {
+        const meta = LANG_META[detectedLang];
+        badge.textContent = `${meta?.flag || ''} Detected: ${meta?.label || detectedLang}`;
+        badge.style.display = 'inline-block';
+    }
+}
+
+// Store script in library with auto-detection of language
+function storeScriptAutoDetect(text, filename) {
+    const lang = detectScriptLanguage(text);
+    storeScriptInLibrary(lang, text, filename);
+    updateTranslationCheckboxes(lang);
+    return lang;
+}
+
 async function translateAndDownload() {
-    // Read from every possible source — library EN, textarea, or videoData
-    const script = (appState.scriptLibrary['en']?.text)
+    // Read from the detected-language slot, then textarea, then videoData
+    const detectedLang = appState.detectedScriptLang || 'en';
+    const script = (appState.scriptLibrary[detectedLang]?.text)
                 || document.getElementById('scriptInput')?.value?.trim()
                 || window.videoData.script
                 || appState.generatedScript;
@@ -1676,9 +1737,9 @@ async function translateAndDownload() {
     window.videoData.script = script;
     appState.generatedScript = script;
 
-    const langMap = { fr: 'translateFR', es: 'translateES', de: 'translateDE' };
+    const langMap = { en: 'translateEN', fr: 'translateFR', es: 'translateES', de: 'translateDE' };
     const selected = Object.entries(langMap)
-        .filter(([, id]) => document.getElementById(id)?.checked)
+        .filter(([lang, id]) => lang !== detectedLang && document.getElementById(id)?.checked)
         .map(([code]) => code);
 
     if (selected.length === 0) {
@@ -1743,6 +1804,13 @@ async function translateAndDownload() {
 function storeScriptInLibrary(langCode, text, filename) {
     const title = document.getElementById('titleInput')?.value || window.videoData.title || 'script';
     appState.scriptLibrary[langCode] = { text, filename, chars: text.length, title };
+    // Track the "source" language so translateAndDownload reads from the right slot
+    if (!appState.detectedScriptLang || langCode !== 'en') {
+        // A non-EN store is always the source; EN only sets it if nothing else did
+        if (langCode !== 'en' || !appState.detectedScriptLang) {
+            appState.detectedScriptLang = langCode;
+        }
+    }
     renderScriptLibrary();
     renderMultiLangVoiceSection();
     renderMultiLangExportSection();
@@ -3899,8 +3967,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Show download/translate section
                     const dlSection = document.getElementById('scriptDownloadSection');
                     if (dlSection) dlSection.style.display = 'block';
-                    // Store in library as EN
-                    storeScriptInLibrary('en', txt, 'manual_script_en.txt');
+                    // Auto-detect language and store in library
+                    storeScriptAutoDetect(txt, 'pasted_script.txt');
                     showVoiceSectionIfScriptAvailable();
                 }
             }, 1200);
