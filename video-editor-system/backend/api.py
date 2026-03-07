@@ -9,6 +9,11 @@ import sys
 import json
 import uuid
 import time
+import threading
+import unicodedata
+import re
+import requests as _http
+from difflib import SequenceMatcher
 import subprocess
 from datetime import datetime
 from flask import Flask, request, jsonify, send_file, send_from_directory
@@ -21,6 +26,55 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from main import VideoEditorSystem
 from utils import ensure_directory_exists, get_file_size, format_time
+
+
+# ── Persistent Gemini rate limiter (module-level, survives across requests) ──
+# Tracks actual API call history and per-key block windows so the system never
+# sends a request to a key that is still in its 429 cooldown period, even when
+# multiple translation requests arrive back-to-back.
+_gem_lock          = threading.Lock()
+_gem_histories: dict[str, list] = {}   # api_key → [call timestamps]
+_gem_blocked:   dict[str, float] = {}  # api_key → unblock_at (epoch seconds)
+_GEM_RPM = 10                          # free-tier safe ceiling per key
+
+
+def _gem_acquire(keys: list[str]) -> str:
+    """Block until any key has a free RPM slot; return the key string.
+
+    Round-robins across keys so load is spread evenly.  Respects block windows
+    set by _gem_block() — a key stays invisible to all threads until it unblocks.
+    """
+    while True:
+        with _gem_lock:
+            now = time.time()
+            for key in keys:
+                if now < _gem_blocked.get(key, 0):
+                    continue  # still in cooldown
+                hist = _gem_histories.setdefault(key, [])
+                hist[:] = [t for t in hist if now - t < 60]
+                if len(hist) < _GEM_RPM:
+                    hist.append(now)
+                    return key
+        time.sleep(1)   # all keys busy — wait then re-check
+
+
+def _gem_block(key: str, seconds: int) -> None:
+    """Mark key as rate-limited for `seconds` seconds.  Called on 429."""
+    with _gem_lock:
+        _gem_blocked[key] = time.time() + seconds
+
+
+def _gem_parse_retry(text: str) -> int:
+    """Extract retry delay from a Gemini 429 response body.
+
+    Gemini REST returns either:
+      "retryDelay": "13s"   (JSON field in error details)
+      retry_delay { seconds: 13 }  (proto text, sometimes in error message)
+    """
+    m = (re.search(r'"retryDelay":\s*"(\d+)s"', text) or
+         re.search(r'retry_delay\s*\{\s*seconds:\s*(\d+)', text) or
+         re.search(r'"seconds":\s*(\d+)', text))
+    return int(m.group(1)) + 2 if m else 15
 
 
 # Initialize Flask app
@@ -996,13 +1050,7 @@ def translate_script():
     - Context window prevents sentence-fragment artifacts
     - Consecutive duplicate paragraph detection + removal
     """
-    import re as _re
-    import unicodedata as _ud
-    import threading as _threading
-    import requests as _req
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    from difflib import SequenceMatcher
-    import time as _time
     from config import Config
 
     try:
@@ -1102,35 +1150,20 @@ def translate_script():
                 'rhetorical':  'İnanabiliyor musun?, Değil mi?, Bu çılgınca değil mi?',
             },
         }
-        MODEL       = 'gemini-2.5-flash'
-        GEMINI_URL  = f'https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent'
-        MAX_TOKENS  = 8192
+        MODEL      = 'gemini-2.5-flash'
+        GEMINI_URL = f'https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent'
+        MAX_TOKENS = 8192
         CHUNK_CHARS = 3500   # paragraph-safe max; output ~20 % larger = ~4 200 → fine
-        RPM_PER_KEY = 10     # free-tier safe ceiling
 
-        # ── Thread-safe round-robin rate-limited key selector ──────────────────
-        class _KeyRotator:
-            def __init__(self):
-                self._lock    = _threading.Lock()
-                self._history = [[] for _ in keys]
+        # ── REST call — uses module-level rate limiter (persists across requests) ─
+        def gemini_call(prompt, retries=6):
+            """Send one translation request.
 
-            def acquire(self):
-                """Block until any key has a free RPM slot; return (key, index)."""
-                while True:
-                    with self._lock:
-                        now = _time.time()
-                        for i, key in enumerate(keys):
-                            self._history[i] = [t for t in self._history[i] if now - t < 60]
-                            if len(self._history[i]) < RPM_PER_KEY:
-                                self._history[i].append(now)
-                                return key, i
-                    _time.sleep(2)  # all slots full — wait and retry
-
-        rotator = _KeyRotator()
-
-        # ── REST call with 429-aware retry ─────────────────────────────────────
-        def gemini_call(prompt, retries=5):
-            api_key, _ = rotator.acquire()
+            On 429: marks the offending key as blocked for the retry delay so ALL
+            threads automatically avoid it — no manual sleeping in caller code.
+            Re-acquires immediately (acquire() will block until a key is free).
+            On network error: exponential back-off, max 4×.
+            """
             body = {
                 'contents': [{'parts': [{'text': prompt}]}],
                 'generationConfig': {
@@ -1140,32 +1173,32 @@ def translate_script():
                 },
             }
             for attempt in range(retries):
+                api_key = _gem_acquire(keys)   # blocks until a key slot is free
                 try:
-                    r = _req.post(GEMINI_URL, json=body, params={'key': api_key}, timeout=90)
+                    r = _http.post(GEMINI_URL, json=body, params={'key': api_key}, timeout=90)
                     if r.status_code == 429:
-                        m = _re.search(r'"seconds":\s*(\d+)', r.text)
-                        wait = int(m.group(1)) + 3 if m else 20 * (attempt + 1)
-                        print(f'   ⏳ 429 — waiting {wait}s (attempt {attempt+1}/{retries})')
-                        _time.sleep(wait)
-                        api_key, _ = rotator.acquire()  # re-acquire (may switch key)
-                        continue
+                        wait = _gem_parse_retry(r.text)
+                        print(f'   ⏳ 429 on key …{api_key[-6:]} — blocked {wait}s '
+                              f'(attempt {attempt+1}/{retries})')
+                        _gem_block(api_key, wait)   # mark key; acquire() will skip it
+                        continue                     # re-acquire immediately (no sleep here)
                     r.raise_for_status()
                     return r.json()['candidates'][0]['content']['parts'][0]['text'].strip()
-                except (_req.exceptions.Timeout, _req.exceptions.ConnectionError):
+                except (_http.exceptions.Timeout, _http.exceptions.ConnectionError) as e:
                     if attempt < retries - 1:
-                        _time.sleep(4 * (attempt + 1))
+                        time.sleep(min(4 ** attempt, 30))
                     else:
                         raise
             raise RuntimeError(f'Gemini call failed after {retries} attempts')
 
         # ── Paragraph-boundary chunking ─────────────────────────────────────────
         def smart_chunks(text):
-            pieces = _re.split(r'(\n{2,})', text)   # keep separators
+            pieces = re.split(r'(\n{2,})', text)   # keep separators
             chunks, cur = [], ''
             for piece in pieces:
                 if len(cur) + len(piece) > CHUNK_CHARS and cur.strip():
                     chunks.append(cur.strip())
-                    cur = '' if _re.match(r'^\n+$', piece) else piece
+                    cur = '' if re.match(r'^\n+$', piece) else piece
                 else:
                     cur += piece
             if cur.strip():
@@ -1173,49 +1206,32 @@ def translate_script():
             return chunks or [text]
 
         # ── Unicode-aware normaliser (works for ALL scripts) ──────────────────
-        def _norm(s: str) -> str:
+        def tnorm(s: str) -> str:
             """Normalise text for duplicate comparison across any language.
 
-            Steps:
-            1. NFKD decomposition: splits accented chars into base + combining
-               mark (é → e + ◌́), so accented and unaccented forms compare equal.
-            2. Strip combining diacritical marks (the floating accents/umlauts).
-            3. Lowercase (handles Latin, Cyrillic, Greek, Turkish İ/i etc.).
-            4. Collapse whitespace.
-            5. Strip punctuation — leaves only word characters from any script
-               (Chinese, Arabic, Japanese etc. remain untouched; Latin punct gone).
+            NFKD decomposition splits accented chars → base + combining mark
+            (é → e + combining acute) so French/German/Spanish/Polish etc.
+            compare correctly even with accent variation.  \w in the final
+            sub matches Unicode word chars, so CJK/Arabic/Cyrillic are kept.
             """
-            s = _ud.normalize('NFKD', s.strip())
-            s = ''.join(c for c in s if not _ud.combining(c))
+            s = unicodedata.normalize('NFKD', s.strip())
+            s = ''.join(c for c in s if not unicodedata.combining(c))
             s = s.lower()
-            s = _re.sub(r'\s+', ' ', s)
-            s = _re.sub(r'[^\w\s]', '', s)   # \w matches Unicode word chars
+            s = re.sub(r'\s+', ' ', s)
+            s = re.sub(r'[^\w\s]', '', s)
             return s
 
-        def _similar(a: str, b: str, threshold: float = 0.88) -> bool:
-            """True if two normalised strings are ≥ threshold similar.
-
-            Catches near-duplicates that differ by a word or two — e.g. when the
-            model adds/removes a minor filler word between identical repetitions.
-            Only called when exact match fails and paragraphs are close in length
-            (to keep the O(n) cost low for large scripts).
-            """
+        def tsimilar(a: str, b: str, threshold: float = 0.88) -> bool:
+            """True if two normalised strings are ≥ threshold similar."""
             if not a or not b:
                 return False
-            # Quick length gate — skip expensive ratio check if wildly different
-            ratio_len = min(len(a), len(b)) / max(len(a), len(b))
-            if ratio_len < 0.7:
+            if min(len(a), len(b)) / max(len(a), len(b)) < 0.7:
                 return False
             return SequenceMatcher(None, a, b).ratio() >= threshold
 
         # ── Overlap-aware chunk joiner ─────────────────────────────────────────
         def join_chunks(parts):
-            """Join translated chunks, trimming any line-level overlap at boundaries.
-
-            Models sometimes echo the last line(s) of chunk N at the start of
-            chunk N+1 to maintain continuity.  Comparison is done with _norm()
-            so accented/Unicode characters compare correctly across all languages.
-            """
+            """Join translated chunks, trimming line-level overlap at boundaries."""
             if not parts:
                 return ''
             result = parts[0]
@@ -1226,8 +1242,7 @@ def translate_script():
                 p_lines = [l for l in part.splitlines()   if l.strip()]
                 overlap = 0
                 for n in range(min(6, len(r_lines), len(p_lines)), 0, -1):
-                    if [_norm(l) for l in r_lines[-n:]] == \
-                       [_norm(l) for l in p_lines[:n]]:
+                    if [tnorm(l) for l in r_lines[-n:]] == [tnorm(l) for l in p_lines[:n]]:
                         overlap = n
                         break
                 if overlap:
@@ -1242,27 +1257,24 @@ def translate_script():
 
         # ── Post-processing ────────────────────────────────────────────────────
         def postprocess(text):
-            # 1. Strip parenthetical glosses the model may have sneaked in
-            text = _re.sub(
+            # Strip parenthetical glosses
+            text = re.sub(
                 r'(?<=\w)\s*\([^()\n]{1,60}\)(?=[^\w(]|$)',
-                lambda m: '' if not _re.search(r'[!?,.]', m.group()) else m.group(),
+                lambda m: '' if not re.search(r'[!?,.]', m.group()) else m.group(),
                 text,
             )
-            # 2. Strong dedup:
-            #    - Exact match after Unicode normalisation (catches accented duplicates)
-            #    - Similarity match for near-duplicates (catches 1-2 word variations)
-            #    - Checks against ALL previous paragraphs (not just last one)
-            paras = _re.split(r'\n{2,}', text)
-            seen_norm: list = []   # list for similarity scan; set for exact lookup
+            # Dedup: exact normalised match + near-duplicate similarity check
+            paras = re.split(r'\n{2,}', text)
+            seen_norm: list = []
             seen_exact: set = set()
             deduped = []
             for p in paras:
-                n = _norm(p)
+                n = tnorm(p)
                 if not n:
                     continue
                 if n in seen_exact:
                     continue
-                if any(_similar(n, prev) for prev in seen_norm):
+                if any(tsimilar(n, prev) for prev in seen_norm):
                     continue
                 seen_exact.add(n)
                 seen_norm.append(n)
