@@ -669,10 +669,11 @@
                                 <span class="chip chip-blue">Script Generation</span>
                                 <span class="chip chip-blue">Title Generation</span>
                                 <span class="chip chip-blue">Translation</span>
+                                <span class="chip chip-blue">Prompts Generator</span>
                             </div>
                         </div>
                         <input type="password" id="gemini-key" placeholder="AIza...">
-                        <small>The main key — used as fallback for all features below if those keys are empty.</small>
+                        <small>The main key — used as fallback for all features when other keys are empty. Prompts Generator uses ALL keys below simultaneously.</small>
                     </div>
 
                     <!-- Auto Images AI / Director -->
@@ -687,7 +688,7 @@
                             </div>
                         </div>
                         <input type="password" id="director-gemini-key" placeholder="AIza... (empty = uses Script Writer key)">
-                        <small>Separate key recommended — isolates image generation rate limits from script generation.</small>
+                        <small>Separate key recommended — isolates rate limits. Also pooled into Prompts Generator for speed.</small>
                     </div>
 
                     <!-- Image Generation -->
