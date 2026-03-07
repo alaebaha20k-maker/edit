@@ -997,9 +997,11 @@ def translate_script():
     - Consecutive duplicate paragraph detection + removal
     """
     import re as _re
+    import unicodedata as _ud
     import threading as _threading
     import requests as _req
     from concurrent.futures import ThreadPoolExecutor, as_completed
+    from difflib import SequenceMatcher
     import time as _time
     from config import Config
 
@@ -1028,6 +1030,77 @@ def translate_script():
             'es': 'Spanish (español)',
             'de': 'German (Deutsch)',
             'en': 'English',
+            'pt': 'Portuguese (português)',
+            'it': 'Italian (italiano)',
+            'nl': 'Dutch (Nederlands)',
+            'pl': 'Polish (polski)',
+            'ru': 'Russian (русский)',
+            'ar': 'Arabic (العربية)',
+            'zh': 'Chinese (中文)',
+            'ja': 'Japanese (日本語)',
+            'ko': 'Korean (한국어)',
+            'tr': 'Turkish (Türkçe)',
+            'hi': 'Hindi (हिन्दी)',
+        }
+
+        # Per-language guide: natural discourse markers used IN the target language.
+        # These are injected into the prompt so the model knows what "natural" means
+        # for each specific language — not just generic "be idiomatic" advice.
+        DISCOURSE_GUIDE: dict = {
+            'fr': {
+                'attention':   'Écoutez, Regardez, Tenez, Voilà',
+                'transition':  'Du coup, En fait, D\'ailleurs, Par contre, Bref, Maintenant',
+                'opener':      'C\'est simple :, La réalité c\'est que..., Ce qu\'il faut comprendre c\'est..., Voici ce que...',
+                'rhetorical':  'Vous voyez ?, C\'est pas génial ça ?, Incroyable non ?',
+            },
+            'es': {
+                'attention':   'Mira, Escucha, Fíjate, Oye, Resulta que',
+                'transition':  'O sea, De hecho, Además, Sin embargo, Es decir, A ver',
+                'opener':      'Aquí está la clave:, La verdad es que..., Y es que..., Lo que pasa es que...',
+                'rhetorical':  '¿Lo ves?, ¿Te das cuenta?, ¿A que no lo sabías?',
+            },
+            'de': {
+                'attention':   'Schau mal, Hör zu, Also, Pass mal auf, Weißt du was',
+                'transition':  'Eigentlich, Jedenfalls, Außerdem, Nämlich, Übrigens, Dabei',
+                'opener':      'Darum geht\'s:, Die Wahrheit ist:, So funktioniert das:, Und hier ist der Punkt:',
+                'rhetorical':  'Weißt du warum?, Kannst du dir das vorstellen?, Klingt das nicht verrückt?',
+            },
+            'en': {
+                'attention':   'Look, Listen, Here\'s the thing, Now, Right,',
+                'transition':  'Actually, Basically, The thing is, On top of that, By the way',
+                'opener':      'Here\'s the deal:, The truth is:, Here\'s the kicker:, And this is key:',
+                'rhetorical':  'Can you believe that?, Right?, Doesn\'t that blow your mind?',
+            },
+            'pt': {
+                'attention':   'Olha, Veja bem, Escuta, Sabe o que é',
+                'transition':  'Na verdade, Aliás, Além disso, Inclusive, Então',
+                'opener':      'Veja bem:, A verdade é que..., E é aí que..., O ponto é:',
+                'rhetorical':  'Acredita nisso?, Entende?, Incrível, não é?',
+            },
+            'it': {
+                'attention':   'Guarda, Senti, Ecco, Sai cosa',
+                'transition':  'Infatti, Quindi, Comunque, Tra l\'altro, In realtà',
+                'opener':      'Ecco il punto:, La verità è che..., Ed è qui che...',
+                'rhetorical':  'Ci credi?, Capisci?, Non è incredibile?',
+            },
+            'nl': {
+                'attention':   'Kijk, Luister, Weet je wat, Oké dus',
+                'transition':  'Eigenlijk, Bovendien, Trouwens, Kortom, Maar goed',
+                'opener':      'Hier is het punt:, De waarheid is:, En dit is cruciaal:',
+                'rhetorical':  'Kun je het geloven?, Toch?, Is dat niet gek?',
+            },
+            'pl': {
+                'attention':   'Słuchaj, Patrz, Wiesz co, No to słuchaj',
+                'transition':  'Właściwie, Poza tym, Zresztą, Tak czy inaczej, W każdym razie',
+                'opener':      'Oto o co chodzi:, Prawda jest taka:, I tu jest clou:',
+                'rhetorical':  'Wierzysz w to?, No nie?, Czy to nie niesamowite?',
+            },
+            'tr': {
+                'attention':   'Bak, Dinle, Şimdi, Şunu söyleyeyim',
+                'transition':  'Aslında, Üstelik, Zaten, Yani, Neyse',
+                'opener':      'İşte mesele şu:, Gerçek şu ki:, Ve işte bu noktada:',
+                'rhetorical':  'İnanabiliyor musun?, Değil mi?, Bu çılgınca değil mi?',
+            },
         }
         MODEL       = 'gemini-2.5-flash'
         GEMINI_URL  = f'https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent'
@@ -1099,12 +1172,49 @@ def translate_script():
                 chunks.append(cur.strip())
             return chunks or [text]
 
+        # ── Unicode-aware normaliser (works for ALL scripts) ──────────────────
+        def _norm(s: str) -> str:
+            """Normalise text for duplicate comparison across any language.
+
+            Steps:
+            1. NFKD decomposition: splits accented chars into base + combining
+               mark (é → e + ◌́), so accented and unaccented forms compare equal.
+            2. Strip combining diacritical marks (the floating accents/umlauts).
+            3. Lowercase (handles Latin, Cyrillic, Greek, Turkish İ/i etc.).
+            4. Collapse whitespace.
+            5. Strip punctuation — leaves only word characters from any script
+               (Chinese, Arabic, Japanese etc. remain untouched; Latin punct gone).
+            """
+            s = _ud.normalize('NFKD', s.strip())
+            s = ''.join(c for c in s if not _ud.combining(c))
+            s = s.lower()
+            s = _re.sub(r'\s+', ' ', s)
+            s = _re.sub(r'[^\w\s]', '', s)   # \w matches Unicode word chars
+            return s
+
+        def _similar(a: str, b: str, threshold: float = 0.88) -> bool:
+            """True if two normalised strings are ≥ threshold similar.
+
+            Catches near-duplicates that differ by a word or two — e.g. when the
+            model adds/removes a minor filler word between identical repetitions.
+            Only called when exact match fails and paragraphs are close in length
+            (to keep the O(n) cost low for large scripts).
+            """
+            if not a or not b:
+                return False
+            # Quick length gate — skip expensive ratio check if wildly different
+            ratio_len = min(len(a), len(b)) / max(len(a), len(b))
+            if ratio_len < 0.7:
+                return False
+            return SequenceMatcher(None, a, b).ratio() >= threshold
+
         # ── Overlap-aware chunk joiner ─────────────────────────────────────────
         def join_chunks(parts):
             """Join translated chunks, trimming any line-level overlap at boundaries.
 
             Models sometimes echo the last line(s) of chunk N at the start of
-            chunk N+1 to maintain coherence.  We detect and strip that overlap.
+            chunk N+1 to maintain continuity.  Comparison is done with _norm()
+            so accented/Unicode characters compare correctly across all languages.
             """
             if not parts:
                 return ''
@@ -1116,12 +1226,11 @@ def translate_script():
                 p_lines = [l for l in part.splitlines()   if l.strip()]
                 overlap = 0
                 for n in range(min(6, len(r_lines), len(p_lines)), 0, -1):
-                    if [l.strip().lower() for l in r_lines[-n:]] == \
-                       [l.strip().lower() for l in p_lines[:n]]:
+                    if [_norm(l) for l in r_lines[-n:]] == \
+                       [_norm(l) for l in p_lines[:n]]:
                         overlap = n
                         break
                 if overlap:
-                    # Drop the overlapping lines from the head of `part`
                     trimmed = part
                     for _ in range(overlap):
                         nl = trimmed.find('\n')
@@ -1132,38 +1241,46 @@ def translate_script():
             return result
 
         # ── Post-processing ────────────────────────────────────────────────────
-        def _norm(s):
-            """Normalise a paragraph for duplicate comparison."""
-            s = _re.sub(r'\s+', ' ', s.strip().lower())
-            return _re.sub(r'[^\w\s]', '', s)
-
         def postprocess(text):
             # 1. Strip parenthetical glosses the model may have sneaked in
-            #    e.g. "term (original term)" — only short ones without punctuation
             text = _re.sub(
                 r'(?<=\w)\s*\([^()\n]{1,60}\)(?=[^\w(]|$)',
                 lambda m: '' if not _re.search(r'[!?,.]', m.group()) else m.group(),
                 text,
             )
-            # 2. Strong dedup — normalised comparison against ALL previous paragraphs
-            #    (not just the last one) catches non-adjacent repeats too
+            # 2. Strong dedup:
+            #    - Exact match after Unicode normalisation (catches accented duplicates)
+            #    - Similarity match for near-duplicates (catches 1-2 word variations)
+            #    - Checks against ALL previous paragraphs (not just last one)
             paras = _re.split(r'\n{2,}', text)
-            seen_norm: set = set()
+            seen_norm: list = []   # list for similarity scan; set for exact lookup
+            seen_exact: set = set()
             deduped = []
             for p in paras:
                 n = _norm(p)
-                if n and n not in seen_norm:
-                    seen_norm.add(n)
-                    deduped.append(p)
+                if not n:
+                    continue
+                if n in seen_exact:
+                    continue
+                if any(_similar(n, prev) for prev in seen_norm):
+                    continue
+                seen_exact.add(n)
+                seen_norm.append(n)
+                deduped.append(p)
             return '\n\n'.join(deduped)
 
         # ── Single chunk translation ───────────────────────────────────────────
-        def translate_chunk(chunk, prev_ctx, next_ctx, lang_name, idx, total):
+        def translate_chunk(chunk, prev_ctx, next_ctx, lang_code, lang_name, idx, total):
+            # Build context block
             ctx = ''
             if prev_ctx:
-                ctx += f'[PRECEDING CONTEXT — continuity reference only, do NOT output]:\n{prev_ctx[-400:]}\n\n'
+                ctx += f'[PRECEDING CONTEXT — read-only, do NOT output]:\n{prev_ctx[-400:]}\n\n'
             if next_ctx:
-                ctx += f'[FOLLOWING CONTEXT — continuity reference only, do NOT output]:\n{next_ctx[:400]}\n\n'
+                ctx += f'[FOLLOWING CONTEXT — read-only, do NOT output]:\n{next_ctx[:400]}\n\n'
+
+            # Pull language-specific discourse guide, fall back to English
+            dg = DISCOURSE_GUIDE.get(lang_code, DISCOURSE_GUIDE['en'])
+
             prompt = (
                 f'You are an expert professional translator specialising in spoken video scripts.\n'
                 f'Translate the [TEXT] section below into {lang_name}.\n\n'
@@ -1175,32 +1292,33 @@ def translate_script():
                 f'2. NO PARENTHETICALS — never add parenthetical explanations, '
                 f'original-language terms, or any annotation in parentheses.\n\n'
 
-                f'3. DISCOURSE MARKERS & RHETORICAL OPENERS — this is critical:\n'
-                f'   Words like "Here", "Ici", "Aquí", "Hier", "Now,", "So,", "Look,", '
-                f'"Right,", "Think about it", "Here\'s the thing" and similar openers are '
-                f'RHETORICAL FUNCTIONS, not literal location words.\n'
+                f'3. DISCOURSE MARKERS & RHETORICAL OPENERS — CRITICAL:\n'
+                f'   Openers like "Here", "Ici", "Aquí", "Hier", "Now,", "So,", "Look,", '
+                f'"Right,", "Voilà,", "Also,", "Schau mal," and any similar word used to '
+                f'open or punctuate a sentence are RHETORICAL FUNCTIONS, not literal words.\n'
                 f'   → Translate their COMMUNICATIVE FUNCTION, not their literal meaning.\n'
-                f'   → Use whatever a native {lang_name} video-script writer would naturally '
-                f'write to open or transition a sentence with the same energy.\n'
-                f'   Examples of function-preserving adaptations:\n'
-                f'   - Attention-getter opener → native equivalent in {lang_name}\n'
-                f'   - "Here\'s the deal:" → punchy {lang_name} equivalent\n'
-                f'   - "Think about it:" → natural {lang_name} rhetorical equivalent\n\n'
+                f'   → Ask yourself: "What would a native {lang_name} video-script writer '
+                f'say here to create the same energy and effect?"\n'
+                f'   → In {lang_name}, natural attention-getters are: {dg["attention"]}\n'
+                f'   → In {lang_name}, natural rhetorical openers are: {dg["opener"]}\n'
+                f'   → In {lang_name}, natural rhetorical questions are: {dg["rhetorical"]}\n\n'
 
-                f'4. TRANSITION WORDS — connectors (however, therefore, meanwhile, '
-                f'besides, actually, basically…) must use the most natural, '
-                f'colloquially correct {lang_name} equivalent — never a word-for-word calque.\n\n'
+                f'4. TRANSITION WORDS — connectors (however, therefore, meanwhile, besides, '
+                f'actually, basically, anyway…) must use the most natural, colloquially correct '
+                f'{lang_name} equivalent.\n'
+                f'   → In {lang_name}, natural connectors are: {dg["transition"]}\n'
+                f'   → Never use a word-for-word calque of the source-language connector.\n\n'
 
                 f'5. RHETORICAL QUESTIONS — must sound punchy and completely native in '
-                f'{lang_name}. Restructure the question if needed; do not translate literally.\n\n'
+                f'{lang_name}. Restructure the sentence if needed; do not translate literally.\n\n'
 
                 f'6. SENTENCE LENGTH — split any sentence over ~25 words into shorter '
                 f'sentences for natural spoken rhythm.\n\n'
 
-                f'7. STRUCTURE — preserve paragraph breaks and blank lines exactly.\n\n'
+                f'7. STRUCTURE — preserve paragraph breaks and blank lines exactly as in the source.\n\n'
 
                 f'8. CONTEXT SECTIONS — if present above, they are read-only references '
-                f'for continuity. Do NOT output them.\n\n'
+                f'for continuity. Do NOT include them in your output.\n\n'
 
                 f'{ctx}'
                 f'[TEXT]:\n{chunk}'
@@ -1223,7 +1341,7 @@ def translate_script():
                         chunk,
                         chunks[i - 1] if i > 0 else '',
                         chunks[i + 1] if i < total - 1 else '',
-                        lang_name, i, total
+                        lang_code, lang_name, i, total
                     ): i
                     for i, chunk in enumerate(chunks)
                 }
