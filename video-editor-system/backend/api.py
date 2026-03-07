@@ -987,7 +987,6 @@ def translate_script():
     Response: { success, translations: {fr: '...', es: '...', de: '...'}, errors: {} }
     """
     import google.generativeai as genai
-    import threading
     import time as _time
     from config import Config
 
@@ -1017,20 +1016,29 @@ def translate_script():
             'en': 'English'
         }
 
-        CHUNK_SIZE = 8000
-        # Tokens: 8000 chars ÷ 3 chars/token ≈ 2667 tokens input.
-        # Output translation is similar size. Set generous budget.
-        TRANSLATE_MAX_TOKENS = 8192
+        # Smaller chunks → each output fits well within the token budget.
+        # Translation can expand text by ~20 %, so keep chunks at 4 000 chars.
+        CHUNK_SIZE = 4000
+        # gemini-2.0-flash is NOT a thinking model — all output tokens go to text.
+        # 16 384 tokens ≈ 65 000 chars of translated output per chunk, plenty.
+        TRANSLATE_MAX_TOKENS = 16384
+        MODEL_NAME = 'gemini-2.0-flash'
 
         def translate_one(api_key, script_text, lang_code):
+            """Translate script_text to lang_code using the given API key.
+            NOTE: genai.configure() is a global call — NOT thread-safe.
+            This function must be called sequentially (no threads).
+            """
             lang_name = LANG_NAMES.get(lang_code, lang_code)
             chunks = [script_text[i:i+CHUNK_SIZE] for i in range(0, len(script_text), CHUNK_SIZE)]
+            # Configure API key right before use (sequential — no race condition)
             genai.configure(api_key=api_key)
-            model = genai.GenerativeModel('gemini-2.5-flash')
+            model = genai.GenerativeModel(MODEL_NAME)
+            print(f"🌍 Translating [{lang_code}] — {len(chunks)} chunk(s), {len(script_text):,} chars total")
             parts = []
             for idx, chunk in enumerate(chunks):
                 if idx > 0:
-                    _time.sleep(1.5)
+                    _time.sleep(1.0)
                 prompt = (
                     f"Translate the following script to {lang_name}.\n"
                     f"Rules:\n"
@@ -1058,35 +1066,20 @@ def translate_script():
 
         results = {}
         errors = {}
-
-        def worker(key, lang):
-            try:
-                results[lang] = translate_one(key, script, lang)
-                print(f"✅ Translation done: {lang}")
-            except Exception as e:
-                errors[lang] = str(e)
-                print(f"❌ Translation failed ({lang}): {e}")
-
-        # Run first 2 languages in parallel, then remaining sequentially
-        threads = []
         keys = [key1, key2]
-        for i, lang in enumerate(languages[:2]):
-            t = threading.Thread(target=worker, args=(keys[i % 2], lang))
-            threads.append(t)
-            t.start()
-        for t in threads:
-            t.join()
 
-        # Remaining languages (3+)
-        for i, lang in enumerate(languages[2:]):
-            k = key1 if i % 2 == 0 else key2
+        # Sequential translation — alternating keys.
+        # genai.configure() is global so threads would race; sequential is safe.
+        for i, lang in enumerate(languages):
+            k = keys[i % 2]
             try:
                 results[lang] = translate_one(k, script, lang)
                 print(f"✅ Translation done: {lang}")
             except Exception as e:
                 errors[lang] = str(e)
-            if i < len(languages[2:]) - 1:
-                _time.sleep(2)
+                print(f"❌ Translation failed ({lang}): {e}")
+            if i < len(languages) - 1:
+                _time.sleep(1.5)
 
         return jsonify({'success': True, 'translations': results, 'errors': errors})
 
