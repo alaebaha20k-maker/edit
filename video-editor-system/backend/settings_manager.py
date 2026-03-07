@@ -871,7 +871,15 @@ Each title must be distinctive, high-quality, and optimized for CTR.
             },
             'pixabay': {
                 'configured': bool(api_keys.get('pixabay')),
-                'required': False  # Optional for now
+                'required': False
+            },
+            'gemini_translate_1': {
+                'configured': bool(api_keys.get('gemini_translate_1')),
+                'required': False
+            },
+            'gemini_translate_2': {
+                'configured': bool(api_keys.get('gemini_translate_2')),
+                'required': False
             }
         }
 
@@ -890,7 +898,8 @@ Each title must be distinctive, high-quality, and optimized for CTR.
                     'configured': api_validation[key]['configured'],
                     'value': '***' if api_keys_dict.get(key) else ''
                 }
-                for key in ['gemini', 'director_gemini', 'replicate', 'inworld', 'pexels', 'pixabay']
+                for key in ['gemini', 'director_gemini', 'gemini_image', 'replicate', 'inworld',
+                            'pexels', 'pixabay', 'gemini_translate_1', 'gemini_translate_2']
             },
             'formulas': {
                 'title': len(cls.load_formula('title')),
