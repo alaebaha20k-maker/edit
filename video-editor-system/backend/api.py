@@ -979,14 +979,27 @@ def generate_script():
 @app.route('/api/translate-script', methods=['POST'])
 def translate_script():
     """
-    Translate a script to multiple languages using 2 Gemini APIs in parallel.
-    - Chunk size: 8000 chars per API call
-    - 2 languages translated simultaneously (API1 + API2)
-    - 3rd language uses API1 after first two finish
-    Request: { script, languages: ['fr','es','de'] }
-    Response: { success, translations: {fr: '...', es: '...', de: '...'}, errors: {} }
+    High-quality parallel translation engine.
+
+    Architecture:
+    - Raw REST API calls — fully thread-safe (no genai global state)
+    - All languages translated in parallel (one thread per language)
+    - Chunks within each language processed in parallel (max 3 concurrent)
+    - Shared sliding-window rate limiter across both keys (10 RPM per key)
+    - Paragraph-boundary chunking + ±1-paragraph context window per chunk
+    - Auto-retry reading retry_delay from 429 errors
+
+    Quality:
+    - No parenthetical glosses (enforced via prompt + post-processing strip)
+    - Idiomatic transition words, natural rhetorical questions
+    - Long sentences split for spoken flow
+    - Context window prevents sentence-fragment artifacts
+    - Consecutive duplicate paragraph detection + removal
     """
-    import google.generativeai as genai
+    import re as _re
+    import threading as _threading
+    import requests as _req
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     import time as _time
     from config import Config
 
@@ -1005,102 +1018,169 @@ def translate_script():
 
         key1 = Config.get_gemini_translate_1_key()
         key2 = Config.get_gemini_translate_2_key() or key1
-
         if not key1:
             return jsonify({'error': 'Translation API Key 1 not configured in Settings'}), 500
 
-        import re as _re
+        keys = list(dict.fromkeys([key1, key2]))  # deduplicate, preserve order
 
         LANG_NAMES = {
             'fr': 'French (français)',
             'es': 'Spanish (español)',
             'de': 'German (Deutsch)',
-            'en': 'English'
+            'en': 'English',
         }
+        MODEL       = 'gemini-2.5-flash'
+        GEMINI_URL  = f'https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent'
+        MAX_TOKENS  = 8192
+        CHUNK_CHARS = 3500   # paragraph-safe max; output ~20 % larger = ~4 200 → fine
+        RPM_PER_KEY = 10     # free-tier safe ceiling
 
-        # 4 000-char chunks keep each translated output well within the token budget.
-        # Translation can expand text by ~20 %, so this is safe.
-        CHUNK_SIZE = 4000
-        # gemini-2.5-flash max output is 8 192 tokens (~32 000 chars) — plenty per chunk.
-        TRANSLATE_MAX_TOKENS = 8192
-        MODEL_NAME = 'gemini-2.5-flash'
+        # ── Thread-safe round-robin rate-limited key selector ──────────────────
+        class _KeyRotator:
+            def __init__(self):
+                self._lock    = _threading.Lock()
+                self._history = [[] for _ in keys]
 
-        def _parse_retry_delay(err_str):
-            """Extract retry_delay seconds from a 429 error message."""
-            m = _re.search(r'retry_delay\s*\{\s*seconds:\s*(\d+)', err_str)
-            return int(m.group(1)) + 3 if m else 20
+            def acquire(self):
+                """Block until any key has a free RPM slot; return (key, index)."""
+                while True:
+                    with self._lock:
+                        now = _time.time()
+                        for i, key in enumerate(keys):
+                            self._history[i] = [t for t in self._history[i] if now - t < 60]
+                            if len(self._history[i]) < RPM_PER_KEY:
+                                self._history[i].append(now)
+                                return key, i
+                    _time.sleep(2)  # all slots full — wait and retry
 
-        def translate_chunk_with_retry(model, prompt, gen_cfg, max_retries=4):
-            """Call model.generate_content with exponential-backoff retry on 429."""
-            for attempt in range(max_retries):
+        rotator = _KeyRotator()
+
+        # ── REST call with 429-aware retry ─────────────────────────────────────
+        def gemini_call(prompt, retries=5):
+            api_key, _ = rotator.acquire()
+            body = {
+                'contents': [{'parts': [{'text': prompt}]}],
+                'generationConfig': {
+                    'temperature': 0.3,
+                    'maxOutputTokens': MAX_TOKENS,
+                    'topP': 0.95,
+                },
+            }
+            for attempt in range(retries):
                 try:
-                    return model.generate_content(prompt, generation_config=gen_cfg)
-                except Exception as e:
-                    err = str(e)
-                    if '429' in err and attempt < max_retries - 1:
-                        wait = _parse_retry_delay(err)
-                        print(f"   ⏳ Rate limit — waiting {wait}s (attempt {attempt+1}/{max_retries})")
+                    r = _req.post(GEMINI_URL, json=body, params={'key': api_key}, timeout=90)
+                    if r.status_code == 429:
+                        m = _re.search(r'"seconds":\s*(\d+)', r.text)
+                        wait = int(m.group(1)) + 3 if m else 20 * (attempt + 1)
+                        print(f'   ⏳ 429 — waiting {wait}s (attempt {attempt+1}/{retries})')
                         _time.sleep(wait)
+                        api_key, _ = rotator.acquire()  # re-acquire (may switch key)
+                        continue
+                    r.raise_for_status()
+                    return r.json()['candidates'][0]['content']['parts'][0]['text'].strip()
+                except (_req.exceptions.Timeout, _req.exceptions.ConnectionError):
+                    if attempt < retries - 1:
+                        _time.sleep(4 * (attempt + 1))
                     else:
                         raise
+            raise RuntimeError(f'Gemini call failed after {retries} attempts')
 
-        def translate_one(api_key, script_text, lang_code):
-            """Translate script_text to lang_code using the given API key.
-            NOTE: genai.configure() is a global call — NOT thread-safe.
-            Always call this function sequentially (never from concurrent threads).
-            """
-            lang_name = LANG_NAMES.get(lang_code, lang_code)
-            chunks = [script_text[i:i+CHUNK_SIZE] for i in range(0, len(script_text), CHUNK_SIZE)]
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel(MODEL_NAME)
-            print(f"🌍 Translating [{lang_code}] — {len(chunks)} chunk(s), {len(script_text):,} chars total")
-            parts = []
-            for idx, chunk in enumerate(chunks):
-                if idx > 0:
-                    _time.sleep(2.0)   # breathe between chunks to stay within RPM
-                prompt = (
-                    f"Translate the following script to {lang_name}.\n"
-                    f"Rules:\n"
-                    f"- Keep the EXACT same structure, paragraphs, and flow\n"
-                    f"- For technical/financial/brand terms: keep original + add {lang_name} translation in parentheses if truly needed\n"
-                    f"- Maintain the tone, style, and energy of the original\n"
-                    f"- Output ONLY the translated text, nothing else — no explanations, no preamble\n\n"
-                    f"SCRIPT:\n{chunk}"
-                )
-                gen_cfg = {
-                    "temperature": 0.3,
-                    "max_output_tokens": TRANSLATE_MAX_TOKENS,
-                    "top_p": 0.95,
-                }
-                response = translate_chunk_with_retry(model, prompt, gen_cfg)
-                part = response.text.strip() if response.text else ''
-                if not part:
-                    print(f"   ⚠️  Empty translation for chunk {idx+1}/{len(chunks)} ({lang_code})")
+        # ── Paragraph-boundary chunking ─────────────────────────────────────────
+        def smart_chunks(text):
+            pieces = _re.split(r'(\n{2,})', text)   # keep separators
+            chunks, cur = [], ''
+            for piece in pieces:
+                if len(cur) + len(piece) > CHUNK_CHARS and cur.strip():
+                    chunks.append(cur.strip())
+                    cur = '' if _re.match(r'^\n+$', piece) else piece
                 else:
-                    print(f"   ✅ Chunk {idx+1}/{len(chunks)} translated: {len(part):,} chars")
-                parts.append(part)
-            result = '\n\n'.join(parts)
-            print(f"✅ Full translation [{lang_code}]: {len(result):,} chars from {len(script_text):,} source chars")
-            return result
+                    cur += piece
+            if cur.strip():
+                chunks.append(cur.strip())
+            return chunks or [text]
 
-        results = {}
-        errors = {}
-        keys = [key1, key2]
+        # ── Post-processing ────────────────────────────────────────────────────
+        def postprocess(text):
+            # Strip parenthetical glosses the model may have sneaked in
+            # e.g. "term (original term)" → "term"
+            # Only removes short, annotation-like parentheticals (no punctuation inside)
+            text = _re.sub(r'(?<=\w)\s*\([^()\n]{1,60}\)(?=[^\w(]|$)',
+                           lambda m: '' if not _re.search(r'[!?,.]', m.group()) else m.group(),
+                           text)
+            # Remove consecutive duplicate paragraphs
+            paras, seen = _re.split(r'\n{2,}', text), []
+            for p in paras:
+                if not seen or p.strip() != seen[-1].strip():
+                    seen.append(p)
+            return '\n\n'.join(seen)
 
-        # Sequential translation — alternating between key1 and key2.
-        # genai.configure() is global so threads would race; sequential is safe.
-        # Between languages, wait 5 s to let the per-minute quota recover.
-        for i, lang in enumerate(languages):
-            k = keys[i % 2]
-            try:
-                results[lang] = translate_one(k, script, lang)
-                print(f"✅ Translation done: {lang}")
-            except Exception as e:
-                errors[lang] = str(e)
-                print(f"❌ Translation failed ({lang}): {e}")
-            if i < len(languages) - 1:
-                print(f"   ⏸️  Cooling down 5 s before next language…")
-                _time.sleep(5)
+        # ── Single chunk translation ───────────────────────────────────────────
+        def translate_chunk(chunk, prev_ctx, next_ctx, lang_name, idx, total):
+            ctx = ''
+            if prev_ctx:
+                ctx += f'[PRECEDING CONTEXT — for continuity only, do NOT output]:\n{prev_ctx[-400:]}\n\n'
+            if next_ctx:
+                ctx += f'[FOLLOWING CONTEXT — for continuity only, do NOT output]:\n{next_ctx[:400]}\n\n'
+            prompt = (
+                f'You are an expert professional translator specialising in spoken video scripts.\n'
+                f'Translate the [TEXT] section below into {lang_name}.\n\n'
+                f'STRICT RULES — follow every rule, no exceptions:\n'
+                f'1. Output ONLY the translated text — no preamble, no notes, no headings.\n'
+                f'2. NEVER add parenthetical explanations or original-language terms in parentheses.\n'
+                f'3. Translate transition/connective words (however, therefore, meanwhile…) '
+                f'IDIOMATICALLY — use natural {lang_name} equivalents, never word-for-word calques.\n'
+                f'4. Rhetorical questions must be punchy and native-sounding in {lang_name}, '
+                f'not literal translations.\n'
+                f'5. Break any sentence over ~25 words into shorter sentences for natural spoken rhythm.\n'
+                f'6. Preserve paragraph structure and blank lines exactly as in the source.\n'
+                f'7. Context sections are for continuity only — do NOT include them in output.\n\n'
+                f'{ctx}'
+                f'[TEXT]:\n{chunk}'
+            )
+            result = gemini_call(prompt)
+            print(f'   ✅ [{lang_name}] chunk {idx+1}/{total}: {len(result):,} chars')
+            return idx, result
+
+        # ── Per-language translation (chunks parallelised) ─────────────────────
+        def translate_language(lang_code):
+            lang_name = LANG_NAMES.get(lang_code, lang_code)
+            chunks = smart_chunks(script)
+            total = len(chunks)
+            print(f'🌍 [{lang_code}] starting — {total} chunk(s), {len(script):,} chars')
+            parts = [None] * total
+            with ThreadPoolExecutor(max_workers=min(total, 3)) as ex:
+                futs = {
+                    ex.submit(
+                        translate_chunk,
+                        chunk,
+                        chunks[i - 1] if i > 0 else '',
+                        chunks[i + 1] if i < total - 1 else '',
+                        lang_name, i, total
+                    ): i
+                    for i, chunk in enumerate(chunks)
+                }
+                for f in as_completed(futs):
+                    try:
+                        idx, text = f.result()
+                        parts[idx] = text
+                    except Exception as e:
+                        parts[futs[f]] = ''
+                        print(f'   ❌ [{lang_code}] chunk {futs[f]+1} failed: {e}')
+            joined = postprocess('\n\n'.join(p or '' for p in parts))
+            print(f'✅ [{lang_code}] done: {len(joined):,} chars')
+            return joined
+
+        # ── All languages in parallel ──────────────────────────────────────────
+        results, errors = {}, {}
+        with ThreadPoolExecutor(max_workers=len(languages)) as ex:
+            futs = {ex.submit(translate_language, lang): lang for lang in languages}
+            for f in as_completed(futs):
+                lang = futs[f]
+                try:
+                    results[lang] = f.result()
+                except Exception as e:
+                    errors[lang] = str(e)
+                    print(f'❌ [{lang}] failed: {e}')
 
         return jsonify({'success': True, 'translations': results, 'errors': errors})
 
