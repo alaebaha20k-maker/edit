@@ -29,52 +29,74 @@ from utils import ensure_directory_exists, get_file_size, format_time
 
 
 # ── Persistent Gemini rate limiter (module-level, survives across requests) ──
-# Tracks actual API call history and per-key block windows so the system never
-# sends a request to a key that is still in its 429 cooldown period, even when
-# multiple translation requests arrive back-to-back.
-_gem_lock          = threading.Lock()
-_gem_histories: dict[str, list] = {}   # api_key → [call timestamps]
-_gem_blocked:   dict[str, float] = {}  # api_key → unblock_at (epoch seconds)
-_GEM_RPM = 10                          # free-tier safe ceiling per key
+#
+# Free-tier limit: 10 RPM per key.
+# We enforce a MINIMUM INTERVAL of 6.5 s between consecutive calls on the
+# same key — this is slightly more than 60/10 = 6 s and prevents bursts.
+# With N keys the effective throughput is N × ~9 RPM with zero 429s.
+#
+# All state is module-level so it persists between back-to-back requests.
+# A fresh request never hammers keys that are still cooling down from the
+# previous translation job.
+
+_gem_lock: threading.Lock       = threading.Lock()
+_gem_last_used:  dict[str, float] = {}   # api_key → time of last dispatched call
+_gem_blocked:    dict[str, float] = {}   # api_key → unblock_at (epoch seconds)
+_GEM_RPM          = 10
+_GEM_MIN_INTERVAL = 60.0 / _GEM_RPM + 0.5   # 6.5 s between calls on same key
 
 
 def _gem_acquire(keys: list[str]) -> str:
-    """Block until any key has a free RPM slot; return the key string.
+    """Block until a key slot is available; return the chosen key.
 
-    Round-robins across keys so load is spread evenly.  Respects block windows
-    set by _gem_block() — a key stays invisible to all threads until it unblocks.
+    For each key in order:
+      1. Skip if blocked by a 429 window.
+      2. Skip if used too recently (< _GEM_MIN_INTERVAL ago).
+      3. Otherwise claim it: record last-used time and return.
+
+    If no key is ready, sleep EXACTLY until the soonest key becomes
+    available (not a fixed poll interval), then retry.
     """
     while True:
+        soonest_wait = _GEM_MIN_INTERVAL   # upper bound for sleep
         with _gem_lock:
             now = time.time()
             for key in keys:
-                if now < _gem_blocked.get(key, 0):
-                    continue  # still in cooldown
-                hist = _gem_histories.setdefault(key, [])
-                hist[:] = [t for t in hist if now - t < 60]
-                if len(hist) < _GEM_RPM:
-                    hist.append(now)
+                unblock = _gem_blocked.get(key, 0)
+                if now < unblock:
+                    soonest_wait = min(soonest_wait, unblock - now)
+                    continue
+                available_at = _gem_last_used.get(key, 0) + _GEM_MIN_INTERVAL
+                if now >= available_at:
+                    _gem_last_used[key] = now
                     return key
-        time.sleep(1)   # all keys busy — wait then re-check
+                soonest_wait = min(soonest_wait, available_at - now)
+        time.sleep(soonest_wait + 0.05)   # wake up just after the slot opens
 
 
 def _gem_block(key: str, seconds: int) -> None:
     """Mark key as rate-limited for `seconds` seconds.  Called on 429."""
     with _gem_lock:
         _gem_blocked[key] = time.time() + seconds
+        # Also push last_used forward so the interval check honours the block
+        _gem_last_used[key] = time.time() + seconds
 
 
 def _gem_parse_retry(text: str) -> int:
     """Extract retry delay from a Gemini 429 response body.
 
-    Gemini REST returns either:
-      "retryDelay": "13s"   (JSON field in error details)
-      retry_delay { seconds: 13 }  (proto text, sometimes in error message)
+    Tries all known formats:
+      "retryDelay": "13s"               – JSON error details
+      retry_delay { seconds: 13 }       – proto-text in message string
+      "seconds": 13                     – bare JSON int
+      Retry in 13 / retry after 13      – human-readable fallback
     """
-    m = (re.search(r'"retryDelay":\s*"(\d+)s"', text) or
-         re.search(r'retry_delay\s*\{\s*seconds:\s*(\d+)', text) or
-         re.search(r'"seconds":\s*(\d+)', text))
-    return int(m.group(1)) + 2 if m else 15
+    m = (re.search(r'"retryDelay":\s*"(\d+)', text) or
+         re.search(r'retry_delay\s*\{[^}]*seconds:\s*(\d+)', text, re.DOTALL) or
+         re.search(r'"seconds":\s*(\d+)', text) or
+         re.search(r'(?:retry in|retry after)\s*(\d+)', text, re.IGNORECASE) or
+         re.search(r'(\d+)\s*s(?:ec|econds)?\b', text))
+    return min(int(m.group(1)) + 2, 90) if m else 20
 
 
 # Initialize Flask app
@@ -1066,12 +1088,20 @@ def translate_script():
         if not languages:
             return jsonify({'error': 'At least one language is required'}), 400
 
-        key1 = Config.get_gemini_translate_1_key()
-        key2 = Config.get_gemini_translate_2_key() or key1
-        if not key1:
-            return jsonify({'error': 'Translation API Key 1 not configured in Settings'}), 500
-
-        keys = list(dict.fromkeys([key1, key2]))  # deduplicate, preserve order
+        # Collect every unique Gemini key configured in Settings.
+        # Priority: dedicated translate keys first, then shared keys.
+        # Deduplication ensures the same key is never double-counted.
+        _candidate_keys = [
+            Config.get_gemini_translate_1_key(),
+            Config.get_gemini_translate_2_key(),
+            Config.get_gemini_api_key(),
+            Config.get_director_gemini_api_key(),
+            Config.get_gemini_image_api_key(),
+        ]
+        keys = list(dict.fromkeys(k for k in _candidate_keys if k))
+        if not keys:
+            return jsonify({'error': 'No Gemini API key configured in Settings'}), 500
+        print(f'🔑 Translation using {len(keys)} unique API key(s)')
 
         LANG_NAMES = {
             'fr': 'French (français)',
@@ -1339,46 +1369,60 @@ def translate_script():
             print(f'   ✅ [{lang_name}] chunk {idx+1}/{total}: {len(result):,} chars')
             return idx, result
 
-        # ── Per-language translation (chunks parallelised) ─────────────────────
-        def translate_language(lang_code):
-            lang_name = LANG_NAMES.get(lang_code, lang_code)
-            chunks = smart_chunks(script)
-            total = len(chunks)
-            print(f'🌍 [{lang_code}] starting — {total} chunk(s), {len(script):,} chars')
-            parts = [None] * total
-            with ThreadPoolExecutor(max_workers=min(total, 3)) as ex:
-                futs = {
-                    ex.submit(
-                        translate_chunk,
-                        chunk,
-                        chunks[i - 1] if i > 0 else '',
-                        chunks[i + 1] if i < total - 1 else '',
-                        lang_code, lang_name, i, total
-                    ): i
-                    for i, chunk in enumerate(chunks)
-                }
-                for f in as_completed(futs):
-                    try:
-                        idx, text = f.result()
-                        parts[idx] = text
-                    except Exception as e:
-                        parts[futs[f]] = ''
-                        print(f'   ❌ [{lang_code}] chunk {futs[f]+1} failed: {e}')
-            joined = postprocess(join_chunks([p or '' for p in parts]))
-            print(f'✅ [{lang_code}] done: {len(joined):,} chars')
-            return joined
+        # ── Single flat work queue — all languages × all chunks ───────────────
+        # One ThreadPoolExecutor for everything.  max_workers = len(keys) so at
+        # most N threads compete for N keys; _gem_acquire() spaces them out via
+        # the per-key minimum interval (6.5 s) — no bursts, no 429s.
+        chunks_src = smart_chunks(script)
+        n_chunks   = len(chunks_src)
+        print(f'📝 {len(languages)} language(s) × {n_chunks} chunk(s) '
+              f'= {len(languages) * n_chunks} task(s) — {len(keys)} key(s) available')
 
-        # ── All languages in parallel ──────────────────────────────────────────
-        results, errors = {}, {}
-        with ThreadPoolExecutor(max_workers=len(languages)) as ex:
-            futs = {ex.submit(translate_language, lang): lang for lang in languages}
+        # task = (lang_code, lang_name, chunk_text, idx, prev_ctx, next_ctx)
+        tasks = []
+        for lang_code in languages:
+            lang_name = LANG_NAMES.get(lang_code, lang_code)
+            print(f'🌍 [{lang_code}] queued — {n_chunks} chunk(s), {len(script):,} chars')
+            for i, chunk in enumerate(chunks_src):
+                tasks.append((
+                    lang_code, lang_name, chunk, i,
+                    chunks_src[i - 1] if i > 0         else '',
+                    chunks_src[i + 1] if i < n_chunks - 1 else '',
+                ))
+
+        # Accumulate translated parts indexed by (lang_code, chunk_idx)
+        translated: dict[tuple, str] = {}
+        chunk_errors: dict[str, str] = {}
+
+        def run_task(task):
+            lang_code, lang_name, chunk, idx, prev_ctx, next_ctx = task
+            _, text = translate_chunk(chunk, prev_ctx, next_ctx,
+                                      lang_code, lang_name, idx, n_chunks)
+            return (lang_code, idx), text
+
+        with ThreadPoolExecutor(max_workers=len(keys)) as ex:
+            futs = {ex.submit(run_task, t): t for t in tasks}
             for f in as_completed(futs):
-                lang = futs[f]
+                task = futs[f]
+                lang_code = task[0]
                 try:
-                    results[lang] = f.result()
+                    key, text = f.result()
+                    translated[key] = text
                 except Exception as e:
-                    errors[lang] = str(e)
-                    print(f'❌ [{lang}] failed: {e}')
+                    chunk_errors[lang_code] = str(e)
+                    print(f'   ❌ [{lang_code}] chunk {task[3]+1} failed: {e}')
+
+        # Assemble per-language results in original chunk order
+        results, errors = {}, {}
+        for lang_code in languages:
+            if lang_code in chunk_errors and not any(
+                    k[0] == lang_code for k in translated):
+                errors[lang_code] = chunk_errors[lang_code]
+                continue
+            parts = [translated.get((lang_code, i), '') for i in range(n_chunks)]
+            joined = postprocess(join_chunks(parts))
+            print(f'✅ [{lang_code}] done: {len(joined):,} chars')
+            results[lang_code] = joined
 
         return jsonify({'success': True, 'translations': results, 'errors': errors})
 
