@@ -1157,20 +1157,17 @@ def translate_script():
         if not languages:
             return jsonify({'error': 'At least one language is required'}), 400
 
-        # Collect every unique Gemini key configured in Settings.
-        # Priority: dedicated translate keys first, then shared keys.
-        # Deduplication ensures the same key is never double-counted.
+        # Translation uses ONLY its dedicated keys (Translate 1 + Translate 2).
+        # No fallback to Script Writer / Auto Images / Image keys — each feature
+        # must use its own dedicated API key to keep rate limits fully isolated.
         _candidate_keys = [
             Config.get_gemini_translate_1_key(),
             Config.get_gemini_translate_2_key(),
-            Config.get_gemini_api_key(),
-            Config.get_director_gemini_api_key(),
-            Config.get_gemini_image_api_key(),
         ]
         keys = list(dict.fromkeys(k for k in _candidate_keys if k))
         if not keys:
-            return jsonify({'error': 'No Gemini API key configured in Settings'}), 500
-        print(f'🔑 Translation using {len(keys)} unique API key(s)')
+            return jsonify({'error': 'No Translation API key configured. Add Translation Key 1 in Settings → Google Gemini AI → Translation Keys.'}), 500
+        print(f'🔑 Translation using {len(keys)} dedicated key(s)')
 
         LANG_NAMES = {
             'fr': 'French (français)',
@@ -2080,6 +2077,8 @@ def save_api_keys():
         unsplash = data.get('unsplash')
         gemini_translate_1 = data.get('gemini_translate_1')
         gemini_translate_2 = data.get('gemini_translate_2')
+        gemini_prompts     = data.get('gemini_prompts')
+        gemini_seo         = data.get('gemini_seo')
 
         # Debug: Log what keys we received (show length not actual value)
         print("\n🔑 Received API keys:")
@@ -2094,8 +2093,10 @@ def save_api_keys():
         print(f"   Unsplash: {'SET (' + str(len(unsplash)) + ' chars)' if unsplash else 'NOT SET'}")
         print(f"   Translate 1: {'SET (' + str(len(gemini_translate_1)) + ' chars)' if gemini_translate_1 else 'NOT SET'}")
         print(f"   Translate 2: {'SET (' + str(len(gemini_translate_2)) + ' chars)' if gemini_translate_2 else 'NOT SET'}")
+        print(f"   Prompts Gen: {'SET (' + str(len(gemini_prompts)) + ' chars)' if gemini_prompts else 'NOT SET'}")
+        print(f"   SEO Gen: {'SET (' + str(len(gemini_seo)) + ' chars)' if gemini_seo else 'NOT SET'}")
 
-        # Save API keys (Script Writer Gemini and Director Gemini are SEPARATE!)
+        # Save API keys (each feature uses its own dedicated key)
         settings = SettingsManager.save_api_keys(
             gemini=gemini,
             director_gemini=director_gemini,
@@ -2107,7 +2108,9 @@ def save_api_keys():
             pixabay=pixabay,
             unsplash=unsplash,
             gemini_translate_1=gemini_translate_1,
-            gemini_translate_2=gemini_translate_2
+            gemini_translate_2=gemini_translate_2,
+            gemini_prompts=gemini_prompts,
+            gemini_seo=gemini_seo
         )
 
         # Get validation status
@@ -4231,10 +4234,10 @@ def seo_generator():
         else:
             formula = SeoFormulaManager.get_default_formula_text()
 
-        # Gemini API key — use Gemini Imagen 3 key, fall back to main Gemini key
-        gemini_key = Config.get_gemini_image_api_key() or Config.get_gemini_api_key()
+        # SEO Generator uses ONLY its own dedicated key. No fallback to other keys.
+        gemini_key = Config.get_gemini_seo_api_key()
         if not gemini_key:
-            return jsonify({'success': False, 'error': 'No Gemini API key configured. Add the Gemini Imagen 3 key in Settings.'}), 400
+            return jsonify({'success': False, 'error': 'No SEO Generator API key configured. Add it in Settings → SEO Generator.'}), 400
 
         link_instruction = f'Include this link naturally in the description: {link}' if link else 'No product link provided — skip the CTA/link section.'
 
@@ -5362,15 +5365,19 @@ def alae_baha_saved_settings():
         return jsonify({
             'success': True,
             'api_keys': {
-                'gemini':           api_keys.get('gemini', ''),
-                'director_gemini':  api_keys.get('director_gemini', ''),
-                'gemini_image':     api_keys.get('gemini_image', ''),
-                'replicate':        api_keys.get('replicate', ''),
-                'inworld':          api_keys.get('inworld', ''),
-                'inworld_secret':   api_keys.get('inworld_secret', ''),
-                'pexels':           api_keys.get('pexels', ''),
-                'pixabay':          api_keys.get('pixabay', ''),
-                'unsplash':         api_keys.get('unsplash', ''),
+                'gemini':             api_keys.get('gemini', ''),
+                'director_gemini':    api_keys.get('director_gemini', ''),
+                'gemini_image':       api_keys.get('gemini_image', ''),
+                'replicate':          api_keys.get('replicate', ''),
+                'inworld':            api_keys.get('inworld', ''),
+                'inworld_secret':     api_keys.get('inworld_secret', ''),
+                'pexels':             api_keys.get('pexels', ''),
+                'pixabay':            api_keys.get('pixabay', ''),
+                'unsplash':           api_keys.get('unsplash', ''),
+                'gemini_translate_1': api_keys.get('gemini_translate_1', ''),
+                'gemini_translate_2': api_keys.get('gemini_translate_2', ''),
+                'gemini_prompts':     api_keys.get('gemini_prompts', ''),
+                'gemini_seo':         api_keys.get('gemini_seo', ''),
             },
         })
     except Exception as e:
@@ -5780,12 +5787,14 @@ OUTPUT ONLY THE {chunk_size} PROMPTS. NOTHING ELSE."""
         if count < 1 or count > 200:
             return jsonify({'error': 'count must be between 1 and 200'}), 400
 
-        keys = _gem_all_keys()
-        if not keys:
-            return jsonify({'error': 'No Gemini API key configured in Settings'}), 500
+        # Prompts Generator uses ONLY its own dedicated key.
+        prompts_key = Config.get_gemini_prompts_api_key()
+        if not prompts_key:
+            return jsonify({'error': 'No Prompts Generator API key configured. Add it in Settings → Prompts Generator.'}), 500
+        keys = [prompts_key]
         model_name = Config.get_director_gemini_model()
         gen_cfg    = {'temperature': 0.85, 'top_p': 0.95, 'max_output_tokens': 32768}
-        print(f'🔑 Prompts generator using {len(keys)} API key(s)')
+        print(f'🔑 Prompts generator using dedicated key …{_gem_key_label(prompts_key)}')
 
         # Resolve style
         if mode == 'video':
@@ -6037,12 +6046,14 @@ OUTPUT ONLY THE {chunk_size} PROMPTS."""
         if not img_style:
             return jsonify({'error': f'Image style not found: {img_style_id}'}), 404
 
-        keys = _gem_all_keys()
-        if not keys:
-            return jsonify({'error': 'No Gemini API key configured in Settings'}), 500
+        # Mixed Prompts Generator uses ONLY its own dedicated key.
+        prompts_key = Config.get_gemini_prompts_api_key()
+        if not prompts_key:
+            return jsonify({'error': 'No Prompts Generator API key configured. Add it in Settings → Prompts Generator.'}), 500
+        keys = [prompts_key]
         model_name = Config.get_director_gemini_model()
         gen_cfg    = {'temperature': 0.85, 'top_p': 0.95, 'max_output_tokens': 32768}
-        print(f'🔑 Mixed prompts using {len(keys)} API key(s)')
+        print(f'🔑 Mixed prompts using dedicated key …{_gem_key_label(prompts_key)}')
 
         # --- generate video prompts (first half) ---
         print(f'\n🎬 Mixed: generating {video_count} video prompts (first {split_pos} chars)…')

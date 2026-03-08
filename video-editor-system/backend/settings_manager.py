@@ -471,7 +471,8 @@ LANGUAGE: Auto-detect from title and script. Write EVERYTHING in that language."
                      gemini_image: str = None,
                      replicate: str = None, inworld: str = None, inworld_secret: str = None,
                      pexels: str = None, pixabay: str = None, unsplash: str = None,
-                     gemini_translate_1: str = None, gemini_translate_2: str = None) -> Dict:
+                     gemini_translate_1: str = None, gemini_translate_2: str = None,
+                     gemini_prompts: str = None, gemini_seo: str = None) -> Dict:
         """
         Save API keys to settings file
 
@@ -518,6 +519,10 @@ LANGUAGE: Auto-detect from title and script. Write EVERYTHING in that language."
             settings['api_keys']['gemini_translate_1'] = gemini_translate_1
         if gemini_translate_2 is not None and gemini_translate_2 != '':
             settings['api_keys']['gemini_translate_2'] = gemini_translate_2
+        if gemini_prompts is not None and gemini_prompts != '':
+            settings['api_keys']['gemini_prompts'] = gemini_prompts
+        if gemini_seo is not None and gemini_seo != '':
+            settings['api_keys']['gemini_seo'] = gemini_seo
 
         # Save to file
         with open(cls.SETTINGS_FILE, 'w') as f:
@@ -533,7 +538,9 @@ LANGUAGE: Auto-detect from title and script. Write EVERYTHING in that language."
             inworld_key=inworld if inworld else None,
             inworld_secret=inworld_secret if inworld_secret else None,
             gemini_translate_1=gemini_translate_1 if gemini_translate_1 else None,
-            gemini_translate_2=gemini_translate_2 if gemini_translate_2 else None
+            gemini_translate_2=gemini_translate_2 if gemini_translate_2 else None,
+            gemini_prompts_key=gemini_prompts if gemini_prompts else None,
+            gemini_seo_key=gemini_seo if gemini_seo else None
         )
 
         return settings

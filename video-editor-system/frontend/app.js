@@ -31,10 +31,16 @@ const appState = {
 
 // Language metadata for multi-language features
 const LANG_META = {
-    en: { label: 'English', flag: '🇺🇸', langCode: 'en-US', prefix: 'en-' },
-    fr: { label: 'French',  flag: '🇫🇷', langCode: 'fr-FR', prefix: 'fr-' },
-    es: { label: 'Spanish', flag: '🇪🇸', langCode: 'es-ES', prefix: 'es-' },
-    de: { label: 'German',  flag: '🇩🇪', langCode: 'de-DE', prefix: 'de-' },
+    en: { label: 'English',    flag: '🇺🇸', langCode: 'en-US', prefix: 'en-' },
+    fr: { label: 'French',     flag: '🇫🇷', langCode: 'fr-FR', prefix: 'fr-' },
+    es: { label: 'Spanish',    flag: '🇪🇸', langCode: 'es-ES', prefix: 'es-' },
+    de: { label: 'German',     flag: '🇩🇪', langCode: 'de-DE', prefix: 'de-' },
+    ar: { label: 'Arabic',     flag: '🇸🇦', langCode: 'ar-SA', prefix: 'ar-' },
+    pt: { label: 'Portuguese', flag: '🇧🇷', langCode: 'pt-BR', prefix: 'pt-' },
+    ru: { label: 'Russian',    flag: '🇷🇺', langCode: 'ru-RU', prefix: 'ru-' },
+    zh: { label: 'Chinese',    flag: '🇨🇳', langCode: 'zh-CN', prefix: 'zh-' },
+    it: { label: 'Italian',    flag: '🇮🇹', langCode: 'it-IT', prefix: 'it-' },
+    nl: { label: 'Dutch',      flag: '🇳🇱', langCode: 'nl-NL', prefix: 'nl-' },
 };
 
 // Global video data
@@ -228,6 +234,8 @@ function _applyApiKeysToForm(api_keys) {
     setField('unsplashKey',         api_keys.unsplash);
     setField('geminiTranslate1Key', api_keys.gemini_translate_1);
     setField('geminiTranslate2Key', api_keys.gemini_translate_2);
+    setField('geminiPromptsKey',    api_keys.gemini_prompts);
+    setField('geminiSeoKey',        api_keys.gemini_seo);
 }
 
 const loadSettings = () => {
@@ -297,7 +305,9 @@ const saveSettings = async () => {
                 pixabay: document.getElementById('pixabayKey')?.value || '',
                 unsplash: document.getElementById('unsplashKey')?.value || '',
                 gemini_translate_1: document.getElementById('geminiTranslate1Key')?.value || '',
-                gemini_translate_2: document.getElementById('geminiTranslate2Key')?.value || ''
+                gemini_translate_2: document.getElementById('geminiTranslate2Key')?.value || '',
+                gemini_prompts:     document.getElementById('geminiPromptsKey')?.value || '',
+                gemini_seo:         document.getElementById('geminiSeoKey')?.value || ''
             },
             title_formulas: appState.titleFormulas || [],
             script_formulas: appState.scriptFormulas || [],
@@ -1667,24 +1677,44 @@ function downloadScript() {
 // Language detection — uses first ~600 chars to score against word lists
 // ---------------------------------------------------------------------------
 function detectScriptLanguage(text) {
-    const sample = text.slice(0, 600).toLowerCase().replace(/[^a-zàâäéèêëîïôùûüœçñáéíóúüß\s]/g, ' ');
-    const words = sample.match(/\b[a-zàâäéèêëîïôùûüœçñáéíóúüß]+\b/g) || [];
-    const wordSet = new Set(words);
+    if (!text || text.trim().length === 0) return 'en';
 
+    // ── Fast Unicode-range detection for non-Latin scripts ──────────────────
+    const sample2k = text.slice(0, 2000);
+    const arabicCount  = (sample2k.match(/[\u0600-\u06FF]/g) || []).length;
+    const cyrillicCount = (sample2k.match(/[\u0400-\u04FF]/g) || []).length;
+    const cjkCount     = (sample2k.match(/[\u4E00-\u9FFF\u3040-\u30FF]/g) || []).length;
+    const charTotal    = sample2k.replace(/\s/g, '').length || 1;
+    if (arabicCount  / charTotal > 0.15) return 'ar';
+    if (cyrillicCount / charTotal > 0.15) return 'ru';
+    if (cjkCount     / charTotal > 0.15) return 'zh';
+
+    // ── Frequency-based detection for Latin-script languages ────────────────
+    // Use first 3000 chars, count how often each marker word appears (not just presence)
+    const lower = text.slice(0, 3000).toLowerCase().replace(/[^a-zàâäéèêëîïôùûüœçñáéíóúüßãõ\s]/g, ' ');
+    const words = lower.match(/\b[a-zàâäéèêëîïôùûüœçñáéíóúüßãõ]{2,}\b/g) || [];
+    const freq = {};
+    words.forEach(w => { freq[w] = (freq[w] || 0) + 1; });
+    const totalWords = words.length || 1;
+
+    // Distinctive markers — words that are strongly characteristic of each language
     const markers = {
-        fr: ['je', 'vous', 'nous', 'ils', 'elle', 'est', 'les', 'des', 'une', 'ce', 'mais', 'bien', 'pour', 'sur', 'avec', 'dans', 'qui', 'que', 'du', 'au', 'très', 'aussi', 'tout', 'plus', 'cette'],
-        es: ['los', 'las', 'del', 'por', 'como', 'pero', 'más', 'este', 'para', 'también', 'sus', 'muy', 'cuando', 'una', 'usted', 'nosotros', 'ellos', 'ser', 'están', 'si', 'yo', 'hay', 'todo'],
-        de: ['der', 'die', 'das', 'ein', 'eine', 'ist', 'und', 'für', 'auf', 'mit', 'nicht', 'von', 'dem', 'den', 'ich', 'sie', 'wir', 'dass', 'haben', 'auch', 'werden', 'durch', 'nach', 'über'],
-        en: ['the', 'is', 'are', 'was', 'were', 'of', 'and', 'or', 'but', 'it', 'he', 'she', 'they', 'this', 'that', 'for', 'with', 'you', 'your', 'have', 'be', 'can', 'will', 'their', 'from'],
+        fr: ['je', 'vous', 'nous', 'elle', 'est', 'les', 'des', 'une', 'ce', 'mais', 'bien', 'pour', 'sur', 'avec', 'dans', 'qui', 'que', 'du', 'au', 'très', 'aussi', 'tout', 'cette', 'sont', 'pas', 'était', 'comme', 'leur', 'dont', 'cela'],
+        es: ['los', 'las', 'del', 'por', 'como', 'pero', 'más', 'este', 'para', 'también', 'sus', 'muy', 'cuando', 'hay', 'todo', 'era', 'sobre', 'qué', 'él', 'han', 'ser', 'una', 'esto', 'bien', 'aquí'],
+        de: ['der', 'die', 'das', 'ein', 'eine', 'ist', 'und', 'für', 'auf', 'mit', 'nicht', 'von', 'dem', 'den', 'ich', 'wir', 'dass', 'haben', 'auch', 'werden', 'durch', 'nach', 'über', 'war', 'beim', 'zur', 'zum', 'zu', 'aber', 'wenn'],
+        pt: ['os', 'as', 'do', 'da', 'dos', 'das', 'que', 'com', 'por', 'uma', 'para', 'não', 'mais', 'ele', 'ela', 'nos', 'mas', 'seu', 'sua', 'isso', 'também', 'porque', 'quando', 'foram', 'está'],
+        en: ['the', 'and', 'was', 'were', 'of', 'or', 'but', 'it', 'he', 'she', 'they', 'this', 'that', 'for', 'with', 'you', 'your', 'have', 'been', 'will', 'their', 'from', 'what', 'when', 'there'],
     };
 
     const scores = {};
     for (const [lang, list] of Object.entries(markers)) {
-        scores[lang] = list.filter(w => wordSet.has(w)).length;
+        // Sum frequencies of all marker words, normalized by total word count
+        scores[lang] = list.reduce((sum, w) => sum + (freq[w] || 0), 0) / totalWords;
     }
 
     const best = Object.entries(scores).sort((a, b) => b[1] - a[1]);
-    return best[0][1] > 0 ? best[0][0] : 'en';   // default to 'en' if unclear
+    // Return best match only if score is meaningfully above zero
+    return best[0][1] > 0.005 ? best[0][0] : 'en';
 }
 
 // Update translation checkboxes — hide the detected language, show the rest
@@ -1895,13 +1925,17 @@ function renderMultiLangVoiceSection() {
     section.style.display = 'block';
 
     list.innerHTML = langs.map(lang => {
-        const meta = LANG_META[lang] || { flag: '🌍', label: lang.toUpperCase(), prefix: 'en-', langCode: lang };
+        const meta = LANG_META[lang] || { flag: '🌍', label: lang.toUpperCase(), prefix: 'en-', langCode: lang + '-' + lang.toUpperCase() };
         const allVoices = [...(VOICE_CATALOGUE.male || []), ...(VOICE_CATALOGUE.female || [])];
-        const langVoices = allVoices.filter(v => (v.lang || 'en-US').startsWith(meta.prefix));
+        // Voices matching this language; fall back to English voices if none available for language
+        let langVoices = allVoices.filter(v => (v.lang || 'en-US').startsWith(meta.prefix));
+        const usingFallback = langVoices.length === 0;
+        if (usingFallback) langVoices = allVoices.filter(v => (v.lang || 'en-US').startsWith('en-'));
         const stored = appState.multiLangVoiceConfig[lang] || (langVoices[0]?.id || '');
         if (!appState.multiLangVoiceConfig[lang] && langVoices[0]) {
             appState.multiLangVoiceConfig[lang] = langVoices[0].id;
         }
+        const fallbackNote = usingFallback ? `<span style="color:#f59e0b; font-size:10px; margin-left:4px;">⚠ using EN voices (no ${meta.label} voices in catalogue)</span>` : '';
         const options = langVoices.map(v =>
             `<option value="${v.id}" ${v.id === stored ? 'selected' : ''}>${v.id} — ${v.desc}</option>`
         ).join('');
@@ -1913,7 +1947,7 @@ function renderMultiLangVoiceSection() {
         return `
         <div style="display:flex; align-items:center; gap:10px; padding:9px 10px; background:rgba(255,255,255,0.03); border-radius:7px; margin-bottom:7px; border:1px solid #2d1b69; flex-wrap:wrap;">
             <span style="font-size:1.2em; flex-shrink:0;">${meta.flag}</span>
-            <strong style="min-width:62px; color:#e2e8f0; font-size:12px;">${meta.label}${doneTag}</strong>
+            <strong style="min-width:62px; color:#e2e8f0; font-size:12px;">${meta.label}${doneTag}${fallbackNote}</strong>
             <select id="multiLangVoice_${lang}" onchange="appState.multiLangVoiceConfig['${lang}']=this.value"
                 style="flex:1; min-width:140px; background:#1e1e2e; color:#e2e8f0; border:1px solid #374151; border-radius:6px; padding:5px; font-size:12px;">
                 ${options}
@@ -1930,7 +1964,7 @@ async function generateSingleLanguageVoice(lang) {
     const s = appState.scriptLibrary[lang];
     if (!s) { showNotification(`⚠️ No ${lang} script in library`, 'warning'); return false; }
 
-    const meta = LANG_META[lang] || { label: lang, langCode: lang, flag: '' };
+    const meta = LANG_META[lang] || { label: lang.toUpperCase(), langCode: lang + '-' + lang.toUpperCase(), flag: '🌍' };
     const voiceId = document.getElementById(`multiLangVoice_${lang}`)?.value
                  || appState.multiLangVoiceConfig[lang] || 'Olivia';
 

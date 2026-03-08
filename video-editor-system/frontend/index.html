@@ -1135,13 +1135,12 @@
                                     <span style="font-weight:700; color:#e0e7ff; font-size:14px;">Auto Images AI</span>
                                     <span style="background:#1e3a5f; color:#93c5fd; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">OPTIONAL</span>
                                     <span style="background:rgba(139,92,246,0.15); color:#c4b5fd; font-size:11px; padding:2px 7px; border-radius:10px;">Image Scene Planning</span>
-                                    <span style="background:rgba(139,92,246,0.15); color:#c4b5fd; font-size:11px; padding:2px 7px; border-radius:10px;">Prompts Generator</span>
                                 </div>
                                 <div class="password-input">
-                                    <input type="password" id="directorGeminiKey" placeholder="AIza... (empty = uses Script Writer key)" class="input-large">
+                                    <input type="password" id="directorGeminiKey" placeholder="AIza..." class="input-large">
                                     <button onclick="togglePassword('directorGeminiKey')" class="btn-toggle">👁️</button>
                                 </div>
-                                <span class="hint">💡 Recommended: use a different key to isolate rate limits from Script Writer. Also pooled into Prompts Generator.</span>
+                                <span class="hint">Dedicated key for Auto Images AI scene planning (gemini-2.5-flash).</span>
                             </div>
 
                             <!-- Key 3: Image Generation -->
@@ -1153,10 +1152,10 @@
                                     <span style="background:rgba(34,197,94,0.12); color:#86efac; font-size:11px; padding:2px 7px; border-radius:10px;">Auto Images (Gemini)</span>
                                 </div>
                                 <div class="password-input">
-                                    <input type="password" id="geminiImageKey" placeholder="AIza... (empty = uses Auto Images AI key)" class="input-large">
+                                    <input type="password" id="geminiImageKey" placeholder="AIza..." class="input-large">
                                     <button onclick="togglePassword('geminiImageKey')" class="btn-toggle">👁️</button>
                                 </div>
-                                <span class="hint">🖼️ Gemini Imagen 3 — cinematic 1920×1080 AI images. Falls back to Auto Images AI key.</span>
+                                <span class="hint">🖼️ Dedicated key for Gemini Imagen 3 — cinematic 1920×1080 AI images.</span>
                             </div>
 
                             <!-- Keys 4–5: Translation (side by side) -->
@@ -1316,6 +1315,62 @@
                                 <span class="hint">Free tier available at unsplash.com/developers</span>
                             </div>
 
+                        </div>
+                    </div>
+
+                    <!-- ════════════════════════════════════
+                         SECTION 5 — Prompts Generator
+                    ════════════════════════════════════ -->
+                    <div style="border:1px solid #0e7490; border-left:5px solid #06b6d4; border-radius:10px; margin-bottom:24px; overflow:hidden;">
+                        <div style="background:linear-gradient(135deg,#042f2e,#083344); padding:14px 18px; display:flex; align-items:center; gap:12px;">
+                            <span style="font-size:22px;">🎬</span>
+                            <div style="flex:1;">
+                                <div style="font-weight:700; font-size:15px; color:#a5f3fc;">Prompts Generator</div>
+                                <div style="font-size:12px; color:#22d3ee; margin-top:2px;">Dedicated key for Image &amp; Video Prompts generation · gemini-2.5-flash</div>
+                            </div>
+                            <a href="https://aistudio.google.com/app/apikey" target="_blank" style="font-size:12px; color:#22d3ee; text-decoration:none; background:rgba(6,182,212,0.1); padding:4px 10px; border-radius:5px; border:1px solid #0e7490; white-space:nowrap;">🔗 Get key →</a>
+                        </div>
+                        <div style="padding:18px; background:#020f10;">
+                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                                <span style="font-weight:700; color:#a5f3fc; font-size:14px;">Prompts Generator Key</span>
+                                <span style="background:#166534; color:#86efac; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">REQUIRED</span>
+                                <span style="background:rgba(6,182,212,0.12); color:#67e8f9; font-size:11px; padding:2px 7px; border-radius:10px;">Image Prompts</span>
+                                <span style="background:rgba(6,182,212,0.12); color:#67e8f9; font-size:11px; padding:2px 7px; border-radius:10px;">Video Prompts</span>
+                                <span style="background:rgba(6,182,212,0.12); color:#67e8f9; font-size:11px; padding:2px 7px; border-radius:10px;">Mixed Mode</span>
+                            </div>
+                            <div class="password-input">
+                                <input type="password" id="geminiPromptsKey" placeholder="AIza..." class="input-large">
+                                <button onclick="togglePassword('geminiPromptsKey')" class="btn-toggle">👁️</button>
+                            </div>
+                            <span class="hint">Exclusive key for the Prompts Generator — completely isolated from other features.</span>
+                        </div>
+                    </div>
+
+                    <!-- ════════════════════════════════════
+                         SECTION 6 — SEO Generator
+                    ════════════════════════════════════ -->
+                    <div style="border:1px solid #065f46; border-left:5px solid #10b981; border-radius:10px; margin-bottom:24px; overflow:hidden;">
+                        <div style="background:linear-gradient(135deg,#022c22,#064e3b); padding:14px 18px; display:flex; align-items:center; gap:12px;">
+                            <span style="font-size:22px;">🔍</span>
+                            <div style="flex:1;">
+                                <div style="font-weight:700; font-size:15px; color:#6ee7b7;">SEO Generator</div>
+                                <div style="font-size:12px; color:#34d399; margin-top:2px;">Dedicated key for YouTube description &amp; tags generation · gemini-2.5-flash</div>
+                            </div>
+                            <a href="https://aistudio.google.com/app/apikey" target="_blank" style="font-size:12px; color:#34d399; text-decoration:none; background:rgba(16,185,129,0.1); padding:4px 10px; border-radius:5px; border:1px solid #065f46; white-space:nowrap;">🔗 Get key →</a>
+                        </div>
+                        <div style="padding:18px; background:#01100a;">
+                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                                <span style="font-weight:700; color:#6ee7b7; font-size:14px;">SEO Generator Key</span>
+                                <span style="background:#166534; color:#86efac; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">REQUIRED</span>
+                                <span style="background:rgba(16,185,129,0.12); color:#6ee7b7; font-size:11px; padding:2px 7px; border-radius:10px;">Descriptions</span>
+                                <span style="background:rgba(16,185,129,0.12); color:#6ee7b7; font-size:11px; padding:2px 7px; border-radius:10px;">Tags</span>
+                                <span style="background:rgba(16,185,129,0.12); color:#6ee7b7; font-size:11px; padding:2px 7px; border-radius:10px;">Language Auto-Detect</span>
+                            </div>
+                            <div class="password-input">
+                                <input type="password" id="geminiSeoKey" placeholder="AIza..." class="input-large">
+                                <button onclick="togglePassword('geminiSeoKey')" class="btn-toggle">👁️</button>
+                            </div>
+                            <span class="hint">Exclusive key for the SEO Generator — completely isolated from other features.</span>
                         </div>
                     </div>
 
