@@ -334,7 +334,9 @@ const saveSettings = async () => {
                     pixabay: settings.api_keys.pixabay,
                     unsplash: settings.api_keys.unsplash,
                     gemini_translate_1: settings.api_keys.gemini_translate_1,
-                    gemini_translate_2: settings.api_keys.gemini_translate_2
+                    gemini_translate_2: settings.api_keys.gemini_translate_2,
+                    gemini_prompts: settings.api_keys.gemini_prompts,
+                    gemini_seo: settings.api_keys.gemini_seo
                 })
             });
             if (!response.ok) console.warn('Failed to save API keys to backend');
