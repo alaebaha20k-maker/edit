@@ -1086,107 +1086,239 @@
                 <!-- API Keys Tab -->
                 <div class="settings-section">
                     <h3>🔑 API Keys</h3>
-                    <div class="input-group">
-                        <label>Gemini API Key (Script Writer - Required for AI generation)</label>
-                        <div class="password-input">
-                            <input type="password" id="geminiKey" placeholder="Enter Gemini API key..." class="input-large">
-                            <button onclick="togglePassword('geminiKey')" class="btn-toggle">👁️</button>
-                        </div>
-                        <span class="hint">Get from: https://aistudio.google.com/app/apikey</span>
-                    </div>
 
-                    <div class="input-group">
-                        <label>Director Gemini API Key (Auto Images AI - gemini-2.5-flash - SEPARATE key recommended)</label>
-                        <div class="password-input">
-                            <input type="password" id="directorGeminiKey" placeholder="Leave empty to use Script Writer key..." class="input-large">
-                            <button onclick="togglePassword('directorGeminiKey')" class="btn-toggle">👁️</button>
-                        </div>
-                        <span class="hint">💡 Use a DIFFERENT Gemini key to avoid rate limit conflicts between script generation and image prompt generation</span>
-                    </div>
-
-                    <div class="input-group">
-                        <label>Gemini Imagen 3 API Key (Optional - AI image generation in Avatar Auto Mix)</label>
-                        <div class="password-input">
-                            <input type="password" id="geminiImageKey" placeholder="AIza... (for Gemini Imagen 3 image generation)" class="input-large">
-                            <button onclick="togglePassword('geminiImageKey')" class="btn-toggle">👁️</button>
-                        </div>
-                        <span class="hint">🖼️ Powers AI image generation in <strong>Auto Avatar Mix</strong>. Uses Gemini Imagen 3 to create cinematic 1920×1080 images. Falls back to Director key if empty. <a href="https://aistudio.google.com/app/apikey" target="_blank">Get key from Google AI Studio</a></span>
-                    </div>
-
-                    <div class="input-group">
-                        <label>Replicate API Token (Required for AI images)</label>
-                        <div class="password-input">
-                            <input type="password" id="replicateKey" placeholder="Enter Replicate token..." class="input-large">
-                            <button onclick="togglePassword('replicateKey')" class="btn-toggle">👁️</button>
-                        </div>
-                        <span class="hint">Get from: https://replicate.com/account/api-tokens</span>
-                    </div>
-
-                    <div class="input-group">
-                        <label>Inworld AI API Key (Required for AI voices)</label>
-                        <div class="password-input">
-                            <input type="password" id="inworldKey" placeholder="Enter Inworld API key..." class="input-large">
-                            <button onclick="togglePassword('inworldKey')" class="btn-toggle">👁️</button>
-                        </div>
-                        <span class="hint">Get from: https://studio.inworld.ai/ (Workspace Settings → API Keys)</span>
-                    </div>
-
-                    <div class="input-group">
-                        <label>Inworld AI API Secret (Required for AI voices)</label>
-                        <div class="password-input">
-                            <input type="password" id="inworldSecret" placeholder="Enter Inworld API secret..." class="input-large">
-                            <button onclick="togglePassword('inworldSecret')" class="btn-toggle">👁️</button>
-                        </div>
-                        <span class="hint">Get from: https://studio.inworld.ai/ (Workspace Settings → API Keys)</span>
-                    </div>
-
-                    <div class="input-group">
-                        <label>Pexels API Key (Optional - for stock footage)</label>
-                        <div class="password-input">
-                            <input type="password" id="pexelsKey" placeholder="Enter Pexels API key..." class="input-large">
-                            <button onclick="togglePassword('pexelsKey')" class="btn-toggle">👁️</button>
-                        </div>
-                        <span class="hint">Get from: https://www.pexels.com/api/</span>
-                    </div>
-
-                    <div class="input-group">
-                        <label>Pixabay API Key (Optional - for stock images)</label>
-                        <div class="password-input">
-                            <input type="password" id="pixabayKey" placeholder="Enter Pixabay API key..." class="input-large">
-                            <button onclick="togglePassword('pixabayKey')" class="btn-toggle">👁️</button>
-                        </div>
-                        <span class="hint">Get from: https://pixabay.com/api/docs/</span>
-                    </div>
-
-                    <div class="input-group">
-                        <label>Unsplash API Key (Optional - for stock images)</label>
-                        <div class="password-input">
-                            <input type="password" id="unsplashKey" placeholder="Enter Unsplash access key..." class="input-large">
-                            <button onclick="togglePassword('unsplashKey')" class="btn-toggle">👁️</button>
-                        </div>
-                        <span class="hint">Get from: https://unsplash.com/developers</span>
-                    </div>
-
-                    <div style="margin-top: 20px; padding: 14px; background: rgba(139,92,246,0.07); border: 1px solid #4c1d95; border-radius: 8px;">
-                        <div style="font-weight: 700; font-size: 13px; margin-bottom: 12px; color: #a78bfa;">🌍 Script Translation API Keys (Gemini 2.5 Flash)</div>
-                        <p style="color: #888; font-size: 12px; margin-bottom: 12px;">Used to translate your scripts to Spanish, French, German. Two keys run in parallel for speed — Key 2 is optional (falls back to Key 1).</p>
-                        <div class="input-group" style="margin-bottom: 10px;">
-                            <label>Translation API Key 1 (Required for translation)</label>
-                            <div class="password-input">
-                                <input type="password" id="geminiTranslate1Key" placeholder="AIza... (Gemini key for translation)" class="input-large">
-                                <button onclick="togglePassword('geminiTranslate1Key')" class="btn-toggle">👁️</button>
+                    <!-- ════════════════════════════════════
+                         SECTION 1 — Google Gemini AI
+                    ════════════════════════════════════ -->
+                    <div style="border:1px solid #4f46e5; border-left:5px solid #6366f1; border-radius:10px; margin-bottom:24px; overflow:hidden;">
+                        <!-- Header -->
+                        <div style="background:linear-gradient(135deg,#1e1b4b,#1e1035); padding:14px 18px; display:flex; align-items:center; gap:12px;">
+                            <span style="font-size:22px;">🤖</span>
+                            <div style="flex:1;">
+                                <div style="font-weight:700; font-size:15px; color:#c7d2fe;">Google Gemini AI</div>
+                                <div style="font-size:12px; color:#818cf8; margin-top:2px;">Powers scripts, images, prompts &amp; translation · All keys come from the same place</div>
                             </div>
-                            <span class="hint">Get from: https://aistudio.google.com/app/apikey — use a separate key to avoid rate limits</span>
+                            <a href="https://aistudio.google.com/app/apikey" target="_blank" style="font-size:12px; color:#818cf8; text-decoration:none; background:rgba(99,102,241,0.15); padding:4px 10px; border-radius:5px; border:1px solid #4f46e5; white-space:nowrap;">🔗 Get keys →</a>
                         </div>
-                        <div class="input-group">
-                            <label>Translation API Key 2 (Optional — used in parallel for 2nd language)</label>
-                            <div class="password-input">
-                                <input type="password" id="geminiTranslate2Key" placeholder="AIza... (optional 2nd key for parallel translation)" class="input-large">
-                                <button onclick="togglePassword('geminiTranslate2Key')" class="btn-toggle">👁️</button>
+                        <!-- Fallback hint bar -->
+                        <div style="background:rgba(99,102,241,0.08); border-bottom:1px solid #312e81; padding:8px 18px; font-size:12px; color:#a5b4fc; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                            <span style="color:#6b7280;">Fallback order:</span>
+                            <strong style="color:#a5b4fc;">Script Writer</strong>
+                            <span style="color:#4b5563;">→</span>
+                            <strong style="color:#a5b4fc;">Auto Images AI</strong>
+                            <span style="color:#4b5563;">→</span>
+                            <strong style="color:#a5b4fc;">Image Generation</strong>
+                            <span style="color:#6b7280; margin-left:8px;">· Translation uses ALL keys in parallel for max speed</span>
+                        </div>
+                        <!-- Body -->
+                        <div style="padding:18px; display:flex; flex-direction:column; gap:18px; background:#0f0f1f;">
+
+                            <!-- Key 1: Script Writer -->
+                            <div style="background:rgba(255,255,255,0.03); border:1px solid #312e81; border-radius:8px; padding:14px;">
+                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                                    <span style="font-weight:700; color:#e0e7ff; font-size:14px;">Script Writer</span>
+                                    <span style="background:#166534; color:#86efac; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">REQUIRED</span>
+                                    <span style="background:rgba(99,102,241,0.15); color:#a5b4fc; font-size:11px; padding:2px 7px; border-radius:10px;">Script Generation</span>
+                                    <span style="background:rgba(99,102,241,0.15); color:#a5b4fc; font-size:11px; padding:2px 7px; border-radius:10px;">Title Generation</span>
+                                    <span style="background:rgba(99,102,241,0.15); color:#a5b4fc; font-size:11px; padding:2px 7px; border-radius:10px;">Prompts Generator</span>
+                                </div>
+                                <div class="password-input">
+                                    <input type="password" id="geminiKey" placeholder="AIza..." class="input-large">
+                                    <button onclick="togglePassword('geminiKey')" class="btn-toggle">👁️</button>
+                                </div>
+                                <span class="hint">Main key — fallback for all features when other keys are empty.</span>
                             </div>
-                            <span class="hint">If empty, Key 1 handles all languages sequentially</span>
+
+                            <!-- Key 2: Auto Images AI -->
+                            <div style="background:rgba(255,255,255,0.03); border:1px solid #312e81; border-radius:8px; padding:14px;">
+                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                                    <span style="font-weight:700; color:#e0e7ff; font-size:14px;">Auto Images AI</span>
+                                    <span style="background:#1e3a5f; color:#93c5fd; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">OPTIONAL</span>
+                                    <span style="background:rgba(139,92,246,0.15); color:#c4b5fd; font-size:11px; padding:2px 7px; border-radius:10px;">Image Scene Planning</span>
+                                    <span style="background:rgba(139,92,246,0.15); color:#c4b5fd; font-size:11px; padding:2px 7px; border-radius:10px;">Prompts Generator</span>
+                                </div>
+                                <div class="password-input">
+                                    <input type="password" id="directorGeminiKey" placeholder="AIza... (empty = uses Script Writer key)" class="input-large">
+                                    <button onclick="togglePassword('directorGeminiKey')" class="btn-toggle">👁️</button>
+                                </div>
+                                <span class="hint">💡 Recommended: use a different key to isolate rate limits from Script Writer. Also pooled into Prompts Generator.</span>
+                            </div>
+
+                            <!-- Key 3: Image Generation -->
+                            <div style="background:rgba(255,255,255,0.03); border:1px solid #312e81; border-radius:8px; padding:14px;">
+                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                                    <span style="font-weight:700; color:#e0e7ff; font-size:14px;">Image Generation</span>
+                                    <span style="background:#1e3a5f; color:#93c5fd; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">OPTIONAL</span>
+                                    <span style="background:rgba(34,197,94,0.12); color:#86efac; font-size:11px; padding:2px 7px; border-radius:10px;">Avatar Auto Mix</span>
+                                    <span style="background:rgba(34,197,94,0.12); color:#86efac; font-size:11px; padding:2px 7px; border-radius:10px;">Auto Images (Gemini)</span>
+                                </div>
+                                <div class="password-input">
+                                    <input type="password" id="geminiImageKey" placeholder="AIza... (empty = uses Auto Images AI key)" class="input-large">
+                                    <button onclick="togglePassword('geminiImageKey')" class="btn-toggle">👁️</button>
+                                </div>
+                                <span class="hint">🖼️ Gemini Imagen 3 — cinematic 1920×1080 AI images. Falls back to Auto Images AI key.</span>
+                            </div>
+
+                            <!-- Keys 4–5: Translation (side by side) -->
+                            <div style="background:rgba(255,255,255,0.03); border:1px dashed #4c1d95; border-radius:8px; padding:14px;">
+                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;">
+                                    <span style="font-weight:700; color:#e0e7ff; font-size:14px;">🌍 Translation Keys</span>
+                                    <span style="background:#1e3a5f; color:#93c5fd; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">OPTIONAL</span>
+                                    <span style="background:rgba(251,146,60,0.12); color:#fdba74; font-size:11px; padding:2px 7px; border-radius:10px;">Multi-language Translation</span>
+                                    <span style="background:rgba(251,146,60,0.12); color:#fdba74; font-size:11px; padding:2px 7px; border-radius:10px;">Parallel Processing</span>
+                                </div>
+                                <p style="color:#6b7280; font-size:12px; margin:6px 0 12px;">All configured Gemini keys are used simultaneously during translation for max speed. Add extra keys for zero rate limits.</p>
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                                    <div>
+                                        <label style="display:block; color:#9ca3af; font-size:12px; font-weight:600; margin-bottom:6px;">Translate Key 1</label>
+                                        <div class="password-input">
+                                            <input type="password" id="geminiTranslate1Key" placeholder="AIza..." class="input-large">
+                                            <button onclick="togglePassword('geminiTranslate1Key')" class="btn-toggle">👁️</button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label style="display:block; color:#9ca3af; font-size:12px; font-weight:600; margin-bottom:6px;">Translate Key 2 <span style="color:#6b7280; font-weight:400;">(optional)</span></label>
+                                        <div class="password-input">
+                                            <input type="password" id="geminiTranslate2Key" placeholder="AIza..." class="input-large">
+                                            <button onclick="togglePassword('geminiTranslate2Key')" class="btn-toggle">👁️</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
                         </div>
                     </div>
+
+                    <!-- ════════════════════════════════════
+                         SECTION 2 — AI Image Generation (Replicate)
+                    ════════════════════════════════════ -->
+                    <div style="border:1px solid #b45309; border-left:5px solid #f59e0b; border-radius:10px; margin-bottom:24px; overflow:hidden;">
+                        <div style="background:linear-gradient(135deg,#1c1207,#1a1000); padding:14px 18px; display:flex; align-items:center; gap:12px;">
+                            <span style="font-size:22px;">🎨</span>
+                            <div style="flex:1;">
+                                <div style="font-weight:700; font-size:15px; color:#fde68a;">AI Image Generation</div>
+                                <div style="font-size:12px; color:#d97706; margin-top:2px;">Flux &amp; SDXL image generation via Replicate · Pay-per-use</div>
+                            </div>
+                            <a href="https://replicate.com/account/api-tokens" target="_blank" style="font-size:12px; color:#d97706; text-decoration:none; background:rgba(245,158,11,0.1); padding:4px 10px; border-radius:5px; border:1px solid #b45309; white-space:nowrap;">🔗 Get key →</a>
+                        </div>
+                        <div style="padding:18px; background:#0f0a00;">
+                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                                <span style="font-weight:700; color:#fde68a; font-size:14px;">Replicate</span>
+                                <span style="background:#166534; color:#86efac; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">REQUIRED</span>
+                                <span style="background:rgba(245,158,11,0.12); color:#fcd34d; font-size:11px; padding:2px 7px; border-radius:10px;">Flux Images</span>
+                                <span style="background:rgba(245,158,11,0.12); color:#fcd34d; font-size:11px; padding:2px 7px; border-radius:10px;">SDXL</span>
+                                <span style="background:rgba(245,158,11,0.12); color:#fcd34d; font-size:11px; padding:2px 7px; border-radius:10px;">Auto Images</span>
+                            </div>
+                            <div class="password-input">
+                                <input type="password" id="replicateKey" placeholder="r8_..." class="input-large">
+                                <button onclick="togglePassword('replicateKey')" class="btn-toggle">👁️</button>
+                            </div>
+                            <span class="hint">~$0.003 per image · Free signup available.</span>
+                        </div>
+                    </div>
+
+                    <!-- ════════════════════════════════════
+                         SECTION 3 — Voice Generation
+                    ════════════════════════════════════ -->
+                    <div style="border:1px solid #166534; border-left:5px solid #22c55e; border-radius:10px; margin-bottom:24px; overflow:hidden;">
+                        <div style="background:linear-gradient(135deg,#052e16,#0a1f0e); padding:14px 18px; display:flex; align-items:center; gap:12px;">
+                            <span style="font-size:22px;">🎤</span>
+                            <div style="flex:1;">
+                                <div style="font-weight:700; font-size:15px; color:#bbf7d0;">Voice Generation</div>
+                                <div style="font-size:12px; color:#4ade80; margin-top:2px;">AI text-to-speech for video narration · Inworld Studio</div>
+                            </div>
+                            <a href="https://studio.inworld.ai/" target="_blank" style="font-size:12px; color:#4ade80; text-decoration:none; background:rgba(34,197,94,0.1); padding:4px 10px; border-radius:5px; border:1px solid #166534; white-space:nowrap;">🔗 Get key →</a>
+                        </div>
+                        <div style="padding:18px; background:#020f05; display:flex; flex-direction:column; gap:14px;">
+
+                            <div>
+                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                                    <span style="font-weight:700; color:#bbf7d0; font-size:14px;">Inworld AI — API Key</span>
+                                    <span style="background:#166534; color:#86efac; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">REQUIRED</span>
+                                    <span style="background:rgba(34,197,94,0.12); color:#86efac; font-size:11px; padding:2px 7px; border-radius:10px;">AI Voice</span>
+                                    <span style="background:rgba(34,197,94,0.12); color:#86efac; font-size:11px; padding:2px 7px; border-radius:10px;">Text-to-Speech</span>
+                                </div>
+                                <div class="password-input">
+                                    <input type="password" id="inworldKey" placeholder="Enter Inworld API key..." class="input-large">
+                                    <button onclick="togglePassword('inworldKey')" class="btn-toggle">👁️</button>
+                                </div>
+                                <span class="hint">Workspace Settings → API Keys in Inworld Studio.</span>
+                            </div>
+
+                            <div>
+                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                                    <span style="font-weight:700; color:#bbf7d0; font-size:14px;">Inworld AI — API Secret</span>
+                                    <span style="background:#166534; color:#86efac; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">REQUIRED</span>
+                                </div>
+                                <div class="password-input">
+                                    <input type="password" id="inworldSecret" placeholder="Enter Inworld API secret..." class="input-large">
+                                    <button onclick="togglePassword('inworldSecret')" class="btn-toggle">👁️</button>
+                                </div>
+                                <span class="hint">Found alongside the API Key in Inworld Studio settings.</span>
+                            </div>
+
+                        </div>
+                    </div>
+
+                    <!-- ════════════════════════════════════
+                         SECTION 4 — Stock Media
+                    ════════════════════════════════════ -->
+                    <div style="border:1px solid #7e22ce; border-left:5px solid #a855f7; border-radius:10px; margin-bottom:24px; overflow:hidden;">
+                        <div style="background:linear-gradient(135deg,#1a0a2e,#120820); padding:14px 18px; display:flex; align-items:center; gap:12px;">
+                            <span style="font-size:22px;">📸</span>
+                            <div style="flex:1;">
+                                <div style="font-weight:700; font-size:15px; color:#e9d5ff;">Stock Media</div>
+                                <div style="font-size:12px; color:#a855f7; margin-top:2px;">Free stock photos &amp; videos · All optional · Free tiers available</div>
+                            </div>
+                        </div>
+                        <div style="padding:18px; background:#0a0314; display:flex; flex-direction:column; gap:14px;">
+
+                            <div>
+                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                                    <span style="font-weight:700; color:#e9d5ff; font-size:14px;">Pexels</span>
+                                    <span style="background:#1e3a5f; color:#93c5fd; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">OPTIONAL</span>
+                                    <span style="background:rgba(168,85,247,0.12); color:#d8b4fe; font-size:11px; padding:2px 7px; border-radius:10px;">Stock Photos</span>
+                                    <span style="background:rgba(168,85,247,0.12); color:#d8b4fe; font-size:11px; padding:2px 7px; border-radius:10px;">Stock Videos</span>
+                                    <a href="https://www.pexels.com/api/" target="_blank" style="font-size:11px; color:#a855f7; text-decoration:none; margin-left:auto;">🔗 Get key →</a>
+                                </div>
+                                <div class="password-input">
+                                    <input type="password" id="pexelsKey" placeholder="Pexels API key..." class="input-large">
+                                    <button onclick="togglePassword('pexelsKey')" class="btn-toggle">👁️</button>
+                                </div>
+                                <span class="hint">Free tier — no billing required.</span>
+                            </div>
+
+                            <div>
+                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                                    <span style="font-weight:700; color:#e9d5ff; font-size:14px;">Pixabay</span>
+                                    <span style="background:#1e3a5f; color:#93c5fd; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">OPTIONAL</span>
+                                    <span style="background:rgba(168,85,247,0.12); color:#d8b4fe; font-size:11px; padding:2px 7px; border-radius:10px;">Stock Images</span>
+                                    <a href="https://pixabay.com/api/docs/" target="_blank" style="font-size:11px; color:#a855f7; text-decoration:none; margin-left:auto;">🔗 Get key →</a>
+                                </div>
+                                <div class="password-input">
+                                    <input type="password" id="pixabayKey" placeholder="Pixabay API key..." class="input-large">
+                                    <button onclick="togglePassword('pixabayKey')" class="btn-toggle">👁️</button>
+                                </div>
+                                <span class="hint">Free tier available at pixabay.com/api/docs/</span>
+                            </div>
+
+                            <div>
+                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                                    <span style="font-weight:700; color:#e9d5ff; font-size:14px;">Unsplash</span>
+                                    <span style="background:#1e3a5f; color:#93c5fd; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">OPTIONAL</span>
+                                    <span style="background:rgba(168,85,247,0.12); color:#d8b4fe; font-size:11px; padding:2px 7px; border-radius:10px;">Stock Photos</span>
+                                    <a href="https://unsplash.com/developers" target="_blank" style="font-size:11px; color:#a855f7; text-decoration:none; margin-left:auto;">🔗 Get key →</a>
+                                </div>
+                                <div class="password-input">
+                                    <input type="password" id="unsplashKey" placeholder="Unsplash access key..." class="input-large">
+                                    <button onclick="togglePassword('unsplashKey')" class="btn-toggle">👁️</button>
+                                </div>
+                                <span class="hint">Free tier available at unsplash.com/developers</span>
+                            </div>
+
+                        </div>
+                    </div>
+
                 </div>
 
                 <!-- Niche Management Section -->

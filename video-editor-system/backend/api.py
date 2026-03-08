@@ -99,6 +99,16 @@ def _gem_parse_retry(text: str) -> int:
     return min(int(m.group(1)) + 2, 90) if m else 20
 
 
+def _gem_key_label(key: str) -> str:
+    """Return a short, safe display label for a Gemini API key.
+    Shows first 4 + last 4 chars so you can tell keys apart in the terminal
+    without exposing the full secret.  Example: AIza…Xk7m
+    """
+    if not key or len(key) < 10:
+        return '???'
+    return f'{key[:4]}…{key[-4:]}'
+
+
 def _gem_all_keys() -> list[str]:
     """Return every unique, non-empty Gemini API key from Config (deduplicated).
 
