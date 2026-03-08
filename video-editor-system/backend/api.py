@@ -5730,10 +5730,9 @@ OUTPUT RULES — READ CAREFULLY:
 1. Output EXACTLY {chunk_size} prompts separated by ONE blank line between each.
 2. NO [image] tokens, NO numbering, NO labels, NO preamble, NO explanation after.
 3. Each prompt = ONE continuous paragraph. NO line breaks inside a prompt.
-4. Every prompt MUST start with: "{style_name} style,"
-5. Every prompt MUST end with: --no text, no captions, no watermarks, no labels
-6. Scenes {chunk_start}–{chunk_end} only, in chronological script order.
-7. Each scene is DISTINCT — never repeat the same visual environment back to back.
+4. Every prompt MUST end with: --no text, no captions, no watermarks, no labels
+5. Scenes {chunk_start}–{chunk_end} only, in chronological script order.
+6. Each scene is DISTINCT — never repeat the same visual environment back to back.
 OUTPUT ONLY THE {chunk_size} PROMPTS. NOTHING ELSE."""
 
     # ---- VIDEO prompt builder ------------------------------------------------
@@ -5976,8 +5975,7 @@ OUTPUT RULES:
 1. EXACTLY {chunk_size} prompts separated by ONE blank line.
 2. NO labels, NO numbering, NO preamble, NO explanation.
 3. One continuous paragraph per prompt — no internal line breaks.
-4. Start each: "{style_name} style,"
-5. End each: --no text, no captions, no watermarks, no labels
+4. End each: --no text, no captions, no watermarks, no labels
 OUTPUT ONLY THE {chunk_size} PROMPTS."""
 
     def build_video_prompt(script_text, style, chunk_start, chunk_size, total_count):
