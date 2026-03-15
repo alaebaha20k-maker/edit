@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 """
-Script Generator — Two-Prompt Architecture (PRODUCTION)
+Script Generator — Formula-First Architecture
 
-Workflow per video:
-  Prompt 0  — Planning call (gemini-2.5-flash, cheap & fast)
-              Locks in: historical anchor, promo count, section order, CTA text.
-              Result is a concise JSON plan that is injected into every writing chunk.
+The user's niche formula IS the complete law.
+The AI's only job is to execute it exactly, section by section.
 
-  Prompts 1…N — Writing chunks (gemini-2.5-pro, highest quality)
-              Each chunk receives the plan so it never forgets the anchor or
-              loses count of promotions.  The final chunk gets a hard STOP
-              signal so the AI never restarts a second script.
+Workflow:
+  Step 0 — Parse (gemini-2.5-flash, 1 call):
+    Read the formula. Extract every section heading in order.
+    Assign sections to chunks so each chunk knows EXACTLY what to write.
+    Also lock: anchor/subject, promo count, CTA text.
 
-  Post-processing — Programmatic duplicate sentence scanner + stop-signal strip.
+  Steps 1–N — Write (gemini-2.5-pro, 1 call per chunk):
+    Each chunk receives only: the full formula + the exact sections assigned to it.
+    No extra structure, no creative instructions on top — the formula handles all of that.
+    Final chunk carries the hard-stop signal.
 
-API call count: 1 (plan) + N chunks (writing) + 0–2 (extension if short)
+  Post — Merge → strip stop signal → clean → deduplicate → length enforce.
 """
 
 import json
@@ -28,14 +30,10 @@ from chunk_planner import ChunkPlanner
 from settings_manager import SettingsManager
 from utils import detect_language_from_text, get_language_name
 
-# The line the model MUST write at the very end — nothing after it is kept.
 STOP_SIGNAL = "=== END OF SCRIPT — DO NOT CONTINUE ==="
 
 
 class ScriptGenerator3Chunk:
-    """
-    Production script generator — two-prompt, pro-model architecture.
-    """
 
     def __init__(self):
         api_key = Config.get_gemini_api_key()
@@ -44,27 +42,24 @@ class ScriptGenerator3Chunk:
         genai.configure(api_key=api_key)
         self.api_key = api_key
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # PUBLIC ENTRY POINT
-    # ─────────────────────────────────────────────────────────────────────────
+    # =========================================================================
+    # PUBLIC
+    # =========================================================================
 
     def generate_script(
         self,
         title: str,
         niche_id: str,
         length: int = 10000,
-        verbose: bool = True
+        verbose: bool = True,
     ) -> Dict:
-        """
-        Generate a script using the two-prompt workflow.
 
-        Returns dict with: script, stats, validation, chunks_used
-        """
         start_time = time.time()
 
         if not Config.validate_script_length(length):
             raise ValueError(
-                f"Length must be between {Config.MIN_SCRIPT_LENGTH} and {Config.MAX_SCRIPT_LENGTH}"
+                f"Length must be between {Config.MIN_SCRIPT_LENGTH} "
+                f"and {Config.MAX_SCRIPT_LENGTH}"
             )
 
         niche = NicheManager.get_niche(niche_id)
@@ -73,38 +68,29 @@ class ScriptGenerator3Chunk:
 
         detected_lang_code = detect_language_from_text(title)
         detected_lang_name = get_language_name(detected_lang_code)
-        original_niche_lang = niche.get('language', 'English')
-        niche['language'] = detected_lang_name
+        original_niche_lang = niche.get("language", "English")
+        niche["language"] = detected_lang_name
 
-        writing_guidelines = niche['writing_guidelines']
-        language           = niche['language']
+        formula  = niche["writing_guidelines"]
+        language = niche["language"]
+        product  = niche.get("product", "our platform")
 
         if verbose:
             print(f"\n{'='*70}")
-            print(f"🎬 SCRIPT GENERATION — TWO-PROMPT ARCHITECTURE")
+            print(f"🎬 FORMULA-FIRST SCRIPT GENERATION")
             print(f"{'='*70}")
             print(f"Title   : {title}")
             print(f"Target  : {length:,} chars")
             print(f"Niche   : {niche['name']}")
-            print(f"Language: {language}" +
-                  (f" (detected, overrides niche: {original_niche_lang})"
-                   if detected_lang_name != original_niche_lang else ""))
+            print(f"Language: {language}" + (
+                f" (detected, overrides niche: {original_niche_lang})"
+                if detected_lang_name != original_niche_lang else ""))
             print(f"Models  : plan={Config.GEMINI_PLAN_MODEL}  write={Config.GEMINI_SCRIPT_MODEL}")
             print(f"{'='*70}\n")
 
-        # ── PROMPT 0 — PLANNING ───────────────────────────────────────────────
-        if verbose:
-            print("📋 PROMPT 0 — Planning call (locks anchor + promo count)...")
-        plan = self._run_planning_call(title, writing_guidelines, language, verbose)
-        if verbose:
-            print(f"   Anchor   : {plan.get('anchor', '—')}")
-            print(f"   Promos   : {plan.get('promo_count', '—')}")
-            print(f"   CTA      : {plan.get('cta_action', '—')}")
-            print(f"   Hook type: {plan.get('opening_hook_type', '—')}\n")
-
-        # ── CHUNK PLAN ────────────────────────────────────────────────────────
-        planner     = ChunkPlanner(length)
-        chunks      = planner.plan()
+        # ── Step 0: Plan chunks ───────────────────────────────────────────────
+        planner      = ChunkPlanner(length)
+        chunks       = planner.plan()
         total_chunks = len(chunks)
 
         if verbose:
@@ -113,32 +99,48 @@ class ScriptGenerator3Chunk:
                 print(f"   Chunk {c.index}/{total_chunks}: {c.role} ({c.target_chars:,} chars)")
             print()
 
-        # ── SYSTEM INSTRUCTION (formula as model identity) ────────────────────
-        system_instruction = self._build_system_instruction(writing_guidelines, language)
+        # ── Step 0b: Parse formula → extract sections + assign to chunks ─────
+        if verbose:
+            print("📋 Step 0 — Parsing formula (locking sections, anchor, promo count)...")
+        plan = self._parse_formula(title, formula, language, total_chunks, verbose)
+        if verbose:
+            print(f"   Anchor    : {plan.get('anchor', '—')}")
+            print(f"   Promos    : {plan.get('promo_count', '—')}")
+            print(f"   CTA       : {plan.get('cta_action', '—')}")
+            for i, secs in plan.get("chunk_sections", {}).items():
+                print(f"   Chunk {i}   : {', '.join(secs)}")
+            print()
 
-        # ── PROMPTS 1…N — WRITING CHUNKS ──────────────────────────────────────
-        generated_chunks  = []
-        previous_context  = ""
+        # ── System instruction: formula as model identity ─────────────────────
+        system_instruction = self._build_system_instruction(formula, language)
+
+        # ── Steps 1–N: Write each chunk ───────────────────────────────────────
+        generated_chunks = []
+        previous_context = ""
         promo_count_so_far = 0
 
         for chunk in chunks:
             if verbose:
                 print(f"✍️  Writing Chunk {chunk.index}/{total_chunks}: {chunk.role}...")
 
+            is_final = (chunk.index == total_chunks)
+
             prompt = self._build_chunk_prompt(
                 title=title,
-                niche=niche,
+                language=language,
+                product=product,
                 chunk=chunk,
-                previous_context=previous_context,
                 total_chunks=total_chunks,
                 plan=plan,
+                previous_context=previous_context,
                 promo_count_so_far=promo_count_so_far,
+                is_final=is_final,
             )
 
-            temp        = self._get_temperature(chunk.role)
+            temp         = self._get_temperature(chunk.role)
             chunk_tokens = min(65536, max(int(chunk.target_chars / 3 * 1.25) + 2000, 4000))
 
-            chunk_text = self._call_api_with_retry(
+            chunk_text = self._call_api(
                 prompt=prompt,
                 system_instruction=system_instruction,
                 model_name=Config.GEMINI_SCRIPT_MODEL,
@@ -149,33 +151,34 @@ class ScriptGenerator3Chunk:
                 verbose=verbose,
             )
 
-            # Count promo blocks written so far (for next chunk's counter)
+            # Count promo tags placed so far
             promo_count_so_far += len(re.findall(
-                r'\[PROMO\s*#?\d+\s*[—\-]?\s*START\]', chunk_text, re.IGNORECASE
+                r'\[PROMO\s*#?\d*\s*[—\-]?\s*START\]', chunk_text, re.IGNORECASE
             ))
 
             generated_chunks.append(chunk_text)
-
             if verbose:
                 print(f"   ✅ {len(chunk_text):,} chars (raw)")
 
-            # Context for next chunk — last 3 sentences
             if chunk.index < total_chunks:
                 sents = [s.strip() for s in re.split(r'[.!?]', chunk_text) if len(s.strip()) > 15]
-                previous_context = '. '.join(sents[-3:]) + '.' if len(sents) >= 3 else chunk_text[-300:]
+                previous_context = (
+                    ". ".join(sents[-3:]) + "."
+                    if len(sents) >= 3
+                    else chunk_text[-300:]
+                )
                 time.sleep(4)
 
-        # ── MERGE + CLEAN ──────────────────────────────────────────────────────
+        # ── Post-processing ───────────────────────────────────────────────────
         if verbose:
             print(f"\n🔗 Merging {len(generated_chunks)} chunks...")
         full_script = self._merge_chunks(generated_chunks)
-        full_script = self._clean_script(full_script)
+        full_script = self._clean_script(full_script)            # strips stop signal first
         full_script = self._remove_duplicate_sentences(full_script, verbose=verbose)
 
-        # ── LENGTH ENFORCEMENT ─────────────────────────────────────────────────
+        # Length enforcement
         MAX_OVERSHOOT = 300
         char_count    = len(full_script)
-
         if verbose:
             print(f"\n📏 Length: {char_count:,} / {length:,} target")
 
@@ -187,7 +190,7 @@ class ScriptGenerator3Chunk:
                 target_length=length,
                 title=title,
                 niche=niche,
-                writing_guidelines=writing_guidelines,
+                formula=formula,
                 plan=plan,
                 verbose=verbose,
             )
@@ -204,286 +207,249 @@ class ScriptGenerator3Chunk:
             if verbose:
                 print(f"   ✅ After trim: {char_count:,} chars")
 
-        # ── VALIDATE ───────────────────────────────────────────────────────────
-        validation     = self._validate_script(full_script, title, length)
-        char_count     = len(full_script)
-        word_count     = len(full_script.split())
+        validation      = self._validate_script(full_script, title, length)
+        char_count      = len(full_script)
+        word_count      = len(full_script.split())
         generation_time = time.time() - start_time
 
         if verbose:
             print(f"\n📊 FINAL STATS:")
             print(f"   Characters : {char_count:,}")
             print(f"   Words      : {word_count:,}")
-            print(f"   Target     : {length:,}")
-            print(f"   Delta      : {char_count - length:+,}")
+            print(f"   Target     : {length:,}  (delta: {char_count - length:+,})")
             print(f"   Time       : {generation_time:.1f}s")
             print(f"   Valid      : {validation['valid']}")
-            if not validation['valid']:
+            if not validation["valid"]:
                 print(f"   Errors     : {', '.join(validation['errors'])}")
             print(f"{'='*70}\n")
 
         return {
-            'script'     : full_script,
-            'stats'      : {'chars': char_count, 'words': word_count, 'time': generation_time},
-            'validation' : validation,
-            'chunks_used': len(chunks),
+            "script"     : full_script,
+            "stats"      : {"chars": char_count, "words": word_count, "time": generation_time},
+            "validation" : validation,
+            "chunks_used": len(chunks),
         }
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # PROMPT 0 — PLANNING CALL
-    # ─────────────────────────────────────────────────────────────────────────
+    # =========================================================================
+    # STEP 0 — FORMULA PARSER
+    # =========================================================================
 
-    def _run_planning_call(
+    def _parse_formula(
         self,
         title: str,
-        writing_guidelines: str,
+        formula: str,
         language: str,
+        total_chunks: int,
         verbose: bool = False,
     ) -> dict:
         """
-        Fast planning call using gemini-2.5-flash.
-        Returns a JSON plan that is injected into every writing chunk prompt.
-        Locking the plan BEFORE writing prevents the anchor from being forgotten
-        and prevents the promo counter from drifting mid-output.
+        Read the formula and produce a concrete execution plan:
+        - Extract every section heading (in order)
+        - Assign sections to chunks (1 … total_chunks)
+        - Lock anchor, promo count, CTA action
+
+        This runs BEFORE any writing so the AI never forgets what it decided.
+        Uses gemini-2.5-flash (cheap + fast — this is a parsing task, not writing).
         """
-        prompt = f"""You are planning a YouTube voice-over script. Read the formula below carefully.
+        chunk_keys = {str(i): f"chunk {i}" for i in range(1, total_chunks + 1)}
+        chunk_keys_json = json.dumps(chunk_keys, ensure_ascii=False)
+
+        prompt = f"""You are reading a YouTube script formula and creating a production plan.
 
 TITLE: "{title}"
 LANGUAGE: {language}
+TOTAL CHUNKS TO WRITE: {total_chunks}
 
-FORMULA:
-{writing_guidelines}
+═══════════════════════ FORMULA ═══════════════════════
+{formula}
+═══════════════════════════════════════════════════════
 
-Your task: extract the script plan from the formula and title. Reply ONLY with a valid JSON object — no explanation, no markdown, no code fences.
+Tasks:
+1. List every section of this formula in order (use the exact heading names from the formula).
+2. Distribute those sections across {total_chunks} chunks.
+   - Chunk 1 = opening / hook sections
+   - Chunk {total_chunks} = closing / CTA / conclusion sections
+   - Middle chunks = body / development / story sections
+   (If only 1 chunk, it gets all sections.)
+3. Extract the main anchor (historical person, story, or event the script focuses on — infer from title + formula).
+4. Count how many promotional blocks the formula requires.
+5. Extract the final CTA action text the formula prescribes.
+
+Reply with ONLY a valid JSON object — no explanation, no markdown, no code fences.
 
 {{
-  "anchor": "<The exact historical person / story / event this script will center on — pick based on the title>",
-  "promo_count": <integer — the exact number of promotional blocks the formula requires>,
-  "promo_trigger": "<The exact formula moment / phrase that signals each promotion>",
-  "cta_action": "<The final action the formula requires the viewer to take — e.g. 'subscribe and hit the bell'>",
-  "opening_hook_type": "<One sentence describing the hook technique from the formula>",
-  "body_sections": ["<section name 1>", "<section name 2>", "..."],
-  "closing_structure": "<One sentence describing how the formula closes the script>"
-}}
-
-Output ONLY the JSON. Nothing before or after."""
+  "sections": ["exact section heading 1", "exact section heading 2", "..."],
+  "chunk_sections": {{
+    "1": ["section heading A", "section heading B"],
+    "2": ["section heading C", "..."],
+    "{total_chunks}": ["last section heading", "..."]
+  }},
+  "anchor": "<main person / story / event>",
+  "promo_count": <integer>,
+  "cta_action": "<exact CTA text or action from formula>",
+  "closing_note": "<one sentence: how the formula ends the script>"
+}}"""
 
         try:
             model    = genai.GenerativeModel(Config.GEMINI_PLAN_MODEL)
             response = model.generate_content(
                 prompt,
-                generation_config={"temperature": 0.10, "max_output_tokens": 1024},
+                generation_config={"temperature": 0.05, "max_output_tokens": 2048},
             )
             text = response.text.strip()
-            # Strip code fences if the model wrapped the JSON
-            text = re.sub(r'```(?:json)?\s*', '', text).strip('` \n')
+            text = re.sub(r"```(?:json)?\s*", "", text).strip("` \n")
             plan = json.loads(text)
+
+            # Ensure all chunk keys exist
+            for i in range(1, total_chunks + 1):
+                key = str(i)
+                if key not in plan.get("chunk_sections", {}):
+                    plan.setdefault("chunk_sections", {})[key] = (
+                        plan.get("sections", [f"Section {i}"])
+                    )
             return plan
+
         except Exception as e:
             if verbose:
-                print(f"   ⚠️  Planning call failed ({e}) — using safe defaults")
+                print(f"   ⚠️  Formula parse failed ({e}) — using fallback plan")
+            # Safe fallback: split sections evenly
+            fallback_sections = [f"Part {i+1}" for i in range(total_chunks)]
             return {
-                "anchor"          : "historical figure from the title",
-                "promo_count"     : 2,
-                "promo_trigger"   : "natural transition point",
-                "cta_action"      : "subscribe and hit the bell",
-                "opening_hook_type": "tension-based opening",
-                "body_sections"   : ["main events", "analysis", "lessons"],
-                "closing_structure": "conclusion with subscribe CTA",
+                "sections"     : fallback_sections,
+                "chunk_sections": {str(i): [fallback_sections[i - 1]] for i in range(1, total_chunks + 1)},
+                "anchor"       : title,
+                "promo_count"  : 1,
+                "cta_action"   : "subscribe and hit the bell",
+                "closing_note" : "conclude with the subscribe call to action",
             }
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # SYSTEM INSTRUCTION
-    # ─────────────────────────────────────────────────────────────────────────
+    # =========================================================================
+    # SYSTEM INSTRUCTION — formula is the law, nothing overrides it
+    # =========================================================================
 
-    def _build_system_instruction(self, writing_guidelines: str, language: str) -> str:
+    def _build_system_instruction(self, formula: str, language: str) -> str:
         """
-        The niche content formula is placed in the system instruction slot —
-        Gemini gives this the HIGHEST priority, above any user-turn text.
+        The formula is placed HERE — in the system instruction slot —
+        which Gemini treats with the highest possible priority.
+        We add only the minimum necessary output rules; the formula defines everything else.
         """
-        return f"""You are an elite professional scriptwriter creating YouTube voice-over scripts.
+        return f"""YOUR FORMULA — THIS IS YOUR COMPLETE WRITING LAW. EXECUTE IT EXACTLY.
 
-YOUR CONTENT FORMULA — THIS IS YOUR COMPLETE WRITING BLUEPRINT:
-Read every line below. This formula defines EVERYTHING about how you write:
-structure, tone, voice, rhythm, hook style, story arc, promo placement, conclusion.
+Every word you write must come from this formula. The structure, the tone, the sections,
+the hook style, the story events, the promotion placement, the CTA — all defined below.
+Do not add, remove, or change anything the formula prescribes.
 
 ══════════════════════════════════════════════════════════════════════
-{writing_guidelines}
+{formula}
 ══════════════════════════════════════════════════════════════════════
 
-You follow this formula EXACTLY. Not approximately — EXACTLY.
-You do not invent your own structure on top of it.
-You do not skip formula sections.
-You execute each formula section in the correct order, with full creative energy.
+ABSOLUTE OUTPUT RULES — these only govern format, not content:
+1.  Language: write 100% in {language} — every word, no exceptions.
+2.  Plain prose only — no markdown, no **, no __, no ##, no headers.
+3.  No visual directions: VISUAL:, VIDEO:, SHOW:, CUT TO:, etc.
+4.  No speaker/narrator tags: NARRATOR:, SPEAKER:, HOST:, etc.
+5.  No timestamps: (0:00–0:15), (30 sec), (pause), etc.
+6.  No stage directions in [ ] or ( ).
+7.  No meta-commentary: "In this section…", "As mentioned…", etc.
+8.  Start with the first word of the script — no preamble or explanation.
+9.  ONE script only. After the final CTA line: STOP. Do not restart."""
 
-NON-NEGOTIABLE OUTPUT RULES (always active — nothing overrides these):
-1.  Write 100% in {language} — every single word, zero exceptions.
-2.  Output ONLY plain flowing prose — no markdown, no **, no __, no ##.
-3.  No section headers, labels, or dividers of any kind.
-4.  No visual cues: VISUAL:, VIDEO:, SHOW:, CUT TO:, etc.
-5.  No narrator/speaker tags: NARRATOR:, SPEAKER:, HOST:, etc.
-6.  No timestamps: (0:00–0:15), (30 sec), (pause), etc.
-7.  No stage directions in brackets [ ] or parentheses ( ).
-8.  No meta-commentary: "In this section…", "As I mentioned…", etc.
-9.  Never mention price, cost, or affordability.
-10. Start writing the script immediately — no preamble, no explanation.
-11. ONE script only. After the final CTA line, STOP. Do not restart."""
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # CHUNK PROMPT BUILDER
-    # ─────────────────────────────────────────────────────────────────────────
+    # =========================================================================
+    # CHUNK PROMPT — minimal, formula-first
+    # =========================================================================
 
     def _build_chunk_prompt(
         self,
         title: str,
-        niche: Dict,
-        chunk: 'ChunkConfig',
-        previous_context: str,
+        language: str,
+        product: str,
+        chunk,
         total_chunks: int,
         plan: dict,
+        previous_context: str,
         promo_count_so_far: int,
+        is_final: bool,
     ) -> str:
-        language   = niche['language']
-        niche_name = niche['name']
-        product    = niche.get('product', 'our platform')
 
-        pct_start = int(chunk.script_position_start * 100)
-        pct_end   = int(chunk.script_position_end   * 100)
+        anchor       = plan.get("anchor", title)
+        promo_count  = plan.get("promo_count", 1)
+        cta_action   = plan.get("cta_action", "subscribe and hit the bell")
+        sections_now = plan.get("chunk_sections", {}).get(str(chunk.index), [])
 
-        # ── Plan context block (injected into every chunk) ───────────────────
-        anchor       = plan.get('anchor', 'the historical figure from the title')
-        promo_count  = plan.get('promo_count', 2)
-        promo_trigger = plan.get('promo_trigger', '')
-        cta_action   = plan.get('cta_action', 'subscribe and hit the bell')
-        closing_desc  = plan.get('closing_structure', 'conclusion with CTA')
-
-        plan_block = (
-            f"━━━ LOCKED SCRIPT PLAN (do not deviate) ━━━\n"
-            f"Historical anchor : {anchor}\n"
-            f"Total promo blocks: {promo_count} (formula-mandated)\n"
-            f"Promos written so far in earlier chunks: {promo_count_so_far}\n"
-            f"Promo trigger     : {promo_trigger}\n"
-            f"Final CTA action  : {cta_action}\n"
-            f"Closing structure : {closing_desc}\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        )
-
-        # ── Role-specific instructions ────────────────────────────────────────
-        if chunk.role == "HOOK_AND_FRAMEWORK":
-            position_desc = f"Chunk 1 of {total_chunks} — OPENING (0 % → {pct_end} % of the full script)"
-            formula_task  = (
-                "━━━ FORMULA EXECUTION FOR THIS CHUNK ━━━\n"
-                "Step 1 — PARSE: Re-read the formula in your system instructions.\n"
-                "         Identify the section(s) that define the HOOK and OPENING.\n"
-                "Step 2 — MAP: Those opening sections are what you write RIGHT NOW.\n"
-                "Step 3 — EXECUTE: Follow every rule in those sections to the letter:\n"
-                f"         hook style = {plan.get('opening_hook_type', 'tension-based')},\n"
-                "         opening tone, emotional trigger, sentence rhythm, promise/tension.\n"
-                "Step 4 — LIMIT: Do NOT write anything from middle or closing sections.\n"
-                "         Do NOT conclude. The script continues in the next chunks."
+        # Format the section list
+        if sections_now:
+            sections_block = "FORMULA SECTIONS TO WRITE IN THIS CHUNK:\n" + "\n".join(
+                f"  → {s}" for s in sections_now
             )
-            continuation_block = ""
-            stop_block = ""
+        else:
+            sections_block = "Write the appropriate portion of the formula for this chunk position."
 
-        elif chunk.role == "DEEP_INSIGHTS_AND_EXAMPLES":
-            position_desc = (
-                f"Chunk {chunk.index} of {total_chunks} — "
-                f"MIDDLE BODY ({pct_start} % → {pct_end} % of the full script)"
-            )
-            remaining_promos = promo_count - promo_count_so_far
-            formula_task  = (
-                "━━━ FORMULA EXECUTION FOR THIS CHUNK ━━━\n"
-                "Step 1 — PARSE: Re-read the formula in your system instructions.\n"
-                "         Identify the section(s) that define the BODY / DEVELOPMENT / STORY EVENTS.\n"
-                "Step 2 — MAP: Those body/development sections are what you write RIGHT NOW.\n"
-                "Step 3 — EXECUTE: Follow every rule in those sections to the letter:\n"
-                "         story progression, emotional arc stages, rhythm rules,\n"
-                "         number and placement of story events, any promo rules that apply here.\n"
-                f"Step 4 — PROMO COUNTER: You still need {remaining_promos} more promo block(s).\n"
-                "         Place them ONLY at the formula-specified trigger moments.\n"
-                "         Tag them exactly as the formula instructs (e.g. [PROMO #X — START]).\n"
-                "Step 5 — LIMIT: Do NOT re-write the hook. Do NOT conclude yet.\n"
-                "         Keep the tension alive — the script ends in the next chunk."
-            )
-            continuation_block = (
-                f"CONTINUE SEAMLESSLY FROM THE PREVIOUS CHUNK "
-                f"(do NOT repeat or summarize what came before):\n"
+        # Continuation context (empty for first chunk)
+        if previous_context:
+            continuation = (
+                f"CONTINUE SEAMLESSLY (do NOT repeat what was already written):\n"
                 f'"...{previous_context}"\n\n'
             )
-            stop_block = ""
+        else:
+            continuation = ""
 
-        else:  # IMPLEMENTATION_AND_CLOSE
-            position_desc = (
-                f"Chunk {chunk.index} of {total_chunks} — "
-                f"CLOSING ({pct_start} % → 100 % of the full script)"
+        # Promo counter reminder (middle + final chunks)
+        if chunk.index > 1:
+            remaining = promo_count - promo_count_so_far
+            promo_reminder = (
+                f"PROMO COUNTER: {promo_count_so_far} promo block(s) already written. "
+                f"You still need exactly {remaining} more in this chunk "
+                f"(per formula — place at formula-specified trigger).\n"
+                f"PRODUCT: {product}\n\n"
+            ) if remaining > 0 else (
+                f"PROMO COUNTER: All {promo_count} promo block(s) already written. "
+                f"Do NOT add any more promotion in this chunk.\n\n"
             )
-            remaining_promos = promo_count - promo_count_so_far
-            formula_task  = (
-                "━━━ FORMULA EXECUTION FOR THIS CHUNK ━━━\n"
-                "Step 1 — PARSE: Re-read the formula in your system instructions.\n"
-                "         Identify the section(s) that define the CLOSING, CONCLUSION, PROMOTION, and CTA.\n"
-                "Step 2 — MAP: Those closing sections are what you write RIGHT NOW.\n"
-                "Step 3 — EXECUTE: Follow every rule in those sections to the letter:\n"
-                "         climax structure, conclusion tone,\n"
-                f"         EXACTLY {remaining_promos} more promo block(s) — no more, no less,\n"
-                f"         CTA action = '{cta_action}', final sentence style.\n"
-                "Step 4 — COMPLETE: This is the FINAL chunk. End the script fully and powerfully.\n"
-                "Step 5 — HARD STOP: After you have written the final CTA / subscribe line,\n"
-                f"         write this exact line on its own and then STOP COMPLETELY:\n"
-                f"         {STOP_SIGNAL}\n"
-                "         Nothing after that line. No summary. No new hook. No restart.\n"
-                "         ONE script. ONE ending."
+        else:
+            promo_reminder = f"PRODUCT: {product}\n\n"
+
+        # Hard stop for final chunk
+        if is_final:
+            stop_instruction = (
+                f"\nHARD STOP RULE:\n"
+                f"After you write the final CTA line ('{cta_action}'), immediately write this exact line:\n"
+                f"{STOP_SIGNAL}\n"
+                f"Then output NOTHING else. The script is complete. Do not add summaries, new sections, "
+                f"or restart.\n"
             )
-            continuation_block = (
-                f"CONTINUE SEAMLESSLY FROM THE PREVIOUS CHUNK "
-                f"(do NOT repeat or summarize what came before):\n"
-                f'"...{previous_context}"\n\n'
+            chunk_role_note = (
+                f"This is the FINAL CHUNK. Complete the script fully — "
+                f"write the closing sections and the CTA exactly as the formula prescribes."
             )
-            stop_block = (
-                f"\n⚠️  STOP RULE: The instant you write the final CTA line, write:\n"
-                f"   {STOP_SIGNAL}\n"
-                f"   Then output NOTHING else. You are done."
+        else:
+            stop_instruction = ""
+            chunk_role_note = (
+                f"This is chunk {chunk.index} of {total_chunks}. "
+                f"Do NOT write closing or CTA sections — those come in chunk {total_chunks}. "
+                f"Keep the narrative going."
             )
 
-        prompt = f"""SCRIPT CHUNK — EXECUTE YOUR FORMULA NOW
+        prompt = f"""SCRIPT CHUNK {chunk.index} OF {total_chunks}
 
-TITLE    : "{title}"
-NICHE    : {niche_name}
-LANGUAGE : {language}
-POSITION : {position_desc}
+TITLE: "{title}"
+SUBJECT / ANCHOR: {anchor}
 
-{plan_block}
+{sections_block}
 
-{continuation_block}{formula_task}
+{continuation}{promo_reminder}NOTE: {chunk_role_note}
 
-━━━ CREATIVE EXECUTION ━━━
-The formula defines your structure. Fill it with vivid, original content:
-- Center the script around: {anchor}
-- Write specifically about "{title}" — not generic content
-- Invent concrete, believable details: real-feeling examples, specific numbers,
-  named characters if the formula uses them, emotional moments that feel lived-in
-- Never sound like AI — sound like a world-class human storyteller
-- Every sentence must earn its place
-
-PRODUCT : {product}
-Follow the formula's exact product placement rules.
-NEVER mention price, cost, or affordability.
-
-TOPIC LOCK: Every sentence must serve the title "{title}". Do not drift.
-
-LENGTH: Write AT LEAST {chunk.target_chars:,} characters.
-        Up to {int(chunk.target_chars * 1.08):,} characters is acceptable.
-        Never cut short — use the full length to go deeper, not to pad.
-{stop_block}
-START WRITING IN {language.upper()} NOW:"""
+LENGTH: Write at least {chunk.target_chars:,} characters (up to {int(chunk.target_chars * 1.08):,} is fine).
+Do not cut short — go deep on the formula sections assigned above.
+{stop_instruction}
+WRITE IN {language.upper()} NOW:"""
 
         return prompt
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # API CALL HELPER — retry on quota errors, re-request if too short
-    # ─────────────────────────────────────────────────────────────────────────
+    # =========================================================================
+    # API CALL HELPER
+    # =========================================================================
 
-    def _call_api_with_retry(
+    def _call_api(
         self,
         prompt: str,
         system_instruction: str,
@@ -494,7 +460,7 @@ START WRITING IN {language.upper()} NOW:"""
         label: str = "",
         verbose: bool = False,
     ) -> str:
-        MAX_API_RETRIES  = 3
+        MAX_API_RETRIES   = 3
         MAX_SHORT_RETRIES = 2
 
         for short_attempt in range(MAX_SHORT_RETRIES + 1):
@@ -517,35 +483,33 @@ START WRITING IN {language.upper()} NOW:"""
                 except Exception as e:
                     err = str(e)
                     is_quota = (
-                        '429' in err
-                        or 'quota' in err.lower()
-                        or 'ResourceExhausted' in type(e).__name__
+                        "429" in err
+                        or "quota" in err.lower()
+                        or "ResourceExhausted" in type(e).__name__
                     )
                     if not is_quota or attempt == MAX_API_RETRIES:
                         raise
-                    m = re.search(r'seconds: (\d+)', err)
+                    m    = re.search(r"seconds: (\d+)", err)
                     wait = int(m.group(1)) + 5 if m else 35
                     if verbose:
                         print(f"   ⚠️  Quota — waiting {wait}s "
                               f"(attempt {attempt + 1}/{MAX_API_RETRIES})...")
                     time.sleep(wait)
 
-            text = response.text.strip()
-
-            min_ok = int(target_chars * 0.50)
+            text    = response.text.strip()
+            min_ok  = int(target_chars * 0.50)
             if len(text) >= min_ok or short_attempt == MAX_SHORT_RETRIES:
                 return text
             if verbose:
-                print(f"   ⚠️  {label} too short "
-                      f"({len(text):,} < {min_ok:,}) — retrying "
-                      f"(attempt {short_attempt + 1}/{MAX_SHORT_RETRIES})...")
+                print(f"   ⚠️  {label} too short ({len(text):,} < {min_ok:,}) "
+                      f"— retrying (attempt {short_attempt + 1}/{MAX_SHORT_RETRIES})...")
             time.sleep(4)
 
         return text
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # EXTENSION (if script is short after merge)
-    # ─────────────────────────────────────────────────────────────────────────
+    # =========================================================================
+    # EXTENSION (if merged script is short)
+    # =========================================================================
 
     def _extend_script(
         self,
@@ -553,18 +517,22 @@ START WRITING IN {language.upper()} NOW:"""
         target_length: int,
         title: str,
         niche: dict,
-        writing_guidelines: str,
+        formula: str,
         plan: dict,
         verbose: bool = False,
     ) -> str:
-        MAX_EXTEND_RETRIES = 2
-        language   = niche.get('language', 'English')
-        niche_name = niche.get('name', '')
-        anchor     = plan.get('anchor', 'the historical figure from the title')
+        MAX_RETRIES = 2
+        language    = niche.get("language", "English")
+        anchor      = plan.get("anchor", title)
+        body_secs   = plan.get("sections", [])
+        body_hint   = (
+            "Continue the body sections from the formula: "
+            + ", ".join(body_secs[1:-1] or body_secs)
+        ) if body_secs else "Continue the body/development sections from the formula."
 
-        system_instruction = self._build_system_instruction(writing_guidelines, language)
+        system_instruction = self._build_system_instruction(formula, language)
 
-        for attempt in range(MAX_EXTEND_RETRIES):
+        for attempt in range(MAX_RETRIES):
             shortage = target_length - len(current_script)
             if shortage <= 0:
                 break
@@ -573,32 +541,22 @@ START WRITING IN {language.upper()} NOW:"""
             extend_tokens = min(65536, max(int(extend_chars / 3 * 1.25) + 2000, 4000))
             tail          = current_script[-600:].strip()
 
-            prompt = f"""SCRIPT EXTENSION — CONTINUE THE BODY SECTION
+            prompt = f"""SCRIPT EXTENSION
 
 TITLE   : "{title}"
-NICHE   : {niche_name}
-LANGUAGE: {language}
-ANCHOR  : {anchor}
+SUBJECT : {anchor}
 
-LAST PART OF SCRIPT (do NOT repeat — continue seamlessly from here):
+LAST PART ALREADY WRITTEN (continue from here — do NOT repeat):
 "...{tail}"
 
-━━━ FORMULA EXECUTION ━━━
-Re-read your formula (in your system instructions).
-Identify the BODY / DEVELOPMENT section rules that apply here.
-Execute those rules now — continue the script body, staying on the anchor: {anchor}
+TASK: {body_hint}
+Write at least {extend_chars:,} new characters of body content.
+Follow the formula exactly. Do NOT add a conclusion or CTA yet.
 
-RULES:
-- Write AT LEAST {extend_chars:,} characters of NEW, original content
-- Do NOT repeat anything already written
-- Do NOT add a conclusion or closing yet — this is body extension only
-- Follow the formula's body section rhythm and structure exactly
-- Start immediately — no preamble
-
-START WRITING IN {language.upper()} NOW:"""
+WRITE IN {language.upper()} NOW:"""
 
             try:
-                extension = self._call_api_with_retry(
+                extension = self._call_api(
                     prompt=prompt,
                     system_instruction=system_instruction,
                     model_name=Config.GEMINI_SCRIPT_MODEL,
@@ -608,7 +566,7 @@ START WRITING IN {language.upper()} NOW:"""
                     label=f"Extension {attempt + 1}",
                     verbose=verbose,
                 )
-                current_script = current_script.rstrip() + ' ' + extension
+                current_script = current_script.rstrip() + " " + extension
                 if verbose:
                     print(f"   Extension +{len(extension):,} → total {len(current_script):,}")
                 time.sleep(4)
@@ -619,74 +577,60 @@ START WRITING IN {language.upper()} NOW:"""
 
         return current_script
 
-    # ─────────────────────────────────────────────────────────────────────────
+    # =========================================================================
     # POST-PROCESSING
-    # ─────────────────────────────────────────────────────────────────────────
+    # =========================================================================
 
     def _merge_chunks(self, chunks: List[str]) -> str:
-        merged = ' '.join(chunks)
-        merged = re.sub(r'(?i)(continuing from|as we discussed|as mentioned earlier)', '', merged)
-        merged = re.sub(r'(?i)(in the previous (section|part|chunk))', '', merged)
-        merged = re.sub(r'  +', ' ', merged)
+        merged = " ".join(chunks)
+        merged = re.sub(r"(?i)(continuing from|as we discussed|as mentioned earlier)", "", merged)
+        merged = re.sub(r"(?i)(in the previous (section|part|chunk))", "", merged)
+        merged = re.sub(r"  +", " ", merged)
         return merged.strip()
 
     def _clean_script(self, text: str) -> str:
-        """
-        Strip the stop signal, then remove all formatting artifacts.
-        The stop signal strip MUST happen first so nothing after it leaks through.
-        """
-        # ── Hard stop — discard everything at and after the signal ────────────
-        stop_idx = text.find(STOP_SIGNAL)
-        if stop_idx != -1:
-            text = text[:stop_idx]
+        # Strip everything at/after the hard stop signal FIRST
+        idx = text.find(STOP_SIGNAL)
+        if idx != -1:
+            text = text[:idx]
 
-        # ── Markdown ──────────────────────────────────────────────────────────
-        text = re.sub(r'\*\*\*(.+?)\*\*\*', r'\1', text)
-        text = re.sub(r'\*\*(.+?)\*\*',     r'\1', text)
-        text = re.sub(r'\*(.+?)\*',          r'\1', text)
-        text = re.sub(r'__(.+?)__',          r'\1', text)
-        text = re.sub(r'_(.+?)_',            r'\1', text)
-        text = re.sub(r'`(.+?)`',            r'\1', text)
-        text = re.sub(r'#{1,6}\s+',          '',    text)
-        text = re.sub(r'\*',                 '',    text)
+        # Markdown
+        text = re.sub(r"\*\*\*(.+?)\*\*\*", r"\1", text)
+        text = re.sub(r"\*\*(.+?)\*\*",     r"\1", text)
+        text = re.sub(r"\*(.+?)\*",          r"\1", text)
+        text = re.sub(r"__(.+?)__",          r"\1", text)
+        text = re.sub(r"_(.+?)_",            r"\1", text)
+        text = re.sub(r"`(.+?)`",            r"\1", text)
+        text = re.sub(r"#{1,6}\s+",          "",    text)
+        text = re.sub(r"\*",                 "",    text)
 
-        # ── Labels + cues ─────────────────────────────────────────────────────
-        text = re.sub(r'(?i)(VISUAL|VIDEO|NARRATOR|SPEAKER|SHOW|CUT TO)\s*:', '', text)
+        # Labels / cues
+        text = re.sub(r"(?i)(VISUAL|VIDEO|NARRATOR|SPEAKER|SHOW|CUT TO)\s*:", "", text)
 
-        # ── Timestamps ────────────────────────────────────────────────────────
-        text = re.sub(r'\(\s*\d+:\d+\s*-\s*\d+:\d+\s*\)', '', text)
-        text = re.sub(r'\(\s*\d+\s*(sec|min|seconds?|minutes?)\s*\)', '', text)
+        # Timestamps
+        text = re.sub(r"\(\s*\d+:\d+\s*-\s*\d+:\d+\s*\)", "", text)
+        text = re.sub(r"\(\s*\d+\s*(sec|min|seconds?|minutes?)\s*\)", "", text)
 
-        # ── Brackets / parentheses with directions ────────────────────────────
-        text = re.sub(r'\[.+?\]', '', text)
-        text = re.sub(r'\(.+?\)', '', text)
+        # Brackets / parentheses with directions
+        text = re.sub(r"\[.+?\]", "", text)
+        text = re.sub(r"\(.+?\)", "", text)
 
-        # ── Spacing ───────────────────────────────────────────────────────────
-        text = re.sub(r'\n{3,}', '\n\n', text)
-        text = re.sub(r'  +',    ' ',    text)
+        # Spacing
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        text = re.sub(r"  +",    " ",    text)
 
         return text.strip()
 
     def _remove_duplicate_sentences(self, text: str, verbose: bool = False) -> str:
-        """
-        Programmatic pass: remove exact or near-exact duplicate sentences.
-        A sentence is considered a duplicate if its normalized form matches
-        a sentence already seen earlier in the text.
-        This catches the main failure mode where the AI generates a second
-        hook/intro after the conclusion.
-        """
-        # Split on sentence-ending punctuation followed by whitespace
-        sentences = re.split(r'(?<=[.!?])\s+', text)
+        sentences = re.split(r"(?<=[.!?])\s+", text)
         seen: set = set()
         unique: List[str] = []
         removed = 0
 
         for sent in sentences:
-            # Normalize: lowercase, collapse whitespace, strip punctuation
-            norm = re.sub(r'[^\w\s]', '', sent.lower())
-            norm = re.sub(r'\s+', ' ', norm).strip()
+            norm = re.sub(r"[^\w\s]", "", sent.lower())
+            norm = re.sub(r"\s+", " ", norm).strip()
 
-            # Skip very short sentences from dedup check (connectors, single words)
             if len(norm) < 40:
                 unique.append(sent)
                 continue
@@ -699,21 +643,17 @@ START WRITING IN {language.upper()} NOW:"""
             unique.append(sent)
 
         if verbose and removed:
-            print(f"   🧹 Duplicate scanner: removed {removed} duplicate sentence(s)")
+            print(f"   🧹 Duplicate scanner: removed {removed} sentence(s)")
 
-        return ' '.join(unique)
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # HELPERS
-    # ─────────────────────────────────────────────────────────────────────────
+        return " ".join(unique)
 
     def _trim_to_length(self, text: str, max_chars: int) -> str:
         if len(text) <= max_chars:
             return text
-        truncated    = text[:max_chars]
-        last_sentence = max(truncated.rfind('.'), truncated.rfind('!'), truncated.rfind('?'))
-        if last_sentence > max_chars * 0.8:
-            return truncated[:last_sentence + 1].strip()
+        truncated = text[:max_chars]
+        last = max(truncated.rfind("."), truncated.rfind("!"), truncated.rfind("?"))
+        if last > max_chars * 0.8:
+            return truncated[:last + 1].strip()
         return truncated.strip()
 
     def _get_temperature(self, role: str) -> float:
@@ -733,10 +673,10 @@ START WRITING IN {language.upper()} NOW:"""
             errors.append(f"Too long: {actual:,} > {target_length + 300:,}")
 
         forbidden = [
-            (r'(?i)\bVISUAL\s*:',  'VISUAL: label found'),
-            (r'(?i)\bNARRATOR\s*:', 'NARRATOR: label found'),
-            (r'\(\s*\d+:\d+',      'Timestamp found'),
-            (re.escape(STOP_SIGNAL), 'Stop signal leaked into output'),
+            (r"(?i)\bVISUAL\s*:",       "VISUAL: label found"),
+            (r"(?i)\bNARRATOR\s*:",     "NARRATOR: label found"),
+            (r"\(\s*\d+:\d+",           "Timestamp found"),
+            (re.escape(STOP_SIGNAL),    "Stop signal leaked into output"),
         ]
         for pattern, msg in forbidden:
             if re.search(pattern, script):
@@ -748,4 +688,4 @@ START WRITING IN {language.upper()} NOW:"""
             if found < len(title_words) * 0.3:
                 errors.append("Possible topic drift (title words missing)")
 
-        return {'valid': len(errors) == 0, 'errors': errors}
+        return {"valid": len(errors) == 0, "errors": errors}
