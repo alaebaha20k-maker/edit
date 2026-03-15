@@ -179,7 +179,9 @@ class Config:
         }
 
     # Gemini Settings - EXACT from HTML reference
-    GEMINI_MODEL = 'gemini-2.5-flash'
+    GEMINI_MODEL        = 'gemini-2.5-flash'          # default / non-script features
+    GEMINI_SCRIPT_MODEL = 'gemini-2.5-pro'            # script writing — highest quality
+    GEMINI_PLAN_MODEL   = 'gemini-2.5-flash'          # planning call — fast, cheap
     GEMINI_MAX_TOKENS = 65536  # EXACT from HTML
     GEMINI_TOP_P = 0.92  # EXACT from HTML
     GEMINI_TOP_K = 35  # EXACT from HTML
