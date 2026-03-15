@@ -256,7 +256,7 @@ class ScriptGenerator3Chunk:
 
         prompt = f"""You are reading a YouTube script formula and creating a production plan.
 
-TITLE: "{title}"
+TITLE: {title}
 LANGUAGE: {language}
 TOTAL CHUNKS TO WRITE: {total_chunks}
 
@@ -264,31 +264,66 @@ TOTAL CHUNKS TO WRITE: {total_chunks}
 {formula}
 ═══════════════════════════════════════════════════════
 
-Tasks:
-1. List every section of this formula in order (use the exact heading names from the formula).
-2. Distribute those sections across {total_chunks} chunks.
-   - Chunk 1 = opening / hook sections
-   - Chunk {total_chunks} = closing / CTA / conclusion sections
-   - Middle chunks = body / development / story sections
-   (If only 1 chunk, it gets all sections.)
-3. Extract the main anchor (historical person, story, or event the script focuses on — infer from title + formula).
-4. Count how many promotional blocks the formula requires.
-5. Extract the final CTA action text the formula prescribes.
+Reply using EXACTLY this plain-text format — no JSON, no markdown, no code fences.
+Each field on its own line. Use the pipe character | to separate multiple values.
 
-Reply with ONLY a valid JSON object — no explanation, no markdown, no code fences.
+SECTIONS: <section1> | <section2> | <section3> | ...
+CHUNK1: <section A> | <section B>
+CHUNK2: <section C> | <section D>
+CHUNK{total_chunks}: <last sections>
+ANCHOR: <main person or story the script focuses on — infer from title>
+PROMO_COUNT: <integer — how many promotional blocks the formula requires>
+CTA: <exact CTA text or action from formula>
+CLOSING: <one sentence — how the formula ends the script>
 
-{{
-  "sections": ["exact section heading 1", "exact section heading 2", "..."],
-  "chunk_sections": {{
-    "1": ["section heading A", "section heading B"],
-    "2": ["section heading C", "..."],
-    "{total_chunks}": ["last section heading", "..."]
-  }},
-  "anchor": "<main person / story / event>",
-  "promo_count": <integer>,
-  "cta_action": "<exact CTA text or action from formula>",
-  "closing_note": "<one sentence: how the formula ends the script>"
-}}"""
+Rules:
+- SECTIONS line: list every section heading in order, separated by |
+- CHUNK lines: assign each section to exactly one chunk (chunk 1 = opening/hook, chunk {total_chunks} = closing/CTA, middle = body)
+- Every chunk line must exist from CHUNK1 to CHUNK{total_chunks}
+- Use exact heading names from the formula — do NOT invent new names
+- Do not add any explanation before or after"""
+
+        def _parse_response(text: str, total_chunks: int, title: str) -> dict:
+            """Parse the line-based response without JSON."""
+            lines = text.strip().splitlines()
+            line_map: Dict[str, str] = {}
+            for line in lines:
+                if ":" in line:
+                    key, _, val = line.partition(":")
+                    line_map[key.strip().upper()] = val.strip()
+
+            # Sections
+            raw_sections = line_map.get("SECTIONS", "")
+            sections = [s.strip() for s in raw_sections.split("|") if s.strip()] if raw_sections else []
+
+            # Chunk assignments
+            chunk_sections: Dict[str, List[str]] = {}
+            for i in range(1, total_chunks + 1):
+                key = f"CHUNK{i}"
+                raw = line_map.get(key, "")
+                secs = [s.strip() for s in raw.split("|") if s.strip()]
+                if not secs:
+                    # fallback: assign evenly from sections list
+                    secs = [sections[i - 1]] if i <= len(sections) else [f"Part {i}"]
+                chunk_sections[str(i)] = secs
+
+            anchor      = line_map.get("ANCHOR", title).strip() or title
+            promo_raw   = line_map.get("PROMO_COUNT", "1").strip()
+            try:
+                promo_count = int(re.sub(r"[^\d]", "", promo_raw) or "1")
+            except ValueError:
+                promo_count = 1
+            cta_action  = line_map.get("CTA", "subscribe and hit the bell").strip()
+            closing     = line_map.get("CLOSING", "conclude with the subscribe call to action").strip()
+
+            return {
+                "sections"      : sections,
+                "chunk_sections": chunk_sections,
+                "anchor"        : anchor,
+                "promo_count"   : promo_count,
+                "cta_action"    : cta_action,
+                "closing_note"  : closing,
+            }
 
         try:
             model    = genai.GenerativeModel(Config.GEMINI_PLAN_MODEL)
@@ -297,16 +332,16 @@ Reply with ONLY a valid JSON object — no explanation, no markdown, no code fen
                 generation_config={"temperature": 0.05, "max_output_tokens": 2048},
             )
             text = response.text.strip()
-            text = re.sub(r"```(?:json)?\s*", "", text).strip("` \n")
-            plan = json.loads(text)
+            plan = _parse_response(text, total_chunks, title)
 
-            # Ensure all chunk keys exist
-            for i in range(1, total_chunks + 1):
-                key = str(i)
-                if key not in plan.get("chunk_sections", {}):
-                    plan.setdefault("chunk_sections", {})[key] = (
-                        plan.get("sections", [f"Section {i}"])
-                    )
+            # Sanity check: if all chunks are empty or all say "Part N", warn but continue
+            all_fallback = all(
+                chunk_sections == [f"Part {i}"]
+                for i, chunk_sections in plan["chunk_sections"].items()
+            )
+            if all_fallback and verbose:
+                print("   ⚠️  Formula parse returned only generic fallback sections")
+
             return plan
 
         except Exception as e:
