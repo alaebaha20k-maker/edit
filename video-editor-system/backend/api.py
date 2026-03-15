@@ -5669,7 +5669,7 @@ def generate_prompts_only():
             return '{' + key + '}'
 
     # ---- IMAGE prompt builder ------------------------------------------------
-    def build_image_prompt(script_text, style, chunk_start, chunk_size, total_count):
+    def build_image_prompt(script_segment, style, chunk_start, chunk_size, total_count, prev_prompts=None):
         style_name        = style.get('name', 'Cinematic')
         style_desc        = style.get('description', '')
         style_formula_raw = style.get('style_formula', '').strip()
@@ -5679,29 +5679,36 @@ def generate_prompts_only():
         lighting          = style.get('lighting', '')
         color_palette     = style.get('color_palette', [])
 
-        visual_rules_text   = '\n'.join([f"- {r}" for r in visual_rules]) if visual_rules else style_desc
-        negative_rules_text = '\n'.join([f"- {r}" for r in negative_rules])
-        color_palette_text  = ', '.join(color_palette) if color_palette else 'rich, vivid colors'
+        color_palette_text = ', '.join(color_palette) if color_palette else 'rich, vivid colors'
         chunk_end = chunk_start + chunk_size - 1
 
+        # Build style DNA — the mandatory visual fingerprint for EVERY prompt
         if style_formula_raw:
-            style_section = f"""═══════════════ STYLE: {style_name} ═══════════════
-{style_formula_raw}
-════════════════════════════════════════"""
+            style_dna = style_formula_raw
         else:
-            style_section = f"""═══════════════ STYLE BIBLE: {style_name} ═══════════════
-{style_desc}
+            dna_parts = [style_desc] if style_desc else []
+            if visual_rules:
+                dna_parts.append('Visual: ' + ' | '.join(visual_rules))
+            if composition:
+                dna_parts.append(f'Composition: {composition}')
+            if lighting:
+                dna_parts.append(f'Lighting: {lighting}')
+            if color_palette_text:
+                dna_parts.append(f'Colors: {color_palette_text}')
+            style_dna = '\n'.join(dna_parts)
 
-VISUAL RULES:
-{visual_rules_text}
+        negative_text = ''
+        if negative_rules:
+            negative_text = '\nNEVER include: ' + ', '.join(negative_rules)
 
-NEGATIVE RULES:
-{negative_rules_text}
-
-Composition: {composition}
-Lighting: {lighting}
-Color Palette: {color_palette_text}
-════════════════════════════════════════"""
+        # Previously generated prompts — tell AI what subjects were already covered
+        prev_section = ''
+        if prev_prompts:
+            previews = '\n'.join(f'- {p[:120]}' for p in prev_prompts[-6:])
+            prev_section = f"""
+ALREADY GENERATED — do NOT repeat these subjects or environments:
+{previews}
+"""
 
         formula_rendered = _auto_images_formula.format_map(_SafeDict(
             n_images=chunk_size,
@@ -5713,65 +5720,87 @@ Color Palette: {color_palette_text}
 
         return f"""You are a professional image prompt writer for AI image generators (Flux, Midjourney, SDXL).
 
-TASK: Generate EXACTLY {chunk_size} image prompts — scenes {chunk_start} to {chunk_end} of {total_count} total.
-The script is divided into {total_count} scenes. You are generating scenes {chunk_start}–{chunk_end}.
-Each prompt must correspond PRECISELY to that portion of the script. CHRONOLOGICAL ORDER. No skipping.
-ALL prompts MUST be written in ENGLISH regardless of the script language.
+════════════════ STYLE CORE — {style_name} ════════════════
+This is the MANDATORY visual DNA. Every single prompt you write MUST reflect this style.
+Apply these parameters as the foundation of every prompt without exception:
 
-═══════════════ FULL SCRIPT ═══════════════
-{script_text}
-═══════════════════════════════════════════
+{style_dna}{negative_text}
+══════════════════════════════════════════════════════════
 
-{style_section}
+TASK: Generate EXACTLY {chunk_size} image prompts covering scenes {chunk_start}–{chunk_end} of {total_count} total.
+Each prompt = one distinct visual scene extracted from the script segment below.
+ALL prompts in ENGLISH. Follow the script CHRONOLOGICALLY. Each prompt covers a different moment.
+{prev_section}
+═══════════════ SCRIPT SEGMENT (scenes {chunk_start}–{chunk_end}) ═══════════════
+{script_segment}
+═══════════════════════════════════════════════════════════════════
 
 {formula_rendered}
 
-OUTPUT RULES — READ CAREFULLY:
-1. Output EXACTLY {chunk_size} prompts separated by ONE blank line between each.
-2. NO [image] tokens, NO numbering, NO labels, NO preamble, NO explanation after.
+OUTPUT RULES:
+1. EXACTLY {chunk_size} prompts separated by ONE blank line between each.
+2. NO numbering, NO labels, NO preamble, NO explanation.
 3. Each prompt = ONE continuous paragraph. NO line breaks inside a prompt.
-4. Every prompt MUST end with: --no text, no captions, no watermarks, no labels
-5. Scenes {chunk_start}–{chunk_end} only, in chronological script order.
-6. Each scene is DISTINCT — never repeat the same visual environment back to back.
+4. Every prompt MUST embed the {style_name} style parameters above as its visual core.
+5. Every prompt MUST end with: --no text, no captions, no watermarks, no labels
+6. Every scene DISTINCT — different subject, angle, or environment from all others.
 OUTPUT ONLY THE {chunk_size} PROMPTS. NOTHING ELSE."""
 
     # ---- VIDEO prompt builder ------------------------------------------------
-    def build_video_prompt(script_text, style, chunk_start, chunk_size, total_count):
+    def build_video_prompt(script_segment, style, chunk_start, chunk_size, total_count, prev_prompts=None):
         style_name    = style.get('name', 'Cinematic')
         style_formula = style.get('style_formula', '').strip()
         chunk_end = chunk_start + chunk_size - 1
 
-        style_section = f"""═══════════════ VIDEO STYLE: {style_name} ═══════════════
-{style_formula if style_formula else f'Cinematic quality, smooth camera movement, {style_name} aesthetic'}
-════════════════════════════════════════"""
+        style_dna = style_formula or f'Cinematic film quality, smooth controlled camera movement, {style_name} aesthetic, professional grade'
+
+        prev_section = ''
+        if prev_prompts:
+            previews = '\n'.join(f'- {p[:120]}' for p in prev_prompts[-6:])
+            prev_section = f"""
+ALREADY GENERATED — do NOT repeat these subjects or shots:
+{previews}
+"""
 
         return f"""You are a professional video prompt writer for AI video generators (Sora, Runway Gen-3, Kling, Pika).
 
-TASK: Generate EXACTLY {chunk_size} video prompts — scenes {chunk_start} to {chunk_end} of {total_count} total.
-The script is divided into {total_count} scenes. You are generating scenes {chunk_start}–{chunk_end}.
-Each prompt must correspond PRECISELY to that portion of the script. CHRONOLOGICAL ORDER.
-ALL prompts MUST be written in ENGLISH regardless of the script language.
+════════════════ VIDEO STYLE CORE — {style_name} ════════════════
+This is the MANDATORY visual DNA. Every single prompt you write MUST apply this style as its base:
 
-═══════════════ FULL SCRIPT ═══════════════
-{script_text}
-═══════════════════════════════════════════
+{style_dna}
+══════════════════════════════════════════════════════════
 
-{style_section}
+TASK: Generate EXACTLY {chunk_size} video prompts covering scenes {chunk_start}–{chunk_end} of {total_count} total.
+Each prompt = one distinct video shot extracted from the script segment below.
+ALL prompts in ENGLISH. Follow the script CHRONOLOGICALLY. Each prompt covers a different moment.
+{prev_section}
+═══════════════ SCRIPT SEGMENT (scenes {chunk_start}–{chunk_end}) ═══════════════
+{script_segment}
+═══════════════════════════════════════════════════════════════════
 
-OUTPUT RULES — READ CAREFULLY:
-1. Output EXACTLY {chunk_size} prompts separated by ONE blank line between each.
-2. NO numbering, NO labels, NO preamble, NO explanation after.
+OUTPUT RULES:
+1. EXACTLY {chunk_size} prompts separated by ONE blank line between each.
+2. NO numbering, NO labels, NO preamble, NO explanation.
 3. Each prompt = ONE continuous paragraph. NO line breaks inside a prompt.
-4. Each prompt MUST include:
-   - Duration: "X seconds," (5–10 seconds per scene)
-   - Camera movement (slow dolly, pan, zoom, static, handheld, aerial, etc.)
-   - Subject and action EXACTLY matching that script moment
-   - Lighting and mood matching the {style_name} style
+4. Every prompt MUST include in this order:
+   - Duration: "X seconds," (5–10 s per scene)
+   - Specific camera movement (slow dolly-in, wide pan left, aerial descent, static close-up, etc.)
+   - Subject + action EXACTLY matching that script moment
+   - Mood and lighting applying the {style_name} style core above
    - End with: high quality, smooth motion, --no text --no subtitles --no watermarks
-5. Scenes {chunk_start}–{chunk_end} only, in chronological script order.
-6. Each scene is visually DISTINCT — vary camera angles and movements.
-7. Be SPECIFIC: describe motion direction, speed, what's in frame, atmosphere.
+5. Every scene DISTINCT — vary shot size, angle, camera movement from all others.
 OUTPUT ONLY THE {chunk_size} PROMPTS. NOTHING ELSE."""
+
+    def _dedup_prompts(prompts):
+        """Remove duplicate or near-duplicate prompts based on first 80 chars fingerprint."""
+        seen = set()
+        result = []
+        for p in prompts:
+            fp = re.sub(r'\s+', ' ', p[:80].lower().strip())
+            if fp not in seen:
+                seen.add(fp)
+                result.append(p)
+        return result
 
     try:
         data = request.get_json() or {}
@@ -5810,10 +5839,20 @@ OUTPUT ONLY THE {chunk_size} PROMPTS. NOTHING ELSE."""
         all_prompts = []
         remaining   = count
         chunk_start = 1
+        script_len  = len(script)
 
         while remaining > 0:
-            chunk_size  = min(CHUNK_SIZE, remaining)
-            prompt_text = prompt_builder(script, style, chunk_start, chunk_size, count)
+            chunk_size = min(CHUNK_SIZE, remaining)
+
+            # Slice the script proportionally so each chunk covers its own section
+            seg_start = int((chunk_start - 1) / count * script_len)
+            seg_end   = int((chunk_start + chunk_size - 1) / count * script_len)
+            script_segment = script[seg_start:seg_end].strip() or script
+
+            prompt_text = prompt_builder(
+                script_segment, style, chunk_start, chunk_size, count,
+                prev_prompts=all_prompts[-6:] if all_prompts else None,
+            )
 
             print(f'\n{"🎬" if mode=="video" else "🎨"} Prompts [{mode}] '
                   f'chunk {chunk_start}–{chunk_start + chunk_size - 1}/{count}')
@@ -5821,7 +5860,11 @@ OUTPUT ONLY THE {chunk_size} PROMPTS. NOTHING ELSE."""
 
             parts = [p.strip() for p in raw.split('\n\n') if p.strip()]
             clean = [p for p in parts if len(p) > 40]
-            all_prompts.extend(clean[:chunk_size])
+            clean = _dedup_prompts(clean)
+            # Only add prompts not already in all_prompts
+            seen_fps = {re.sub(r'\s+', ' ', p[:80].lower().strip()) for p in all_prompts}
+            new_prompts = [p for p in clean if re.sub(r'\s+', ' ', p[:80].lower().strip()) not in seen_fps]
+            all_prompts.extend(new_prompts[:chunk_size])
 
             chunk_start += chunk_size
             remaining   -= chunk_size
@@ -5935,7 +5978,7 @@ def generate_mixed_prompts():
             return '{' + key + '}'
 
     # ---- prompt builders (same logic as generate_prompts_only) ---------------
-    def build_image_prompt(script_text, style, chunk_start, chunk_size, total_count):
+    def build_image_prompt(script_segment, style, chunk_start, chunk_size, total_count, prev_prompts=None):
         style_name        = style.get('name', 'Cinematic')
         style_desc        = style.get('description', '')
         style_formula_raw = style.get('style_formula', '').strip()
@@ -5944,30 +5987,47 @@ def generate_mixed_prompts():
         composition       = style.get('composition', '')
         lighting          = style.get('lighting', '')
         color_palette     = style.get('color_palette', [])
-        vr  = '\n'.join([f"- {r}" for r in visual_rules]) if visual_rules else style_desc
-        nr  = '\n'.join([f"- {r}" for r in negative_rules])
         cp  = ', '.join(color_palette) if color_palette else 'rich, vivid colors'
         end = chunk_start + chunk_size - 1
 
         if style_formula_raw:
-            style_sec = f"═══ STYLE: {style_name} ═══\n{style_formula_raw}\n══════════════════════"
+            style_dna = style_formula_raw
         else:
-            style_sec = f"═══ STYLE BIBLE: {style_name} ═══\n{style_desc}\nVISUAL RULES:\n{vr}\nNEGATIVE RULES:\n{nr}\nComposition: {composition}\nLighting: {lighting}\nColor Palette: {cp}\n══════════════════════"
+            dna_parts = [style_desc] if style_desc else []
+            if visual_rules:
+                dna_parts.append('Visual: ' + ' | '.join(visual_rules))
+            if composition:
+                dna_parts.append(f'Composition: {composition}')
+            if lighting:
+                dna_parts.append(f'Lighting: {lighting}')
+            if cp:
+                dna_parts.append(f'Colors: {cp}')
+            style_dna = '\n'.join(dna_parts)
+
+        negative_text = ('\nNEVER include: ' + ', '.join(negative_rules)) if negative_rules else ''
+        prev_section = ''
+        if prev_prompts:
+            previews = '\n'.join(f'- {p[:120]}' for p in prev_prompts[-6:])
+            prev_section = f'\nALREADY GENERATED — do NOT repeat these subjects or environments:\n{previews}\n'
 
         formula_rendered = _auto_images_formula.format_map(_SafeDict(
             n_images=chunk_size, style_name=style_name,
             lighting=lighting, composition=composition, color_palette=cp,
         ))
         return f"""You are a professional image prompt writer (Flux, Midjourney, SDXL).
-TASK: Generate EXACTLY {chunk_size} image prompts — scenes {chunk_start} to {end} of {total_count} total.
-Script section: this is the SECOND HALF of the full video — generate the final {total_count} scenes from this script segment.
-ALL prompts in ENGLISH. Chronological order. Each = a distinct script moment.
 
-═══ SCRIPT SEGMENT ═══
-{script_text}
-═══════════════════════
+════════════════ STYLE CORE — {style_name} ════════════════
+MANDATORY visual DNA — embed this in EVERY prompt without exception:
 
-{style_sec}
+{style_dna}{negative_text}
+══════════════════════════════════════════════════════════
+
+TASK: Generate EXACTLY {chunk_size} image prompts — scenes {chunk_start}–{end} of {total_count} total.
+ALL prompts in ENGLISH. Chronological order. Each = a distinct moment from the script segment below.
+{prev_section}
+═══ SCRIPT SEGMENT (scenes {chunk_start}–{end}) ═══
+{script_segment}
+═══════════════════════════════════════════
 
 {formula_rendered}
 
@@ -5975,48 +6035,80 @@ OUTPUT RULES:
 1. EXACTLY {chunk_size} prompts separated by ONE blank line.
 2. NO labels, NO numbering, NO preamble, NO explanation.
 3. One continuous paragraph per prompt — no internal line breaks.
-4. End each: --no text, no captions, no watermarks, no labels
+4. Every prompt MUST embed the {style_name} style core as its visual foundation.
+5. End each: --no text, no captions, no watermarks, no labels
+6. Every scene DISTINCT — different subject/angle/environment from all others.
 OUTPUT ONLY THE {chunk_size} PROMPTS."""
 
-    def build_video_prompt(script_text, style, chunk_start, chunk_size, total_count):
+    def build_video_prompt(script_segment, style, chunk_start, chunk_size, total_count, prev_prompts=None):
         style_name    = style.get('name', 'Cinematic')
         style_formula = style.get('style_formula', '').strip()
         end = chunk_start + chunk_size - 1
-        style_sec = f"═══ VIDEO STYLE: {style_name} ═══\n{style_formula or 'Cinematic quality, smooth camera movement'}\n══════════════════════"
+        style_dna = style_formula or f'Cinematic film quality, smooth controlled camera movement, {style_name} aesthetic, professional grade'
+
+        prev_section = ''
+        if prev_prompts:
+            previews = '\n'.join(f'- {p[:120]}' for p in prev_prompts[-6:])
+            prev_section = f'\nALREADY GENERATED — do NOT repeat these subjects or shots:\n{previews}\n'
+
         return f"""You are a professional video prompt writer (Sora, Runway, Kling, Pika).
-TASK: Generate EXACTLY {chunk_size} video prompts — scenes {chunk_start} to {end} of {total_count} total.
-Script section: this is the FIRST HALF of the full video — generate the opening {total_count} scenes from this script segment.
-ALL prompts in ENGLISH. Chronological order. Each = a distinct script moment (5–10 seconds each).
 
-═══ SCRIPT SEGMENT ═══
-{script_text}
-═══════════════════════
+════════════════ VIDEO STYLE CORE — {style_name} ════════════════
+MANDATORY visual DNA — apply this as the base of EVERY prompt without exception:
 
-{style_sec}
+{style_dna}
+══════════════════════════════════════════════════════════
+
+TASK: Generate EXACTLY {chunk_size} video prompts — scenes {chunk_start}–{end} of {total_count} total.
+ALL prompts in ENGLISH. Chronological order. Each = a distinct moment from the script segment below.
+{prev_section}
+═══ SCRIPT SEGMENT (scenes {chunk_start}–{end}) ═══
+{script_segment}
+═══════════════════════════════════════════
 
 OUTPUT RULES:
 1. EXACTLY {chunk_size} prompts separated by ONE blank line.
 2. NO labels, NO numbering, NO preamble, NO explanation.
 3. One continuous paragraph per prompt — no internal line breaks.
-4. Each prompt MUST include: duration ("X seconds,"), camera movement, subject + action from that script moment, mood/lighting, render quality suffix.
+4. Every prompt MUST include: duration ("X seconds,"), specific camera movement, subject + action from that script moment, mood/lighting applying the {style_name} style core, render quality suffix.
 5. End each: high quality, smooth motion, --no text --no subtitles --no watermarks
+6. Every scene DISTINCT — vary shot size, angle, camera movement from all others.
 OUTPUT ONLY THE {chunk_size} PROMPTS."""
+
+    def _dedup_p(prompts):
+        import re as _re
+        seen = set()
+        result = []
+        for p in prompts:
+            fp = _re.sub(r'\s+', ' ', p[:80].lower().strip())
+            if fp not in seen:
+                seen.add(fp)
+                result.append(p)
+        return result
 
     # ---- main logic ----------------------------------------------------------
     def run_chunks(script_segment, style, total_count, prompt_builder, keys,
                    model_name, gen_cfg):
+        import re as _re
         results = []
         remaining   = total_count
         chunk_start = 1
+        seg_len     = len(script_segment)
         while remaining > 0:
             chunk_size = min(CHUNK_SIZE, remaining)
-            pt  = prompt_builder(script_segment, style, chunk_start, chunk_size, total_count)
+            s_start = int((chunk_start - 1) / total_count * seg_len)
+            s_end   = int((chunk_start + chunk_size - 1) / total_count * seg_len)
+            seg     = script_segment[s_start:s_end].strip() or script_segment
+            pt  = prompt_builder(seg, style, chunk_start, chunk_size, total_count,
+                                 prev_prompts=results[-6:] if results else None)
             raw = _gem_call_sdk(keys, model_name, gen_cfg, pt).strip()
             parts = [p.strip() for p in raw.split('\n\n') if p.strip() and len(p.strip()) > 40]
-            results.extend(parts[:chunk_size])
+            parts = _dedup_p(parts)
+            seen_fps = {_re.sub(r'\s+', ' ', p[:80].lower().strip()) for p in results}
+            new = [p for p in parts if _re.sub(r'\s+', ' ', p[:80].lower().strip()) not in seen_fps]
+            results.extend(new[:chunk_size])
             chunk_start += chunk_size
             remaining   -= chunk_size
-            # No explicit sleep — _gem_acquire() handles spacing
         return results
 
     try:
