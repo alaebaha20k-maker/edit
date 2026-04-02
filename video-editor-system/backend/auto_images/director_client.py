@@ -69,8 +69,10 @@ class DirectorClient:
         with open(cache_file, 'w') as f:
             json.dump(plan.model_dump(), f, indent=2)
 
-    def _build_director_prompt(self, script_text: str, style: Dict, n_images: int, scene_timing_hints: Optional[List[Dict]] = None) -> str:
-        """Build the Director prompt with all requirements"""
+    def _build_director_prompt(self, script_text: str, style: Dict, n_images: int,
+                                scene_timing_hints: Optional[List[Dict]] = None,
+                                formula: str = None) -> str:
+        """Build the Director prompt with all requirements, injecting the editable formula."""
 
         style_name = style.get('name', 'Cinematic')
         style_description = style.get('description', 'High-quality cinematic style')
@@ -87,6 +89,23 @@ class DirectorClient:
         negative_rules_text = '\n'.join([f"   - {rule}" for rule in negative_rules])
         color_palette_text = ', '.join(color_palette)
         negative_rules_joined = ', '.join(negative_rules)  # For use in prompts
+
+        # Render the formula — fill known placeholders, leave unknown ones intact
+        from settings_manager import SettingsManager
+
+        _formula = formula if formula is not None else SettingsManager.load_formula('auto_images')
+
+        class _SafeDict(dict):
+            def __missing__(self, key):
+                return '{' + key + '}'
+
+        formula_rendered = _formula.format_map(_SafeDict(
+            n_images=n_images,
+            style_name=style_name,
+            lighting=lighting_style,
+            composition=composition_style,
+            color_palette=color_palette_text,
+        ))
 
         # Build timing hints section if provided
         timing_section = ""
@@ -114,20 +133,16 @@ IMPORTANT:
 - This ensures PERFECT synchronization between voice and images
 ═══════════════════════════════════════════════════════════'''
 
-        prompt = f"""You are an AI Director planning visual scenes for a video. You MUST create HIGHLY DETAILED, PROFESSIONAL QUALITY prompts that EXACTLY match the chosen style.
-
-TASK: Create {n_images} DETAILED image generation prompts from this script.
-
-IMPORTANT - MULTILINGUAL SUPPORT:
-- The script may be in ANY language (English, Arabic, French, Spanish, Chinese, etc.)
-- You MUST understand the script content in its original language
-- BUT: ALL image prompts MUST be written in ENGLISH (for optimal image generation quality)
-- Translate/adapt the visual concepts while keeping cultural and contextual accuracy
-
-SCRIPT:
-{script_text}{timing_section}
-
+        # If the style has a custom formula, use it directly as the style section
+        style_formula = style.get('style_formula', '').strip()
+        if style_formula:
+            style_section = f"""═══════════════════════════════════════════════════════════
+STYLE: {style_name}
 ═══════════════════════════════════════════════════════════
+{style_formula}
+═══════════════════════════════════════════════════════════"""
+        else:
+            style_section = f"""═══════════════════════════════════════════════════════════
 STYLE BIBLE: {style_name}
 ═══════════════════════════════════════════════════════════
 Description: {style_description}
@@ -141,122 +156,30 @@ NEGATIVE RULES (MUST AVOID):
 Composition: {composition_style}
 Lighting: {lighting_style}
 Color Palette: {color_palette_text}
-═══════════════════════════════════════════════════════════
+═══════════════════════════════════════════════════════════"""
 
-CRITICAL REQUIREMENTS:
-1. Generate EXACTLY {n_images} scenes (NO MORE, NO LESS)
-2. Scenes MUST be CHRONOLOGICAL (beginning → end of script)
-3. Each scene covers a DISTINCT part of the story
-4. NO REPETITION - each scene is completely unique
-5. Each prompt MUST be 300+ CHARACTERS (not words!) with EXTREME DETAIL
-6. Focus on VISUAL STORYTELLING - create images that tell the story without text
+        prompt = f"""You are an AI Director planning visual scenes for a video. You MUST create HIGHLY DETAILED, PROFESSIONAL QUALITY prompts that EXACTLY match the chosen style.
 
-═══════════════════════════════════════════════════════════
-CREATIVE SCENE PRINCIPLES - HOW TO CREATE GREAT VISUALS
-═══════════════════════════════════════════════════════════
+TASK: Create {n_images} DETAILED image generation prompts from this script.
 
-🎨 VISUAL STORYTELLING MASTERY:
+IMPORTANT - MULTILINGUAL SUPPORT:
+- The script may be in ANY language (English, Arabic, French, Spanish, Chinese, etc.)
+- You MUST understand the script content in its original language
+- BUT: ALL image prompts MUST be written in ENGLISH (for optimal image generation quality)
+- Translate/adapt the visual concepts while keeping cultural and contextual accuracy
 
-1. SHOW, DON'T TELL
-   - Instead of "person looking sad" → "woman in her 30s with red-rimmed eyes and tear-stained cheeks, shoulders slumped, staring blankly at an empty coffee cup on a rain-streaked window sill"
-   - Instead of "office workspace" → "cluttered mahogany desk with scattered papers, overflowing inbox, cold half-finished coffee, and a framed photo face-down, illuminated by harsh fluorescent overhead lights"
+SCRIPT:
+{script_text}{timing_section}
 
-2. EMOTIONAL DEPTH THROUGH DETAILS
-   - Small details reveal emotion: trembling hands, clenched jaw, forced smile, distant gaze
-   - Environment reflects mood: warm golden hour for hope, harsh shadows for tension, soft diffused light for peace
-   - Body language tells stories: confident stance vs defensive posture, open arms vs crossed arms
+{style_section}
 
-3. CINEMATIC COMPOSITION TECHNIQUES
-   - Rule of thirds: Position key elements at intersection points for dynamic composition
-   - Leading lines: Use roads, railings, shadows to guide viewer's eye to subject
-   - Depth layers: Foreground, mid-ground, background create immersive 3D feeling
-   - Frame within frame: Doorways, windows, arches focus attention on subject
-
-4. LIGHTING AS EMOTION
-   - Golden hour (sunrise/sunset): Warmth, hope, nostalgia, romance
-   - Blue hour (twilight): Mystery, contemplation, transition, melancholy
-   - Harsh noon sun: Clarity, exposure, harsh reality, intensity
-   - Soft overcast: Calm, neutral, introspective, gentle
-   - Dramatic side lighting: Tension, conflict, duality, revelation
-   - Backlight/rim light: Heroic, ethereal, mysterious, dramatic
-
-5. COLOR PSYCHOLOGY FOR MOOD
-   - Warm tones (red, orange, yellow): Energy, passion, urgency, excitement
-   - Cool tones (blue, cyan, teal): Calm, technology, sadness, distance
-   - Desaturated/muted: Serious, documentary, realistic, somber
-   - High saturation: Vibrant, energetic, artificial, stylized
-   - Complementary colors: Visual tension and energy (blue/orange, purple/yellow)
-
-6. MATCH SCENES TO SCRIPT CONTENT TYPE
-   - Educational/Tutorial content → Clean, bright, organized visuals with clear focus
-   - Dramatic/Story content → Cinematic lighting, emotional expressions, narrative moments
-   - Tech/Business content → Modern, sleek, professional environments with cool tones
-   - Nature/Travel content → Epic landscapes, golden hour lighting, sense of scale
-   - Personal/Vlog content → Intimate framing, warm tones, relatable settings
-
-7. CAMERA ANGLE PSYCHOLOGY
-   - Eye level: Neutral, relatable, documentary style
-   - Low angle (looking up): Power, dominance, heroic, impressive
-   - High angle (looking down): Vulnerability, weakness, overview, context
-   - Dutch angle (tilted): Unease, tension, disorientation, chaos
-   - Over-shoulder: Conversation, involvement, perspective
-   - Bird's eye view: Scale, pattern, planning, god's perspective
-
-8. DEPTH OF FIELD STORYTELLING
-   - Shallow (blurred background): Focus on subject, intimacy, isolation from surroundings
-   - Deep (everything sharp): Context importance, environment as character, documentary feel
-   - Rack focus: Shift attention, reveal, dramatic moment
-
-9. VISUAL METAPHORS AND SYMBOLISM
-   - Weather matches emotion: Storm = turmoil, sunshine = happiness, fog = confusion
-   - Objects tell stories: Wilted flower = lost hope, rising smoke = fleeting time
-   - Positioning shows relationships: Close = connection, separated = distance
-   - Height in frame = status/power dynamics
-
-10. PROFESSIONAL POLISH
-    - Specific materials and textures: "brushed aluminum MacBook", "weathered leather chair", "glossy marble countertop"
-    - Exact time of day: "early morning mist at 6am", "golden hour at 7:30pm", "harsh midday sun"
-    - Precise clothing details: "navy blue suit with white pocket square", "faded denim jacket with rolled sleeves"
-    - Technical camera terms: "85mm lens with f/1.4 aperture", "35mm wide angle", "macro close-up"
-
-═══════════════════════════════════════════════════════════
-
-PROMPT QUALITY RULES (MANDATORY - NO EXCEPTIONS):
-
-Each "image_prompt" MUST include ALL of these elements:
-
-1. SUBJECT: Detailed description of who/what (age, appearance, clothing, expression)
-2. SETTING: Specific environment details (location type, background elements, atmosphere)
-3. ACTION: Exact moment being captured (pose, movement, interaction)
-4. CAMERA: Specific shot type and angle (wide shot, close-up, dutch angle, over-shoulder, etc.)
-5. LIGHTING: Detailed lighting description matching style ({lighting_style})
-6. COMPOSITION: Framing that matches style ({composition_style})
-7. STYLE TOKENS: Include "{style_name}" style
-8. COLOR GUIDANCE: Use colors from palette ({color_palette_text})
-9. QUALITY: Add "professional photography, high resolution, sharp focus, detailed"
-10. TEXTURE & DETAILS: Materials, surfaces, depth of field
-
-EXAMPLE OF EXCELLENT PROMPT (300+ characters, extreme detail - THIS IS THE STANDARD):
-"A determined young trader in his late 20s with short dark hair, intense brown eyes, and deeply focused expression showing slight tension in his jaw, wearing a perfectly pressed crisp white shirt with rolled-up sleeves revealing a silver watch, sitting at a modern minimalist glass desk with brushed steel legs in a sleek corner office featuring floor-to-ceiling windows overlooking a golden-hour city skyline with skyscrapers bathed in warm orange light, leaning forward with both hands gripping the edge of the desk while studying three large glowing 27-inch monitors displaying colorful candlestick trading charts with red and green bars and flowing data streams, medium close-up shot from a 45-degree side angle capturing both his concentrated face profile and the illuminated screens reflection in his eyes, warm golden sunlight at 7pm streaming through the tall windows creating dramatic rim lighting that outlines his profile and shoulders while cool blue-teal monitor glow illuminates his face from the front creating a striking color contrast, {style_name} style, shot with 50mm lens at f/2.8 creating shallow depth of field with razor-sharp focus on subject's face and hands while the background city lights blur into soft bokeh orbs, rich color palette of warm golds and oranges mixing with cool blues and teals, professional photography, high resolution 8k quality, cinematic lighting, sharp details on fabric texture and screen reflections, photorealistic, masterpiece quality"
-
-EXAMPLE OF BAD PROMPT (DO NOT DO THIS):
-"Trader at desk looking at computer, {style_name} style"
+{formula_rendered}
 
 Each "negative_prompt" MUST include:
 - All negative rules from style bible
 - Generic quality issues: "low quality, blurry, distorted, pixelated, jpeg artifacts"
 - Technical issues: "overexposed, underexposed, bad lighting, poor composition"
 - Unwanted elements: "text, watermarks, signatures, logos, banners"
-- Style violations: Elements that contradict the chosen style
-
-SCENE DISTRIBUTION STRATEGY:
-- If N = 1: ONLY the very first/opening scene that introduces the topic
-- If N = 2: Opening scene + final/conclusion scene
-- If N = 3-5: Major story beats only (intro, climax, conclusion)
-- If N = 6-10: Key moments from each story section
-- If N = 11-20: Detailed coverage with transitions
-- If N = 21-50: Granular scene-by-scene progression
-- If N = 51-100: Nearly every sentence gets a visual
 
 OUTPUT FORMAT (STRICT JSON - NO MARKDOWN):
 {{
@@ -446,7 +369,8 @@ OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.
         style: Dict,
         n_images: int,
         force_regenerate: bool = False,
-        verbose: bool = True
+        verbose: bool = True,
+        formula: str = None,
     ) -> AutoImagesPlan:
         """
         Plan auto-images using chunking strategy for large n_images
@@ -487,7 +411,7 @@ OUTPUT ONLY VALID JSON. NO MARKDOWN. NO EXPLANATION.
             chunk_script = ' '.join(script_words[start_word_idx:end_word_idx])
 
             # Generate chunk plan
-            chunk_prompt = self._build_director_prompt(chunk_script, style, chunk_size)
+            chunk_prompt = self._build_director_prompt(chunk_script, style, chunk_size, formula=formula)
 
             # Add context about chunk position
             chunk_context = f"""
@@ -796,7 +720,8 @@ OUTPUT ONLY VALID JSON."""
         n_images: int,
         scene_timing_hints: Optional[List[Dict]] = None,
         force_regenerate: bool = False,
-        verbose: bool = True
+        verbose: bool = True,
+        formula: str = None,
     ) -> AutoImagesPlan:
         """
         Plan auto-generated images using Gemini Director
@@ -829,7 +754,7 @@ OUTPUT ONLY VALID JSON."""
         if n_images > 15:
             if verbose:
                 print(f"   📦 Using chunking strategy (n_images > 15)")
-            return self._plan_auto_images_chunked(script_text, style, n_images, force_regenerate, verbose)
+            return self._plan_auto_images_chunked(script_text, style, n_images, force_regenerate, verbose, formula=formula)
 
         # Check cache
         cache_key = self._get_cache_key(script_text, style, n_images)
@@ -845,7 +770,7 @@ OUTPUT ONLY VALID JSON."""
         if verbose:
             print(f"   🔄 Generating new plan...")
 
-        prompt = self._build_director_prompt(script_text, style, n_images, scene_timing_hints)
+        prompt = self._build_director_prompt(script_text, style, n_images, scene_timing_hints, formula=formula)
 
         # Try up to 3 times (initial + 2 retries)
         max_attempts = 3

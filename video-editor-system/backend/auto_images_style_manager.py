@@ -133,62 +133,49 @@ class AutoImagesStyleManager:
     def create_style(
         cls,
         name: str,
-        description: str,
-        visual_rules: List[str],
-        negative_rules: List[str],
-        composition: str,
-        lighting: str,
-        color_palette: List[str]
+        description: str = '',
+        visual_rules: List[str] = None,
+        negative_rules: List[str] = None,
+        composition: str = '',
+        lighting: str = '',
+        color_palette: List[str] = None,
+        style_formula: str = '',
     ) -> Dict:
-        """
-        Create new custom style
+        """Create new custom style.
 
-        Args:
-            name: Style name
-            description: Style description
-            visual_rules: List of visual guidelines (3-10 items)
-            negative_rules: List of things to avoid (2-10 items)
-            composition: Composition approach
-            lighting: Lighting style
-            color_palette: List of colors (3-10 items)
-
-        Returns:
-            Created style dict
+        If style_formula is provided it is used as the complete style instruction
+        and the structured fields become optional.
         """
-        # Validation
         if not name or len(name.strip()) < 3:
             raise ValueError("Style name must be at least 3 characters")
 
-        if not description or len(description.strip()) < 10:
-            raise ValueError("Description must be at least 10 characters")
+        has_formula = bool(style_formula and style_formula.strip())
 
-        if not visual_rules or len(visual_rules) < 3:
-            raise ValueError("Must provide at least 3 visual rules")
+        if not has_formula:
+            # Structured-fields mode — validate required fields
+            if not visual_rules or len(visual_rules) < 3:
+                raise ValueError("Provide at least 3 visual rules (or fill the Style Formula instead)")
+            if not negative_rules or len(negative_rules) < 2:
+                raise ValueError("Provide at least 2 negative rules (or fill the Style Formula instead)")
+            if not composition or len(composition.strip()) < 5:
+                raise ValueError("Composition is required when Style Formula is empty")
+            if not lighting or len(lighting.strip()) < 5:
+                raise ValueError("Lighting is required when Style Formula is empty")
+            if not color_palette or len(color_palette) < 3:
+                raise ValueError("Provide at least 3 colors (or fill the Style Formula instead)")
 
-        if not negative_rules or len(negative_rules) < 2:
-            raise ValueError("Must provide at least 2 negative rules")
-
-        if not composition or len(composition.strip()) < 10:
-            raise ValueError("Composition must be at least 10 characters")
-
-        if not lighting or len(lighting.strip()) < 10:
-            raise ValueError("Lighting must be at least 10 characters")
-
-        if not color_palette or len(color_palette) < 3:
-            raise ValueError("Must provide at least 3 colors in palette")
-
-        # Create style
         style_id = f"custom_{uuid.uuid4().hex[:8]}"
 
         new_style = {
             "id": style_id,
             "name": name.strip(),
-            "description": description.strip(),
-            "visual_rules": [r.strip() for r in visual_rules],
-            "negative_rules": [r.strip() for r in negative_rules],
-            "composition": composition.strip(),
-            "lighting": lighting.strip(),
-            "color_palette": [c.strip() for c in color_palette],
+            "description": (description or '').strip(),
+            "style_formula": style_formula.strip() if has_formula else '',
+            "visual_rules": [r.strip() for r in (visual_rules or [])],
+            "negative_rules": [r.strip() for r in (negative_rules or [])],
+            "composition": (composition or '').strip(),
+            "lighting": (lighting or '').strip(),
+            "color_palette": [c.strip() for c in (color_palette or [])],
             "custom": True
         }
 
@@ -219,7 +206,8 @@ class AutoImagesStyleManager:
         negative_rules: List[str] = None,
         composition: str = None,
         lighting: str = None,
-        color_palette: List[str] = None
+        color_palette: List[str] = None,
+        style_formula: str = None,
     ) -> Optional[Dict]:
         """
         Update existing style
@@ -283,9 +271,10 @@ class AutoImagesStyleManager:
             style["lighting"] = lighting.strip()
 
         if color_palette is not None:
-            if len(color_palette) < 3:
-                raise ValueError("Must provide at least 3 colors")
             style["color_palette"] = [c.strip() for c in color_palette]
+
+        if style_formula is not None:
+            style["style_formula"] = style_formula.strip()
 
         # Save
         with open(cls.STYLES_FILE, 'w') as f:

@@ -23,8 +23,24 @@ const appState = {
     mediaLibrary: [],
     niches: [],
     selectedNiche: '',
-    lastGenerationTime: 0,  // Track last API call for rate limiting
-    generationCooldown: 15000  // 15 seconds cooldown between generations
+    lastGenerationTime: 0,
+    generationCooldown: 15000,
+    scriptLibrary: {},        // { en: {text, filename, chars, title}, fr: {...}, ... }
+    multiLangVoiceConfig: {}  // { en: 'Dennis', fr: 'Mathieu', es: 'Diego', de: 'Josef' }
+};
+
+// Language metadata for multi-language features
+const LANG_META = {
+    en: { label: 'English',    flag: '🇺🇸', langCode: 'en-US', prefix: 'en-' },
+    fr: { label: 'French',     flag: '🇫🇷', langCode: 'fr-FR', prefix: 'fr-' },
+    es: { label: 'Spanish',    flag: '🇪🇸', langCode: 'es-ES', prefix: 'es-' },
+    de: { label: 'German',     flag: '🇩🇪', langCode: 'de-DE', prefix: 'de-' },
+    ar: { label: 'Arabic',     flag: '🇸🇦', langCode: 'ar-SA', prefix: 'ar-' },
+    pt: { label: 'Portuguese', flag: '🇧🇷', langCode: 'pt-BR', prefix: 'pt-' },
+    ru: { label: 'Russian',    flag: '🇷🇺', langCode: 'ru-RU', prefix: 'ru-' },
+    zh: { label: 'Chinese',    flag: '🇨🇳', langCode: 'zh-CN', prefix: 'zh-' },
+    it: { label: 'Italian',    flag: '🇮🇹', langCode: 'it-IT', prefix: 'it-' },
+    nl: { label: 'Dutch',      flag: '🇳🇱', langCode: 'nl-NL', prefix: 'nl-' },
 };
 
 // Global video data
@@ -149,47 +165,17 @@ async function checkForExistingScript() {
 
 // Display existing script in the UI
 function displayExistingScript(scriptData) {
-    // Populate script input
-    const scriptInput = document.getElementById('scriptInput');
-    if (scriptInput) {
-        scriptInput.value = scriptData.script;
-        window.videoData.script = scriptData.script;
-        appState.generatedScript = scriptData.script;
+    // Store script internally but do NOT put it back in the textarea
+    window.videoData.script = scriptData.script;
+    appState.generatedScript = scriptData.script;
+
+    // Auto-detect language and store in library (accessible via Script Library cards)
+    if (scriptData.script) {
+        storeScriptAutoDetect(scriptData.script, scriptData.script_filename || 'script.txt');
     }
 
-    // Show script stats
-    const statsBox = document.getElementById('scriptStats');
-    if (statsBox) {
-        statsBox.style.display = 'block';
-        statsBox.innerHTML = `
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 15px;">
-                <div>
-                    <strong>📏 Length:</strong><br>${scriptData.length.toLocaleString()} chars
-                </div>
-                <div>
-                    <strong>📝 Words:</strong><br>${scriptData.words.toLocaleString()}
-                </div>
-                <div>
-                    <strong>📄 File:</strong><br>${scriptData.script_filename || 'script.txt'}
-                </div>
-                <div>
-                    <strong>📅 Modified:</strong><br>${scriptData.modified || 'Recently'}
-                </div>
-            </div>
-        `;
-    }
-
-    // Show download button
-    const downloadSection = document.getElementById('scriptDownloadSection');
-    if (downloadSection) {
-        downloadSection.style.display = 'block';
-    }
-
-    // Show voice generation section
-    const voiceSection = document.getElementById('voiceGenerationSection');
-    if (voiceSection) {
-        voiceSection.style.display = 'block';
-    }
+    // Keep scriptStats, scriptDownloadSection, and voiceGenerationSection hidden —
+    // the user wants a clean page on load; the script is accessible via the library.
 }
 
 // Ensure the UI is in generation mode (when no script exists)
@@ -222,6 +208,11 @@ function ensureGenerationMode() {
 function openSettings() {
     const modal = document.getElementById('settingsModal');
     modal.classList.add('show');
+    // Always re-sync API keys from backend when opening settings
+    fetch('/api/alae-baha/saved-settings')
+        .then(r => r.ok ? r.json() : null)
+        .then(data => { if (data && data.success && data.api_keys) _applyApiKeysToForm(data.api_keys); })
+        .catch(() => {});
     loadSettings();
 }
 
@@ -230,37 +221,31 @@ function closeSettings() {
     modal.classList.remove('show');
 }
 
+function _applyApiKeysToForm(api_keys) {
+    const setField = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+    setField('geminiKey',           api_keys.gemini);
+    setField('directorGeminiKey',   api_keys.director_gemini);
+    setField('geminiImageKey',      api_keys.gemini_image);
+    setField('replicateKey',        api_keys.replicate);
+    setField('inworldKey',          api_keys.inworld);
+    setField('inworldSecret',       api_keys.inworld_secret);
+    setField('pexelsKey',           api_keys.pexels);
+    setField('pixabayKey',          api_keys.pixabay);
+    setField('unsplashKey',         api_keys.unsplash);
+    setField('geminiTranslate1Key', api_keys.gemini_translate_1);
+    setField('geminiTranslate2Key', api_keys.gemini_translate_2);
+    setField('geminiPromptsKey',    api_keys.gemini_prompts);
+    setField('geminiSeoKey',        api_keys.gemini_seo);
+}
+
 const loadSettings = () => {
+    // Step 1: Load formulas + niche selection from localStorage (fast, local-only data)
     try {
         const saved = localStorage.getItem('videoToolSettings');
         if (saved) {
             const settings = JSON.parse(saved);
             appState.settings = settings;
 
-            // Restore API keys
-            if (settings.api_keys) {
-                const geminiKey = document.getElementById('geminiKey');
-                const directorGeminiKey = document.getElementById('directorGeminiKey');
-                const geminiImageKey = document.getElementById('geminiImageKey');
-                const replicateKey = document.getElementById('replicateKey');
-                const inworldKey = document.getElementById('inworldKey');
-                const inworldSecret = document.getElementById('inworldSecret');
-                const pexelsKey = document.getElementById('pexelsKey');
-                const pixabayKey = document.getElementById('pixabayKey');
-                const unsplashKey = document.getElementById('unsplashKey');
-
-                if (geminiKey) geminiKey.value = settings.api_keys.gemini || '';
-                if (directorGeminiKey) directorGeminiKey.value = settings.api_keys.director_gemini || '';
-                if (geminiImageKey) geminiImageKey.value = settings.api_keys.gemini_image || '';
-                if (replicateKey) replicateKey.value = settings.api_keys.replicate || '';
-                if (inworldKey) inworldKey.value = settings.api_keys.inworld || '';
-                if (inworldSecret) inworldSecret.value = settings.api_keys.inworld_secret || '';
-                if (pexelsKey) pexelsKey.value = settings.api_keys.pexels || '';
-                if (pixabayKey) pixabayKey.value = settings.api_keys.pixabay || '';
-                if (unsplashKey) unsplashKey.value = settings.api_keys.unsplash || '';
-            }
-
-            // Load formula lists
             if (settings.title_formulas) {
                 appState.titleFormulas = settings.title_formulas;
                 renderTitleFormulas(settings.title_formulas);
@@ -271,21 +256,39 @@ const loadSettings = () => {
                 renderScriptFormulas(settings.script_formulas);
                 updateScriptFormulaDropdown(settings.script_formulas);
             }
-
-            // Load selected niche
             if (settings.selectedNiche) {
                 appState.selectedNiche = settings.selectedNiche;
             }
-
-            // Load niches from backend
-            loadNiches();
-
-            console.log('✅ Settings loaded from localStorage');
         }
     } catch (error) {
-        console.error('Load settings failed:', error);
-        showNotification('⚠️ Error loading settings', 'warning');
+        console.warn('localStorage read failed:', error);
     }
+
+    // Step 2: Always fetch API keys from backend — permanently saved on server.
+    fetch('/api/alae-baha/saved-settings')
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+            if (data && data.success && data.api_keys) {
+                _applyApiKeysToForm(data.api_keys);
+                const stored = JSON.parse(localStorage.getItem('videoToolSettings') || '{}');
+                stored.api_keys = Object.assign(stored.api_keys || {}, data.api_keys);
+                localStorage.setItem('videoToolSettings', JSON.stringify(stored));
+                console.log('✅ API keys synced from server');
+            }
+        })
+        .catch(() => {});
+
+    // Step 3: Load Auto Images Formula from backend
+    fetch('/api/settings/formulas/auto_images')
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+            const el = document.getElementById('autoImagesFormulaText');
+            if (el && data && data.formula) el.value = data.formula;
+        })
+        .catch(() => {});
+
+    // Step 4: Load dynamic data from backend
+    loadNiches();
 };
 
 const saveSettings = async () => {
@@ -300,7 +303,11 @@ const saveSettings = async () => {
                 inworld_secret: document.getElementById('inworldSecret')?.value || '',
                 pexels: document.getElementById('pexelsKey')?.value || '',
                 pixabay: document.getElementById('pixabayKey')?.value || '',
-                unsplash: document.getElementById('unsplashKey')?.value || ''
+                unsplash: document.getElementById('unsplashKey')?.value || '',
+                gemini_translate_1: document.getElementById('geminiTranslate1Key')?.value || '',
+                gemini_translate_2: document.getElementById('geminiTranslate2Key')?.value || '',
+                gemini_prompts:     document.getElementById('geminiPromptsKey')?.value || '',
+                gemini_seo:         document.getElementById('geminiSeoKey')?.value || ''
             },
             title_formulas: appState.titleFormulas || [],
             script_formulas: appState.scriptFormulas || [],
@@ -311,7 +318,7 @@ const saveSettings = async () => {
         localStorage.setItem('videoToolSettings', JSON.stringify(settings));
         appState.settings = settings;
 
-        // Save ALL API keys to backend via the correct endpoint
+        // Save ALL API keys to backend
         try {
             const response = await fetch('/api/settings/api-keys', {
                 method: 'POST',
@@ -324,17 +331,29 @@ const saveSettings = async () => {
                     inworld: settings.api_keys.inworld,
                     inworld_secret: settings.api_keys.inworld_secret,
                     pexels: settings.api_keys.pexels,
-                    pixabay: settings.api_keys.pixabay
+                    pixabay: settings.api_keys.pixabay,
+                    unsplash: settings.api_keys.unsplash,
+                    gemini_translate_1: settings.api_keys.gemini_translate_1,
+                    gemini_translate_2: settings.api_keys.gemini_translate_2,
+                    gemini_prompts: settings.api_keys.gemini_prompts,
+                    gemini_seo: settings.api_keys.gemini_seo
                 })
             });
-
-            if (!response.ok) {
-                console.warn('Failed to save to backend:', await response.text());
-            } else {
-                console.log('✅ All API keys saved to backend successfully');
-            }
+            if (!response.ok) console.warn('Failed to save API keys to backend');
         } catch (error) {
-            console.warn('Failed to save to backend:', error);
+            console.warn('Failed to save API keys to backend:', error);
+        }
+
+        // Save Auto Images Formula to backend
+        const autoImagesFormulaEl = document.getElementById('autoImagesFormulaText');
+        if (autoImagesFormulaEl && autoImagesFormulaEl.value.trim()) {
+            try {
+                await fetch('/api/settings/formulas', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ auto_images_formula: autoImagesFormulaEl.value })
+                });
+            } catch (e) { console.warn('Failed to save Auto Images Formula:', e); }
         }
 
         showNotification('✅ Settings saved successfully!', 'success');
@@ -345,6 +364,19 @@ const saveSettings = async () => {
         showNotification('❌ Failed to save: ' + error.message, 'error');
     }
 };
+
+async function resetAutoImagesFormula() {
+    if (!confirm('Reset the Auto Images Formula to the built-in default?')) return;
+    try {
+        const r = await fetch('/api/settings/formulas/auto_images/reset', { method: 'POST' });
+        const data = await r.json();
+        const el = document.getElementById('autoImagesFormulaText');
+        if (el && data.formula) el.value = data.formula;
+        showNotification('✅ Auto Images Formula reset to default', 'success');
+    } catch (e) {
+        showNotification('❌ Reset failed: ' + e.message, 'error');
+    }
+}
 
 // =============================================================================
 // NICHE MANAGEMENT SYSTEM
@@ -840,9 +872,15 @@ async function loadScriptFile() {
         scriptInput.value = text;
         window.videoData.script = text;
         appState.generatedScript = text;
-        showNotification('✅ Script loaded from file', 'success');
 
-        // Show voice section when script is uploaded
+        // Auto-detect language and store in Script Library
+        storeScriptAutoDetect(text, file.name);
+
+        // Show download + translate section
+        const dlSection = document.getElementById('scriptDownloadSection');
+        if (dlSection) dlSection.style.display = 'block';
+
+        showNotification('✅ Script loaded from file', 'success');
         showVoiceSectionIfScriptAvailable();
     }
 }
@@ -964,15 +1002,13 @@ async function generateScript() {
                 throw new Error(data.error || 'Script generation failed');
             }
 
-            // Store script in both window.videoData AND the textarea input
+            // Store script internally (not displayed — user downloads it)
             window.videoData.script = data.script;
             appState.generatedScript = data.script;
 
-            // CRITICAL FIX: Populate the scriptInput textarea so it's available for all features
-            const scriptInput = document.getElementById('scriptInput');
-            if (scriptInput) {
-                scriptInput.value = data.script;
-            }
+            // AI-generated scripts are always English; update checkboxes accordingly
+            storeScriptInLibrary('en', data.script, data.script_filename || 'script_en.txt');
+            updateTranslationCheckboxes('en');
 
             // DON'T display full script (can be very long - just show success message)
             if (resultBox) {
@@ -997,7 +1033,7 @@ async function generateScript() {
                             <strong>📝 Words:</strong><br>${data.words.toLocaleString()}
                         </div>
                         <div>
-                            <strong>📦 Chunks:</strong><br>${data.chunks_used} chunks (30/40/30)
+                            <strong>📦 Chunks:</strong><br>${data.chunks_used} chunks
                         </div>
                         <div>
                             <strong>⏱️ Time:</strong><br>${data.time.toFixed(1)}s
@@ -1005,6 +1041,10 @@ async function generateScript() {
                         <div>
                             <strong>📄 File:</strong><br>${data.script_filename || 'script.txt'}
                         </div>
+                    </div>
+                    <div style="margin-top:12px; padding:10px; background:rgba(0,0,0,0.04); border-radius:6px; font-size:12px; color:#555; border-left:3px solid #4CAF50;">
+                        <strong>✅ Script loaded in textarea below (${data.length.toLocaleString()} chars after cleaning):</strong><br>
+                        <em>${(data.script || '').substring(0, 120).replace(/</g,'&lt;')}…</em>
                     </div>
                 `;
             }
@@ -1195,8 +1235,9 @@ function toggleVoiceSection(type) {
 // Add voice to library
 function addVoiceToLibrary(voiceData) {
     window.videoData.voiceLibrary.push(voiceData);
-    window.videoData.selectedVoiceIndex = window.videoData.voiceLibrary.length - 1; // Auto-select new voice
+    window.videoData.selectedVoiceIndex = window.videoData.voiceLibrary.length - 1;
     renderVoiceLibrary();
+    renderMultiLangExportSection();
 }
 
 // Render voice library with ranking (Step 2 only - All-in-one)
@@ -1282,6 +1323,7 @@ function renderVoiceLibrary() {
                             <strong>${typeLabel}</strong>
                             ${voice.voice ? `<span style="color: #667eea;">• ${voice.voice}</span>` : ''}
                             ${voice.language ? `<span style="color: #888;">• ${voice.language}</span>` : ''}
+                            ${voice.langCode ? `<span style="background:#1e3a2e; color:#10b981; padding:1px 6px; border-radius:4px; font-size:11px; font-weight:700;">${(LANG_META[voice.langCode]?.flag || '') + ' ' + (LANG_META[voice.langCode]?.label || voice.langCode.toUpperCase())}</span>` : ''}
                             ${modelLabel ? `<span style="color: #888;">• ${modelLabel}</span>` : ''}
                         </div>
                         <div style="color: #666; font-size: 0.9em;">
@@ -1336,6 +1378,7 @@ function removeVoiceFromLibrary(index) {
     if (confirm('Delete this voice from library?')) {
         window.videoData.voiceLibrary.splice(index, 1);
         renderVoiceLibrary();
+        renderMultiLangExportSection();
         showNotification('✅ Voice deleted', 'success');
     }
 }
@@ -1632,6 +1675,489 @@ function downloadScript() {
     showNotification(`✅ Script downloaded: ${filename}`, 'success');
 }
 
+// ---------------------------------------------------------------------------
+// Language detection — uses first ~600 chars to score against word lists
+// ---------------------------------------------------------------------------
+function detectScriptLanguage(text) {
+    if (!text || text.trim().length === 0) return 'en';
+
+    // ── Fast Unicode-range detection for non-Latin scripts ──────────────────
+    const sample2k = text.slice(0, 2000);
+    const arabicCount  = (sample2k.match(/[\u0600-\u06FF]/g) || []).length;
+    const cyrillicCount = (sample2k.match(/[\u0400-\u04FF]/g) || []).length;
+    const cjkCount     = (sample2k.match(/[\u4E00-\u9FFF\u3040-\u30FF]/g) || []).length;
+    const charTotal    = sample2k.replace(/\s/g, '').length || 1;
+    if (arabicCount  / charTotal > 0.15) return 'ar';
+    if (cyrillicCount / charTotal > 0.15) return 'ru';
+    if (cjkCount     / charTotal > 0.15) return 'zh';
+
+    // ── Frequency-based detection for Latin-script languages ────────────────
+    // Use first 3000 chars, count how often each marker word appears (not just presence)
+    const lower = text.slice(0, 3000).toLowerCase().replace(/[^a-zàâäéèêëîïôùûüœçñáéíóúüßãõ\s]/g, ' ');
+    const words = lower.match(/\b[a-zàâäéèêëîïôùûüœçñáéíóúüßãõ]{2,}\b/g) || [];
+    const freq = {};
+    words.forEach(w => { freq[w] = (freq[w] || 0) + 1; });
+    const totalWords = words.length || 1;
+
+    // Distinctive markers — words that are strongly characteristic of each language
+    const markers = {
+        fr: ['je', 'vous', 'nous', 'elle', 'est', 'les', 'des', 'une', 'ce', 'mais', 'bien', 'pour', 'sur', 'avec', 'dans', 'qui', 'que', 'du', 'au', 'très', 'aussi', 'tout', 'cette', 'sont', 'pas', 'était', 'comme', 'leur', 'dont', 'cela'],
+        es: ['los', 'las', 'del', 'por', 'como', 'pero', 'más', 'este', 'para', 'también', 'sus', 'muy', 'cuando', 'hay', 'todo', 'era', 'sobre', 'qué', 'él', 'han', 'ser', 'una', 'esto', 'bien', 'aquí'],
+        de: ['der', 'die', 'das', 'ein', 'eine', 'ist', 'und', 'für', 'auf', 'mit', 'nicht', 'von', 'dem', 'den', 'ich', 'wir', 'dass', 'haben', 'auch', 'werden', 'durch', 'nach', 'über', 'war', 'beim', 'zur', 'zum', 'zu', 'aber', 'wenn'],
+        pt: ['os', 'as', 'do', 'da', 'dos', 'das', 'que', 'com', 'por', 'uma', 'para', 'não', 'mais', 'ele', 'ela', 'nos', 'mas', 'seu', 'sua', 'isso', 'também', 'porque', 'quando', 'foram', 'está'],
+        en: ['the', 'and', 'was', 'were', 'of', 'or', 'but', 'it', 'he', 'she', 'they', 'this', 'that', 'for', 'with', 'you', 'your', 'have', 'been', 'will', 'their', 'from', 'what', 'when', 'there'],
+    };
+
+    const scores = {};
+    for (const [lang, list] of Object.entries(markers)) {
+        // Sum frequencies of all marker words, normalized by total word count
+        scores[lang] = list.reduce((sum, w) => sum + (freq[w] || 0), 0) / totalWords;
+    }
+
+    const best = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+    // Return best match only if score is meaningfully above zero
+    return best[0][1] > 0.005 ? best[0][0] : 'en';
+}
+
+// Update translation checkboxes — hide the detected language, show the rest
+function updateTranslationCheckboxes(detectedLang) {
+    const allLangs = { en: 'translateEN', fr: 'translateFR', es: 'translateES', de: 'translateDE' };
+    for (const [lang, checkboxId] of Object.entries(allLangs)) {
+        const label = document.getElementById(checkboxId)?.closest('label');
+        if (!label) continue;
+        if (lang === detectedLang) {
+            label.style.opacity = '0.35';
+            label.style.pointerEvents = 'none';
+            label.title = `Already in ${LANG_META[lang]?.label || lang}`;
+            document.getElementById(checkboxId).checked = false;
+        } else {
+            label.style.opacity = '';
+            label.style.pointerEvents = '';
+            label.title = '';
+        }
+    }
+
+    // Show detected-language badge next to the download button
+    const badge = document.getElementById('detectedLangBadge');
+    if (badge) {
+        const meta = LANG_META[detectedLang];
+        badge.textContent = `${meta?.flag || ''} Detected: ${meta?.label || detectedLang}`;
+        badge.style.display = 'inline-block';
+    }
+}
+
+// Store script in library with auto-detection of language
+function storeScriptAutoDetect(text, filename) {
+    const lang = detectScriptLanguage(text);
+    storeScriptInLibrary(lang, text, filename);
+    updateTranslationCheckboxes(lang);
+    return lang;
+}
+
+async function translateAndDownload() {
+    // Read from the detected-language slot, then textarea, then videoData
+    const detectedLang = appState.detectedScriptLang || 'en';
+    const script = (appState.scriptLibrary[detectedLang]?.text)
+                || document.getElementById('scriptInput')?.value?.trim()
+                || window.videoData.script
+                || appState.generatedScript;
+    if (!script || script.trim().length === 0) {
+        showNotification('⚠️ No script available to translate. Generate or paste a script first.', 'warning');
+        return;
+    }
+    // Make sure the full script is synced to videoData before translating
+    window.videoData.script = script;
+    appState.generatedScript = script;
+
+    const langMap = { en: 'translateEN', fr: 'translateFR', es: 'translateES', de: 'translateDE' };
+    const selected = Object.entries(langMap)
+        .filter(([lang, id]) => lang !== detectedLang && document.getElementById(id)?.checked)
+        .map(([code]) => code);
+
+    if (selected.length === 0) {
+        showNotification('⚠️ Select at least one language to translate', 'warning');
+        return;
+    }
+
+    const progressEl = document.getElementById('translateProgress');
+    if (progressEl) {
+        progressEl.style.display = 'block';
+        progressEl.textContent = `⏳ Translating to ${selected.map(l => l.toUpperCase()).join(', ')}… This may take a minute.`;
+    }
+
+    try {
+        const res = await fetch('/api/translate-script', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ script, languages: selected })
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+            throw new Error(data.error || 'Translation failed');
+        }
+
+        const title = document.getElementById('titleInput')?.value || window.videoData.title || 'script';
+        const baseFilename = title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+
+        const langLabels = { fr: 'french', es: 'spanish', de: 'german' };
+        let stored = 0;
+        for (const [lang, text] of Object.entries(data.translations)) {
+            if (!text) continue;
+            const filename = `${baseFilename}_${langLabels[lang] || lang}.txt`;
+            // Store in Script Library (also auto-downloads)
+            storeScriptInLibrary(lang, text, filename);
+            // Also trigger browser download
+            const blob = new Blob([text], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = filename;
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a); URL.revokeObjectURL(url);
+            stored++;
+        }
+
+        const errCount = Object.keys(data.errors || {}).length;
+        if (progressEl) {
+            progressEl.textContent = `✅ ${stored} translated script(s) saved to library${errCount ? ` · ⚠️ ${errCount} error(s)` : ''}`;
+        }
+        showNotification(`✅ ${stored} translations done — see Script Library below!`, 'success');
+
+    } catch (err) {
+        if (progressEl) progressEl.textContent = `❌ ${err.message}`;
+        showNotification('❌ Translation failed: ' + err.message, 'error');
+    }
+}
+
+// =============================================================================
+// SCRIPT LIBRARY
+// =============================================================================
+
+function storeScriptInLibrary(langCode, text, filename) {
+    const title = document.getElementById('titleInput')?.value || window.videoData.title || 'script';
+    appState.scriptLibrary[langCode] = { text, filename, chars: text.length, title };
+    // Track the "source" language so translateAndDownload reads from the right slot
+    if (!appState.detectedScriptLang || langCode !== 'en') {
+        // A non-EN store is always the source; EN only sets it if nothing else did
+        if (langCode !== 'en' || !appState.detectedScriptLang) {
+            appState.detectedScriptLang = langCode;
+        }
+    }
+    renderScriptLibrary();
+    renderMultiLangVoiceSection();
+    renderMultiLangExportSection();
+}
+
+function renderScriptLibrary() {
+    const section = document.getElementById('scriptLibrarySection');
+    const container = document.getElementById('scriptLibraryList');
+    if (!container) return;
+
+    const langs = Object.keys(appState.scriptLibrary);
+    if (langs.length === 0) {
+        if (section) section.style.display = 'none';
+        return;
+    }
+    if (section) section.style.display = 'block';
+
+    container.innerHTML = langs.map(lang => {
+        const s = appState.scriptLibrary[lang];
+        const meta = LANG_META[lang] || { flag: '🌍', label: lang.toUpperCase() };
+        const previewText = s.text.substring(0, 1500) + (s.text.length > 1500 ? '\n...' : '');
+        return `
+        <div style="border:1px solid #374151; border-radius:9px; padding:13px; margin-bottom:9px; background:rgba(255,255,255,0.02);">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span style="font-size:1.5em;">${meta.flag}</span>
+                    <div>
+                        <strong style="color:#e2e8f0; font-size:13px;">${meta.label}</strong>
+                        <div style="color:#6b7280; font-size:11px;">${s.chars.toLocaleString()} chars · ${s.filename}</div>
+                    </div>
+                </div>
+                <div style="display:flex; gap:5px; flex-shrink:0;">
+                    <button onclick="toggleScriptView('${lang}')" style="padding:5px 10px; background:#374151; border:none; border-radius:5px; color:#e2e8f0; cursor:pointer; font-size:11px;">👁 View</button>
+                    <button onclick="downloadScriptFromLibrary('${lang}')" style="padding:5px 10px; background:#16a34a; border:none; border-radius:5px; color:white; cursor:pointer; font-size:11px;">📥 Download</button>
+                    <button onclick="deleteScriptFromLibrary('${lang}')" style="padding:5px 10px; background:#dc2626; border:none; border-radius:5px; color:white; cursor:pointer; font-size:11px;">🗑</button>
+                </div>
+            </div>
+            <div id="scriptView_${lang}" style="display:none; margin-top:10px;">
+                <textarea readonly style="width:100%; height:140px; resize:vertical; background:#0f172a; color:#d1d5db; border:1px solid #374151; border-radius:6px; padding:8px; font-size:11px; font-family:monospace; box-sizing:border-box;">${previewText}</textarea>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function toggleScriptView(lang) {
+    const el = document.getElementById(`scriptView_${lang}`);
+    if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function downloadScriptFromLibrary(lang) {
+    const s = appState.scriptLibrary[lang];
+    if (!s) return;
+    const blob = new Blob([s.text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = s.filename;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+    showNotification(`📥 Downloaded: ${s.filename}`, 'success');
+}
+
+function deleteScriptFromLibrary(lang) {
+    const meta = LANG_META[lang] || { label: lang };
+    if (!confirm(`Delete ${meta.label} script from library?`)) return;
+    delete appState.scriptLibrary[lang];
+    renderScriptLibrary();
+    renderMultiLangVoiceSection();
+    renderMultiLangExportSection();
+}
+
+// =============================================================================
+// MULTI-LANGUAGE VOICE PACK
+// =============================================================================
+
+function renderMultiLangVoiceSection() {
+    const section = document.getElementById('multiLangVoiceSection');
+    const list = document.getElementById('multiLangVoiceList');
+    if (!section || !list) return;
+
+    const langs = Object.keys(appState.scriptLibrary);
+    if (langs.length === 0) { section.style.display = 'none'; return; }
+    section.style.display = 'block';
+
+    list.innerHTML = langs.map(lang => {
+        const meta = LANG_META[lang] || { flag: '🌍', label: lang.toUpperCase(), prefix: 'en-', langCode: lang + '-' + lang.toUpperCase() };
+        const allVoices = [...(VOICE_CATALOGUE.male || []), ...(VOICE_CATALOGUE.female || [])];
+        // Voices matching this language; fall back to English voices if none available for language
+        let langVoices = allVoices.filter(v => (v.lang || 'en-US').startsWith(meta.prefix));
+        const usingFallback = langVoices.length === 0;
+        if (usingFallback) langVoices = allVoices.filter(v => (v.lang || 'en-US').startsWith('en-'));
+        const stored = appState.multiLangVoiceConfig[lang] || (langVoices[0]?.id || '');
+        if (!appState.multiLangVoiceConfig[lang] && langVoices[0]) {
+            appState.multiLangVoiceConfig[lang] = langVoices[0].id;
+        }
+        const fallbackNote = usingFallback ? `<span style="color:#f59e0b; font-size:10px; margin-left:4px;">⚠ using EN voices (no ${meta.label} voices in catalogue)</span>` : '';
+        const options = langVoices.map(v =>
+            `<option value="${v.id}" ${v.id === stored ? 'selected' : ''}>${v.id} — ${v.desc}</option>`
+        ).join('');
+
+        const voiceLibrary = window.videoData.voiceLibrary || [];
+        const hasVoice = voiceLibrary.some(v => v.langCode === lang);
+        const doneTag = hasVoice ? '<span style="color:#10b981; font-size:11px; margin-left:4px;">✅ Done</span>' : '';
+
+        return `
+        <div style="display:flex; align-items:center; gap:10px; padding:9px 10px; background:rgba(255,255,255,0.03); border-radius:7px; margin-bottom:7px; border:1px solid #2d1b69; flex-wrap:wrap;">
+            <span style="font-size:1.2em; flex-shrink:0;">${meta.flag}</span>
+            <strong style="min-width:62px; color:#e2e8f0; font-size:12px;">${meta.label}${doneTag}${fallbackNote}</strong>
+            <select id="multiLangVoice_${lang}" onchange="appState.multiLangVoiceConfig['${lang}']=this.value"
+                style="flex:1; min-width:140px; background:#1e1e2e; color:#e2e8f0; border:1px solid #374151; border-radius:6px; padding:5px; font-size:12px;">
+                ${options}
+            </select>
+            <button onclick="generateSingleLanguageVoice('${lang}')"
+                style="padding:5px 12px; background:#667eea; border:none; border-radius:6px; color:white; cursor:pointer; font-size:11px; white-space:nowrap; flex-shrink:0;">
+                🎙 Generate
+            </button>
+        </div>`;
+    }).join('');
+}
+
+async function generateSingleLanguageVoice(lang) {
+    const s = appState.scriptLibrary[lang];
+    if (!s) { showNotification(`⚠️ No ${lang} script in library`, 'warning'); return false; }
+
+    const meta = LANG_META[lang] || { label: lang.toUpperCase(), langCode: lang + '-' + lang.toUpperCase(), flag: '🌍' };
+    const voiceId = document.getElementById(`multiLangVoice_${lang}`)?.value
+                 || appState.multiLangVoiceConfig[lang] || 'Olivia';
+
+    const progressEl = document.getElementById('multiLangVoiceProgress');
+    if (progressEl) { progressEl.style.display = 'block'; progressEl.textContent = `⏳ Generating ${meta.flag} ${meta.label} voice (${voiceId})…`; }
+
+    try {
+        const res = await fetch('/api/generate-voice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                script: s.text,
+                voice_id: voiceId,
+                model_id: 'inworld-tts-1.5-mini',
+                language: meta.langCode,
+                speaking_rate: parseFloat(document.getElementById('speakingRate')?.value || '1.0')
+            })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Voice generation failed');
+
+        addVoiceToLibrary({
+            url: data.audio_url,
+            path: data.audio_path,
+            filename: data.audio_filename,
+            duration: data.duration_seconds,
+            chunks: data.chunks_count,
+            voice: voiceId,
+            language: meta.langCode,
+            model: 'inworld-tts-1.5-mini',
+            speed: parseFloat(document.getElementById('speakingRate')?.value || '1.0'),
+            type: 'ai',
+            langCode: lang
+        });
+
+        const mins = Math.floor(data.duration_seconds / 60);
+        const secs = Math.floor(data.duration_seconds % 60);
+        if (progressEl) progressEl.textContent = `✅ ${meta.flag} ${meta.label} voice done: ${mins}m ${secs}s`;
+        showNotification(`✅ ${meta.label} voice generated!`, 'success');
+        renderMultiLangVoiceSection();
+        renderMultiLangExportSection();
+        return true;
+    } catch (err) {
+        if (progressEl) progressEl.textContent = `❌ ${meta.label} failed: ${err.message}`;
+        showNotification(`❌ ${meta.label} voice failed: ${err.message}`, 'error');
+        return false;
+    }
+}
+
+async function generateAllLanguageVoices() {
+    const langs = Object.keys(appState.scriptLibrary);
+    if (langs.length === 0) { showNotification('⚠️ Generate scripts first', 'warning'); return; }
+
+    const btn = document.getElementById('generateAllVoicesBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating…'; }
+
+    const progressEl = document.getElementById('multiLangVoiceProgress');
+    if (progressEl) { progressEl.style.display = 'block'; progressEl.textContent = ''; }
+
+    let done = 0;
+    for (let i = 0; i < langs.length; i++) {
+        const lang = langs[i];
+        const meta = LANG_META[lang] || { label: lang };
+        if (progressEl) progressEl.textContent = `⏳ [${i+1}/${langs.length}] Generating ${meta.label} voice…`;
+        const ok = await generateSingleLanguageVoice(lang);
+        if (ok) done++;
+        if (i < langs.length - 1) await new Promise(r => setTimeout(r, 3000));
+    }
+
+    if (btn) { btn.disabled = false; btn.textContent = '🎙️ Generate All Language Voices (one by one)'; }
+    if (progressEl) progressEl.textContent = `✅ Finished: ${done}/${langs.length} voices generated.`;
+    showNotification(`✅ ${done}/${langs.length} voices done!`, done > 0 ? 'success' : 'warning');
+}
+
+// =============================================================================
+// MULTI-LANGUAGE VIDEO EXPORT
+// =============================================================================
+
+function renderMultiLangExportSection() {
+    const section = document.getElementById('multiLangExportSection');
+    const list = document.getElementById('multiLangExportList');
+    if (!section || !list) return;
+
+    const scriptLangs = Object.keys(appState.scriptLibrary);
+    const voiceLibrary = window.videoData.voiceLibrary || [];
+    const readyLangs = scriptLangs.filter(lang => voiceLibrary.some(v => v.langCode === lang));
+
+    if (readyLangs.length === 0) { section.style.display = 'none'; return; }
+    section.style.display = 'block';
+
+    list.innerHTML = readyLangs.map(lang => {
+        const meta = LANG_META[lang] || { flag: '🌍', label: lang };
+        const voices = voiceLibrary.filter(v => v.langCode === lang);
+        const totalDur = voices.reduce((s, v) => s + (parseFloat(v.duration) || 0), 0);
+        const durStr = `${Math.floor(totalDur/60)}m ${Math.floor(totalDur%60)}s`;
+        return `
+        <div style="display:flex; align-items:center; gap:10px; padding:8px 10px; background:rgba(255,255,255,0.03); border-radius:7px; margin-bottom:6px; border:1px solid #1e3a2e;">
+            <input type="checkbox" id="exportLang_${lang}" checked style="width:15px; height:15px; cursor:pointer;">
+            <span style="font-size:1.2em;">${meta.flag}</span>
+            <strong style="color:#e2e8f0; font-size:13px;">${meta.label}</strong>
+            <span style="color:#6b7280; font-size:11px;">· ${voices.length} voice(s) · ${durStr}</span>
+        </div>`;
+    }).join('');
+}
+
+async function generateMultiLangVideos() {
+    const mediaLibrary = appState.mediaLibrary || [];
+    if (mediaLibrary.length === 0) {
+        showNotification('⚠️ Add media first (Step 3)', 'warning');
+        return;
+    }
+
+    const qualityRadio = document.querySelector('input[name="quality"]:checked');
+    const quality = qualityRadio ? qualityRadio.value : '720';
+    const resolution = quality === '1080' ? '1920x1080' : '1280x720';
+    const useKenBurns = document.getElementById('useKenBurns')?.checked || false;
+    const mediaPaths = mediaLibrary.map(m => m.path || m.url).filter(Boolean);
+    const voiceLibrary = window.videoData.voiceLibrary || [];
+
+    const scriptLangs = Object.keys(appState.scriptLibrary);
+    const selectedLangs = scriptLangs.filter(lang => {
+        const cb = document.getElementById(`exportLang_${lang}`);
+        return cb ? cb.checked : false;
+    }).filter(lang => voiceLibrary.some(v => v.langCode === lang));
+
+    if (selectedLangs.length === 0) {
+        showNotification('⚠️ No languages ready (need scripts + voices)', 'warning');
+        return;
+    }
+
+    const btn = document.getElementById('generateMultiLangBtn');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Generating…'; }
+
+    const progressEl = document.getElementById('multiLangExportProgress');
+    const resultsEl = document.getElementById('multiLangExportResults');
+    if (progressEl) { progressEl.style.display = 'block'; progressEl.innerHTML = ''; }
+    if (resultsEl) resultsEl.innerHTML = '';
+
+    let done = 0;
+    const title = document.getElementById('titleInput')?.value || window.videoData.title || 'video';
+
+    for (let i = 0; i < selectedLangs.length; i++) {
+        const lang = selectedLangs[i];
+        const meta = LANG_META[lang] || { flag: '🌍', label: lang };
+        const langVoices = voiceLibrary.filter(v => v.langCode === lang);
+        const voicePaths = langVoices.map(v => v.path).filter(Boolean);
+
+        const logLine = (html) => { if (progressEl) progressEl.innerHTML += `<div>${html}</div>`; };
+        logLine(`⏳ [${i+1}/${selectedLangs.length}] Assembling ${meta.flag} ${meta.label} video…`);
+
+        try {
+            const res = await fetch('/api/assemble-video', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    voice_paths: voicePaths,
+                    media_paths: mediaPaths,
+                    title: `${title} [${meta.label}]`,
+                    resolution,
+                    use_ken_burns: useKenBurns,
+                    background_music_path: window.videoData.backgroundMusic?.path || null
+                })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || 'Assembly failed');
+
+            done++;
+            logLine(`<span style="color:#10b981;">✅ ${meta.flag} ${meta.label} done!</span>`);
+            if (resultsEl) resultsEl.innerHTML += `
+            <div style="padding:11px; border:1px solid #1e3a2e; border-radius:8px; margin-bottom:7px; background:rgba(16,185,129,0.06);">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <strong style="color:#10b981;">${meta.flag} ${meta.label} ✅</strong>
+                    <button onclick="window.location.href='${data.download_url}'"
+                        style="padding:5px 14px; background:#10b981; border:none; border-radius:5px; color:white; cursor:pointer; font-size:12px;">
+                        📥 Download
+                    </button>
+                </div>
+                <div style="color:#6b7280; font-size:11px; margin-top:4px;">
+                    ${data.output_filename} · ${data.duration_formatted} · ${(data.file_size_mb||0).toFixed(1)} MB
+                </div>
+            </div>`;
+        } catch (err) {
+            logLine(`<span style="color:#ef4444;">❌ ${meta.flag} ${meta.label}: ${err.message}</span>`);
+        }
+        if (i < selectedLangs.length - 1) await new Promise(r => setTimeout(r, 2000));
+    }
+
+    if (btn) { btn.disabled = false; btn.textContent = '🚀 Generate All Language Videos'; }
+    showNotification(`✅ ${done}/${selectedLangs.length} videos assembled`, done > 0 ? 'success' : 'warning');
+}
+
 // =============================================================================
 // BACKGROUND MUSIC
 // =============================================================================
@@ -1673,7 +2199,7 @@ function renderBackgroundMusicPreview(musicData) {
                 <div style="flex: 1;">
                     <strong style="color: #ff9800;">🎵 ${musicData.filename}</strong>
                     <div style="color: #666; font-size: 0.9em; margin-top: 3px;">
-                        ⏱️ ${minutes}:${seconds.toString().padStart(2, '0')} • Will loop at 10% volume
+                        ⏱️ ${minutes}:${seconds.toString().padStart(2, '0')} • Will loop at 5% volume
                     </div>
                 </div>
                 <button onclick="removeBackgroundMusic()" style="
@@ -1703,9 +2229,9 @@ function playBackgroundMusicPreview() {
     }
 
     backgroundMusicAudio = new Audio(window.videoData.backgroundMusic.url);
-    backgroundMusicAudio.volume = 0.1; // Preview at 10% volume
+    backgroundMusicAudio.volume = 0.05; // Preview at 5% volume
     backgroundMusicAudio.play();
-    showNotification('▶️ Playing music preview at 10% volume...', 'info');
+    showNotification('▶️ Playing music preview at 5% volume...', 'info');
 
     backgroundMusicAudio.addEventListener('ended', () => {
         showNotification('⏹️ Music preview ended', 'info');
@@ -1755,6 +2281,10 @@ function toggleMediaSection(type) {
                 loadAutoImageStyles(); // Load styles (including custom) when section opens
             }
         }
+    } else if (type === 'localimages') {
+        const checked = document.getElementById('useLocalImagesMix')?.checked;
+        const section = document.getElementById('localImagesMixSection');
+        if (section) section.style.display = checked ? 'block' : 'none';
     }
 }
 
@@ -1817,7 +2347,7 @@ function renderMediaLibrary() {
         const isVideo = media.type === 'video';
 
         const preview = isVideo
-            ? `<video src="${media.url}" style="width: 100%; height: 120px; object-fit: cover;"></video>`
+            ? `<video src="${media.url}" style="width: 100%; height: 120px; object-fit: cover;" ${media.muted ? 'muted' : ''}></video>`
             : `<img src="${media.url}" style="width: 100%; height: 120px; object-fit: cover;">`;
 
         const selectCheckbox = selectionState.isSelectionMode
@@ -1921,7 +2451,23 @@ function toggleMediaMute(id) {
     if (media) {
         media.muted = !media.muted;
         showNotification(media.muted ? '🔇 Video muted' : '🔊 Video unmuted', 'info');
+        renderMediaLibrary();
     }
+}
+
+function muteAllVideos() {
+    const videos = appState.mediaLibrary.filter(m => m.type === 'video');
+    if (videos.length === 0) {
+        showNotification('No videos in media library', 'info');
+        return;
+    }
+    const allMuted = videos.every(m => m.muted);
+    // Toggle: if all already muted → unmute all; otherwise → mute all
+    const newState = !allMuted;
+    videos.forEach(m => { m.muted = newState; });
+    window.videoData.mediaLibrary = appState.mediaLibrary;
+    renderMediaLibrary();
+    showNotification(newState ? `🔇 ${videos.length} video(s) muted` : `🔊 ${videos.length} video(s) unmuted`, 'info');
 }
 
 function downloadMedia(id) {
@@ -2053,8 +2599,8 @@ async function loadAutoImageStyles() {
             // Cache the full style objects
             window._cachedAutoImageStyles = data.styles;
 
-            // Populate both dropdowns: Auto Images AI and Auto Avatar Mix
-            ['autoImageStyle', 'autoAvatarImageStyle'].forEach(selectId => {
+            // Populate all style dropdowns: Auto Images AI, Auto Avatar Mix, Prompts Generator, Mixed
+            ['autoImageStyle', 'autoAvatarImageStyle', 'pgStyleSelect', 'mixedImageStyleSelect'].forEach(selectId => {
                 const styleSelect = document.getElementById(selectId);
                 if (styleSelect) {
                     const currentVal = styleSelect.value;
@@ -2077,6 +2623,391 @@ async function loadAutoImageStyles() {
     } catch (error) {
         console.error('Error loading styles:', error);
     }
+}
+
+// =============================================================================
+// PROMPTS GENERATOR — image or video prompts, scene-by-scene from script
+// =============================================================================
+
+let _pgMode = 'image'; // 'image' | 'video' | 'mixed'
+
+function pgSetMode(mode) {
+    _pgMode = mode;
+    const isMixed = mode === 'mixed';
+    const isVideo = mode === 'video';
+
+    // Tabs
+    const tabCfg = {
+        image: { bg: 'linear-gradient(135deg,#8b5cf6,#6d28d9)', col: '#fff' },
+        video: { bg: 'linear-gradient(135deg,#dc2626,#7f1d1d)', col: '#fff' },
+        mixed: { bg: 'linear-gradient(135deg,#f59e0b,#92400e)', col: '#fff' },
+        off:   { bg: '#1e1e2e', col: '#888' },
+    };
+    ['image','video','mixed'].forEach(t => {
+        const el = document.getElementById(`pgTab${t.charAt(0).toUpperCase()+t.slice(1)}`);
+        if (!el) return;
+        const active = t === mode ? tabCfg[t] : tabCfg.off;
+        el.style.background = active.bg;
+        el.style.color      = active.col;
+    });
+
+    // Show/hide single-mode vs mixed-mode panels
+    document.getElementById('pgSingleModeWrap').style.display = isMixed ? 'none' : '';
+    document.getElementById('pgMixedModeWrap').style.display  = isMixed ? '' : 'none';
+
+    if (!isMixed) {
+        // Style selectors in single mode
+        document.getElementById('pgImageStyleWrap').style.display = isVideo ? 'none' : '';
+        document.getElementById('pgVideoStyleWrap').style.display = isVideo ? '' : 'none';
+
+        const btn = document.getElementById('pgGenerateBtn');
+        if (btn) {
+            btn.textContent = isVideo ? '🎬 Generate Video Prompts' : '🎨 Generate Image Prompts';
+            btn.style.background = isVideo
+                ? 'linear-gradient(135deg,#dc2626,#7f1d1d)'
+                : 'linear-gradient(135deg,#8b5cf6,#6d28d9)';
+        }
+        const lbl = document.getElementById('pgResultLabel');
+        if (lbl) lbl.childNodes[0].textContent = isVideo ? 'Generated Video Prompts ' : 'Generated Image Prompts ';
+    } else {
+        // Mixed mode: populate both dropdowns and update stats
+        _populateMixedDropdowns();
+        mixedUpdateSplit(document.getElementById('mixedSplitSlider')?.value || 50);
+        mixedUpdateStats();
+    }
+
+    document.getElementById('pgResultSection').style.display = 'none';
+    document.getElementById('pgProgressBox').style.display   = 'none';
+
+    if (isVideo) loadVideoStylesSelect();
+}
+
+async function loadVideoStylesSelect() {
+    try {
+        const r = await fetch('/api/video-styles');
+        const d = await r.json();
+        if (!d.success) return;
+        // Single-mode selector
+        const sel = document.getElementById('pgVideoStyleSelect');
+        if (sel) {
+            const cur = sel.value;
+            sel.innerHTML = d.styles.map(s =>
+                `<option value="${s.id}">${s.built_in ? '🎬' : '✨'} ${s.name}</option>`
+            ).join('');
+            if (cur) sel.value = cur;
+        }
+        // Mixed-mode video selector
+        const msel = document.getElementById('mixedVideoStyleSelect');
+        if (msel) {
+            const cur2 = msel.value;
+            msel.innerHTML = d.styles.map(s =>
+                `<option value="${s.id}">${s.built_in ? '🎬' : '✨'} ${s.name}</option>`
+            ).join('');
+            if (cur2) msel.value = cur2;
+        }
+    } catch (e) { console.warn('Could not load video styles:', e); }
+}
+
+async function _populateMixedDropdowns() {
+    // Populate video styles
+    await loadVideoStylesSelect();
+    // Populate image styles in mixed image selector
+    if (window._cachedAutoImageStyles) {
+        const sel = document.getElementById('mixedImageStyleSelect');
+        if (sel) {
+            const cur = sel.value;
+            sel.innerHTML = window._cachedAutoImageStyles.map(s => {
+                const icon = s.id === 'cinematic' ? '🎬' : s.id === 'photorealistic' ? '📷' : s.id === 'artistic' ? '🎨' : s.id === 'animated' ? '🎭' : '✨';
+                return `<option value="${s.id}">${icon} ${s.name}</option>`;
+            }).join('');
+            if (cur) sel.value = cur;
+        }
+    }
+}
+
+function mixedUpdateSplit(pct) {
+    const script = document.getElementById('scriptInput')?.value || '';
+    const totalChars = script.length;
+    const splitPos   = Math.round(totalChars * (pct / 100));
+    document.getElementById('mixedSplitLabel').textContent = pct + '%';
+    if (totalChars > 0) {
+        document.getElementById('mixedSplitChars').textContent =
+            ` · first ${splitPos.toLocaleString()} chars → video · last ${(totalChars - splitPos).toLocaleString()} chars → images`;
+    }
+    mixedUpdateStats();
+}
+
+function mixedUpdateStats() {
+    const vCount = parseInt(document.getElementById('mixedVideoCount')?.value) || 0;
+    const durMin = ((vCount * 10) / 60).toFixed(1);
+    const el = document.getElementById('mixedVideoDuration');
+    if (el) el.textContent = `≈ ${durMin} min of video (${vCount} × 10s)`;
+}
+
+async function generateMixedPrompts() {
+    const script = (document.getElementById('scriptInput')?.value || '').trim();
+    if (!script) { showNotification('⚠️ Enter or generate a script first', 'warning'); return; }
+
+    const pct            = parseInt(document.getElementById('mixedSplitSlider')?.value) || 50;
+    const splitPos       = Math.round(script.length * (pct / 100));
+    const vidStyleId     = document.getElementById('mixedVideoStyleSelect')?.value;
+    const imgStyleId     = document.getElementById('mixedImageStyleSelect')?.value;
+    const videoCount     = parseInt(document.getElementById('mixedVideoCount')?.value) || 20;
+    const imageCount     = parseInt(document.getElementById('mixedImageCount')?.value) || 20;
+
+    if (!vidStyleId) { showNotification('⚠️ Select a video style', 'warning'); return; }
+    if (!imgStyleId) { showNotification('⚠️ Select an image style', 'warning'); return; }
+
+    const progressBox   = document.getElementById('pgProgressBox');
+    const resultSection = document.getElementById('pgResultSection');
+    progressBox.style.display = 'block';
+    progressBox.style.borderLeftColor = '#f59e0b';
+    const durMin = ((videoCount * 10) / 60).toFixed(1);
+    progressBox.innerHTML = `<p>🎬+🖼️ Generating mixed prompts…<br>
+        <small style="color:#888;">Step 1/2: ${videoCount} video prompts (first ${pct}% of script = ~${durMin} min) → then ${imageCount} image prompts</small></p>`;
+    resultSection.style.display = 'none';
+    document.getElementById('pgOutputText').value = '';
+
+    try {
+        const r = await fetch('/api/generate-mixed-prompts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                script,
+                split_char_pos: splitPos,
+                video_style_id: vidStyleId,
+                video_count:    videoCount,
+                style_id:       imgStyleId,
+                image_count:    imageCount,
+            })
+        });
+        const d = await r.json();
+        if (!r.ok || !d.success) throw new Error(d.error || 'Generation failed');
+
+        // Build combined output
+        const lines = [
+            `${'═'.repeat(60)}`,
+            `🎬 VIDEO PROMPTS (${d.video_count}) — Style: ${d.vid_style_name}`,
+            `Script: first ${pct}% (${d.split_pos.toLocaleString()} chars) · ≈ ${d.video_duration_min} min of video (each ~10s)`,
+            `${'═'.repeat(60)}`,
+            '',
+            d.video_prompts.join('\n\n'),
+            '',
+            `${'═'.repeat(60)}`,
+            `🖼️ IMAGE PROMPTS (${d.image_count}) — Style: ${d.img_style_name}`,
+            `Script: last ${100-pct}% (${(d.total_chars - d.split_pos).toLocaleString()} chars)`,
+            `${'═'.repeat(60)}`,
+            '',
+            d.image_prompts.join('\n\n'),
+        ];
+        const combined = lines.join('\n');
+        document.getElementById('pgOutputText').value = combined;
+        document.getElementById('pgCountLabel').textContent =
+            `(${d.video_count} video + ${d.image_count} image prompts)`;
+        document.getElementById('pgResultLabel').childNodes[0].textContent = '🎬+🖼️ Mixed Prompts ';
+
+        progressBox.innerHTML = `<p style="color:#22c55e;">✅ ${d.video_count} video + ${d.image_count} image prompts ready!</p>`;
+        resultSection.style.display = 'block';
+        resultSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        showNotification(`✅ Mixed: ${d.video_count} video + ${d.image_count} image prompts!`, 'success');
+    } catch (e) {
+        progressBox.innerHTML = `<p style="color:#ef4444;">❌ ${e.message}</p>`;
+        showNotification('❌ ' + e.message, 'error');
+    }
+}
+
+async function generatePromptsOnly() {
+    const script = (document.getElementById('scriptInput')?.value || window.videoData?.script || '').trim();
+    if (!script) {
+        showNotification('⚠️ Please enter or generate a script first', 'warning');
+        return;
+    }
+
+    const count = parseInt(document.getElementById('pgCount')?.value) || 20;
+    if (count < 1 || count > 200) {
+        showNotification('⚠️ Number of prompts must be between 1 and 200', 'warning');
+        return;
+    }
+
+    const isVideo     = _pgMode === 'video';
+    const styleId     = document.getElementById('pgStyleSelect')?.value;
+    const vidStyleId  = document.getElementById('pgVideoStyleSelect')?.value;
+
+    if (!isVideo && !styleId) {
+        showNotification('⚠️ Please select an image style', 'warning');
+        return;
+    }
+    if (isVideo && !vidStyleId) {
+        showNotification('⚠️ Please select a video style', 'warning');
+        return;
+    }
+
+    const progressBox   = document.getElementById('pgProgressBox');
+    const resultSection = document.getElementById('pgResultSection');
+    const outputEl      = document.getElementById('pgOutputText');
+    const countLabel    = document.getElementById('pgCountLabel');
+
+    progressBox.style.display = 'block';
+    progressBox.style.borderLeftColor = isVideo ? '#dc2626' : '#8b5cf6';
+    progressBox.innerHTML = `<p>${isVideo ? '🎬' : '🎨'} Generating <strong>${count}</strong> ${isVideo ? 'video' : 'image'} prompts with Director Gemini…<br>
+        <small style="color:#888;">${count > 15 ? 'Sending in chunks of 15 — please wait' : 'Single call — almost done'}</small></p>`;
+    resultSection.style.display = 'none';
+    if (outputEl) outputEl.value = '';
+
+    try {
+        const body = {
+            script,
+            count,
+            mode: _pgMode,
+            style_id:       styleId,
+            video_style_id: vidStyleId,
+        };
+
+        const response = await fetch('/api/generate-prompts-only', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Prompts generation failed');
+        }
+
+        const text = data.prompts.join('\n\n');
+        if (outputEl) outputEl.value = text;
+        if (countLabel) countLabel.textContent = `(${data.prompts.length} prompts · ${data.style_name})`;
+
+        progressBox.innerHTML = `<p style="color:#22c55e;">✅ ${data.prompts.length} ${isVideo ? 'video' : 'image'} prompts generated!</p>`;
+        resultSection.style.display = 'block';
+        showNotification(`✅ ${data.prompts.length} prompts ready!`, 'success');
+
+    } catch (error) {
+        progressBox.innerHTML = `<p style="color:#ef4444;">❌ ${error.message}</p>`;
+        showNotification('❌ Prompts generation failed: ' + error.message, 'error');
+    }
+}
+
+function downloadPromptsText() {
+    const text = document.getElementById('pgOutputText')?.value;
+    if (!text) return;
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = _pgMode === 'video' ? 'video_prompts.txt' : 'image_prompts.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+// =============================================================================
+// VIDEO STYLES — Settings management
+// =============================================================================
+
+async function loadVideoStylesList() {
+    try {
+        const r = await fetch('/api/video-styles');
+        const d = await r.json();
+        if (!d.success) return;
+        _renderVideoStylesList(d.styles);
+    } catch (e) { console.warn('Could not load video styles:', e); }
+}
+
+function _renderVideoStylesList(styles) {
+    const container = document.getElementById('videoStylesList');
+    if (!container) return;
+    const custom = styles.filter(s => !s.built_in);
+    if (custom.length === 0) {
+        container.innerHTML = '<p style="color:#666; font-size:14px;">No custom video styles yet. Create your first one!</p>';
+        return;
+    }
+    container.innerHTML = custom.map(s => `
+        <div style="padding:10px 14px; margin:5px 0; background:#1a0a0a; border:1px solid #7f1d1d; border-radius:8px; display:flex; justify-content:space-between; align-items:flex-start;">
+            <div style="flex:1; min-width:0;">
+                <strong style="color:#f87171;">✨ ${s.name}</strong>
+                <p style="margin:3px 0 0; color:#666; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${(s.style_formula||'').substring(0,100).replace(/\n/g,' ')}…</p>
+            </div>
+            <div style="display:flex; gap:6px; margin-left:10px; flex-shrink:0;">
+                <button onclick="editVideoStyle('${s.id}')" style="background:#7f1d1d; color:#fca5a5; border:none; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">✏️ Edit</button>
+                <button onclick="deleteVideoStyle('${s.id}')" style="background:#450a0a; color:#fca5a5; border:none; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">🗑️</button>
+            </div>
+        </div>`).join('');
+}
+
+function openVideoStyleCreator() {
+    document.getElementById('editingVideoStyleId').value = '';
+    document.getElementById('videoStyleCreatorTitle').textContent = '➕ New Video Style';
+    document.getElementById('newVideoStyleName').value = '';
+    document.getElementById('newVideoStyleFormula').value = '';
+    document.getElementById('newVideoStyleDesc').value = '';
+    document.getElementById('videoStyleCreatorSection').style.display = 'block';
+    document.getElementById('videoStyleCreatorSection').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+function closeVideoStyleCreator() {
+    document.getElementById('videoStyleCreatorSection').style.display = 'none';
+    document.getElementById('editingVideoStyleId').value = '';
+}
+
+async function editVideoStyle(styleId) {
+    try {
+        const r = await fetch('/api/video-styles');
+        const d = await r.json();
+        const s = (d.styles || []).find(x => x.id === styleId);
+        if (!s) return;
+        document.getElementById('editingVideoStyleId').value = styleId;
+        document.getElementById('videoStyleCreatorTitle').textContent = '✏️ Edit: ' + s.name;
+        document.getElementById('newVideoStyleName').value    = s.name || '';
+        document.getElementById('newVideoStyleFormula').value = s.style_formula || '';
+        document.getElementById('newVideoStyleDesc').value    = s.description || '';
+        document.getElementById('videoStyleCreatorSection').style.display = 'block';
+        document.getElementById('videoStyleCreatorSection').scrollIntoView({ behavior:'smooth', block:'start' });
+    } catch (e) { showNotification('❌ Could not load style', 'error'); }
+}
+
+async function saveVideoStylePreset() {
+    const editingId    = document.getElementById('editingVideoStyleId').value.trim();
+    const name         = document.getElementById('newVideoStyleName').value.trim();
+    const style_formula = document.getElementById('newVideoStyleFormula').value.trim();
+    const description  = document.getElementById('newVideoStyleDesc').value.trim();
+
+    if (!name)         { showNotification('❌ Style name is required', 'error'); return; }
+    if (!style_formula || style_formula.length < 10) { showNotification('❌ Formula is required', 'error'); return; }
+
+    try {
+        const isEdit = editingId !== '';
+        const url    = isEdit ? `/api/video-styles/${editingId}` : '/api/video-styles';
+        const method = isEdit ? 'PUT' : 'POST';
+        const r = await fetch(url, {
+            method, headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, style_formula, description })
+        });
+        const d = await r.json();
+        if (d.success) {
+            showNotification(isEdit ? '✅ Video style updated!' : '✅ Video style saved!', 'success');
+            closeVideoStyleCreator();
+            await loadVideoStylesList();
+            loadVideoStylesSelect();
+        } else {
+            showNotification('❌ ' + (d.error || 'Save failed'), 'error');
+        }
+    } catch (e) { showNotification('❌ ' + e.message, 'error'); }
+}
+
+async function deleteVideoStyle(styleId) {
+    if (!confirm('Delete this video style?')) return;
+    try {
+        const r = await fetch(`/api/video-styles/${styleId}`, { method: 'DELETE' });
+        const d = await r.json();
+        if (d.success) {
+            showNotification('✅ Video style deleted', 'success');
+            await loadVideoStylesList();
+            loadVideoStylesSelect();
+        } else {
+            showNotification('❌ ' + (d.error || 'Delete failed'), 'error');
+        }
+    } catch (e) { showNotification('❌ ' + e.message, 'error'); }
 }
 
 async function generateAutoImages() {
@@ -3057,6 +3988,28 @@ function formatTime(seconds) {
 document.addEventListener('DOMContentLoaded', () => {
     // Load settings from localStorage
     loadSettings();
+
+    // Sync manual scriptInput textarea → videoData + library (debounced)
+    const scriptInputEl = document.getElementById('scriptInput');
+    if (scriptInputEl) {
+        let _scriptSyncTimer = null;
+        scriptInputEl.addEventListener('input', () => {
+            clearTimeout(_scriptSyncTimer);
+            _scriptSyncTimer = setTimeout(() => {
+                const txt = scriptInputEl.value.trim();
+                if (txt.length > 50) {
+                    window.videoData.script = txt;
+                    appState.generatedScript = txt;
+                    // Show download/translate section
+                    const dlSection = document.getElementById('scriptDownloadSection');
+                    if (dlSection) dlSection.style.display = 'block';
+                    // Auto-detect language and store in library
+                    storeScriptAutoDetect(txt, 'pasted_script.txt');
+                    showVoiceSectionIfScriptAvailable();
+                }
+            }, 1200);
+        });
+    }
 
     // Setup settings button
     const settingsBtn = document.getElementById('settingsBtn');
@@ -4235,85 +5188,110 @@ function renderCustomStyles(styles) {
         return;
     }
 
-    container.innerHTML = customStyles.map(style => `
-        <div style="padding: 10px; margin: 5px 0; background: #fff; border: 1px solid #ddd; border-radius: 5px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-                <strong>${style.name}</strong>
-                <p style="margin: 5px 0 0 0; color: #666; font-size: 13px;">${style.description}</p>
+    container.innerHTML = customStyles.map(style => {
+        const preview = style.style_formula
+            ? style.style_formula.substring(0, 120).replace(/\n/g, ' ') + (style.style_formula.length > 120 ? '…' : '')
+            : (style.description || '');
+        return `
+        <div style="padding: 12px; margin: 6px 0; background: #1a1a2e; border: 1px solid #4c1d95; border-radius: 8px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                <div style="flex:1; min-width:0;">
+                    <strong style="color:#a78bfa;">${style.name}</strong>
+                    ${style.style_formula ? '<span style="font-size:11px; color:#7c3aed; margin-left:8px; background:#2d1b69; padding:1px 6px; border-radius:10px;">formula</span>' : ''}
+                    <p style="margin: 4px 0 0; color:#888; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${preview}</p>
+                </div>
+                <div style="display:flex; gap:6px; margin-left:10px; flex-shrink:0;">
+                    <button onclick="editCustomStyle('${style.id}')" style="background:#4c1d95; color:#e2e8f0; border:none; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">✏️ Edit</button>
+                    <button onclick="deleteCustomStyle('${style.id}')" style="background:#7f1d1d; color:#fca5a5; border:none; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">🗑️</button>
+                </div>
             </div>
-            <button onclick="deleteCustomStyle('${style.id}')" class="btn-secondary" style="padding: 5px 10px; font-size: 13px;">🗑️ Delete</button>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 }
 
 function openStyleCreator() {
-    const section = document.getElementById('styleCreatorSection');
-    if (section) {
-        section.style.display = 'block';
-        // Clear form
-        document.getElementById('newStyleName').value = '';
-        document.getElementById('newStyleDescription').value = '';
-        document.getElementById('newStyleVisualRules').value = '';
-        document.getElementById('newStyleNegativeRules').value = '';
-        document.getElementById('newStyleComposition').value = '';
-        document.getElementById('newStyleLighting').value = '';
-        document.getElementById('newStyleColors').value = '';
-    }
+    document.getElementById('editingStyleId').value = '';
+    document.getElementById('styleCreatorTitle').textContent = '✏️ Create New Style';
+    document.getElementById('newStyleName').value = '';
+    document.getElementById('newStyleFormula').value = '';
+    document.getElementById('newStyleDescription').value = '';
+    document.getElementById('newStyleVisualRules').value = '';
+    document.getElementById('newStyleNegativeRules').value = '';
+    document.getElementById('newStyleComposition').value = '';
+    document.getElementById('newStyleLighting').value = '';
+    document.getElementById('newStyleColors').value = '';
+    document.getElementById('styleCreatorSection').style.display = 'block';
+    document.getElementById('styleCreatorSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function editCustomStyle(styleId) {
+    // Find the style in the loaded list
+    fetch(`/api/auto-images/styles/${styleId}`)
+        .then(r => r.json())
+        .then(data => {
+            const s = data.style;
+            if (!s) return;
+            document.getElementById('editingStyleId').value = styleId;
+            document.getElementById('styleCreatorTitle').textContent = '✏️ Edit Style: ' + s.name;
+            document.getElementById('newStyleName').value = s.name || '';
+            document.getElementById('newStyleFormula').value = s.style_formula || '';
+            document.getElementById('newStyleDescription').value = s.description || '';
+            document.getElementById('newStyleVisualRules').value = (s.visual_rules || []).join('\n');
+            document.getElementById('newStyleNegativeRules').value = (s.negative_rules || []).join('\n');
+            document.getElementById('newStyleComposition').value = s.composition || '';
+            document.getElementById('newStyleLighting').value = s.lighting || '';
+            document.getElementById('newStyleColors').value = (s.color_palette || []).join('\n');
+            document.getElementById('styleCreatorSection').style.display = 'block';
+            document.getElementById('styleCreatorSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        })
+        .catch(() => showNotification('❌ Could not load style', 'error'));
 }
 
 function closeStyleCreator() {
-    const section = document.getElementById('styleCreatorSection');
-    if (section) {
-        section.style.display = 'none';
-    }
+    document.getElementById('styleCreatorSection').style.display = 'none';
+    document.getElementById('editingStyleId').value = '';
 }
 
 async function saveNewStyle() {
-    const name = document.getElementById('newStyleName').value.trim();
-    const description = document.getElementById('newStyleDescription').value.trim();
-    const visualRulesText = document.getElementById('newStyleVisualRules').value.trim();
-    const negativeRulesText = document.getElementById('newStyleNegativeRules').value.trim();
-    const composition = document.getElementById('newStyleComposition').value.trim();
-    const lighting = document.getElementById('newStyleLighting').value.trim();
-    const colorsText = document.getElementById('newStyleColors').value.trim();
+    const editingId = document.getElementById('editingStyleId').value.trim();
+    const name         = document.getElementById('newStyleName').value.trim();
+    const style_formula = document.getElementById('newStyleFormula').value.trim();
+    const description  = document.getElementById('newStyleDescription').value.trim();
+    const visual_rules = document.getElementById('newStyleVisualRules').value.trim().split('\n').map(s=>s.trim()).filter(Boolean);
+    const negative_rules = document.getElementById('newStyleNegativeRules').value.trim().split('\n').map(s=>s.trim()).filter(Boolean);
+    const composition  = document.getElementById('newStyleComposition').value.trim();
+    const lighting     = document.getElementById('newStyleLighting').value.trim();
+    const color_palette = document.getElementById('newStyleColors').value.trim().split('\n').map(s=>s.trim()).filter(Boolean);
 
-    // Parse textarea inputs (one per line)
-    const visual_rules = visualRulesText.split('\n').map(s => s.trim()).filter(s => s.length > 0);
-    const negative_rules = negativeRulesText.split('\n').map(s => s.trim()).filter(s => s.length > 0);
-    const color_palette = colorsText.split('\n').map(s => s.trim()).filter(s => s.length > 0);
-
-    // Validation
-    if (!name || !description || visual_rules.length < 3 || negative_rules.length < 2 || !composition || !lighting || color_palette.length < 3) {
-        showNotification('❌ Please fill all fields. Min: 3 visual rules, 2 negative rules, 3 colors', 'error');
+    if (!name) { showNotification('❌ Style Name is required', 'error'); return; }
+    if (!style_formula && (visual_rules.length < 3 || negative_rules.length < 2)) {
+        showNotification('❌ Fill the Style Formula OR provide 3+ visual rules and 2+ negative rules', 'error');
         return;
     }
 
-    try {
-        const response = await fetch('/api/auto-images/styles', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                name,
-                description,
-                visual_rules,
-                negative_rules,
-                composition,
-                lighting,
-                color_palette
-            })
-        });
+    const body = { name, style_formula, description, visual_rules, negative_rules, composition, lighting, color_palette };
 
+    try {
+        const isEdit = editingId !== '';
+        const url    = isEdit ? `/api/auto-images/styles/${editingId}` : '/api/auto-images/styles';
+        const method = isEdit ? 'PUT' : 'POST';
+
+        const response = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
         const data = await response.json();
 
         if (data.success) {
-            showNotification('✅ Style created successfully!', 'success');
+            showNotification(isEdit ? '✅ Style updated!' : '✅ Style created!', 'success');
             closeStyleCreator();
             await loadCustomStyles();
         } else {
-            showNotification('❌ Error: ' + data.error, 'error');
+            showNotification('❌ ' + (data.error || 'Unknown error'), 'error');
         }
     } catch (error) {
-        showNotification('❌ Error creating style: ' + error.message, 'error');
+        showNotification('❌ ' + error.message, 'error');
     }
 }
 
@@ -4876,35 +5854,60 @@ console.log('✅ Avatar AI functionality loaded');
 // Loaded from API on init; fallback to this if API fails.
 const VOICE_CATALOGUE = {
     male: [
-        { id: 'Dennis',   desc: 'Deep · Authoritative · News anchor' },
-        { id: 'Mark',     desc: 'Professional · Clear · Corporate' },
-        { id: 'Theodore', desc: 'Warm · Friendly · Storytelling' },
-        { id: 'Craig',    desc: 'Strong · Confident · Documentary' },
-        { id: 'Edward',   desc: 'Refined · Calm · Narration' },
-        { id: 'Timothy',  desc: 'Young · Energetic · Casual' },
-        { id: 'Simon',    desc: 'Smooth · Articulate · Podcast' },
-        { id: 'Oliver',   desc: 'Clear · Engaging · Explainer' },
-        { id: 'Elliott',  desc: 'Rich · Measured · Drama' },
-        { id: 'James',    desc: 'Classic · Trustworthy · Broadcast' },
-        { id: 'Liam',     desc: 'Bright · Conversational · Friendly' },
-        { id: 'Noah',     desc: 'Deep · Calm · Meditation' },
-        { id: 'Ethan',    desc: 'Upbeat · Modern · Tech' },
-        { id: 'Ryan',     desc: 'Casual · Relatable · Everyday' },
-        { id: 'Logan',    desc: 'Bold · Dynamic · Promo' },
-        { id: 'Blake',    desc: 'Smooth · Cool · Modern' },
-        { id: 'Clive',    desc: 'Deep · Calm · Authoritative' },
+        // English
+        { id: 'Dennis',   desc: 'Deep · Authoritative · News anchor',   lang: 'en-US' },
+        { id: 'Mark',     desc: 'Professional · Clear · Corporate',      lang: 'en-US' },
+        { id: 'Theodore', desc: 'Warm · Friendly · Storytelling',        lang: 'en-US' },
+        { id: 'Craig',    desc: 'Strong · Confident · Documentary',      lang: 'en-US' },
+        { id: 'Edward',   desc: 'Refined · Calm · Narration',            lang: 'en-US' },
+        { id: 'Timothy',  desc: 'Young · Energetic · Casual',            lang: 'en-US' },
+        { id: 'Simon',    desc: 'Smooth · Articulate · Podcast',         lang: 'en-US' },
+        { id: 'Oliver',   desc: 'Clear · Engaging · Explainer',          lang: 'en-US' },
+        { id: 'Elliott',  desc: 'Rich · Measured · Drama',               lang: 'en-US' },
+        { id: 'James',    desc: 'Classic · Trustworthy · Broadcast',     lang: 'en-US' },
+        { id: 'Liam',     desc: 'Bright · Conversational · Friendly',    lang: 'en-US' },
+        { id: 'Noah',     desc: 'Deep · Calm · Meditation',              lang: 'en-US' },
+        { id: 'Ethan',    desc: 'Upbeat · Modern · Tech',                lang: 'en-US' },
+        { id: 'Ryan',     desc: 'Casual · Relatable · Everyday',         lang: 'en-US' },
+        { id: 'Logan',    desc: 'Bold · Dynamic · Promo',                lang: 'en-US' },
+        { id: 'Blake',    desc: 'Smooth · Cool · Modern',                lang: 'en-US' },
+        { id: 'Clive',    desc: 'Deep · Calm · Authoritative',           lang: 'en-US' },
+        // French
+        { id: 'Mathieu',  desc: 'Naturel · Professionnel · FR',          lang: 'fr-FR' },
+        { id: 'Étienne',  desc: 'Chaleureux · Storytelling · FR',        lang: 'fr-FR' },
+        { id: 'Alain',    desc: 'Profond · Autoritaire · FR',            lang: 'fr-FR' },
+        // German
+        { id: 'Josef',    desc: 'Klar · Professionell · DE',             lang: 'de-DE' },
+        // Spanish
+        { id: 'Diego',    desc: 'Suave · Calmado · Narración · ES',      lang: 'es-ES' },
+        { id: 'Miguel',   desc: 'Cálido · Storytelling · ES',            lang: 'es-ES' },
+        { id: 'Rafael',   desc: 'Profundo · Sereno · Narración · ES',    lang: 'es-ES' },
     ],
     female: [
-        { id: 'Olivia',    desc: 'Elegant · Smooth · Premium' },
-        { id: 'Sarah',     desc: 'Warm · Engaging · Conversational' },
-        { id: 'Ashley',    desc: 'Energetic · Bright · Upbeat' },
-        { id: 'Elizabeth', desc: 'Professional · Clear · Corporate' },
-        { id: 'Wendy',     desc: 'Soft · Gentle · Soothing' },
+        // English
+        { id: 'Olivia',    desc: 'Elegant · Smooth · Premium',           lang: 'en-US' },
+        { id: 'Sarah',     desc: 'Warm · Engaging · Conversational',     lang: 'en-US' },
+        { id: 'Ashley',    desc: 'Energetic · Bright · Upbeat',          lang: 'en-US' },
+        { id: 'Elizabeth', desc: 'Professional · Clear · Corporate',     lang: 'en-US' },
+        { id: 'Wendy',     desc: 'Soft · Gentle · Soothing',             lang: 'en-US' },
+        // French
+        { id: 'Hélène',   desc: 'Douce · Élégante · FR',                lang: 'fr-FR' },
+        // German
+        { id: 'Johanna',   desc: 'Ruhig · Tief · Smoky · DE',           lang: 'de-DE' },
+        // Spanish
+        { id: 'Lupita',    desc: 'Vibrante · Energética · ES',           lang: 'es-ES' },
     ],
 };
 
-// Track which gender is currently active
+function getVoiceLang(voiceId) {
+    const all = [...(VOICE_CATALOGUE.male || []), ...(VOICE_CATALOGUE.female || [])];
+    const entry = all.find(v => v.id === voiceId);
+    return (entry && entry.lang) ? entry.lang : 'en-US';
+}
+
+// Track active language/gender filters
 let _activeGender = 'male';
+let _activeLang = 'en';  // 'en' | 'fr' | 'de' | 'es'
 // Full voice list fetched from API (keyed by id)
 let _apiVoiceMap = {};
 
@@ -4924,23 +5927,39 @@ async function loadVoiceList() {
     if (statusEl) { statusEl.textContent = ''; }
 }
 
-function renderVoiceDropdown(gender) {
-    _activeGender = gender;
+function renderVoiceDropdown(gender, lang) {
+    if (gender) _activeGender = gender;
+    if (lang)   _activeLang   = lang;
 
     const voiceSelect = document.getElementById('voiceId');
     if (!voiceSelect) return;
 
-    // Update toggle button styles
+    // Update gender button styles
     const btnMale   = document.getElementById('genderBtnMale');
     const btnFemale = document.getElementById('genderBtnFemale');
     if (btnMale && btnFemale) {
         const activeStyle   = 'flex:1; padding:7px 0; border-radius:6px; border:2px solid #667eea; background:#667eea; color:#fff; font-weight:600; cursor:pointer; font-size:0.9em;';
         const inactiveStyle = 'flex:1; padding:7px 0; border-radius:6px; border:2px solid #667eea; background:transparent; color:#667eea; font-weight:600; cursor:pointer; font-size:0.9em;';
-        btnMale.style.cssText   = gender === 'male'   ? activeStyle : inactiveStyle;
-        btnFemale.style.cssText = gender === 'female' ? activeStyle : inactiveStyle;
+        btnMale.style.cssText   = _activeGender === 'male'   ? activeStyle : inactiveStyle;
+        btnFemale.style.cssText = _activeGender === 'female' ? activeStyle : inactiveStyle;
     }
 
-    const voices = VOICE_CATALOGUE[gender] || [];
+    // Update language button styles
+    const langMap = { en: 'voiceLangEn', fr: 'voiceLangFr', de: 'voiceLangDe', es: 'voiceLangEs' };
+    Object.entries(langMap).forEach(([lc, btnId]) => {
+        const btn = document.getElementById(btnId);
+        if (btn) {
+            btn.style.background = (_activeLang === lc) ? '#667eea' : 'transparent';
+            btn.style.color      = (_activeLang === lc) ? '#fff'    : '#667eea';
+        }
+    });
+
+    // Filter voices by language
+    const langPrefixMap = { en: 'en-', fr: 'fr-', de: 'de-', es: 'es-' };
+    const prefix = langPrefixMap[_activeLang] || 'en-';
+    const allForGender = VOICE_CATALOGUE[_activeGender] || [];
+    const voices = allForGender.filter(v => (v.lang || 'en-US').startsWith(prefix));
+
     voiceSelect.innerHTML = '';
     voices.forEach(v => {
         const opt = document.createElement('option');
@@ -4949,12 +5968,23 @@ function renderVoiceDropdown(gender) {
         voiceSelect.appendChild(opt);
     });
 
-    if (voiceSelect.options.length > 0) voiceSelect.selectedIndex = 0;
+    if (voiceSelect.options.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = '— No voices for this combination —';
+        voiceSelect.appendChild(opt);
+    } else {
+        voiceSelect.selectedIndex = 0;
+    }
     updateVoiceDescription();
 }
 
 function filterVoicesByGender(gender) {
-    renderVoiceDropdown(gender);
+    renderVoiceDropdown(gender, null);
+}
+
+function filterVoicesByLang(lang) {
+    renderVoiceDropdown(null, lang);
 }
 
 function updateVoiceDescription() {
@@ -4963,9 +5993,13 @@ function updateVoiceDescription() {
     if (!voiceSelect || !descEl) return;
 
     const selected = voiceSelect.value;
-    const list = VOICE_CATALOGUE[_activeGender] || [];
-    const entry = list.find(v => v.id === selected);
+    const allVoices = [...(VOICE_CATALOGUE.male || []), ...(VOICE_CATALOGUE.female || [])];
+    const entry = allVoices.find(v => v.id === selected);
     descEl.textContent = entry ? entry.desc : '';
+
+    // Keep the hidden language input in sync so generation uses the right locale
+    const langInput = document.getElementById('voiceLanguage');
+    if (langInput) langInput.value = getVoiceLang(selected);
 }
 
 async function previewVoice() {
@@ -4979,7 +6013,7 @@ async function previewVoice() {
 
     const voice_id = voiceSelect.value;
     const model_id = modelSelect ? modelSelect.value : 'inworld-tts-1.5-mini';
-    const language = 'en-US';
+    const language = getVoiceLang(voice_id);
 
     btn.disabled = true;
     btn.textContent = '⏳…';
@@ -5014,3 +6048,375 @@ async function previewVoice() {
         btn.textContent = '▶ Preview';
     }
 }
+
+// =============================================================================
+// LOCAL IMAGES MIX — Avatar + user's own images, no AI generation
+// =============================================================================
+
+// Stores avatar path (server-side, muted) for local mix
+window.localMixAvatarData = null;
+// Stores uploaded image paths from server
+window.localMixImagePaths = [];
+
+async function handleLocalMixAvatarUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    showNotification('📤 Uploading and muting avatar video...', 'info');
+    const preview = document.getElementById('localMixAvatarPreview');
+    preview.innerHTML = '<p style="color:#888;">Uploading...</p>';
+
+    try {
+        const formData = new FormData();
+        formData.append('avatar', file);
+
+        const res = await fetch('/api/avatar/upload-avatar', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Upload failed');
+
+        window.localMixAvatarData = { path: data.path, duration: data.duration };
+
+        preview.innerHTML = `
+            <div style="background:rgba(76,175,80,0.1); padding:10px; border-radius:5px;">
+                ✅ <strong>${file.name}</strong> (${(data.duration || 0).toFixed(1)}s, muted)
+                <button onclick="window.localMixAvatarData=null; document.getElementById('localMixAvatarPreview').innerHTML='';"
+                    style="float:right; background:#f44336; color:white; border:none; padding:4px 10px; border-radius:3px; cursor:pointer;">Remove</button>
+            </div>`;
+        showNotification('✅ Avatar uploaded!', 'success');
+    } catch (err) {
+        preview.innerHTML = '';
+        showNotification('❌ Failed to upload avatar: ' + err.message, 'error');
+    }
+}
+
+async function handleLocalImagesUpload(event) {
+    const files = Array.from(event.target.files);
+    if (!files.length) return;
+
+    const preview = document.getElementById('localImagesPreview');
+    preview.innerHTML = '<p style="color:#888;">Uploading images...</p>';
+    showNotification(`📤 Uploading ${files.length} image(s)...`, 'info');
+
+    try {
+        const formData = new FormData();
+        files.forEach(f => formData.append('images', f));
+
+        const res = await fetch('/api/avatar/upload-local-images', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Upload failed');
+
+        window.localMixImagePaths = data.images.map(i => i.path);
+
+        preview.innerHTML = `
+            <div style="background:rgba(103,58,183,0.1); padding:10px; border-radius:5px; text-align:left;">
+                ✅ <strong>${data.count} image(s) ready</strong>
+                <button onclick="window.localMixImagePaths=[]; document.getElementById('localImagesPreview').innerHTML='';"
+                    style="float:right; background:#f44336; color:white; border:none; padding:4px 10px; border-radius:3px; cursor:pointer;">Clear</button>
+                <div style="margin-top:8px; font-size:12px; color:#666;">
+                    ${data.images.map(i => `• ${i.name}`).join('<br>')}
+                </div>
+            </div>`;
+        showNotification(`✅ ${data.count} image(s) uploaded!`, 'success');
+    } catch (err) {
+        preview.innerHTML = '';
+        showNotification('❌ Failed to upload images: ' + err.message, 'error');
+    }
+}
+
+async function generateLocalImagesMix() {
+    if (!window.localMixAvatarData) {
+        showNotification('⚠️ Please upload an avatar video first', 'warning'); return;
+    }
+    if (!window.localMixImagePaths || window.localMixImagePaths.length === 0) {
+        showNotification('⚠️ Please upload at least one image', 'warning'); return;
+    }
+
+    const voiceLibrary = window.videoData?.voiceLibrary || [];
+    if (voiceLibrary.length === 0) {
+        showNotification('⚠️ Please generate or upload voice first (Step 2)', 'warning'); return;
+    }
+
+    const progressDiv = document.getElementById('localImagesMixProgress');
+    progressDiv.style.display = 'block';
+    progressDiv.innerHTML = `<div style="padding:15px;">
+        ⚡ Assembling video — ${window.localMixImagePaths.length} image(s) + avatar loop...<br>
+        <small style="color:#888;">Smart timing: 30s avatar → 5s image (no AI needed)</small>
+    </div>`;
+
+    try {
+        const voicePaths = voiceLibrary.map(v => v.path).filter(Boolean);
+        const backgroundMusic = window.videoData?.backgroundMusic || null;
+
+        const res = await fetch('/api/avatar/generate-local-mix', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                avatar_video: window.localMixAvatarData.path,
+                audio: voicePaths[0],
+                voice_paths: voicePaths,
+                image_paths: window.localMixImagePaths,
+                background_music: backgroundMusic
+            })
+        });
+
+        const result = await res.json();
+        if (!result.success) throw new Error(result.error || 'Generation failed');
+
+        const videoFilename = result.video_path.split('/').pop();
+        const imagesMsg = result.images_used < result.total_images
+            ? `${result.images_used}/${result.total_images} images used (avatar loops for remaining time)`
+            : `All ${result.total_images} images used`;
+
+        progressDiv.innerHTML = `
+            <div style="padding:20px; background:rgba(103,58,183,0.1); border-radius:8px;">
+                <h3 style="color:#673ab7; margin:0 0 15px 0;">✅ Local Images Mix Ready!</h3>
+                <p><strong>Duration:</strong> ${(result.audio_duration || 0).toFixed(1)}s</p>
+                <p><strong>Images:</strong> ${imagesMsg}</p>
+                <p><strong>Timing:</strong> ${(result.avatar_gap || 30).toFixed(0)}s avatar + 5s image per cycle</p>
+                <p><strong>Done in:</strong> ${(result.generation_time || 0).toFixed(1)}s</p>
+                <video controls style="width:100%; max-width:800px; aspect-ratio:16/9; margin:15px 0; border-radius:8px; background:#000;">
+                    <source src="/api/download/${videoFilename}" type="video/mp4">
+                </video>
+                <div>
+                    <button class="btn-primary" onclick="window.location.href='/api/download/${videoFilename}'">📥 Download Video (MP4)</button>
+                </div>
+            </div>`;
+        showNotification('✅ Local Images Mix video ready!', 'success');
+
+    } catch (err) {
+        console.error('Local Images Mix error:', err);
+        progressDiv.innerHTML = `<div style="padding:15px; background:rgba(244,67,54,0.1); color:#f44336;">❌ ${err.message}</div>`;
+        showNotification('❌ Failed to generate Local Images Mix', 'error');
+    }
+}
+
+
+// =============================================================================
+// SEO GENERATOR
+// =============================================================================
+
+// ---- Presets management (Settings) ----
+
+async function loadSeoFormulas() {
+    try {
+        const r = await fetch('/api/seo-formulas');
+        const d = await r.json();
+        if (!d.success) return;
+        _renderSeoFormulasList(d.formulas);
+        _populateSeoFormulaSelect(d.formulas);
+    } catch (e) { console.warn('Could not load SEO formulas:', e); }
+}
+
+function _renderSeoFormulasList(formulas) {
+    const container = document.getElementById('seoFormulasList');
+    if (!container) return;
+    if (!formulas || formulas.length === 0) {
+        container.innerHTML = '<p style="color:#666; font-size:14px;">No saved formulas yet. Create your first one!</p>';
+        return;
+    }
+    container.innerHTML = formulas.map(f => `
+        <div style="padding:10px 14px; margin:5px 0; background:#0f1a15; border:1px solid #065f46; border-radius:8px; display:flex; justify-content:space-between; align-items:flex-start;">
+            <div style="flex:1; min-width:0;">
+                <strong style="color:#10b981;">${f.name}</strong>
+                <p style="margin:3px 0 0; color:#666; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${f.formula.substring(0,100).replace(/\n/g,' ')}…</p>
+            </div>
+            <div style="display:flex; gap:6px; margin-left:10px; flex-shrink:0;">
+                <button onclick="editSeoFormula('${f.id}')" style="background:#065f46; color:#d1fae5; border:none; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">✏️ Edit</button>
+                <button onclick="deleteSeoFormula('${f.id}')" style="background:#7f1d1d; color:#fca5a5; border:none; border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;">🗑️</button>
+            </div>
+        </div>`).join('');
+}
+
+function _populateSeoFormulaSelect(formulas) {
+    const sel = document.getElementById('seoFormulaSelect');
+    if (!sel) return;
+    const current = sel.value;
+    sel.innerHTML = '<option value="">⚙️ Default formula</option>' +
+        (formulas || []).map(f => `<option value="${f.id}">${f.name}</option>`).join('');
+    if (current) sel.value = current;
+}
+
+function openSeoFormulaCreator() {
+    document.getElementById('editingSeoFormulaId').value = '';
+    document.getElementById('seoFormulaCreatorTitle').textContent = '➕ New SEO Formula';
+    document.getElementById('newSeoFormulaName').value = '';
+    document.getElementById('newSeoFormulaText').value = '';
+    document.getElementById('seoFormulaCreatorSection').style.display = 'block';
+    document.getElementById('seoFormulaCreatorSection').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+function closeSeoFormulaCreator() {
+    document.getElementById('seoFormulaCreatorSection').style.display = 'none';
+    document.getElementById('editingSeoFormulaId').value = '';
+}
+
+async function editSeoFormula(formulaId) {
+    try {
+        const r = await fetch('/api/seo-formulas');
+        const d = await r.json();
+        const f = (d.formulas || []).find(x => x.id === formulaId);
+        if (!f) return;
+        document.getElementById('editingSeoFormulaId').value = formulaId;
+        document.getElementById('seoFormulaCreatorTitle').textContent = '✏️ Edit: ' + f.name;
+        document.getElementById('newSeoFormulaName').value = f.name;
+        document.getElementById('newSeoFormulaText').value = f.formula;
+        document.getElementById('seoFormulaCreatorSection').style.display = 'block';
+        document.getElementById('seoFormulaCreatorSection').scrollIntoView({ behavior:'smooth', block:'start' });
+    } catch (e) { showNotification('❌ Could not load formula', 'error'); }
+}
+
+async function saveSeoFormulaPreset() {
+    const editingId = document.getElementById('editingSeoFormulaId').value.trim();
+    const name    = document.getElementById('newSeoFormulaName').value.trim();
+    const formula = document.getElementById('newSeoFormulaText').value.trim();
+
+    if (!name) { showNotification('❌ Formula name is required', 'error'); return; }
+    if (!formula || formula.length < 10) { showNotification('❌ Formula text is required', 'error'); return; }
+
+    try {
+        const isEdit = editingId !== '';
+        const url    = isEdit ? `/api/seo-formulas/${editingId}` : '/api/seo-formulas';
+        const method = isEdit ? 'PUT' : 'POST';
+        const r = await fetch(url, {
+            method, headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, formula })
+        });
+        const d = await r.json();
+        if (d.success) {
+            showNotification(isEdit ? '✅ Formula updated!' : '✅ Formula saved!', 'success');
+            closeSeoFormulaCreator();
+            await loadSeoFormulas();
+        } else {
+            showNotification('❌ ' + (d.error || 'Save failed'), 'error');
+        }
+    } catch (e) { showNotification('❌ ' + e.message, 'error'); }
+}
+
+async function deleteSeoFormula(formulaId) {
+    if (!confirm('Delete this SEO formula?')) return;
+    try {
+        const r = await fetch(`/api/seo-formulas/${formulaId}`, { method: 'DELETE' });
+        const d = await r.json();
+        if (d.success) {
+            showNotification('✅ Formula deleted', 'success');
+            await loadSeoFormulas();
+        } else {
+            showNotification('❌ ' + (d.error || 'Delete failed'), 'error');
+        }
+    } catch (e) { showNotification('❌ ' + e.message, 'error'); }
+}
+
+function saveSeoDefaultLink() {
+    const link = document.getElementById('seoDefaultLink')?.value.trim() || '';
+    if (link) localStorage.setItem('seoDefaultLink', link);
+    showNotification('✅ Default link saved', 'success');
+}
+
+// ---- SEO Generator (main section) ----
+
+function seoAutoFill() {
+    // Use the real element IDs from the main page
+    const titleEl  = document.getElementById('titleInput');
+    const scriptEl = document.getElementById('scriptInput');
+
+    const seoTitleEl  = document.getElementById('seoTitle');
+    const seoScriptEl = document.getElementById('seoScript');
+
+    if (seoTitleEl  && titleEl  && titleEl.value)  seoTitleEl.value  = titleEl.value;
+    if (seoScriptEl && scriptEl && scriptEl.value) seoScriptEl.value = scriptEl.value;
+
+    // Pre-fill link from saved default (only when empty)
+    const seoLinkEl = document.getElementById('seoLink');
+    if (seoLinkEl && !seoLinkEl.value) {
+        const savedLink = localStorage.getItem('seoDefaultLink');
+        if (savedLink) seoLinkEl.value = savedLink;
+    }
+
+    // Reload formula dropdown in case new presets were saved
+    loadSeoFormulas();
+}
+
+async function generateSeo() {
+    const title      = document.getElementById('seoTitle').value.trim();
+    const script     = document.getElementById('seoScript').value.trim();
+    const link       = document.getElementById('seoLink').value.trim();
+    const formula_id = document.getElementById('seoFormulaSelect')?.value || '';
+
+    if (!title && !script) {
+        showNotification('❌ Enter a title or script first', 'error');
+        return;
+    }
+
+    const progressBox   = document.getElementById('seoProgressBox');
+    const resultSection = document.getElementById('seoResultSection');
+    progressBox.style.display   = 'block';
+    resultSection.style.display = 'none';
+
+    try {
+        const r = await fetch('/api/seo-generator', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, script, link, formula_id })
+        });
+        const d = await r.json();
+        progressBox.style.display = 'none';
+
+        if (!d.success) { showNotification('❌ ' + (d.error || 'Generation failed'), 'error'); return; }
+
+        document.getElementById('seoDescription').value = d.description;
+        document.getElementById('seoTags').value        = d.tags;
+
+        const badge = document.getElementById('seoLangBadge');
+        if (badge && d.language) badge.textContent = '(' + d.language + ')';
+
+        const tlen  = (d.tags || '').length;
+        const lenEl = document.getElementById('seoTagsLength');
+        const warn  = document.getElementById('seoTagsWarning');
+        if (lenEl) lenEl.textContent = tlen + ' / 400 chars';
+        if (warn)  warn.style.display = tlen > 400 ? 'block' : 'none';
+
+        resultSection.style.display = 'block';
+        resultSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        showNotification('✅ Description & tags generated!', 'success');
+    } catch (e) {
+        progressBox.style.display = 'none';
+        showNotification('❌ ' + e.message, 'error');
+    }
+}
+
+function copySeoDescription() {
+    const v = document.getElementById('seoDescription')?.value;
+    if (!v) return;
+    navigator.clipboard.writeText(v).then(() => showNotification('📋 Description copied!', 'success'));
+}
+
+function copySeoTags() {
+    const v = document.getElementById('seoTags')?.value;
+    if (!v) return;
+    navigator.clipboard.writeText(v).then(() => showNotification('📋 Tags copied!', 'success'));
+}
+
+// Load SEO formulas + Video styles when settings open
+(function() {
+    const _orig = window.openSettings;
+    window.openSettings = function() {
+        if (_orig) _orig.apply(this, arguments);
+        loadSeoFormulas();
+        loadVideoStylesList();
+        const saved = localStorage.getItem('seoDefaultLink');
+        if (saved) {
+            const el = document.getElementById('seoDefaultLink');
+            if (el && !el.value) el.value = saved;
+        }
+    };
+})();
+
+// Auto-fill SEO fields when the section scrolls into view
+(function() {
+    const seoSection = document.getElementById('seoGeneratorStep');
+    if (!seoSection || !('IntersectionObserver' in window)) return;
+    const io = new IntersectionObserver(entries => {
+        if (entries[0].isIntersecting) seoAutoFill();
+    }, { threshold: 0.1 });
+    io.observe(seoSection);
+})();

@@ -52,26 +52,19 @@ class Config:
     def get_director_gemini_api_key(cls):
         """
         Get Director Gemini API key (SEPARATE from script writer!)
-        Used ONLY for Auto Images AI Director
+        Used ONLY for Auto Images AI Director. No fallback to other keys.
         """
         saved = cls._load_saved_config()
-        # Use separate key if available, otherwise fallback to main Gemini key
-        return saved.get('director_gemini_api_key') or saved.get('gemini_api_key') or os.getenv('DIRECTOR_GEMINI_API_KEY') or os.getenv('GEMINI_API_KEY', '')
+        return saved.get('director_gemini_api_key') or os.getenv('DIRECTOR_GEMINI_API_KEY', '')
 
     @classmethod
     def get_gemini_image_api_key(cls):
         """
         Get Gemini Image API key for image generation (Gemini 2.5 Flash Image).
-        Falls back to director key, then main Gemini key.
+        No fallback — must be set explicitly in Settings.
         """
         saved = cls._load_saved_config()
-        return (
-            saved.get('gemini_image_api_key')
-            or os.getenv('GEMINI_IMAGE_API_KEY', '')
-            or saved.get('director_gemini_api_key')
-            or saved.get('gemini_api_key')
-            or os.getenv('GEMINI_API_KEY', '')
-        )
+        return saved.get('gemini_image_api_key') or os.getenv('GEMINI_IMAGE_API_KEY', '')
 
     @classmethod
     def get_director_gemini_model(cls):
@@ -97,12 +90,36 @@ class Config:
         saved = cls._load_saved_config()
         return saved.get('inworld_api_secret') or os.getenv('INWORLD_API_SECRET', '')
 
+    @classmethod
+    def get_gemini_translate_1_key(cls):
+        """Get Gemini Translation API Key 1 (for parallel script translation)"""
+        saved = cls._load_saved_config()
+        return saved.get('gemini_translate_1') or os.getenv('GEMINI_TRANSLATE_1', '')
+
+    @classmethod
+    def get_gemini_translate_2_key(cls):
+        """Get Gemini Translation API Key 2 (for parallel script translation)"""
+        saved = cls._load_saved_config()
+        return saved.get('gemini_translate_2') or os.getenv('GEMINI_TRANSLATE_2', '')
+
+    @classmethod
+    def get_gemini_prompts_api_key(cls):
+        """Get dedicated Gemini API key for Prompts Generator. NO fallback — must be set explicitly."""
+        saved = cls._load_saved_config()
+        return saved.get('gemini_prompts') or os.getenv('GEMINI_PROMPTS_KEY', '')
+
+    @classmethod
+    def get_gemini_seo_api_key(cls):
+        """Get dedicated Gemini API key for SEO Generator. NO fallback — must be set explicitly."""
+        saved = cls._load_saved_config()
+        return saved.get('gemini_seo') or os.getenv('GEMINI_SEO_KEY', '')
+
     # For backward compatibility, make them accessible as class attributes
     GEMINI_API_KEY = property(lambda self: self.get_gemini_api_key())
     REPLICATE_API_TOKEN = property(lambda self: self.get_replicate_api_token())
 
     @classmethod
-    def save_api_config(cls, gemini_key=None, director_gemini_key=None, gemini_image_key=None, replicate_token=None, inworld_key=None, inworld_secret=None):
+    def save_api_config(cls, gemini_key=None, director_gemini_key=None, gemini_image_key=None, replicate_token=None, inworld_key=None, inworld_secret=None, gemini_translate_1=None, gemini_translate_2=None, gemini_prompts_key=None, gemini_seo_key=None):
         """Save API keys to config file"""
         cls.DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -128,6 +145,14 @@ class Config:
             config['inworld_api_key'] = inworld_key
         if inworld_secret:
             config['inworld_api_secret'] = inworld_secret
+        if gemini_translate_1:
+            config['gemini_translate_1'] = gemini_translate_1
+        if gemini_translate_2:
+            config['gemini_translate_2'] = gemini_translate_2
+        if gemini_prompts_key:
+            config['gemini_prompts'] = gemini_prompts_key
+        if gemini_seo_key:
+            config['gemini_seo'] = gemini_seo_key
 
         # Save to file
         with open(cls.API_CONFIG_FILE, 'w') as f:
@@ -154,7 +179,9 @@ class Config:
         }
 
     # Gemini Settings - EXACT from HTML reference
-    GEMINI_MODEL = 'gemini-2.5-flash'
+    GEMINI_MODEL        = 'gemini-2.5-flash'          # default / non-script features
+    GEMINI_SCRIPT_MODEL = 'gemini-2.5-pro'            # script writing — highest quality
+    GEMINI_PLAN_MODEL   = 'gemini-2.5-flash'          # planning call — fast, cheap
     GEMINI_MAX_TOKENS = 65536  # EXACT from HTML
     GEMINI_TOP_P = 0.92  # EXACT from HTML
     GEMINI_TOP_K = 35  # EXACT from HTML

@@ -300,7 +300,7 @@ class VideoAssembler:
                 }
 
             # SINGLE IMAGE: Use -framerate 2 BEFORE -i (CRITICAL!)
-            if ext in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']:
+            if ext in ['.jpg', '.jpeg', '.jfif', '.png', '.webp', '.bmp', '.tiff', '.gif']:
                 if verbose:
                     if use_timed_zoom:
                         zoom_dir = video_settings.get('zoom_direction', 'in').upper()
@@ -330,19 +330,19 @@ class VideoAssembler:
 
                 # CRITICAL: -framerate 2 BEFORE -i + OPTIMIZED x264-params
                 if prepared_music_path:
-                    # WITH background music: Mix audio at 10% volume
+                    # WITH background music: Mix audio at 5% volume
                     # Build filter_complex with optional zoom effect
                     if use_timed_zoom:
                         # Use timed zoom (zoom for specified duration, then hold)
                         zoom_filter = self._get_timed_zoom_filter(voice_duration, video_settings, int(width), int(height), output_fps=30)
-                        video_filter = '{}[v];[1:a]volume=1.0[voice];[2:a]volume=0.08[music];[voice][music]amix=inputs=2:duration=shortest[aout]'.format(zoom_filter)
+                        video_filter = '{}[v];[1:a]volume=1.0[voice];[2:a]volume=0.05[music];[voice][music]amix=inputs=2:duration=shortest[aout]'.format(zoom_filter)
                     elif use_ken_burns:
                         # Traditional Ken Burns (zoom throughout entire duration)
                         total_frames = int(voice_duration * 2)  # fps=2
                         zoom_step = 0.05 / total_frames  # 5% zoom over entire duration
-                        video_filter = 'zoompan=z=\'min(zoom+{:.6f},1.05)\':d=1:s={}x{}[v];[1:a]volume=1.0[voice];[2:a]volume=0.08[music];[voice][music]amix=inputs=2:duration=shortest[aout]'.format(zoom_step, width, height)
+                        video_filter = 'zoompan=z=\'min(zoom+{:.6f},1.05)\':d=1:s={}x{}[v];[1:a]volume=1.0[voice];[2:a]volume=0.05[music];[voice][music]amix=inputs=2:duration=shortest[aout]'.format(zoom_step, width, height)
                     else:
-                        video_filter = '[1:a]volume=1.0[voice];[2:a]volume=0.08[music];[voice][music]amix=inputs=2:duration=shortest[aout]'
+                        video_filter = '[1:a]volume=1.0[voice];[2:a]volume=0.05[music];[voice][music]amix=inputs=2:duration=shortest[aout]'
 
                     cmd = [
                         'ffmpeg', '-y',
@@ -441,55 +441,171 @@ class VideoAssembler:
                     'voice_duration': voice_duration
                 }
 
-        # MULTIPLE IMAGES: Use concat + -vf fps=2
+        # MULTIPLE MEDIA: Handle images AND videos together
+        IMAGE_EXTS = {'.jpg', '.jpeg', '.jfif', '.png', '.webp', '.bmp', '.tiff', '.gif'}
+        VIDEO_EXTS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv'}
+
         if verbose:
             if use_timed_zoom:
                 zoom_dir = video_settings.get('zoom_direction', 'in').upper()
                 zoom_dur = video_settings.get('zoom_duration', 1.0)
-                zoom_status = f"WITH Timed Zoom ({zoom_dir} for {zoom_dur}s per image, then hold)"
+                zoom_status = f"WITH Timed Zoom ({zoom_dir} for {zoom_dur}s per item, then hold)"
             elif use_ken_burns:
                 zoom_status = "WITH Ken Burns (subtle zoom per image)"
             else:
                 zoom_status = "NO zoom"
-            print(f"\n⚡ SLIDESHOW MODE: Multiple images ({zoom_status})")
-            print(f"   Strategy: concat + -vf fps=2")
+            img_count = sum(1 for p in media_paths if os.path.splitext(p)[1].lower() in IMAGE_EXTS)
+            vid_count = sum(1 for p in media_paths if os.path.splitext(p)[1].lower() in VIDEO_EXTS)
+            print(f"\n⚡ SLIDESHOW MODE: {len(media_paths)} items ({img_count} images, {vid_count} videos) ({zoom_status})")
 
-        # Filter to only images
-        image_paths = [
-            p for p in media_paths
-            if os.path.splitext(p)[1].lower() in ['.jpg', '.jpeg', '.png', '.webp', '.bmp']
-        ]
+        if len(media_paths) == 0:
+            raise ValueError("No valid media found in media_paths")
 
-        if len(image_paths) == 0:
-            raise ValueError("No valid images found in media_paths")
+        # Pre-filter to only supported types so duration_per_item is always exact
+        supported_paths = [p for p in media_paths if os.path.splitext(p)[1].lower() in IMAGE_EXTS | VIDEO_EXTS]
+        skipped = len(media_paths) - len(supported_paths)
+        if skipped > 0 and verbose:
+            print(f"   ⚠️  {skipped} unsupported file(s) excluded before duration calculation")
+        if len(supported_paths) == 0:
+            raise ValueError("No supported media found in media_paths")
 
-        # Cache all images as 1080p JPGs
-        cache_start = time.time()
-        cached_images = []
+        # ── Duration logic ──────────────────────────────────────────────────
+        # Videos: play once at their natural duration (no looping, no trimming)
+        # Images: share whatever time is left over equally
+        # ────────────────────────────────────────────────────────────────────
+
+        # Probe each video's natural duration first
+        natural_video_durations = {}   # path → seconds
+        for p in supported_paths:
+            if os.path.splitext(p)[1].lower() in VIDEO_EXTS:
+                try:
+                    res = subprocess.run([
+                        'ffprobe', '-v', 'error',
+                        '-show_entries', 'format=duration',
+                        '-of', 'default=noprint_wrappers=1:nokey=1', p
+                    ], capture_output=True, text=True)
+                    natural_video_durations[p] = float(res.stdout.strip())
+                except Exception:
+                    natural_video_durations[p] = 10.0  # safe fallback
+
+        total_video_duration = sum(natural_video_durations.values())
+        remaining_for_images = max(voice_duration - total_video_duration, 0.0)
+        image_paths_list = [p for p in supported_paths if os.path.splitext(p)[1].lower() in IMAGE_EXTS]
+        num_images = len(image_paths_list)
+        duration_per_image = (remaining_for_images / num_images) if num_images > 0 else 0.0
 
         if verbose:
-            print(f"   Caching {len(image_paths)} images to 1080p JPG...")
+            print(f"   Videos total: {total_video_duration:.1f}s | Remaining for {num_images} image(s): {remaining_for_images:.1f}s ({duration_per_image:.2f}s each)")
 
-        for i, img_path in enumerate(image_paths):
-            cached_img = self._get_cached_image(img_path, int(width), int(height))
-            cached_images.append(cached_img)
+        # Process each media item into a standardised temp clip
+        cache_start = time.time()
+        processed_clips = []
+
+        if verbose:
+            print(f"   Processing {len(supported_paths)} media items...")
+
+        for idx, mpath in enumerate(supported_paths):
+            ext = os.path.splitext(mpath)[1].lower()
+            clip_out = str(self.temp_dir / f"media_clip_{idx:03d}_{int(time.time())}.mp4")
+
+            if ext in IMAGE_EXTS:
+                if duration_per_image <= 0:
+                    if verbose:
+                        print(f"   ⚠️  Skipping image (no time left after videos): {mpath}")
+                    continue
+
+                # Cache image to 1080p JPG then encode to video
+                cached_img = self._get_cached_image(mpath, int(width), int(height))
+
+                if use_timed_zoom:
+                    zoom_filter = self._get_timed_zoom_filter(duration_per_image, video_settings, int(width), int(height), output_fps=30)
+                    vf = zoom_filter
+                elif use_ken_burns:
+                    total_frames_img = int(duration_per_image * 2)
+                    zoom_step = 0.05 / max(total_frames_img, 1)
+                    vf = 'zoompan=z=\'min(zoom+{:.6f},1.05)\':d=1:s={}x{}'.format(zoom_step, width, height)
+                else:
+                    vf = None
+
+                if verbose:
+                    print(f"   Image {idx+1}: {duration_per_image:.2f}s")
+
+                img_cmd = [
+                    'ffmpeg', '-y',
+                    '-thread_queue_size', '512',
+                    '-probesize', '32',
+                    '-analyzeduration', '0',
+                    '-framerate', '2',
+                    '-loop', '1',
+                    '-i', cached_img,
+                    '-t', str(duration_per_image),
+                    '-c:v', 'libx264',
+                    '-preset', 'ultrafast',
+                    '-crf', '35',
+                    '-g', '300',
+                    '-tune', 'stillimage',
+                    '-x264-params', 'keyint=300:scenecut=-1:rc-lookahead=1:me_range=4',
+                    '-an',
+                    '-pix_fmt', 'yuv420p',
+                    '-threads', '0',
+                ]
+                if vf:
+                    img_cmd.extend(['-vf', vf])
+                img_cmd.append(clip_out)
+
+                subprocess.run(img_cmd, capture_output=True, text=True, check=True, timeout=300)
+
+            elif ext in VIDEO_EXTS:
+                # Videos play ONCE at their natural duration — no looping, no trimming
+                vid_dur = natural_video_durations.get(mpath, 10.0)
+
+                if verbose:
+                    print(f"   Video {idx+1}: {vid_dur:.2f}s (natural, no loop)")
+
+                vid_cmd = [
+                    'ffmpeg', '-y',
+                    '-i', mpath,
+                    '-vf', f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,fps=30',
+                    '-c:v', 'libx264',
+                    '-preset', 'ultrafast',
+                    '-crf', '35',
+                    '-an',
+                    '-pix_fmt', 'yuv420p',
+                    '-threads', '0',
+                    clip_out
+                ]
+                subprocess.run(vid_cmd, capture_output=True, text=True, check=True, timeout=600)
+            else:
+                if verbose:
+                    print(f"   ⚠️  Skipping unsupported media: {mpath}")
+                continue
+
+            processed_clips.append(clip_out)
 
         cache_elapsed = time.time() - cache_start
 
         if verbose:
-            print(f"   Cache: {cache_elapsed:.1f}s (hits: {self.cache_hits}, misses: {self.cache_misses})")
+            print(f"   Clips processed: {len(processed_clips)} in {cache_elapsed:.1f}s (cache hits: {self.cache_hits}, misses: {self.cache_misses})")
 
-        # Create concat list with durations
-        duration_per_image = voice_duration / len(cached_images)
+        if len(processed_clips) == 0:
+            raise ValueError("No media clips could be processed")
+
+        # Concatenate all processed clips into one silent video
         concat_file = self.temp_dir / "concat_list.txt"
-
         with open(concat_file, 'w') as f:
-            for i, img in enumerate(cached_images):
-                f.write(f"file '{os.path.abspath(img)}'\n")
-                if i < len(cached_images) - 1:
-                    f.write(f"duration {duration_per_image}\n")
-            # Repeat last image
-            f.write(f"file '{os.path.abspath(cached_images[-1])}'\n")
+            for cp in processed_clips:
+                f.write(f"file '{os.path.abspath(cp)}'\n")
+
+        silent_video = str(self.temp_dir / f"silent_video_{int(time.time())}.mp4")
+        concat_cmd = [
+            'ffmpeg', '-y',
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', str(concat_file),
+            '-c', 'copy',
+            silent_video
+        ]
+        subprocess.run(concat_cmd, capture_output=True, text=True, check=True, timeout=600)
 
         # Prepare background music if provided
         prepared_music_path = None
@@ -498,89 +614,69 @@ class VideoAssembler:
                 background_music_path, voice_duration, verbose
             )
 
-        # Final render with concat + -vf fps=2 + OPTIMIZED x264-params
-        # Build video filter chain (fps=2 + optional zoom)
-        if use_timed_zoom:
-            # Use timed zoom (zoom for specified duration, then hold) - per image
-            zoom_filter = self._get_timed_zoom_filter(duration_per_image, video_settings, int(width), int(height), output_fps=30)
-            # Note: For slideshow, each image gets the timed zoom effect independently
-            video_filters = f'fps=30,{zoom_filter}'
-        elif use_ken_burns:
-            # Traditional Ken Burns (zoom throughout entire duration of each image)
-            frames_per_image = int(duration_per_image * 2)  # fps=2
-            zoom_step = 0.05 / frames_per_image  # 5% zoom per image
-            video_filters = 'fps=2,zoompan=z=\'min(zoom+{:.6f},1.05)\':d=1:s={}x{}'.format(zoom_step, width, height)
-        else:
-            video_filters = 'fps=2'
+        # Final assembly: silent video + voice (+ optional music)
+        render_start = time.time()
 
         if prepared_music_path:
-            # WITH background music: Mix audio at 8% volume
-            cmd = [
+            # WITH background music: Mix audio at 5% volume
+            final_cmd = [
                 'ffmpeg', '-y',
                 '-thread_queue_size', '512',
-                '-f', 'concat',
-                '-safe', '0',
-                '-i', str(concat_file),
+                '-i', silent_video,
                 '-thread_queue_size', '512',
                 '-i', voice_path,
                 '-i', prepared_music_path,
-                '-filter_complex', '[1:a]volume=1.0[voice];[2:a]volume=0.08[music];[voice][music]amix=inputs=2:duration=shortest[aout]',
+                '-filter_complex', '[1:a]volume=1.0[voice];[2:a]volume=0.05[music];[voice][music]amix=inputs=2:duration=shortest[aout]',
                 '-map', '0:v',
                 '-map', '[aout]',
-                '-vf', video_filters,
-                '-c:v', 'libx264',
-                '-preset', 'ultrafast',
-                '-crf', '35',
-                '-g', '300',
-                '-tune', 'stillimage',
-                '-x264-params', 'keyint=300:scenecut=-1:rc-lookahead=1:me_range=4',
-                '-c:a', 'aac',  # Must encode mixed audio
+                '-c:v', 'copy',
+                '-c:a', 'aac',
                 '-b:a', '128k',
                 '-shortest',
-                '-pix_fmt', 'yuv420p',
-                '-threads', '0',
                 '-movflags', '+faststart',
                 output_path
             ]
         else:
-            # NO background music: Keep ultra-fast copy mode
-            cmd = [
+            # NO background music: mux video + voice directly
+            final_cmd = [
                 'ffmpeg', '-y',
                 '-thread_queue_size', '512',
-                '-f', 'concat',
-                '-safe', '0',
-                '-i', str(concat_file),
+                '-i', silent_video,
                 '-thread_queue_size', '512',
                 '-i', voice_path,
-                '-vf', video_filters,
-                '-c:v', 'libx264',
-                '-preset', 'ultrafast',
-                '-crf', '35',
-                '-g', '300',
-                '-tune', 'stillimage',
-                '-x264-params', 'keyint=300:scenecut=-1:rc-lookahead=1:me_range=4',
-                '-c:a', 'copy',  # 🔥 ALWAYS copy!
+                '-map', '0:v',
+                '-map', '1:a',
+                '-c:v', 'copy',
+                '-c:a', 'copy',
                 '-shortest',
-                '-pix_fmt', 'yuv420p',
-                '-threads', '0',
                 '-movflags', '+faststart',
                 output_path
             ]
 
         if verbose:
-            print(f"\n📝 FFmpeg command:")
-            print(f"   {' '.join(cmd)}")
+            print(f"\n📝 Final assembly command:")
+            print(f"   {' '.join(final_cmd)}")
 
-        render_start = time.time()
-        subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=1200)
+        subprocess.run(final_cmd, capture_output=True, text=True, check=True, timeout=1200)
         render_elapsed = time.time() - render_start
+
+        # Cleanup temp clips
+        for cp in processed_clips:
+            try:
+                os.remove(cp)
+            except Exception:
+                pass
+        try:
+            os.remove(silent_video)
+        except Exception:
+            pass
 
         total_elapsed = time.time() - total_start
         size_mb = os.path.getsize(output_path) / (1024 * 1024)
 
         if verbose:
             print(f"\n✅ DONE!")
-            print(f"   Cache: {cache_elapsed:.1f}s")
+            print(f"   Clips: {cache_elapsed:.1f}s")
             print(f"   Render: {render_elapsed:.1f}s")
             print(f"   Total: {total_elapsed:.1f}s")
             print(f"   Size: {size_mb:.2f} MB")
@@ -591,7 +687,7 @@ class VideoAssembler:
             'duration_seconds': voice_duration,
             'file_size_mb': size_mb,
             'processing_time': total_elapsed,
-            'media_count': len(cached_images),
+            'media_count': len(processed_clips),
             'voice_duration': voice_duration
         }
 
