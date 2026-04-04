@@ -273,43 +273,51 @@ class ScriptGenerator3Chunk:
         for i in range(1, total_chunks + 1):
             role_hint = chunk_roles.get(i, "body / development")
             if i == 1:
-                sections_hint = "<hook section> | <opening section>"
+                sections_hint = "<hook section(s)>"
             elif i == total_chunks:
-                sections_hint = "<closing section> | <CTA section>"
+                sections_hint = "<closing section(s) | CTA section(s)>"
             else:
-                sections_hint = "<body section> | <development section>"
+                sections_hint = "<body section(s)>"
             chunk_format_block += (
                 f"CHUNK{i}: {sections_hint}  ({role_hint})\n"
                 f"CHUNK{i}_CONTENT:\n"
-                f"<Copy VERBATIM from the Writing Guidelines: every rule, instruction, tone, mandatory phrase, "
-                f"story/example, writing technique for CHUNK{i} sections. Nothing generic. Be exhaustive — copy EVERY rule, instruction, phrase, example, technique. No word limit.>\n"
+                f"[For CHUNK{i}: Write a complete, detailed writing brief. Include:\n"
+                f" 1. TONE & STYLE rules from the Writing Guidelines for these sections\n"
+                f" 2. STRUCTURE: the exact sequence / steps to follow\n"
+                f" 3. MANDATORY PHRASES or hooks to use (copy verbatim from guidelines)\n"
+                f" 4. SPECIFIC TECHNIQUES (storytelling, hooks, transitions, etc.)\n"
+                f" 5. WHAT TO INCLUDE (topics, arguments, examples required)\n"
+                f" 6. WHAT TO AVOID for these sections\n"
+                f"Do NOT summarize vaguely. Copy the actual rules word-for-word.]\n"
                 f"END_CHUNK{i}\n\n"
             )
 
-        prompt = f"""You are reading a YouTube script Writing Guidelines document and creating a production execution plan.
+        prompt = f"""You are an expert script production planner. Your job is to read the Writing Guidelines below and produce a CONCRETE EXECUTION PLAN that a script writer can follow directly.
 
 TITLE: "{title}"
 LANGUAGE: {language}
-CHUNKS TO WRITE: {total_chunks}
+NUMBER OF CHUNKS TO WRITE: {total_chunks}
+(Chunk 1 = opening/hook, Chunk {total_chunks} = closing/CTA, middle chunks = body content)
 
 ════════════════════════ WRITING GUIDELINES ════════════════════════
 {formula}
 ════════════════════════════════════════════════════════════════════
 
-YOUR TASK: Output the execution plan below. No JSON. No markdown. Follow the format EXACTLY.
+OUTPUT the plan below. Use EXACTLY this format. No markdown, no JSON.
 
-SECTIONS: <section1> | <section2> | <section3> | ...  (ALL sections from Writing Guidelines, in order)
+SECTIONS: <all section names from Writing Guidelines, pipe-separated, in order>
 
-{chunk_format_block}ANCHOR: <main subject/person — infer from title>
-PROMO_COUNT: <integer — how many promotional blocks the Writing Guidelines requires. Write 0 if none.>
-CTA: <copy the exact CTA text from the Writing Guidelines>
-CLOSING: <one sentence — how the Writing Guidelines says to close>
+{chunk_format_block}ANCHOR: <the main subject, person, or story anchor — infer from title>
+PROMO_COUNT: <integer — how many promotion/ad blocks the Writing Guidelines prescribes. 0 if none.>
+CTA: <the exact call-to-action text prescribed in the Writing Guidelines>
+CLOSING: <how the Writing Guidelines says to close the video>
 
-RULES:
-- CHUNK_CONTENT: copy ACTUAL TEXT from the Writing Guidelines — specific phrases, exact instructions, story elements, mandatory requirements. Not summaries.
-- PROMO_COUNT = 0 if the Writing Guidelines has no promotional blocks
-- All CHUNK lines must be present (CHUNK1 through CHUNK{total_chunks})
-- Use section names as they appear in the Writing Guidelines"""
+CRITICAL RULES:
+- CHUNK{{}}_CONTENT blocks MUST contain real, specific, actionable rules — not summaries like "follow the guidelines"
+- Copy mandatory phrases VERBATIM from the Writing Guidelines
+- Each CHUNK_CONTENT block should be detailed enough that a writer can follow it WITHOUT reading the original guidelines
+- PROMO_COUNT must be 0 if the Writing Guidelines has no promotional section
+- Every CHUNK block (CHUNK1 through CHUNK{total_chunks}) MUST be present in your output"""
 
         def _parse_response(text: str, total_chunks: int, title: str) -> dict:
             """Parse the response including multi-line CHUNK{i}_CONTENT blocks."""
@@ -401,7 +409,7 @@ RULES:
             model    = genai.GenerativeModel(Config.GEMINI_PLAN_MODEL)
             response = model.generate_content(
                 prompt,
-                generation_config={"temperature": 0.05, "max_output_tokens": 16384},
+                generation_config={"temperature": 0.05, "max_output_tokens": 32768},
             )
             text = response.text.strip()
 
@@ -449,23 +457,31 @@ RULES:
         This sets WHO the model is. The chunk prompts tell it WHAT to write next
         (with the specific formula rules for that section injected directly).
         """
-        return f"""YOU ARE A SCRIPT-WRITING MACHINE. YOUR COMPLETE IDENTITY IS DEFINED BY THE WRITING GUIDELINES BELOW.
-YOU HAVE NO CREATIVE FREEDOM. YOUR ONLY JOB IS TO EXECUTE THE WRITING GUIDELINES EXACTLY.
+        return f"""YOU ARE A PROFESSIONAL SCRIPT WRITER. YOUR ENTIRE WRITING STYLE, STRUCTURE, TONE, AND CONTENT RULES ARE DEFINED BY THE WRITING GUIDELINES BELOW. YOU MUST EXECUTE THEM WITH ABSOLUTE PRECISION.
 
-══════════════════════════ YOUR WRITING GUIDELINES (COMPLETE LAW) ══════════════════════════
+THESE WRITING GUIDELINES ARE YOUR COMPLETE LAW:
+══════════════════════════════════════════════════════════════════════════════════════
 {formula}
-════════════════════════════════════════════════════════════════════════════════════════════
+══════════════════════════════════════════════════════════════════════════════════════
 
-OUTPUT FORMAT RULES (format only — all content is 100% governed by Writing Guidelines above):
-1.  Write 100% in {language} — every word, no exceptions.
-2.  Plain prose only — no markdown, no **, no __, no ##, no bullet points.
-3.  No visual directions: VISUAL:, VIDEO:, SHOW:, CUT TO:, etc.
-4.  No speaker/narrator labels: NARRATOR:, SPEAKER:, HOST:, etc.
-5.  No timestamps or time markers.
-6.  No stage directions in brackets [ ] or parentheses ( ).
-7.  No meta-commentary about the script itself.
-8.  Start directly with the first word of the script.
-9.  ONE script only — after the final CTA line, STOP immediately."""
+HOW TO APPLY THESE GUIDELINES:
+- Every sentence you write MUST execute a specific rule from the guidelines above.
+- Follow the section structure EXACTLY as prescribed.
+- Use the exact tone, hooks, phrases, and techniques specified.
+- Do NOT invent a different structure or style — follow the formula.
+- If the guidelines say to use a specific phrase or story: USE IT.
+- If the guidelines specify a sequence of steps: FOLLOW that sequence.
+
+OUTPUT FORMAT (applies to all chunks):
+1. Write 100% in {language} — every word, no exceptions.
+2. Plain prose only — no markdown, no **, no __, no ##, no bullet points in the script.
+3. No visual directions: VISUAL:, VIDEO:, SHOW:, CUT TO:
+4. No speaker/narrator labels: NARRATOR:, SPEAKER:, HOST:
+5. No timestamps or time markers.
+6. No stage directions in brackets [ ] or parentheses ( ).
+7. No meta-commentary about the script.
+8. Start directly with the first word of content.
+9. After the final CTA line, STOP immediately."""
 
     # =========================================================================
     # CHUNK PROMPT — minimal, formula-first
@@ -489,42 +505,44 @@ OUTPUT FORMAT RULES (format only — all content is 100% governed by Writing Gui
         cta_action   = plan.get("cta_action", "subscribe and hit the bell")
         sections_now = plan.get("chunk_sections", {}).get(str(chunk.index), [])
 
-        # ── Full Writing Guidelines always injected (guaranteed compliance) ──────
-        # The full formula goes in BOTH:
-        #   1. system_instruction (model identity — set once per session)
-        #   2. HERE in every chunk prompt (explicit reminder at write time)
-        # This double-injection ensures the model cannot ignore any rule,
-        # even for a 40K-70K formula where "lost in the middle" is a risk.
-        full_formula = plan.get("_formula_text", "")
+        # ── Build the sections directive for this chunk ────────────────────────
+        # Strategy:
+        #   • The FULL Writing Guidelines already live in the system_instruction
+        #     (the model's core identity set before every generate_content call).
+        #   • Here we inject ONLY the extracted section-specific rules so the
+        #     prompt stays short and focused — long formulas repeated here make
+        #     the model treat the guidelines as boilerplate noise.
+        #   • If extraction failed, we inject just the section names + a hard
+        #     directive to execute the system-instruction guidelines exactly.
         section_content = plan.get("chunk_section_content", {}).get(str(chunk.index), "")
         sections_label = " | ".join(sections_now) if sections_now else f"part {chunk.index} of {total_chunks}"
 
-        if full_formula:
-            if section_content:
-                # Full formula + focused section rules for this chunk
+        if section_content:
+            # Focused extracted rules for this chunk — the key directive
+            sections_block = (
+                f"SECTIONS TO WRITE FOR THIS CHUNK: {sections_label}\n\n"
+                f"EXACT RULES FROM YOUR WRITING GUIDELINES FOR THESE SECTIONS:\n"
+                f"{'═' * 60}\n"
+                f"{section_content}\n"
+                f"{'═' * 60}\n"
+                f"Execute EVERY rule above verbatim. Your full Writing Guidelines are in your identity — apply them all."
+            )
+        else:
+            # Fallback: no extracted content — direct the model to use its identity
+            full_formula = plan.get("_formula_text", "")
+            if full_formula:
                 sections_block = (
-                    f"══════════ YOUR COMPLETE WRITING GUIDELINES ══════════\n"
+                    f"SECTIONS TO WRITE: {sections_label}\n\n"
+                    f"YOUR WRITING GUIDELINES (execute ALL rules exactly):\n"
+                    f"{'═' * 60}\n"
                     f"{full_formula}\n"
-                    f"══════════════════════════════════════════════════════\n\n"
-                    f"FOCUSED RULES FOR THIS CHUNK ({sections_label}):\n"
-                    f"{'─' * 54}\n"
-                    f"{section_content}\n"
-                    f"{'─' * 54}"
+                    f"{'═' * 60}"
                 )
             else:
-                # Full formula only (section extraction didn't produce results)
                 sections_block = (
-                    f"══════════ YOUR COMPLETE WRITING GUIDELINES ══════════\n"
-                    f"{full_formula}\n"
-                    f"══════════════════════════════════════════════════════\n"
-                    f"Sections for this chunk: {sections_label}"
+                    f"SECTIONS TO WRITE: {sections_label}\n"
+                    f"Execute ALL rules from your Writing Guidelines (system identity) exactly."
                 )
-        else:
-            # Should never happen — formula is always stored in plan
-            sections_block = (
-                f"SECTIONS TO WRITE: {sections_label}\n"
-                f"Follow your Writing Guidelines in the system instruction exactly."
-            )
 
         # ── Continuation context ───────────────────────────────────────────────
         if previous_context:
@@ -567,19 +585,20 @@ OUTPUT FORMAT RULES (format only — all content is 100% governed by Writing Gui
                 f"Do NOT write the closing or CTA yet — those come in the final chunk."
             )
 
-        prompt = f"""═══ WRITING PHASE {chunk.index + 1} — CHUNK {chunk.index}/{total_chunks} ═══
+        prompt = f"""═══ CHUNK {chunk.index}/{total_chunks} ═══
 
-TITLE: "{title}"
-SUBJECT / ANCHOR: {anchor}
+VIDEO TITLE: "{title}"
+ANCHOR / SUBJECT: {anchor}
+LANGUAGE: {language.upper()} — write every single word in {language}
 
 {sections_block}
 
-{continuation}{promo_reminder}ROLE: {chunk_role_note}
+{continuation}{promo_reminder}YOUR ROLE FOR THIS CHUNK: {chunk_role_note}
 
+MANDATORY: Apply your Writing Guidelines (in your identity) to every sentence.
 LENGTH: Write at least {chunk.target_chars:,} characters (up to {int(chunk.target_chars * 1.08):,} max).
-Every sentence must execute a specific rule from the Writing Guidelines above.
 {stop_instruction}
-WRITE IN {language.upper()} NOW:"""
+START WRITING NOW:"""
 
         return prompt
 
