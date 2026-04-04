@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Chunk Planner - Dynamic chunking for ALL script lengths.
+Chunk Planner - Dynamic chunking for ALL script lengths (1k – 100k chars).
 
 Strategy for every length:
   - Hook  : 20 % of total, capped at 8 000 chars (min 2 000)
@@ -11,11 +11,15 @@ Keeping every chunk ≤ 8 000 chars makes the model reliably fill its target
 and stay well inside Gemini's output-token limit, so the final script always
 reaches the requested length without needing many extension retries.
 
+The niche formula (Writing Guidelines) is injected into EVERY chunk so
+100 % of the formula is applied regardless of total length chosen.
+
 API-call count examples:
-  10 000 chars → 3 chunks   (hook 2k + middle 5k + close 3k)
-  30 000 chars → 5–6 chunks
-  60 000 chars → 9–10 chunks
-  80 000 chars → 12–13 chunks  (still ≪ 20 calls/min quota)
+  10 000 chars →  3 chunks
+  30 000 chars →  5–6 chunks
+  60 000 chars →  9–10 chunks
+  80 000 chars → 12–13 chunks
+ 100 000 chars → 15–16 chunks  (all within 20 calls/min quota)
 """
 
 import math
@@ -39,7 +43,7 @@ MAX_CHUNK_SIZE = 8_000
 
 class ChunkPlanner:
     """
-    Dynamic chunk planner that works for ANY script length (1 000 – 80 000 chars).
+    Dynamic chunk planner that works for ANY script length (1 000 – 100 000 chars).
 
     The plan always has at least 3 chunks:
       1. HOOK_AND_FRAMEWORK      (opening)
