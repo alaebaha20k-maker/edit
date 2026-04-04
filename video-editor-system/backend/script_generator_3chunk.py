@@ -2,21 +2,23 @@
 """
 Script Generator — Formula-First Architecture
 
-The user's niche formula IS the complete law.
-The AI's only job is to execute it exactly, section by section.
+The user's niche Writing Guidelines IS the complete law.
+Every sentence must execute a specific rule from that formula.
 
 Workflow:
-  Step 0 — Parse (gemini-2.5-flash, 1 call):
-    Read the formula. Extract every section heading in order.
-    Assign sections to chunks so each chunk knows EXACTLY what to write.
-    Also lock: anchor/subject, promo count, CTA text.
+  PHASE 1 — PLAN (gemini-2.5-flash, 1 call):
+    Read the full Writing Guidelines.
+    Extract every section in order WITH its actual rules/content from the formula.
+    Assign sections+content to chunks. Lock anchor, promo count, CTA.
+    *** KEY: section CONTENT (not just names) is stored in the plan ***
 
-  Steps 1–N — Write (gemini-2.5-pro, 1 call per chunk):
-    Each chunk receives only: the full formula + the exact sections assigned to it.
-    No extra structure, no creative instructions on top — the formula handles all of that.
-    Final chunk carries the hard-stop signal.
+  PHASE 2–N — WRITE (gemini-2.5-pro, 1 call per chunk):
+    System instruction = full Writing Guidelines (model identity = formula)
+    Chunk prompt = specific section RULES extracted from formula (injected directly)
+    The model has the formula both as identity AND as explicit rules per section.
+    This guarantees compliance even for 40K-70K char formulas.
 
-  Post — Merge → strip stop signal → clean → deduplicate → length enforce.
+  PHASE FINAL — POST: Merge → strip stop → clean → dedup → length enforce.
 """
 
 import json
@@ -99,36 +101,32 @@ class ScriptGenerator3Chunk:
                 print(f"   Chunk {c.index}/{total_chunks}: {c.role} ({c.target_chars:,} chars)")
             print()
 
-        # ── Step 0b: Parse formula → extract sections + assign to chunks ─────
+        # ── PHASE 1 — PLAN: Parse formula, extract section content ──────────────
         if verbose:
-            print("📋 Step 0 — Parsing formula (locking sections, anchor, promo count)...")
+            print(f"🔧 PHASE 1 — PLAN")
+            print(f"   Formula   : {len(formula):,} chars (Writing Guidelines)")
+            print(f"   Parsing sections + extracting rules per chunk...")
         plan = self._parse_formula(title, formula, language, total_chunks, verbose)
         if verbose:
-            print(f"   Anchor    : {plan.get('anchor', '—')}")
-            print(f"   Promos    : {plan.get('promo_count', '—')}")
-            print(f"   CTA       : {plan.get('cta_action', '—')}")
+            print(f"   ✅ Anchor  : {plan.get('anchor', '—')}")
+            print(f"   ✅ Promos  : {plan.get('promo_count', '—')}")
+            print(f"   ✅ CTA     : {plan.get('cta_action', '—')}")
             for i, secs in plan.get("chunk_sections", {}).items():
-                print(f"   Chunk {i}   : {', '.join(secs)}")
+                content_len = len(plan.get("chunk_section_content", {}).get(i, ""))
+                print(f"   ✅ Chunk {i}  : {', '.join(secs)}  [{content_len:,} chars of rules injected]")
             print()
 
-        # ── Step 0c: Extract compliance rules from formula ────────────────────
-        if verbose:
-            print("🔍 Step 0c — Extracting compliance rules from formula...")
-        compliance_rules = self._extract_compliance_rules(formula, language, verbose)
-        if verbose:
-            print()
+        # ── System instruction: full formula = model identity ─────────────────
+        system_instruction = self._build_system_instruction(formula, language)
 
-        # ── System instruction: formula as model identity ─────────────────────
-        system_instruction = self._build_system_instruction(formula, language, compliance_rules)
-
-        # ── Steps 1–N: Write each chunk ───────────────────────────────────────
+        # ── PHASE 2–N — WRITE each chunk ──────────────────────────────────────
         generated_chunks = []
         previous_context = ""
         promo_count_so_far = 0
 
         for chunk in chunks:
             if verbose:
-                print(f"✍️  Writing Chunk {chunk.index}/{total_chunks}: {chunk.role}...")
+                print(f"✍️  PHASE {chunk.index + 1} — WRITE Chunk {chunk.index}/{total_chunks}: {chunk.role}...")
 
             is_final = (chunk.index == total_chunks)
 
@@ -142,7 +140,6 @@ class ScriptGenerator3Chunk:
                 previous_context=previous_context,
                 promo_count_so_far=promo_count_so_far,
                 is_final=is_final,
-                compliance_rules=compliance_rules,
             )
 
             temp         = self._get_temperature(chunk.role)
@@ -157,7 +154,6 @@ class ScriptGenerator3Chunk:
                 target_chars=chunk.target_chars,
                 label=f"Chunk {chunk.index}/{total_chunks}",
                 verbose=verbose,
-                compliance_rules=compliance_rules,
             )
 
             # Count promo tags placed so far
@@ -252,86 +248,120 @@ class ScriptGenerator3Chunk:
         verbose: bool = False,
     ) -> dict:
         """
-        Read the formula and produce a concrete execution plan:
-        - Extract every section heading (in order)
-        - Assign sections to chunks (1 … total_chunks)
-        - Lock anchor, promo count, CTA action
+        PHASE 1 — PLAN
 
-        This runs BEFORE any writing so the AI never forgets what it decided.
-        Uses gemini-2.5-flash (cheap + fast — this is a parsing task, not writing).
+        Reads the full Writing Guidelines and produces a concrete execution plan:
+        - Identify every section in order
+        - Assign sections to chunks
+        - Extract the ACTUAL RULES/CONTENT from the formula for each chunk
+          (this is the critical upgrade — section content injected into writing prompts)
+        - Lock: anchor, promo count, CTA
+
+        The plan's chunk_section_content dict holds the verbatim formula rules
+        for each chunk. These get injected directly into writing prompts so the
+        model has the specific formula rules RIGHT IN FRONT OF IT while writing,
+        not buried in a 42K system instruction it has to "look up."
         """
-        chunk_keys = {str(i): f"chunk {i}" for i in range(1, total_chunks + 1)}
-        chunk_keys_json = json.dumps(chunk_keys, ensure_ascii=False)
+        # Build the section content format lines for the prompt
+        chunk_content_format = ""
+        for i in range(1, total_chunks + 1):
+            chunk_content_format += f"CHUNK{i}_CONTENT:\n[Copy the exact rules, instructions, tone requirements, and mandatory elements from the Writing Guidelines that apply to this chunk's sections. Be thorough — include every rule verbatim. Up to 800 words.]\nEND_CHUNK{i}\n\n"
 
-        prompt = f"""You are reading a YouTube script formula and creating a production plan.
+        prompt = f"""You are reading a YouTube script Writing Guidelines document and creating a production execution plan.
 
-TITLE: {title}
+TITLE: "{title}"
 LANGUAGE: {language}
-TOTAL CHUNKS TO WRITE: {total_chunks}
+CHUNKS TO WRITE: {total_chunks}  (chunk 1 = opening/hook, chunk {total_chunks} = closing/CTA)
 
-═══════════════════════ FORMULA ═══════════════════════
+════════════ WRITING GUIDELINES (FULL FORMULA) ════════════
 {formula}
-═══════════════════════════════════════════════════════
+═══════════════════════════════════════════════════════════
 
-Reply using EXACTLY this plain-text format — no JSON, no markdown, no code fences.
-Each field on its own line. Use the pipe character | to separate multiple values.
+YOUR TASK: Create the execution plan in this EXACT format. No JSON. No markdown.
 
-SECTIONS: <section1> | <section2> | <section3> | ...
-CHUNK1: <section A> | <section B>
-CHUNK2: <section C> | <section D>
-CHUNK{total_chunks}: <last sections>
-ANCHOR: <main person or story the script focuses on — infer from title>
-PROMO_COUNT: <integer — how many promotional blocks the formula requires>
-CTA: <exact CTA text or action from formula>
-CLOSING: <one sentence — how the formula ends the script>
+SECTIONS: <section1> | <section2> | <section3> | ... (ALL sections in order from the formula)
+CHUNK1: <section A> | <section B>  (sections for chunk 1)
+CHUNK1_CONTENT:
+<Copy VERBATIM from the Writing Guidelines: every rule, instruction, tone requirement, writing technique, mandatory phrase, story element, structure rule that applies to the sections assigned to CHUNK1. Include ALL details — nothing generic. Up to 800 words.>
+END_CHUNK1
 
-Rules:
-- SECTIONS line: list every section heading in order, separated by |
-- CHUNK lines: assign each section to exactly one chunk (chunk 1 = opening/hook, chunk {total_chunks} = closing/CTA, middle = body)
-- Every chunk line must exist from CHUNK1 to CHUNK{total_chunks}
-- Use exact heading names from the formula — do NOT invent new names
-- Do not add any explanation before or after"""
+CHUNK2: <section C> | <section D>  (sections for chunk 2)
+CHUNK2_CONTENT:
+<Copy VERBATIM from the Writing Guidelines: every rule, instruction, tone requirement, writing technique, mandatory phrase, story element, structure rule that applies to the sections assigned to CHUNK2. Include ALL details — nothing generic. Up to 800 words.>
+END_CHUNK2
+{f"""
+CHUNK3: <last sections>  (closing + CTA sections)
+CHUNK3_CONTENT:
+<Copy VERBATIM from the Writing Guidelines: every rule for closing, CTA, final section. Up to 800 words.>
+END_CHUNK3
+""" if total_chunks >= 3 else ""}
+ANCHOR: <main subject/person of the script — infer from title>
+PROMO_COUNT: <integer — exact number of promotional blocks the Writing Guidelines requires. Use 0 if none.>
+CTA: <copy the exact CTA text/action from the Writing Guidelines>
+CLOSING: <one sentence — how the formula closes the script>
+
+CRITICAL RULES:
+- CHUNK_CONTENT sections: copy the ACTUAL TEXT from the Writing Guidelines, not summaries. If the formula says "use this exact phrase: X" — copy that. If it says "tell this story" — copy that instruction.
+- Use exact section names from the Writing Guidelines
+- PROMO_COUNT must be 0 if the Writing Guidelines has no promotional blocks
+- Every CHUNK line (CHUNK1, CHUNK2...) must be present"""
 
         def _parse_response(text: str, total_chunks: int, title: str) -> dict:
-            """Parse the line-based response without JSON."""
+            """Parse the response including multi-line CHUNK{i}_CONTENT blocks."""
+            # --- Parse single-line fields ---
             lines = text.strip().splitlines()
             line_map: Dict[str, str] = {}
             for line in lines:
                 if ":" in line:
                     key, _, val = line.partition(":")
-                    line_map[key.strip().upper()] = val.strip()
+                    k = key.strip().upper()
+                    # Only capture single-line keys (not CONTENT blocks)
+                    if not k.endswith("_CONTENT") and k not in ("END_CHUNK1", "END_CHUNK2", "END_CHUNK3", "END_CHUNK4"):
+                        line_map[k] = val.strip()
 
-            # Sections
+            # --- Parse multi-line CHUNK{i}_CONTENT blocks ---
+            chunk_section_content: Dict[str, str] = {}
+            for i in range(1, total_chunks + 1):
+                start_marker = f"CHUNK{i}_CONTENT:"
+                end_marker   = f"END_CHUNK{i}"
+                start_idx = text.find(start_marker)
+                end_idx   = text.find(end_marker)
+                if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                    content = text[start_idx + len(start_marker):end_idx].strip()
+                    if content:
+                        chunk_section_content[str(i)] = content
+
+            # --- Sections ---
             raw_sections = line_map.get("SECTIONS", "")
             sections = [s.strip() for s in raw_sections.split("|") if s.strip()] if raw_sections else []
 
-            # Chunk assignments
+            # --- Chunk section name assignments ---
             chunk_sections: Dict[str, List[str]] = {}
             for i in range(1, total_chunks + 1):
-                key = f"CHUNK{i}"
-                raw = line_map.get(key, "")
+                raw = line_map.get(f"CHUNK{i}", "")
                 secs = [s.strip() for s in raw.split("|") if s.strip()]
                 if not secs:
-                    # fallback: assign evenly from sections list
                     secs = [sections[i - 1]] if i <= len(sections) else [f"Part {i}"]
                 chunk_sections[str(i)] = secs
 
-            anchor      = line_map.get("ANCHOR", title).strip() or title
-            promo_raw   = line_map.get("PROMO_COUNT", "1").strip()
+            # --- Scalar fields ---
+            anchor    = line_map.get("ANCHOR", title).strip() or title
+            promo_raw = line_map.get("PROMO_COUNT", "0").strip()
             try:
-                promo_count = int(re.sub(r"[^\d]", "", promo_raw) or "1")
+                promo_count = int(re.sub(r"[^\d]", "", promo_raw) or "0")
             except ValueError:
-                promo_count = 1
-            cta_action  = line_map.get("CTA", "subscribe and hit the bell").strip()
-            closing     = line_map.get("CLOSING", "conclude with the subscribe call to action").strip()
+                promo_count = 0
+            cta_action = line_map.get("CTA", "subscribe and hit the bell").strip()
+            closing    = line_map.get("CLOSING", "conclude with the subscribe call to action").strip()
 
             return {
-                "sections"      : sections,
-                "chunk_sections": chunk_sections,
-                "anchor"        : anchor,
-                "promo_count"   : promo_count,
-                "cta_action"    : cta_action,
-                "closing_note"  : closing,
+                "sections"             : sections,
+                "chunk_sections"       : chunk_sections,
+                "chunk_section_content": chunk_section_content,   # ← THE KEY NEW FIELD
+                "anchor"               : anchor,
+                "promo_count"          : promo_count,
+                "cta_action"           : cta_action,
+                "closing_note"         : closing,
             }
 
         try:
@@ -343,175 +373,60 @@ Rules:
             text = response.text.strip()
             plan = _parse_response(text, total_chunks, title)
 
-            # Sanity check: if all chunks are empty or all say "Part N", warn but continue
-            all_fallback = all(
-                chunk_sections == [f"Part {i}"]
-                for i, chunk_sections in plan["chunk_sections"].items()
-            )
-            if all_fallback and verbose:
-                print("   ⚠️  Formula parse returned only generic fallback sections")
+            # Warn if content extraction failed
+            if verbose:
+                content_map = plan.get("chunk_section_content", {})
+                if not content_map:
+                    print("   ⚠️  Section content extraction failed — chunks will use formula via system instruction only")
+                else:
+                    total_content = sum(len(v) for v in content_map.values())
+                    print(f"   ✅ Section content extracted: {total_content:,} chars across {len(content_map)} chunks")
 
             return plan
 
         except Exception as e:
             if verbose:
-                print(f"   ⚠️  Formula parse failed ({e}) — using fallback plan")
-            # Safe fallback: split sections evenly
+                print(f"   ⚠️  Formula parse failed ({e}) — fallback plan (formula still in system instruction)")
             fallback_sections = [f"Part {i+1}" for i in range(total_chunks)]
             return {
-                "sections"     : fallback_sections,
-                "chunk_sections": {str(i): [fallback_sections[i - 1]] for i in range(1, total_chunks + 1)},
-                "anchor"       : title,
-                "promo_count"  : 1,
-                "cta_action"   : "subscribe and hit the bell",
-                "closing_note" : "conclude with the subscribe call to action",
+                "sections"             : fallback_sections,
+                "chunk_sections"       : {str(i): [fallback_sections[i - 1]] for i in range(1, total_chunks + 1)},
+                "chunk_section_content": {},
+                "anchor"               : title,
+                "promo_count"          : 0,
+                "cta_action"           : "subscribe and hit the bell",
+                "closing_note"         : "conclude with the subscribe call to action",
             }
 
     # =========================================================================
-    # COMPLIANCE RULES EXTRACTOR — run once before any writing
+    # SYSTEM INSTRUCTION — full Writing Guidelines as model identity
     # =========================================================================
 
-    def _extract_compliance_rules(
-        self,
-        formula: str,
-        language: str,
-        verbose: bool = False,
-    ) -> str:
+    def _build_system_instruction(self, formula: str, language: str) -> str:
         """
-        Extract ALL rules, structure, tone requirements, and mandatory elements
-        from the Writing Guidelines formula into a structured compliance checklist.
+        The Writing Guidelines go here — in the system instruction slot —
+        which Gemini treats as the model's core identity.
 
-        This gives Gemini a DOUBLE REPRESENTATION of the formula:
-          1. The full formula text (in system_instruction) — complete law
-          2. This extracted checklist — compressed, scannable rules
-
-        For large formulas (30K-70K chars), this dramatically improves compliance
-        because the model can verify each sentence against the checklist.
-
-        Uses Gemini Flash (fast, cheap — this is extraction, not writing).
+        This sets WHO the model is. The chunk prompts tell it WHAT to write next
+        (with the specific formula rules for that section injected directly).
         """
-        if len(formula) < 2000:
-            # Small formula — full text is already clear, no extraction needed
-            return ""
+        return f"""YOU ARE A SCRIPT-WRITING MACHINE. YOUR COMPLETE IDENTITY IS DEFINED BY THE WRITING GUIDELINES BELOW.
+YOU HAVE NO CREATIVE FREEDOM. YOUR ONLY JOB IS TO EXECUTE THE WRITING GUIDELINES EXACTLY.
 
-        prompt = f"""You are reading a YouTube script writing formula/law document.
-Your ONLY job: extract EVERY single rule, requirement, structure element, writing instruction,
-tone requirement, mandatory element, forbidden element, and architectural constraint
-into a structured compliance checklist.
-
-LANGUAGE FOR SCRIPTS: {language}
-
-═══════════════════════ FORMULA ═══════════════════════
+══════════════════════════ YOUR WRITING GUIDELINES (COMPLETE LAW) ══════════════════════════
 {formula}
-═══════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════════════════════════════
 
-Extract ALL rules. Output ONLY the checklist in this exact format:
-
-MANDATORY STRUCTURE (sections in order):
-1. [section name] — [what it must contain]
-2. [section name] — [what it must contain]
-...
-
-TONE & STYLE LAWS:
-1. [rule]
-2. [rule]
-...
-
-MANDATORY ELEMENTS (must appear in every script — specific phrases, stories, stats, etc.):
-1. [element]
-2. [element]
-...
-
-WRITING TECHNIQUE RULES:
-1. [rule]
-2. [rule]
-...
-
-PROMOTION & CTA RULES:
-1. [rule]
-2. [rule]
-...
-
-STRICTLY FORBIDDEN (never do this):
-1. [forbidden thing]
-2. [forbidden thing]
-...
-
-Be exhaustive — include every rule no matter how small.
-If the formula specifies exact phrases, wording, or sentences — copy them verbatim.
-Output ONLY the checklist. No introduction, no conclusion."""
-
-        try:
-            model    = genai.GenerativeModel(Config.GEMINI_PLAN_MODEL)
-            response = model.generate_content(
-                prompt,
-                generation_config={"temperature": 0.02, "max_output_tokens": 16384},
-            )
-            rules = response.text.strip()
-            if verbose:
-                print(f"   ✅ Compliance checklist: {len(rules):,} chars extracted from {len(formula):,}-char formula")
-            return rules
-        except Exception as e:
-            if verbose:
-                print(f"   ⚠️  Compliance extraction failed ({e}) — writing will use formula only")
-            return ""
-
-    # =========================================================================
-    # SYSTEM INSTRUCTION — formula is the law, nothing overrides it
-    # =========================================================================
-
-    def _build_system_instruction(self, formula: str, language: str, compliance_rules: str = "") -> str:
-        """
-        The formula is placed HERE — in the system instruction slot —
-        which Gemini treats with the highest possible priority.
-
-        Architecture:
-        - PART 1: Compliance checklist (extracted rules — compact, scannable)
-        - PART 2: Full formula text (complete law — authoritative)
-        - PART 3: Absolute output format rules
-        """
-        if compliance_rules:
-            compliance_block = f"""╔══════════════════════════════════════════════════════════════════════╗
-║  COMPLIANCE CHECKLIST — VERIFY EVERY SENTENCE AGAINST THESE RULES  ║
-╚══════════════════════════════════════════════════════════════════════╝
-{compliance_rules}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-"""
-        else:
-            compliance_block = ""
-
-        return f"""YOU ARE A SCRIPT-WRITING EXECUTION ENGINE.
-YOUR IDENTITY, YOUR ARCHITECTURE, YOUR LAWS ARE DEFINED BELOW.
-YOU DO NOT HAVE CREATIVE FREEDOM. YOU EXECUTE THE FORMULA. NOTHING ELSE.
-
-{compliance_block}╔══════════════════════════════════════════════════════════════════════╗
-║           COMPLETE FORMULA — THIS IS YOUR WRITING LAW               ║
-║     Every word, section, tone, structure, story, CTA = this formula ║
-╚══════════════════════════════════════════════════════════════════════╝
-{formula}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-ENFORCEMENT PROTOCOL — NON-NEGOTIABLE:
-• Before writing each paragraph: identify which formula section/rule it executes.
-• If the formula prescribes specific phrases, hooks, or sentences — use them verbatim.
-• If the formula defines a structure — follow it in exact order, no skipping.
-• If the formula defines tone, style, or voice — apply it to every single sentence.
-• If something is not in the formula — do NOT add it.
-• Writing that does not execute a specific formula rule is a violation.
-
-ABSOLUTE FORMAT RULES (format only — content is 100% governed by the formula):
-1.  Language: write 100% in {language} — every word, no exceptions.
-2.  Plain prose only — no markdown, no **, no __, no ##, no headers.
+OUTPUT FORMAT RULES (format only — all content is 100% governed by Writing Guidelines above):
+1.  Write 100% in {language} — every word, no exceptions.
+2.  Plain prose only — no markdown, no **, no __, no ##, no bullet points.
 3.  No visual directions: VISUAL:, VIDEO:, SHOW:, CUT TO:, etc.
-4.  No speaker/narrator tags: NARRATOR:, SPEAKER:, HOST:, etc.
-5.  No timestamps: (0:00–0:15), (30 sec), (pause), etc.
-6.  No stage directions in [ ] or ( ).
-7.  No meta-commentary: "In this section…", "As mentioned…", etc.
-8.  Start with the first word of the script — no preamble or explanation.
-9.  ONE script only. After the final CTA line: STOP. Do not restart.
-10. EVERY paragraph must execute a specific section or rule from the formula above."""
+4.  No speaker/narrator labels: NARRATOR:, SPEAKER:, HOST:, etc.
+5.  No timestamps or time markers.
+6.  No stage directions in brackets [ ] or parentheses ( ).
+7.  No meta-commentary about the script itself.
+8.  Start directly with the first word of the script.
+9.  ONE script only — after the final CTA line, STOP immediately."""
 
     # =========================================================================
     # CHUNK PROMPT — minimal, formula-first
@@ -528,23 +443,37 @@ ABSOLUTE FORMAT RULES (format only — content is 100% governed by the formula):
         previous_context: str,
         promo_count_so_far: int,
         is_final: bool,
-        compliance_rules: str = "",
     ) -> str:
 
         anchor       = plan.get("anchor", title)
-        promo_count  = plan.get("promo_count", 1)
+        promo_count  = plan.get("promo_count", 0)
         cta_action   = plan.get("cta_action", "subscribe and hit the bell")
         sections_now = plan.get("chunk_sections", {}).get(str(chunk.index), [])
 
-        # Format the section list
-        if sections_now:
-            sections_block = "FORMULA SECTIONS TO WRITE IN THIS CHUNK:\n" + "\n".join(
-                f"  → {s}" for s in sections_now
+        # ── Section content injection (THE CORE FIX) ──────────────────────────
+        # Get the actual formula rules extracted for this chunk (not just names).
+        # If extracted, inject them directly so the model has them RIGHT HERE.
+        # If not extracted (fallback), list section names and reference system instruction.
+        section_content = plan.get("chunk_section_content", {}).get(str(chunk.index), "")
+
+        if section_content:
+            sections_block = (
+                f"FORMULA RULES TO EXECUTE IN THIS CHUNK (extracted from your Writing Guidelines):\n"
+                f"{'─' * 60}\n"
+                f"{section_content}\n"
+                f"{'─' * 60}\n"
+                f"Sections: {' | '.join(sections_now)}"
+            )
+        elif sections_now:
+            sections_block = (
+                f"FORMULA SECTIONS TO WRITE IN THIS CHUNK:\n"
+                + "\n".join(f"  → {s}" for s in sections_now)
+                + "\n(Refer to your Writing Guidelines in the system instruction for the exact rules.)"
             )
         else:
-            sections_block = "Write the appropriate portion of the formula for this chunk position."
+            sections_block = "Write the appropriate portion of the Writing Guidelines for this chunk position."
 
-        # Continuation context (empty for first chunk)
+        # ── Continuation context ───────────────────────────────────────────────
         if previous_context:
             continuation = (
                 f"CONTINUE SEAMLESSLY (do NOT repeat what was already written):\n"
@@ -553,64 +482,49 @@ ABSOLUTE FORMAT RULES (format only — content is 100% governed by the formula):
         else:
             continuation = ""
 
-        # Promo counter reminder (middle + final chunks)
-        if chunk.index > 1:
+        # ── Promo counter ──────────────────────────────────────────────────────
+        if promo_count == 0:
+            promo_reminder = ""  # No promos in this formula — don't mention them
+        elif chunk.index > 1:
             remaining = promo_count - promo_count_so_far
             promo_reminder = (
-                f"PROMO COUNTER: {promo_count_so_far} promo block(s) already written. "
-                f"You still need exactly {remaining} more in this chunk "
-                f"(per formula — place at formula-specified trigger).\n"
+                f"PROMO COUNTER: {promo_count_so_far}/{promo_count} promo block(s) written. "
+                f"Place exactly {remaining} more in this chunk per the Writing Guidelines.\n"
                 f"PRODUCT: {product}\n\n"
             ) if remaining > 0 else (
-                f"PROMO COUNTER: All {promo_count} promo block(s) already written. "
-                f"Do NOT add any more promotion in this chunk.\n\n"
+                f"PROMO COUNTER: All {promo_count} promo block(s) done. Do NOT add more.\n\n"
             )
         else:
-            promo_reminder = f"PRODUCT: {product}\n\n"
+            promo_reminder = f"PRODUCT: {product}\n\n" if promo_count > 0 else ""
 
-        # Hard stop for final chunk
+        # ── Final chunk stop rule ──────────────────────────────────────────────
         if is_final:
             stop_instruction = (
-                f"\nHARD STOP RULE:\n"
-                f"After you write the final CTA line ('{cta_action}'), immediately write this exact line:\n"
+                f"\nHARD STOP: After writing the final CTA ('{cta_action}'), write this exact line:\n"
                 f"{STOP_SIGNAL}\n"
-                f"Then output NOTHING else. The script is complete. Do not add summaries, new sections, "
-                f"or restart.\n"
+                f"Then output NOTHING. Script complete.\n"
             )
             chunk_role_note = (
-                f"This is the FINAL CHUNK. Complete the script fully — "
-                f"write the closing sections and the CTA exactly as the formula prescribes."
+                f"FINAL CHUNK — write the closing and CTA exactly as prescribed in the Writing Guidelines."
             )
         else:
             stop_instruction = ""
             chunk_role_note = (
-                f"This is chunk {chunk.index} of {total_chunks}. "
-                f"Do NOT write closing or CTA sections — those come in chunk {total_chunks}. "
-                f"Keep the narrative going."
+                f"Chunk {chunk.index} of {total_chunks}. "
+                f"Do NOT write the closing or CTA yet — those come in the final chunk."
             )
 
-        # Compliance reminder (first 3000 chars of checklist — most critical rules)
-        if compliance_rules:
-            compliance_reminder = (
-                f"FORMULA COMPLIANCE REMINDER — Your system instruction contains the full formula law.\n"
-                f"Key rules to apply in THIS chunk:\n"
-                f"{compliance_rules[:3000]}\n\n"
-            )
-        else:
-            compliance_reminder = ""
-
-        prompt = f"""SCRIPT CHUNK {chunk.index} OF {total_chunks}
+        prompt = f"""═══ WRITING PHASE {chunk.index + 1} — CHUNK {chunk.index}/{total_chunks} ═══
 
 TITLE: "{title}"
 SUBJECT / ANCHOR: {anchor}
 
 {sections_block}
 
-{compliance_reminder}{continuation}{promo_reminder}NOTE: {chunk_role_note}
+{continuation}{promo_reminder}ROLE: {chunk_role_note}
 
-LENGTH: Write at least {chunk.target_chars:,} characters (up to {int(chunk.target_chars * 1.08):,} is fine).
-Do not cut short — go deep on the formula sections assigned above.
-Every paragraph must execute a specific rule or section from your formula (in system instruction).
+LENGTH: Write at least {chunk.target_chars:,} characters (up to {int(chunk.target_chars * 1.08):,} max).
+Every sentence must execute a specific rule from the Writing Guidelines above.
 {stop_instruction}
 WRITE IN {language.upper()} NOW:"""
 
@@ -630,7 +544,6 @@ WRITE IN {language.upper()} NOW:"""
         target_chars: int,
         label: str = "",
         verbose: bool = False,
-        compliance_rules: str = "",
     ) -> str:
         MAX_API_RETRIES   = 3
         MAX_SHORT_RETRIES = 2
