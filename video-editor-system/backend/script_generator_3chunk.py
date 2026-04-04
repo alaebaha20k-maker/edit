@@ -183,15 +183,18 @@ class ScriptGenerator3Chunk:
         full_script = self._clean_script(full_script)            # strips stop signal first
         full_script = self._remove_duplicate_sentences(full_script, verbose=verbose)
 
-        # Length enforcement
-        MAX_OVERSHOOT = 300
+        # ── Length enforcement ────────────────────────────────────────────────
+        # Overshoot tolerance: 1 % of target (min 300, max 2000 chars).
+        # This prevents trimming a 100K script that comes out at 100,500 chars.
+        MAX_OVERSHOOT = max(300, min(int(length * 0.01), 2000))
         char_count    = len(full_script)
         if verbose:
-            print(f"\n📏 Length: {char_count:,} / {length:,} target")
+            print(f"\n📏 Length: {char_count:,} / {length:,} target  (tolerance: +{MAX_OVERSHOOT:,})")
 
         if char_count < length:
+            shortage_pct = round((length - char_count) / length * 100, 1)
             if verbose:
-                print(f"   ⚠️  Short by {length - char_count:,} — extending...")
+                print(f"   ⚠️  Short by {length - char_count:,} chars ({shortage_pct}%) — extending...")
             full_script = self._extend_script(
                 current_script=full_script,
                 target_length=length,
@@ -208,7 +211,7 @@ class ScriptGenerator3Chunk:
 
         if char_count > length + MAX_OVERSHOOT:
             if verbose:
-                print(f"   ✂️  Over by {char_count - length:,} — trimming...")
+                print(f"   ✂️  Over by {char_count - length:,} chars — trimming to sentence boundary...")
             full_script = self._trim_to_length(full_script, length + MAX_OVERSHOOT)
             char_count  = len(full_script)
             if verbose:
@@ -656,14 +659,21 @@ WRITE IN {language.upper()} NOW:"""
         plan: dict,
         verbose: bool = False,
     ) -> str:
-        MAX_RETRIES = 2
+        """
+        Extend the script until it reaches target_length.
+        Loops up to MAX_RETRIES times, each time requesting enough chars to close
+        the remaining gap. The full Writing Guidelines are injected into every
+        extension prompt so the formula continues to be applied.
+        """
+        MAX_RETRIES = 6   # enough for even large shortages on 100K scripts
         language    = niche.get("language", "English")
         anchor      = plan.get("anchor", title)
         body_secs   = plan.get("sections", [])
-        body_hint   = (
-            "Continue the body sections from the formula: "
-            + ", ".join(body_secs[1:-1] or body_secs)
-        ) if body_secs else "Continue the body/development sections from the formula."
+        # Middle sections hint (exclude first and last — those are hook/close)
+        mid_secs = body_secs[1:-1] if len(body_secs) > 2 else body_secs
+        body_hint = (
+            "Continue these body sections from the Writing Guidelines: " + ", ".join(mid_secs)
+        ) if mid_secs else "Continue the body / development sections prescribed by your Writing Guidelines."
 
         system_instruction = self._build_system_instruction(formula, language)
 
@@ -672,21 +682,25 @@ WRITE IN {language.upper()} NOW:"""
             if shortage <= 0:
                 break
 
-            extend_chars  = shortage + 1500
-            extend_tokens = min(65536, max(int(extend_chars / 3 * 1.25) + 2000, 4000))
-            tail          = current_script[-600:].strip()
+            # Request the exact shortage + a small buffer so one call can close it
+            extend_chars  = shortage + 2000
+            extend_tokens = min(65536, max(int(extend_chars / 3 * 1.3) + 3000, 6000))
+            tail          = current_script[-800:].strip()
 
-            prompt = f"""SCRIPT EXTENSION
+            prompt = f"""══════════ WRITING GUIDELINES (execute ALL rules) ══════════
+{formula}
+════════════════════════════════════════════════════════════
 
-TITLE   : "{title}"
-SUBJECT : {anchor}
+SCRIPT EXTENSION — TITLE: "{title}"
+SUBJECT: {anchor}
 
-LAST PART ALREADY WRITTEN (continue from here — do NOT repeat):
+CONTINUE FROM HERE (do NOT repeat what was already written):
 "...{tail}"
 
 TASK: {body_hint}
-Write at least {extend_chars:,} new characters of body content.
-Follow the formula exactly. Do NOT add a conclusion or CTA yet.
+You must write at least {extend_chars:,} characters of new content.
+Apply the Writing Guidelines exactly — same tone, style, structure, and rules.
+Do NOT write a conclusion or CTA in this extension.
 
 WRITE IN {language.upper()} NOW:"""
 
@@ -698,12 +712,14 @@ WRITE IN {language.upper()} NOW:"""
                     temperature=0.85,
                     max_output_tokens=extend_tokens,
                     target_chars=extend_chars,
-                    label=f"Extension {attempt + 1}",
+                    label=f"Extension {attempt + 1}/{MAX_RETRIES}",
                     verbose=verbose,
                 )
-                current_script = current_script.rstrip() + " " + extension
+                current_script = current_script.rstrip() + "\n\n" + extension.strip()
+                new_total = len(current_script)
                 if verbose:
-                    print(f"   Extension +{len(extension):,} → total {len(current_script):,}")
+                    remaining = max(0, target_length - new_total)
+                    print(f"   Extension {attempt+1}: +{len(extension):,} chars → total {new_total:,} / {target_length:,}  (still need: {remaining:,})")
                 time.sleep(4)
             except Exception as e:
                 if verbose:

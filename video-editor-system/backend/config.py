@@ -204,10 +204,10 @@ class Config:
     IMAGE_DURATION_SECONDS = 5.0  # Duration for each image in video
 
     # Script generation settings - FULL RANGE SUPPORT
-    # Allow any length from 1,000 to 80,000 characters
-    MIN_SCRIPT_LENGTH = 1000      # Minimum: ~1 min video (Shorts)
-    MAX_SCRIPT_LENGTH = 80000     # Maximum: ~60+ min video (Documentary)
-    DEFAULT_SCRIPT_LENGTH = 10000 # Default: ~10-12 min video
+    # Any length from 1,000 to 100,000 characters
+    MIN_SCRIPT_LENGTH = 1000       # Minimum: ~1 min video (Shorts)
+    MAX_SCRIPT_LENGTH = 100000     # Maximum: ~80+ min video (Mega Documentary)
+    DEFAULT_SCRIPT_LENGTH = 10000  # Default: ~10-12 min video
 
     # Valid discrete script lengths (used by generate_script() 3-part generator)
     VALID_SCRIPT_LENGTHS = [30000, 60000, 100000]
