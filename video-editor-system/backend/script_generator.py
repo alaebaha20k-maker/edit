@@ -570,8 +570,6 @@ COMPLETE NOW:"""
         Raises:
             ValueError: If validation fails after max retries
         """
-        from settings_manager import SettingsManager
-
         start_time = time.time()
 
         # Validate length range
@@ -593,9 +591,6 @@ COMPLETE NOW:"""
         original_niche_lang = niche.get('language', 'English')
         niche['language'] = detected_lang_name  # Override with detected language
 
-        # Load script formula from settings
-        script_formula = SettingsManager.load_formula('script')
-
         if verbose:
             print(f"\n{'='*70}")
             print(f"🎬 GENERATING ONE-BLOCK SCRIPT WITH HARD VALIDATION")
@@ -615,14 +610,22 @@ COMPLETE NOW:"""
         if verbose:
             print(f"🧠 Narrative Approach: {approach}")
 
-        # Build ONE BLOCK prompt using formula
+        # Build ONE BLOCK prompt — niche writing_guidelines is the complete formula
         prompt = self._build_oneblock_prompt(
             title=title,
             niche_data=niche,
-            formula=script_formula,
             target_chars=length,
             approach=approach
         )
+
+        # Calculate max_output_tokens dynamically based on target length
+        # French/Arabic: ~3 chars/token; English: ~4 chars/token — use 3 to be safe
+        # Add 25% buffer + 3000 tokens for thinking overhead
+        needed_tokens = int(length / 3 * 1.25) + 3000
+        max_tokens = min(Config.GEMINI_MAX_TOKENS, max(needed_tokens, 6000))
+
+        if verbose:
+            print(f"⚡ Token budget: {max_tokens:,} output tokens (for {length:,} chars)")
 
         # RETRY LOOP - Generate with validation
         script = None
@@ -640,8 +643,8 @@ COMPLETE NOW:"""
             response = model.generate_content(
                 prompt,
                 generation_config=genai.types.GenerationConfig(
-                    temperature=0.88,  # Single optimal temperature
-                    max_output_tokens=Config.GEMINI_MAX_TOKENS,
+                    temperature=0.88,
+                    max_output_tokens=max_tokens,
                     top_p=0.95,
                     top_k=40
                 )
@@ -716,29 +719,39 @@ COMPLETE NOW:"""
             }
         }
 
-    def _build_oneblock_prompt(self, title, niche_data, formula, target_chars, approach):
-        """Build FINAL PRODUCTION SCRIPT PROMPT with HARD OVERRIDES + TITLE-LOCK + LENGTH EXECUTION"""
+    def _build_oneblock_prompt(self, title, niche_data, target_chars, approach):
+        """Build FINAL PRODUCTION SCRIPT PROMPT — niche writing_guidelines is the sole formula"""
 
         product = niche_data.get('product', 'our platform')
         language = niche_data['language']
         niche_name = niche_data['name']
-
-        # Replace placeholders in formula (auto-normalize)
-        formula_filled = formula.replace('{title}', title)
-        formula_filled = formula_filled.replace('{niche}', niche_name)
-        formula_filled = formula_filled.replace('{language}', language)
-        formula_filled = formula_filled.replace('{guidelines}', niche_data.get('writing_guidelines', ''))
-        formula_filled = formula_filled.replace('{length}', f"{target_chars:,}")
-        formula_filled = formula_filled.replace('{approach}', approach)
-        formula_filled = formula_filled.replace('{topic}', title)
-        formula_filled = formula_filled.replace('{target_length}', f"{target_chars:,}")
-        formula_filled = formula_filled.replace('{word_count}', f"{target_chars // 5:,}")
+        writing_guidelines = niche_data.get('writing_guidelines', '')
 
         # FINAL PRODUCTION SCRIPT PROMPT
         prompt = f"""You are an elite, world-class human scriptwriter.
 
 You write high-retention YouTube scripts that sound natural, emotional, intelligent, and deeply human.
 Your scripts are written to be converted directly into voice audio without any modification.
+
+════════════════════════════════════════════════════════════
+👑 SELECTED CONTENT NICHE — THE SUPREME LAW
+════════════════════════════════════════════════════════════
+
+Niche selected by the user: {niche_name}
+
+The following is the COMPLETE WRITING FORMULA for this niche.
+It is the FIRST and HIGHEST authority in this entire prompt.
+EVERY rule below — voice, tone, rhythm, structure, order, promotions,
+hook, climax, conclusion — comes from THIS niche formula.
+
+All generic instructions further in this prompt are SECONDARY.
+When this niche formula conflicts with any generic instruction — the niche formula WINS.
+When this niche formula defines a structure order — follow that order EXACTLY.
+When this niche formula defines a rule — apply it WITHOUT EXCEPTION.
+
+THIS IS THE FORMULA YOU MUST EXECUTE:
+
+{writing_guidelines}
 
 ════════════════════════════════════════════════════════════
 🔒 HARD OVERRIDES (ABSOLUTE — MUST WIN OVER EVERYTHING)
@@ -756,6 +769,7 @@ THESE RULES OVERRIDE ALL OTHER INSTRUCTIONS:
 8. DO NOT use ANY formatting symbols: **, __, ~~, ##, ---, ***, ===, ───
 9. DO NOT label sections with titles like "Introduction:", "Hook:", "Conclusion:"
 10. DO NOT include character counts, timestamps, or meta-commentary.
+11. WRITE ENTIRELY IN {language}. Every single word of the script MUST be in {language}. This is absolute and cannot be overridden by any formula or guideline.
 
 IF ANY OF THE ABOVE APPEAR IN YOUR OUTPUT, THE OUTPUT IS INVALID AND MUST BE REGENERATED INTERNALLY.
 
@@ -801,152 +815,14 @@ ABSOLUTE OUTPUT RULES (NO EXCEPTIONS)
 - The script must be completely clean and voice-ready.
 
 ────────────────────────────────────────
-CORE OBJECTIVE
-────────────────────────────────────────
-Write a high-quality YouTube video script that maximizes retention and emotional engagement.
-
-The script must:
-- Be written ONLY for the provided title: "{title}"
-- Match the selected niche and audience.
-- Respect the custom formula provided by the user.
-- Match the required character length EXACTLY (±3%).
-- Flow clearly and logically from the first sentence to the last.
-
-────────────────────────────────────────
-HOOK INTELLIGENCE (CRITICAL)
-────────────────────────────────────────
-The first 2 to 3 sentences must:
-- Create immediate curiosity, tension, or emotional pull.
-- Avoid explaining the topic.
-- Avoid summarizing the content.
-- Avoid generic openings such as:
-  "Today we will"
-  "This video is about"
-  "In this story"
-  "Welcome to"
-  "Let me tell you about"
-- Make the listener feel compelled to continue.
-
-If the hook is weak, the script is considered a failure.
-
-────────────────────────────────────────
-FORMULA NORMALIZATION SYSTEM
-────────────────────────────────────────
-The user provides a SCRIPT FORMULA written in natural language.
-
-Your task is to:
-1. Internally translate the formula into a clear narrative structure you fully understand.
-2. Convert it into an internal sequence such as:
-   opening intention
-   progression
-   escalation
-   resolution or takeaway
-3. Follow this internal structure faithfully.
-4. Never output the formula or mention it.
-
-The formula defines HOW the script is written.
-The title defines WHAT the script is about.
-
-────────────────────────────────────────
-NICHE-SPECIFIC HIDDEN RULES (INTERNAL ONLY)
-────────────────────────────────────────
-
-If NICHE = STORY / HORROR / DRAMA:
-- Maintain strict consistency of names, places, and timeline.
-- Build tension gradually.
-- Never change story facts mid-script.
-- Focus on emotion and consequence.
-
-If NICHE = EDUCATION / EXPLAINER:
-- Challenge assumptions early.
-- Explain clearly using simple language.
-- Avoid sounding academic.
-- Build understanding step by step.
-
-If NICHE = NEWS / ANALYSIS:
-- Emphasize why this matters now.
-- Clearly explain context and implications.
-- Stay factual and grounded.
-- Avoid speculation unless clearly framed.
-
-If NICHE = FINANCE / TRADING:
-- Be realistic and grounded.
-- Explain risks and misunderstandings.
-- Avoid hype language.
-- End with a clear, sober takeaway.
-
-────────────────────────────────────────
-CREATIVE VARIATION ENGINE (ANTI-REPETITION)
-────────────────────────────────────────
-Every script must feel fresh and original.
-
-Rules:
-- Never reuse the same narrative rhythm in consecutive generations.
-- Vary sentence length and pacing.
-- Rotate hook psychology (curiosity, tension, contrast, mystery, emotion).
-- Avoid predictable phrasing.
-- Write as if a different human author is writing each script.
-
-────────────────────────────────────────
-RESEARCH INTELLIGENCE
-────────────────────────────────────────
-If the topic requires knowledge:
-- Write as if you deeply understand the subject.
-- Be accurate and confident.
-- Do not invent facts.
-- Do not cite sources.
-- Do not sound robotic or academic.
-
-────────────────────────────────────────
-CHUNKED GENERATION SYSTEM (TOKEN SAFE)
-────────────────────────────────────────
-If the script is long:
-- Internally generate the script in logical chunks.
-- Ensure each chunk flows seamlessly into the next.
-- Maintain consistency across all chunks.
-- Merge internally into ONE final clean block.
-- Do NOT expose chunks in the output.
-
-────────────────────────────────────────
-PRODUCT INTEGRATION (NATURAL & SEAMLESS)
+PRODUCT INTEGRATION
 ────────────────────────────────────────
 Product/Platform: {product}
-- Mention naturally 2-3 times throughout the script
-- Example: "and I track everything using {product}, link in description"
-- NEVER mention price, cost, or affordability
-- Seamlessly woven into the narrative
+Follow the product integration rules defined in the niche formula above.
+NEVER mention price, cost, or affordability.
 
-Language: {language}
-
-════════════════════════════════════════════════════════════
-🔄 AUTO-RETRY QUALITY VALIDATOR (ENHANCED)
-════════════════════════════════════════════════════════════
-
-Before outputting the final script, verify:
-
-✓ Clean formatting (no symbols, no meta text, no screenplay formatting)
-✓ Strong hook (first 2-3 sentences create tension/curiosity)
-✓ Formula compliance (follows user's structure)
-✓ Niche rules followed (story consistency, education clarity, etc.)
-✓ Length within ±3% tolerance ({int(target_chars * 0.97):,} - {int(target_chars * 1.03):,} chars)
-✓ Title-lock verified (no topic drift)
-✓ Logical consistency (no contradictions)
-✓ Creative freshness (not repetitive)
-✓ No scene labels, narrator labels, dialogue formatting, or visual cues
-✓ No "Part 1", "Part 2", "To be continued", or continuation markers
-✓ ONE single continuous block only
-
-FAIL AND REGENERATE IF:
-- Output contains labels, scenes, dialogue formatting, or visual cues
-- Output implies multiple parts or continuation
-- Output exceeds ±3% of target length
-- Topic drifts from the title
-- Output is not a single continuous block
-
-If ANY check fails:
-- Internally revise and regenerate.
-- Retry up to 3 times.
-- Only output the script when ALL checks pass.
+MANDATORY LANGUAGE: {language}
+Every word of the output MUST be written in {language}. No exceptions.
 
 ════════════════════════════════════════════════════════════
 INPUTS
@@ -960,8 +836,34 @@ NICHE:
 TARGET CHARACTERS:
 {target_chars:,} (STRICT: must be within {int(target_chars * 0.97):,} - {int(target_chars * 1.03):,})
 
-SCRIPT FORMULA:
-{formula_filled}
+════════════════════════════════════════════════════════════
+⚠️ RAPPEL CRITIQUE — RÈGLES LES PLUS SOUVENT VIOLÉES
+════════════════════════════════════════════════════════════
+
+Avant d'écrire le premier mot, mémorise ces 5 points absolus :
+
+① RYTHME VIVANT — LOI FONDAMENTALE, AUCUNE EXCEPTION
+   Chaque paragraphe DOIT suivre : Court (≤8 mots) → Long (15-20 mots) → Court (≤8 mots)
+   ABSOLUMENT INTERDIT : deux phrases courtes consécutives.
+   Vérifie chaque paragraphe avant de passer au suivant. Si deux courtes se suivent — réécris immédiatement.
+
+② CLIMAX — 8 À 12 PHRASES MAXIMUM, PAS UNE DE PLUS
+   Le climax ne reprend AUCUNE idée déjà exprimée dans le corps — c'est une vérité nouvelle, pas un résumé.
+   La dernière phrase du climax = la plus courte et la plus mémorable du climax entier.
+   Si le climax dépasse 12 phrases — coupe sans pitié.
+
+③ PROMOTIONS — DOULEUR → PRODUIT → LIEN (5 à 8 phrases MAX chacune)
+   Ne liste JAMAIS des fonctionnalités. Connecte uniquement la douleur exacte de CE script au produit.
+   Chaque promotion SE TERMINE obligatoirement par le lien en description.
+   La formulation du lien doit être différente dans chacune des 3 promotions.
+
+④ PRÉNOMS — JAMAIS LE MÊME DEUX FOIS DANS LE MÊME SCRIPT
+   Avant d'introduire un personnage, vérifie mentalement tous les prénoms déjà utilisés.
+   Un prénom utilisé une fois = interdit pour le reste du script. Zéro exception.
+
+⑤ ARC ÉMOTIONNEL — R → C → E → T → CL DANS L'ORDRE STRICT
+   Planifie les 5 cases avant d'écrire le premier mot du corps.
+   Ne reviens JAMAIS en arrière dans l'arc. Ne passe pas à l'émotion suivante sans avoir atteint la précédente.
 
 ════════════════════════════════════════════════════════════
 NOW WRITE THE FINAL SCRIPT

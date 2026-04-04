@@ -95,16 +95,21 @@ def process_final_video(media_items, audio_files, output_path, quality='1080', v
             if verbose:
                 print(f"   Processing image {i+1}/{len(media_items)}...")
 
+            out_h = '1080' if quality == '1080' else '720'
+            out_w = '1920' if quality == '1080' else '1280'
             subprocess.run([
                 'ffmpeg', '-y',
                 '-loop', '1',
+                '-framerate', '2',
                 '-i', item['path'],
-                '-vf', f"scale=1920:{quality},zoompan=z='min(zoom+0.0015,1.5)':d={int(duration_per_item*30)}:s=1920x{quality},fps=30",
+                '-vf', f"scale={out_w}:{out_h}:force_original_aspect_ratio=decrease,pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2,zoompan=z='min(zoom+0.0015,1.5)':d={int(duration_per_item*30)}:s={out_w}x{out_h},fps=30",
                 '-t', str(duration_per_item),
                 '-c:v', 'libx264',
                 '-preset', 'ultrafast',
+                '-tune', 'stillimage',
                 '-crf', '23',
                 '-an',
+                '-pix_fmt', 'yuv420p',
                 clip_output
             ], check=True, capture_output=not verbose)
 
@@ -115,6 +120,10 @@ def process_final_video(media_items, audio_files, output_path, quality='1080', v
 
             video_duration = get_media_duration(item['path'])
 
+            out_h = '1080' if quality == '1080' else '720'
+            out_w = '1920' if quality == '1080' else '1280'
+            scale_vf = f"scale={out_w}:{out_h}:force_original_aspect_ratio=decrease,pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2,fps=30"
+
             if video_duration < duration_per_item:
                 # Loop video to fill duration
                 num_loops = int(duration_per_item / video_duration) + 1
@@ -124,11 +133,12 @@ def process_final_video(media_items, audio_files, output_path, quality='1080', v
                     '-stream_loop', str(num_loops),
                     '-i', item['path'],
                     '-t', str(duration_per_item),
-                    '-vf', f"scale=1920:{quality},fps=30",
+                    '-vf', scale_vf,
                     '-c:v', 'libx264',
                     '-preset', 'ultrafast',
                     '-crf', '23',
                     '-an',
+                    '-pix_fmt', 'yuv420p',
                     clip_output
                 ], check=True, capture_output=not verbose)
             else:
@@ -137,11 +147,12 @@ def process_final_video(media_items, audio_files, output_path, quality='1080', v
                     'ffmpeg', '-y',
                     '-i', item['path'],
                     '-t', str(duration_per_item),
-                    '-vf', f"scale=1920:{quality},fps=30",
+                    '-vf', scale_vf,
                     '-c:v', 'libx264',
                     '-preset', 'ultrafast',
                     '-crf', '23',
                     '-an',
+                    '-pix_fmt', 'yuv420p',
                     clip_output
                 ], check=True, capture_output=not verbose)
 

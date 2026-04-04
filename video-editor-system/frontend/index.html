@@ -164,6 +164,7 @@
                             <option value="5000">Short Video (5k chars / ~7-8 min)</option>
                             <option value="10000" selected>Standard Video (10k chars / ~10-12 min)</option>
                             <option value="20000">Long Video (20k chars / ~15-20 min)</option>
+                            <option value="30000">Extended Video (30k chars / ~22-28 min)</option>
                             <option value="40000">Deep Dive (40k chars / ~30-40 min)</option>
                             <option value="80000">Full Documentary (80k chars / ~60+ min)</option>
                         </select>
@@ -174,9 +175,45 @@
                 <div id="scriptResult" class="result-box" style="display: none;"></div>
                 <div id="scriptStats" class="stats-box" style="display: none;"></div>
 
-                <!-- Download Button -->
+                <!-- Download + Translation Section -->
                 <div id="scriptDownloadSection" style="display: none; margin-top: 15px;">
                     <button onclick="downloadScript()" class="btn-success">📥 Download Script (.txt)</button>
+
+                    <!-- Multi-language Translation -->
+                    <div style="margin-top: 14px; padding: 14px; background: rgba(102, 126, 234, 0.08); border: 1px solid #374151; border-radius: 10px;">
+                        <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
+                            <div style="font-weight: 600; font-size: 13px; color: #a78bfa;">🌍 Translate Script to Other Languages</div>
+                            <span id="detectedLangBadge" style="display:none; font-size:11px; padding:2px 8px; background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.4); border-radius:10px; color:#6ee7b7;"></span>
+                        </div>
+                        <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 12px;">
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px;">
+                                <input type="checkbox" id="translateEN" style="width:15px;height:15px;">
+                                <span>🇺🇸 English (EN)</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px;">
+                                <input type="checkbox" id="translateFR" style="width:15px;height:15px;">
+                                <span>🇫🇷 French (FR)</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px;">
+                                <input type="checkbox" id="translateES" style="width:15px;height:15px;">
+                                <span>🇪🇸 Spanish (ES)</span>
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px;">
+                                <input type="checkbox" id="translateDE" style="width:15px;height:15px;">
+                                <span>🇩🇪 German (DE)</span>
+                            </label>
+                        </div>
+                        <button onclick="translateAndDownload()" class="btn-secondary" style="font-size: 13px; padding: 8px 18px;">
+                            🌍 Translate &amp; Download All
+                        </button>
+                        <div id="translateProgress" style="display:none; margin-top: 10px; font-size: 13px; color: #a78bfa; padding: 8px; background: rgba(139,92,246,0.08); border-radius: 6px;"></div>
+                    </div>
+                </div>
+
+                <!-- Script Library -->
+                <div id="scriptLibrarySection" style="display:none; margin-top: 18px; padding: 16px; background: rgba(99,102,241,0.06); border: 1px solid #374151; border-radius: 10px;">
+                    <h4 style="margin-bottom: 12px; color: #a5b4fc; font-size: 14px;">📚 Script Library</h4>
+                    <div id="scriptLibraryList"></div>
                 </div>
 
                 <!-- Voice Generation Section -->
@@ -196,58 +233,70 @@
                     </div>
 
                     <!-- AI Voice Generation -->
+                    <!-- Model always mini (fast) — hidden -->
+                    <input type="hidden" id="voiceModel" value="inworld-tts-1.5-mini">
+
                     <div id="aiVoiceSection" style="display: block;">
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                            <!-- Model Selection -->
-                            <div class="input-group">
-                                <label>🎯 Quality Model:</label>
-                                <select id="voiceModel" class="input-medium" style="width: 100%;">
-                                    <option value="inworld-tts-1.5-max" selected>Max Quality (Best, Slower)</option>
-                                    <option value="inworld-tts-1.5-mini">Mini Quality (Fast, Good)</option>
-                                </select>
-                                <small style="color: #888; display: block; margin-top: 5px;">
-                                    <span id="modelDescription">Max: Best quality, takes more time</span>
-                                </small>
-                            </div>
 
                             <!-- Voice Selection -->
-                            <div class="input-group">
+                            <div class="input-group" style="grid-column: 1 / -1;">
                                 <label>🎤 Voice Character:</label>
-                                <select id="voiceId" class="input-medium" style="width: 100%;">
-                                    <option value="Olivia" selected>Olivia - Female (Elegant, Smooth)</option>
-                                    <option value="Dennis">Dennis - Male (Deep, Authoritative)</option>
-                                    <option value="Sarah">Sarah - Female (Warm, Engaging)</option>
-                                    <option value="Mark">Mark - Male (Professional, Clear)</option>
-                                    <option value="Ashley">Ashley - Female (Energetic, Bright)</option>
-                                    <option value="Theodore">Theodore - Male (Warm, Friendly)</option>
-                                    <option value="Elizabeth">Elizabeth - Female (Professional, Clear)</option>
-                                    <option value="Edward">Edward - Male (British, Refined)</option>
-                                    <option value="Wendy">Wendy - Female (Soft, Gentle)</option>
-                                    <option value="Craig">Craig - Male (Strong, Confident)</option>
-                                </select>
+
+                                <!-- Language selector -->
+                                <div style="display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap;">
+                                    <button id="voiceLangEn" onclick="filterVoicesByLang('en')"
+                                        style="padding: 5px 12px; border-radius: 6px; border: 2px solid #667eea; background: #667eea; color: #fff; font-weight: 600; cursor: pointer; font-size: 0.85em;">
+                                        🇺🇸 English
+                                    </button>
+                                    <button id="voiceLangFr" onclick="filterVoicesByLang('fr')"
+                                        style="padding: 5px 12px; border-radius: 6px; border: 2px solid #667eea; background: transparent; color: #667eea; font-weight: 600; cursor: pointer; font-size: 0.85em;">
+                                        🇫🇷 French
+                                    </button>
+                                    <button id="voiceLangDe" onclick="filterVoicesByLang('de')"
+                                        style="padding: 5px 12px; border-radius: 6px; border: 2px solid #667eea; background: transparent; color: #667eea; font-weight: 600; cursor: pointer; font-size: 0.85em;">
+                                        🇩🇪 German
+                                    </button>
+                                    <button id="voiceLangEs" onclick="filterVoicesByLang('es')"
+                                        style="padding: 5px 12px; border-radius: 6px; border: 2px solid #667eea; background: transparent; color: #667eea; font-weight: 600; cursor: pointer; font-size: 0.85em;">
+                                        🇪🇸 Spanish
+                                    </button>
+                                </div>
+
+                                <!-- Male / Female toggle -->
+                                <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+                                    <button id="genderBtnMale" onclick="filterVoicesByGender('male')"
+                                        style="flex:1; padding: 7px 0; border-radius: 6px; border: 2px solid #667eea; background: #667eea; color: #fff; font-weight: 600; cursor: pointer; font-size: 0.9em;">
+                                        👨 Male
+                                    </button>
+                                    <button id="genderBtnFemale" onclick="filterVoicesByGender('female')"
+                                        style="flex:1; padding: 7px 0; border-radius: 6px; border: 2px solid #667eea; background: transparent; color: #667eea; font-weight: 600; cursor: pointer; font-size: 0.9em;">
+                                        👩 Female
+                                    </button>
+                                </div>
+
+                                <!-- Voice dropdown + preview button -->
+                                <div style="display: flex; gap: 8px; align-items: center;">
+                                    <select id="voiceId" class="input-medium" style="flex: 1;" onchange="updateVoiceDescription()">
+                                        <!-- populated by JS -->
+                                    </select>
+                                    <button id="previewVoiceBtn" onclick="previewVoice()" title="Preview this voice"
+                                        style="padding: 8px 14px; background: #667eea; border: none; border-radius: 6px; color: white; cursor: pointer; font-size: 0.95em; white-space: nowrap; flex-shrink: 0;">
+                                        ▶ Preview
+                                    </button>
+                                </div>
+
+                                <!-- Voice description hint -->
+                                <small id="voiceDescription" style="color: #aaa; display: block; margin-top: 5px; font-style: italic;"></small>
+                                <small id="voiceLoadStatus" style="color: #888; display: block; margin-top: 2px;"></small>
+                                <audio id="voicePreviewAudio" style="display:none;"></audio>
                             </div>
 
-                            <!-- Language Selection -->
-                            <div class="input-group">
-                                <label>🌍 Language:</label>
-                                <select id="voiceLanguage" class="input-medium" style="width: 100%;">
-                                    <option value="en-US" selected>🇺🇸 English (United States)</option>
-                                    <option value="en-GB">🇬🇧 English (United Kingdom)</option>
-                                    <option value="es-ES">🇪🇸 Spanish (Spain)</option>
-                                    <option value="es-MX">🇲🇽 Spanish (Mexico)</option>
-                                    <option value="fr-FR">🇫🇷 French (France)</option>
-                                    <option value="de-DE">🇩🇪 German (Germany)</option>
-                                    <option value="it-IT">🇮🇹 Italian (Italy)</option>
-                                    <option value="pt-BR">🇧🇷 Portuguese (Brazil)</option>
-                                    <option value="ja-JP">🇯🇵 Japanese (Japan)</option>
-                                    <option value="ko-KR">🇰🇷 Korean (South Korea)</option>
-                                    <option value="zh-CN">🇨🇳 Chinese (Simplified)</option>
-                                    <option value="ar-SA">🇸🇦 Arabic (Saudi Arabia)</option>
-                                </select>
-                            </div>
+                            <!-- Language auto-set from selected voice -->
+                            <input type="hidden" id="voiceLanguage" value="en-US">
 
                             <!-- Speaking Speed -->
-                            <div class="input-group">
+                            <div class="input-group" style="grid-column: 1 / -1;">
                                 <label>⚡ Speed: <span id="speakingRateDisplay" style="font-weight: bold; color: #667eea;">1.0x</span></label>
                                 <input type="range" id="speakingRate" min="0.5" max="2.0" step="0.1" value="1.0" class="slider" style="width: 100%;">
                                 <div style="display: flex; justify-content: space-between; font-size: 0.85em; color: #888;">
@@ -295,19 +344,30 @@
                         </div>
                     </div>
 
+                    <!-- Multi-Language Voice Pack -->
+                    <div id="multiLangVoiceSection" style="display:none; margin-top: 20px; padding: 18px; background: rgba(139,92,246,0.07); border: 1px solid #4c1d95; border-radius: 10px;">
+                        <h4 style="margin-bottom: 6px; color: #a78bfa; font-size: 14px;">🌍 Multi-Language Voice Pack</h4>
+                        <p style="color: #888; font-size: 12px; margin-bottom: 14px;">Select a voice for each language script. Voices are generated one by one and added to the library in order.</p>
+                        <div id="multiLangVoiceList"></div>
+                        <button onclick="generateAllLanguageVoices()" id="generateAllVoicesBtn" class="btn-secondary" style="margin-top: 10px; width: 100%; font-size: 13px;">
+                            🎙️ Generate All Language Voices (one by one)
+                        </button>
+                        <div id="multiLangVoiceProgress" style="display:none; margin-top:10px; font-size:12px; color:#a78bfa; padding:8px; background:rgba(139,92,246,0.08); border-radius:6px;"></div>
+                    </div>
+
                     <!-- Background Music Section -->
                     <div id="backgroundMusicSection" style="margin-top: 30px; background: rgba(255, 152, 0, 0.1); padding: 20px; border-radius: 10px;">
                         <h3 style="margin-bottom: 15px;">🎵 Background Music <span style="font-size: 14px; color: #888;">(Optional)</span></h3>
 
                         <label class="checkbox-label" style="margin-bottom: 15px; display: block;">
                             <input type="checkbox" id="enableBackgroundMusic" onchange="toggleBackgroundMusicUpload()">
-                            <span>🎶 Add Background Music (10% volume, auto-loop)</span>
+                            <span>🎶 Add Background Music (5% volume, auto-loop)</span>
                         </label>
 
                         <div id="backgroundMusicUploadSection" style="display: none;">
                             <div style="background: rgba(76, 175, 80, 0.1); padding: 12px; border-radius: 8px; margin-bottom: 15px;">
                                 <p style="font-size: 13px; color: #666; margin: 0;">
-                                    💡 <strong>How it works:</strong> Background music plays at 10% volume behind your voice. If music is shorter than video, it loops automatically (cutting first 5 seconds on each loop for smooth transition).
+                                    💡 <strong>How it works:</strong> Background music plays at 5% volume behind your voice. If music is shorter than video, it loops automatically (cutting first 5 seconds on each loop for smooth transition).
                                 </p>
                             </div>
 
@@ -327,6 +387,193 @@
                 </div>
             </section>
 
+            <!-- Prompts Generator -->
+            <section class="step" id="promptsGeneratorStep">
+                <h3><span class="step-number" style="background: linear-gradient(135deg, #8b5cf6, #6d28d9); font-size:18px; line-height:1;">🎨</span> Prompts Generator</h3>
+                <p style="color: #888; margin-bottom: 14px; font-size: 14px;">
+                    Splits your script into <strong>exact scenes</strong> and generates a prompt for each one — in order, matched to the script moment.
+                    Uses Director Gemini + your chosen style formula. Output is plain text ready to paste into any AI generator.
+                </p>
+
+                <!-- Mode tabs -->
+                <div style="display:flex; gap:0; margin-bottom:18px; border-radius:8px; overflow:hidden; border:1px solid #374151;">
+                    <button id="pgTabImage" onclick="pgSetMode('image')"
+                        style="flex:1; padding:10px; font-size:13px; font-weight:600; border:none; cursor:pointer; background:linear-gradient(135deg,#8b5cf6,#6d28d9); color:#fff; transition:all 0.2s;">
+                        🖼️ Image Prompts
+                    </button>
+                    <button id="pgTabVideo" onclick="pgSetMode('video')"
+                        style="flex:1; padding:10px; font-size:13px; font-weight:600; border:none; cursor:pointer; background:#1e1e2e; color:#888; transition:all 0.2s;">
+                        🎬 Video Prompts
+                    </button>
+                    <button id="pgTabMixed" onclick="pgSetMode('mixed')"
+                        style="flex:1; padding:10px; font-size:13px; font-weight:600; border:none; cursor:pointer; background:#1e1e2e; color:#888; transition:all 0.2s;">
+                        🎬+🖼️ Mixed
+                    </button>
+                </div>
+
+                <!-- IMAGE / VIDEO single-mode controls -->
+                <div id="pgSingleModeWrap">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 18px;">
+                        <div class="input-group" style="margin:0;" id="pgImageStyleWrap">
+                            <label>Image Style</label>
+                            <select id="pgStyleSelect" class="input-large">
+                                <option value="">-- Loading styles… --</option>
+                            </select>
+                        </div>
+                        <div class="input-group" style="margin:0; display:none;" id="pgVideoStyleWrap">
+                            <label>Video Style</label>
+                            <select id="pgVideoStyleSelect" class="input-large">
+                                <option value="">-- Loading styles… --</option>
+                            </select>
+                        </div>
+                        <div class="input-group" style="margin:0;">
+                            <label>Number of Scenes</label>
+                            <input type="number" id="pgCount" value="20" min="1" max="200" class="input-medium" style="width:100%;">
+                            <small style="color:#888; margin-top:4px; display:block;">Each prompt = one script scene · chunks of 15</small>
+                        </div>
+                    </div>
+                    <button onclick="generatePromptsOnly()" id="pgGenerateBtn"
+                        style="width:100%; font-size:15px; padding:12px; background:linear-gradient(135deg,#8b5cf6,#6d28d9); color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:600;">
+                        🎨 Generate Image Prompts
+                    </button>
+                </div>
+
+                <!-- MIXED mode controls -->
+                <div id="pgMixedModeWrap" style="display:none;">
+                    <p style="color:#888; font-size:13px; margin-bottom:14px;">
+                        The script is split at a character position you choose.
+                        <strong style="color:#f59e0b;">First part → 🎬 Video prompts</strong> (opening of video) ·
+                        <strong style="color:#a78bfa;">Second part → 🖼️ Image prompts</strong> (rest of video).
+                    </p>
+
+                    <!-- Split slider -->
+                    <div class="input-group" style="margin-bottom:14px;">
+                        <label>Split Point — <span id="mixedSplitLabel" style="color:#f59e0b; font-weight:700;">50%</span>
+                            <span id="mixedSplitChars" style="color:#888; font-size:12px; font-weight:normal;"></span>
+                        </label>
+                        <input type="range" id="mixedSplitSlider" min="10" max="90" value="50" style="width:100%; accent-color:#f59e0b;"
+                            oninput="mixedUpdateSplit(this.value)">
+                        <div style="display:flex; justify-content:space-between; font-size:11px; color:#666; margin-top:2px;">
+                            <span>🎬 More video</span><span>🖼️ More images</span>
+                        </div>
+                    </div>
+
+                    <!-- Two columns: video left, image right -->
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:16px;">
+                        <!-- Video side -->
+                        <div style="padding:14px; background:#1a0a0a; border:1px solid #7f1d1d; border-radius:10px;">
+                            <div style="color:#f87171; font-weight:700; font-size:13px; margin-bottom:10px;">🎬 Video Prompts (first half)</div>
+                            <div class="input-group" style="margin-bottom:8px;">
+                                <label style="font-size:12px;">Video Style</label>
+                                <select id="mixedVideoStyleSelect" class="input-large">
+                                    <option value="">Loading…</option>
+                                </select>
+                            </div>
+                            <div class="input-group" style="margin-bottom:4px;">
+                                <label style="font-size:12px;">Number of video prompts</label>
+                                <input type="number" id="mixedVideoCount" value="30" min="1" max="150" class="input-medium" style="width:100%;" oninput="mixedUpdateStats()">
+                            </div>
+                            <div id="mixedVideoDuration" style="color:#f59e0b; font-size:12px; margin-top:4px;">≈ 5 min of video (30 × 10s)</div>
+                        </div>
+                        <!-- Image side -->
+                        <div style="padding:14px; background:#0f0f1a; border:1px solid #4c1d95; border-radius:10px;">
+                            <div style="color:#a78bfa; font-weight:700; font-size:13px; margin-bottom:10px;">🖼️ Image Prompts (second half)</div>
+                            <div class="input-group" style="margin-bottom:8px;">
+                                <label style="font-size:12px;">Image Style</label>
+                                <select id="mixedImageStyleSelect" class="input-large">
+                                    <option value="">Loading…</option>
+                                </select>
+                            </div>
+                            <div class="input-group" style="margin-bottom:4px;">
+                                <label style="font-size:12px;">Number of image prompts</label>
+                                <input type="number" id="mixedImageCount" value="20" min="1" max="150" class="input-medium" style="width:100%;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <button onclick="generateMixedPrompts()" id="pgMixedGenerateBtn"
+                        style="width:100%; font-size:15px; padding:12px; background:linear-gradient(135deg,#f59e0b,#92400e); color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:600;">
+                        🎬+🖼️ Generate Mixed Prompts
+                    </button>
+                </div>
+
+                <div id="pgProgressBox" style="display:none; margin-top:14px; padding:12px; background:rgba(139,92,246,0.08); border-radius:8px; border-left:3px solid #8b5cf6;"></div>
+
+                <div id="pgResultSection" style="display:none; margin-top:16px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <label style="font-weight:600; font-size:14px;" id="pgResultLabel">Generated Prompts <span id="pgCountLabel" style="color:#888; font-weight:400;"></span></label>
+                        <button onclick="downloadPromptsText()" class="btn-success" style="padding:6px 18px; font-size:13px;">
+                            📥 Download .txt
+                        </button>
+                    </div>
+                    <textarea id="pgOutputText" rows="20" class="textarea-large" readonly
+                        style="font-family:monospace; font-size:12px; line-height:1.6; background:#111827; color:#d1d5db; border:1px solid #374151; resize:vertical;"></textarea>
+                </div>
+            </section>
+
+            <!-- SEO Generator -->
+            <section class="step" id="seoGeneratorStep">
+                <h3><span class="step-number" style="background: linear-gradient(135deg, #10b981, #065f46); font-size:18px; line-height:1;">🔍</span> SEO Generator</h3>
+                <p style="color: #888; margin-bottom: 18px; font-size: 14px;">
+                    Generate a high-quality YouTube <strong>description</strong> and <strong>tags</strong> from your title and script using Gemini.
+                    Language is auto-detected — Arabic script gets Arabic description, French gets French, etc.
+                </p>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 14px;">
+                    <div class="input-group" style="margin:0;">
+                        <label>Video Title <span style="color:#888; font-size:12px;">(auto-filled from your title above)</span></label>
+                        <input type="text" id="seoTitle" class="input-large" placeholder="Your video title...">
+                    </div>
+                    <div class="input-group" style="margin:0;">
+                        <label>Product / Affiliate Link <span style="color:#888; font-size:12px;">(always included in description)</span></label>
+                        <input type="text" id="seoLink" class="input-large" placeholder="https://...">
+                    </div>
+                </div>
+
+                <div class="input-group" style="margin-bottom:14px;">
+                    <label>Script <span style="color:#888; font-size:12px;">(auto-filled · you can edit)</span></label>
+                    <textarea id="seoScript" rows="5" class="textarea-large" style="font-size:13px;" placeholder="Paste or auto-fill your script here..."></textarea>
+                </div>
+
+                <div class="input-group" style="margin-bottom:14px;">
+                    <label>SEO Formula <span style="color:#888; font-size:12px;">(choose your saved formula preset — manage them in Settings)</span></label>
+                    <select id="seoFormulaSelect" class="input-large" style="background:#0f1a15; color:#d1fae5; border-color:#065f46;">
+                        <option value="">⚙️ Default formula</option>
+                    </select>
+                </div>
+
+                <button onclick="generateSeo()" class="btn-primary" style="width:100%; font-size:15px; padding:12px; background: linear-gradient(135deg, #10b981, #065f46);">
+                    🔍 Generate Description & Tags
+                </button>
+
+                <div id="seoProgressBox" style="display:none; margin-top:14px; padding:12px; background:rgba(16,185,129,0.08); border-radius:8px; border-left:3px solid #10b981; color:#10b981; font-size:14px;">
+                    ⏳ Generating with Gemini…
+                </div>
+
+                <div id="seoResultSection" style="display:none; margin-top:18px;">
+                    <!-- Description -->
+                    <div style="margin-bottom:16px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <label style="font-weight:600; font-size:14px;">📝 Description <span id="seoLangBadge" style="font-size:12px; color:#10b981; font-weight:400; margin-left:8px;"></span></label>
+                            <button onclick="copySeoDescription()" style="background:#065f46; color:#d1fae5; border:none; border-radius:6px; padding:5px 14px; font-size:12px; cursor:pointer;">📋 Copy</button>
+                        </div>
+                        <textarea id="seoDescription" rows="18" class="textarea-large"
+                            style="font-family:monospace; font-size:13px; line-height:1.6; background:#0f1a15; color:#d1fae5; border:1px solid #065f46; resize:vertical;"></textarea>
+                    </div>
+
+                    <!-- Tags -->
+                    <div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <label style="font-weight:600; font-size:14px;">🏷️ Tags <span id="seoTagsLength" style="font-size:12px; color:#888; font-weight:400; margin-left:8px;"></span></label>
+                            <button onclick="copySeoTags()" style="background:#065f46; color:#d1fae5; border:none; border-radius:6px; padding:5px 14px; font-size:12px; cursor:pointer;">📋 Copy</button>
+                        </div>
+                        <textarea id="seoTags" rows="4" class="textarea-large"
+                            style="font-family:monospace; font-size:13px; background:#0f1a15; color:#d1fae5; border:1px solid #065f46; resize:vertical;"></textarea>
+                        <small id="seoTagsWarning" style="display:none; color:#ef4444; font-size:12px; margin-top:4px;">⚠️ Tags exceed 400 characters — trim before uploading to YouTube</small>
+                    </div>
+                </div>
+            </section>
+
             <!-- Step 3: Media (Images/Videos) -->
             <section class="step">
                 <h3><span class="step-number">3</span> Media (Images & Videos)</h3>
@@ -342,6 +589,18 @@
                     <label class="checkbox-label">
                         <input type="checkbox" id="useStockFootage" onchange="toggleMediaSection('stock')">
                         <span>📹 Stock Footage (Pexels)</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="useAutoVideos" onchange="toggleMediaSection('autovideos')">
+                        <span>🎬 Auto Videos AI (Avatar + Stock)</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="useAutoAvatar" onchange="toggleMediaSection('autoavatar')">
+                        <span>🎭 Auto Avatar Mix (Avatar + AI Images)</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="useLocalImagesMix" onchange="toggleMediaSection('localimages')">
+                        <span>🖼️ Local Images Mix (Avatar + Your Images, No AI)</span>
                     </label>
                 </div>
 
@@ -443,9 +702,140 @@
                     <div id="stockPreview" class="image-grid"></div>
                 </div>
 
+                <!-- Auto Videos AI Section (Avatar + Stock Videos) -->
+                <div id="autoVideosSection" class="subsection" style="display: none;">
+                    <div style="background: rgba(156, 39, 176, 0.1); padding: 12px; border-radius: 8px; margin-bottom: 15px;">
+                        <p style="font-size: 13px; color: #666; margin: 0;">
+                            🎬 <strong>Auto Videos AI:</strong> Upload your avatar video and let Gemini + Whisper automatically create a video mixing avatar loops with stock videos from Pexels/Pixabay.<br>
+                            📐 <strong>Pattern:</strong> [30s avatar] → [5-10s stock] → [30s avatar] → [5-10s stock] → ... → [Last 2 min: full avatar]<br>
+                            🤖 <strong>Auto Calculation:</strong> Gemini calculates exactly how many videos needed based on voice length!
+                        </p>
+                    </div>
+
+                    <!-- Avatar Video Upload -->
+                    <div style="margin-bottom: 15px;">
+                        <label>Avatar Video (will be auto-muted):</label>
+                        <div class="upload-zone" style="padding: 20px; text-align: center;">
+                            <input type="file" id="autoVideosAvatarUpload" accept="video/*" style="display: none;" onchange="handleAutoVideosAvatarUpload(event)">
+                            <button onclick="document.getElementById('autoVideosAvatarUpload').click()" class="btn-secondary">📤 Upload Avatar Video</button>
+                            <div id="autoVideosAvatarPreview" style="margin-top: 10px;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Options -->
+                    <div style="margin-bottom: 15px;">
+                        <label>Stock APIs (searches all selected APIs for best match):</label>
+                        <select id="autoVideosStockAPI" class="input-large">
+                            <option value="both">🔍 Search Both (Pexels + Pixabay)</option>
+                            <option value="pexels">Pexels Only</option>
+                            <option value="pixabay">Pixabay Only</option>
+                        </select>
+                    </div>
+
+                    <!-- Timing Method -->
+                    <div style="margin-bottom: 15px;">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="autoVideosUseWhisper">
+                            <span>⏱️ Use Whisper STT (slower but more detailed timing)</span>
+                        </label>
+                        <p style="font-size: 12px; color: #666; margin: 5px 0 0 24px;">
+                            ⚡ Default: Fast Gemini planning (recommended)<br>
+                            🐌 Whisper: Better timing but takes longer
+                        </p>
+                    </div>
+
+                    <button onclick="generateAutoVideos()" class="btn-secondary" style="width: 100%;">🎬 Generate Auto Videos Mix</button>
+                    <div id="autoVideosProgress" class="progress-box" style="display: none;"></div>
+                </div>
+
+                <!-- Auto Avatar Mix Section (Avatar + AI Images) -->
+                <div id="autoAvatarSection" class="subsection" style="display: none;">
+                    <div style="background: rgba(255, 152, 0, 0.1); padding: 12px; border-radius: 8px; margin-bottom: 15px;">
+                        <p style="font-size: 13px; color: #666; margin: 0;">
+                            🎭 <strong>Auto Avatar Mix:</strong> Upload your avatar video and let Gemini + Whisper automatically create a video mixing avatar loops with AI-generated images.<br>
+                            📐 <strong>Pattern:</strong> [1 min avatar] → [10 sec image] → [1 min avatar] → [10 sec image] → ... → [Last 2 min: full avatar]<br>
+                            🤖 <strong>Auto Calculation:</strong> Gemini calculates exactly how many images needed based on voice length!
+                        </p>
+                    </div>
+
+                    <!-- Avatar Video Upload -->
+                    <div style="margin-bottom: 15px;">
+                        <label>Avatar Video (will be auto-muted):</label>
+                        <div class="upload-zone" style="padding: 20px; text-align: center;">
+                            <input type="file" id="autoAvatarVideoUpload" accept="video/*" style="display: none;" onchange="handleAutoAvatarVideoUpload(event)">
+                            <button onclick="document.getElementById('autoAvatarVideoUpload').click()" class="btn-secondary">📤 Upload Avatar Video</button>
+                            <div id="autoAvatarVideoPreview" style="margin-top: 10px;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Options -->
+                    <div style="margin-bottom: 15px;">
+                        <label>Image Style: <span style="font-size: 12px; color: #888;">(includes custom styles from Settings)</span></label>
+                        <select id="autoAvatarImageStyle" class="input-large">
+                            <option value="cinematic">🎬 Cinematic</option>
+                            <option value="photorealistic">📷 Photorealistic</option>
+                            <option value="artistic">🎨 Artistic</option>
+                            <option value="animated">🎭 Animated</option>
+                        </select>
+                    </div>
+
+                    <!-- Timing Method -->
+                    <div style="margin-bottom: 15px;">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="autoAvatarUseWhisper">
+                            <span>⏱️ Use Whisper STT (slower but more detailed timing)</span>
+                        </label>
+                        <p style="font-size: 12px; color: #666; margin: 5px 0 0 24px;">
+                            ⚡ Default: Fast Gemini planning (recommended)<br>
+                            🐌 Whisper: Better timing but takes longer
+                        </p>
+                    </div>
+
+                    <button onclick="generateAutoAvatar()" class="btn-secondary" style="width: 100%;">🎭 Generate Auto Avatar Mix</button>
+                    <div id="autoAvatarProgress" class="progress-box" style="display: none;"></div>
+                </div>
+
+                <!-- Local Images Mix Section -->
+                <div id="localImagesMixSection" class="subsection" style="display: none;">
+                    <div style="background: rgba(103, 58, 183, 0.1); padding: 12px; border-radius: 8px; margin-bottom: 15px;">
+                        <p style="font-size: 13px; color: #666; margin: 0;">
+                            🖼️ <strong>Local Images Mix:</strong> Upload your avatar + your own images. No AI generation.<br>
+                            📐 <strong>Pattern:</strong> [30s avatar] → [5s image] → [30s avatar] → [5s image] → ...<br>
+                            🧠 <strong>Smart calc:</strong> If images run out early → avatar loops to end. Too many images → spacing auto-adjusted to fit all images perfectly.
+                        </p>
+                    </div>
+
+                    <!-- Avatar Video -->
+                    <div style="margin-bottom: 15px;">
+                        <label>Avatar Video (will be auto-muted):</label>
+                        <div class="upload-zone" style="padding: 20px; text-align: center;">
+                            <input type="file" id="localMixAvatarUpload" accept="video/*" style="display: none;" onchange="handleLocalMixAvatarUpload(event)">
+                            <button onclick="document.getElementById('localMixAvatarUpload').click()" class="btn-secondary">📤 Upload Avatar Video</button>
+                            <div id="localMixAvatarPreview" style="margin-top: 10px;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Local Images Upload -->
+                    <div style="margin-bottom: 15px;">
+                        <label>Your Images <span style="color:#888; font-size:12px;">(JPG, PNG, WEBP, BMP, GIF — all formats)</span>:</label>
+                        <div class="upload-zone" style="padding: 20px; text-align: center;">
+                            <input type="file" id="localImagesUpload" accept="image/*" multiple style="display: none;" onchange="handleLocalImagesUpload(event)">
+                            <button onclick="document.getElementById('localImagesUpload').click()" class="btn-secondary">🖼️ Upload Images</button>
+                            <p style="font-size: 12px; color: #888; margin: 8px 0 0 0;">Select multiple images at once</p>
+                            <div id="localImagesPreview" style="margin-top: 12px;"></div>
+                        </div>
+                    </div>
+
+                    <button onclick="generateLocalImagesMix()" class="btn-secondary" style="width: 100%; background: linear-gradient(135deg, #673ab7, #9c27b0); border: none; color: white;">🖼️ Generate Local Images Mix</button>
+                    <div id="localImagesMixProgress" class="progress-box" style="display: none;"></div>
+                </div>
+
                 <!-- Media Library -->
                 <div id="mediaLibrarySection" class="subsection" style="margin-top: 30px; background: rgba(102, 126, 234, 0.1); padding: 20px; border-radius: 10px;">
-                    <h3 style="margin-bottom: 15px;">📚 Media Library <span style="font-size: 14px; color: #888;">(Drag to reorder)</span></h3>
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+                        <h3 style="margin: 0;">📚 Media Library <span style="font-size: 14px; color: #888;">(Drag to reorder)</span></h3>
+                        <button onclick="muteAllVideos()" class="btn-secondary" style="font-size: 13px; padding: 6px 14px;">🔇 Mute All Videos</button>
+                    </div>
                     <div id="mediaSelectionButtons" style="margin-bottom: 15px;"></div>
                     <div id="mediaLibraryGrid" class="media-library-grid" style="min-height: 100px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 15px;">
                         <p style="color: #888; grid-column: 1/-1;">No media added yet. Upload or fetch stock footage above.</p>
@@ -507,6 +897,18 @@
                             </span>
                         </span>
                     </label>
+                </div>
+
+                <!-- Multi-Language Video Export -->
+                <div id="multiLangExportSection" style="display:none; margin-bottom: 20px; padding: 18px; background: rgba(16,185,129,0.06); border: 1px solid #065f46; border-radius: 10px;">
+                    <h4 style="color: #10b981; margin-bottom: 8px; font-size: 14px;">🌍 Multi-Language Video Export</h4>
+                    <p style="color: #888; font-size: 12px; margin-bottom: 14px;">Generate one video per language using the same media. Videos are assembled one by one.</p>
+                    <div id="multiLangExportList"></div>
+                    <button onclick="generateMultiLangVideos()" id="generateMultiLangBtn" style="width:100%; padding:11px; background:linear-gradient(135deg,#10b981,#065f46); color:white; border:none; border-radius:8px; cursor:pointer; font-weight:700; font-size:13px; margin-top:10px;">
+                        🚀 Generate All Language Videos
+                    </button>
+                    <div id="multiLangExportProgress" style="display:none; margin-top:10px; font-size:12px; padding:10px; background:rgba(0,0,0,0.2); border-radius:6px; max-height:150px; overflow-y:auto;"></div>
+                    <div id="multiLangExportResults" style="margin-top:10px;"></div>
                 </div>
 
                 <button onclick="assembleVideo()" class="btn-primary btn-large">🚀 ASSEMBLE FINAL VIDEO</button>
@@ -684,77 +1086,259 @@
                 <!-- API Keys Tab -->
                 <div class="settings-section">
                     <h3>🔑 API Keys</h3>
-                    <div class="input-group">
-                        <label>Gemini API Key (Script Writer - Required for AI generation)</label>
-                        <div class="password-input">
-                            <input type="password" id="geminiKey" placeholder="Enter Gemini API key..." class="input-large">
-                            <button onclick="togglePassword('geminiKey')" class="btn-toggle">👁️</button>
+
+                    <!-- ════════════════════════════════════
+                         SECTION 1 — Google Gemini AI
+                    ════════════════════════════════════ -->
+                    <div style="border:1px solid #4f46e5; border-left:5px solid #6366f1; border-radius:10px; margin-bottom:24px; overflow:hidden;">
+                        <!-- Header -->
+                        <div style="background:linear-gradient(135deg,#1e1b4b,#1e1035); padding:14px 18px; display:flex; align-items:center; gap:12px;">
+                            <span style="font-size:22px;">🤖</span>
+                            <div style="flex:1;">
+                                <div style="font-weight:700; font-size:15px; color:#c7d2fe;">Google Gemini AI — Script &amp; Images</div>
+                                <div style="font-size:12px; color:#818cf8; margin-top:2px;">Each feature has its own dedicated key — no sharing, no fallback chains</div>
+                            </div>
+                            <a href="https://aistudio.google.com/app/apikey" target="_blank" style="font-size:12px; color:#818cf8; text-decoration:none; background:rgba(99,102,241,0.15); padding:4px 10px; border-radius:5px; border:1px solid #4f46e5; white-space:nowrap;">🔗 Get keys →</a>
                         </div>
-                        <span class="hint">Get from: https://aistudio.google.com/app/apikey</span>
+                        <!-- Body -->
+                        <div style="padding:18px; display:flex; flex-direction:column; gap:18px; background:#0f0f1f;">
+
+                            <!-- Key 1: Script Writer -->
+                            <div style="background:rgba(255,255,255,0.03); border:1px solid #312e81; border-radius:8px; padding:14px;">
+                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                                    <span style="font-weight:700; color:#e0e7ff; font-size:14px;">Script Writer</span>
+                                    <span style="background:#166534; color:#86efac; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">REQUIRED</span>
+                                    <span style="background:rgba(99,102,241,0.15); color:#a5b4fc; font-size:11px; padding:2px 7px; border-radius:10px;">Script Generation</span>
+                                    <span style="background:rgba(99,102,241,0.15); color:#a5b4fc; font-size:11px; padding:2px 7px; border-radius:10px;">Title Generation</span>
+                                </div>
+                                <div class="password-input">
+                                    <input type="password" id="geminiKey" placeholder="AIza..." class="input-large">
+                                    <button onclick="togglePassword('geminiKey')" class="btn-toggle">👁️</button>
+                                </div>
+                                <span class="hint">Dedicated key for Script Writer and Title Generator only.</span>
+                            </div>
+
+                            <!-- Key 2: Auto Images AI -->
+                            <div style="background:rgba(255,255,255,0.03); border:1px solid #312e81; border-radius:8px; padding:14px;">
+                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                                    <span style="font-weight:700; color:#e0e7ff; font-size:14px;">Auto Images AI</span>
+                                    <span style="background:#1e3a5f; color:#93c5fd; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">OPTIONAL</span>
+                                    <span style="background:rgba(139,92,246,0.15); color:#c4b5fd; font-size:11px; padding:2px 7px; border-radius:10px;">Image Scene Planning</span>
+                                </div>
+                                <div class="password-input">
+                                    <input type="password" id="directorGeminiKey" placeholder="AIza..." class="input-large">
+                                    <button onclick="togglePassword('directorGeminiKey')" class="btn-toggle">👁️</button>
+                                </div>
+                                <span class="hint">Dedicated key for Auto Images AI scene planning (gemini-2.5-flash).</span>
+                            </div>
+
+                            <!-- Key 3: Image Generation -->
+                            <div style="background:rgba(255,255,255,0.03); border:1px solid #312e81; border-radius:8px; padding:14px;">
+                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                                    <span style="font-weight:700; color:#e0e7ff; font-size:14px;">Image Generation</span>
+                                    <span style="background:#1e3a5f; color:#93c5fd; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">OPTIONAL</span>
+                                    <span style="background:rgba(34,197,94,0.12); color:#86efac; font-size:11px; padding:2px 7px; border-radius:10px;">Avatar Auto Mix</span>
+                                    <span style="background:rgba(34,197,94,0.12); color:#86efac; font-size:11px; padding:2px 7px; border-radius:10px;">Auto Images (Gemini)</span>
+                                </div>
+                                <div class="password-input">
+                                    <input type="password" id="geminiImageKey" placeholder="AIza..." class="input-large">
+                                    <button onclick="togglePassword('geminiImageKey')" class="btn-toggle">👁️</button>
+                                </div>
+                                <span class="hint">🖼️ Dedicated key for Gemini Imagen 3 — cinematic 1920×1080 AI images.</span>
+                            </div>
+
+                            <!-- Keys 4–5: Translation (side by side) -->
+                            <div style="background:rgba(255,255,255,0.03); border:1px dashed #4c1d95; border-radius:8px; padding:14px;">
+                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap;">
+                                    <span style="font-weight:700; color:#e0e7ff; font-size:14px;">🌍 Translation Keys</span>
+                                    <span style="background:#1e3a5f; color:#93c5fd; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">OPTIONAL</span>
+                                    <span style="background:rgba(251,146,60,0.12); color:#fdba74; font-size:11px; padding:2px 7px; border-radius:10px;">Multi-language Translation</span>
+                                    <span style="background:rgba(251,146,60,0.12); color:#fdba74; font-size:11px; padding:2px 7px; border-radius:10px;">Parallel Processing</span>
+                                </div>
+                                <p style="color:#6b7280; font-size:12px; margin:6px 0 12px;">Only Translation Keys 1 &amp; 2 are used for translation — completely separate from all other features.</p>
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                                    <div>
+                                        <label style="display:block; color:#9ca3af; font-size:12px; font-weight:600; margin-bottom:6px;">Translate Key 1</label>
+                                        <div class="password-input">
+                                            <input type="password" id="geminiTranslate1Key" placeholder="AIza..." class="input-large">
+                                            <button onclick="togglePassword('geminiTranslate1Key')" class="btn-toggle">👁️</button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label style="display:block; color:#9ca3af; font-size:12px; font-weight:600; margin-bottom:6px;">Translate Key 2 <span style="color:#6b7280; font-weight:400;">(optional)</span></label>
+                                        <div class="password-input">
+                                            <input type="password" id="geminiTranslate2Key" placeholder="AIza..." class="input-large">
+                                            <button onclick="togglePassword('geminiTranslate2Key')" class="btn-toggle">👁️</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Key 6: Prompts Generator -->
+                            <div style="background:rgba(6,182,212,0.05); border:1px solid #0e7490; border-radius:8px; padding:14px;">
+                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                                    <span style="font-weight:700; color:#a5f3fc; font-size:14px;">🎬 Prompts Generator</span>
+                                    <span style="background:#166534; color:#86efac; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">REQUIRED</span>
+                                    <span style="background:rgba(6,182,212,0.12); color:#67e8f9; font-size:11px; padding:2px 7px; border-radius:10px;">Image Prompts</span>
+                                    <span style="background:rgba(6,182,212,0.12); color:#67e8f9; font-size:11px; padding:2px 7px; border-radius:10px;">Video Prompts</span>
+                                    <span style="background:rgba(6,182,212,0.12); color:#67e8f9; font-size:11px; padding:2px 7px; border-radius:10px;">Mixed Mode</span>
+                                </div>
+                                <div class="password-input">
+                                    <input type="password" id="geminiPromptsKey" placeholder="AIza..." class="input-large">
+                                    <button onclick="togglePassword('geminiPromptsKey')" class="btn-toggle">👁️</button>
+                                </div>
+                                <span class="hint">Dedicated key for the Prompts Generator — used only for this feature.</span>
+                            </div>
+
+                            <!-- Key 7: SEO Generator -->
+                            <div style="background:rgba(16,185,129,0.05); border:1px solid #065f46; border-radius:8px; padding:14px;">
+                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                                    <span style="font-weight:700; color:#6ee7b7; font-size:14px;">🔍 SEO Generator</span>
+                                    <span style="background:#166534; color:#86efac; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">REQUIRED</span>
+                                    <span style="background:rgba(16,185,129,0.12); color:#6ee7b7; font-size:11px; padding:2px 7px; border-radius:10px;">Descriptions</span>
+                                    <span style="background:rgba(16,185,129,0.12); color:#6ee7b7; font-size:11px; padding:2px 7px; border-radius:10px;">Tags</span>
+                                    <span style="background:rgba(16,185,129,0.12); color:#6ee7b7; font-size:11px; padding:2px 7px; border-radius:10px;">Language Auto-Detect</span>
+                                </div>
+                                <div class="password-input">
+                                    <input type="password" id="geminiSeoKey" placeholder="AIza..." class="input-large">
+                                    <button onclick="togglePassword('geminiSeoKey')" class="btn-toggle">👁️</button>
+                                </div>
+                                <span class="hint">Dedicated key for the SEO Generator — used only for this feature.</span>
+                            </div>
+
+                        </div>
                     </div>
 
-                    <div class="input-group">
-                        <label>Director Gemini API Key (Auto Images AI - gemini-2.5-flash - SEPARATE key recommended)</label>
-                        <div class="password-input">
-                            <input type="password" id="directorGeminiKey" placeholder="Leave empty to use Script Writer key..." class="input-large">
-                            <button onclick="togglePassword('directorGeminiKey')" class="btn-toggle">👁️</button>
+                    <!-- ════════════════════════════════════
+                         SECTION 2 — AI Image Generation (Replicate)
+                    ════════════════════════════════════ -->
+                    <div style="border:1px solid #b45309; border-left:5px solid #f59e0b; border-radius:10px; margin-bottom:24px; overflow:hidden;">
+                        <div style="background:linear-gradient(135deg,#1c1207,#1a1000); padding:14px 18px; display:flex; align-items:center; gap:12px;">
+                            <span style="font-size:22px;">🎨</span>
+                            <div style="flex:1;">
+                                <div style="font-weight:700; font-size:15px; color:#fde68a;">AI Image Generation</div>
+                                <div style="font-size:12px; color:#d97706; margin-top:2px;">Flux &amp; SDXL image generation via Replicate · Pay-per-use</div>
+                            </div>
+                            <a href="https://replicate.com/account/api-tokens" target="_blank" style="font-size:12px; color:#d97706; text-decoration:none; background:rgba(245,158,11,0.1); padding:4px 10px; border-radius:5px; border:1px solid #b45309; white-space:nowrap;">🔗 Get key →</a>
                         </div>
-                        <span class="hint">💡 Use a DIFFERENT Gemini key to avoid rate limit conflicts between script generation and image prompt generation</span>
+                        <div style="padding:18px; background:#0f0a00;">
+                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                                <span style="font-weight:700; color:#fde68a; font-size:14px;">Replicate</span>
+                                <span style="background:#166534; color:#86efac; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">REQUIRED</span>
+                                <span style="background:rgba(245,158,11,0.12); color:#fcd34d; font-size:11px; padding:2px 7px; border-radius:10px;">Flux Images</span>
+                                <span style="background:rgba(245,158,11,0.12); color:#fcd34d; font-size:11px; padding:2px 7px; border-radius:10px;">SDXL</span>
+                                <span style="background:rgba(245,158,11,0.12); color:#fcd34d; font-size:11px; padding:2px 7px; border-radius:10px;">Auto Images</span>
+                            </div>
+                            <div class="password-input">
+                                <input type="password" id="replicateKey" placeholder="r8_..." class="input-large">
+                                <button onclick="togglePassword('replicateKey')" class="btn-toggle">👁️</button>
+                            </div>
+                            <span class="hint">~$0.003 per image · Free signup available.</span>
+                        </div>
                     </div>
 
-                    <div class="input-group">
-                        <label>Replicate API Token (Required for AI images)</label>
-                        <div class="password-input">
-                            <input type="password" id="replicateKey" placeholder="Enter Replicate token..." class="input-large">
-                            <button onclick="togglePassword('replicateKey')" class="btn-toggle">👁️</button>
+                    <!-- ════════════════════════════════════
+                         SECTION 3 — Voice Generation
+                    ════════════════════════════════════ -->
+                    <div style="border:1px solid #166534; border-left:5px solid #22c55e; border-radius:10px; margin-bottom:24px; overflow:hidden;">
+                        <div style="background:linear-gradient(135deg,#052e16,#0a1f0e); padding:14px 18px; display:flex; align-items:center; gap:12px;">
+                            <span style="font-size:22px;">🎤</span>
+                            <div style="flex:1;">
+                                <div style="font-weight:700; font-size:15px; color:#bbf7d0;">Voice Generation</div>
+                                <div style="font-size:12px; color:#4ade80; margin-top:2px;">AI text-to-speech for video narration · Inworld Studio</div>
+                            </div>
+                            <a href="https://studio.inworld.ai/" target="_blank" style="font-size:12px; color:#4ade80; text-decoration:none; background:rgba(34,197,94,0.1); padding:4px 10px; border-radius:5px; border:1px solid #166534; white-space:nowrap;">🔗 Get key →</a>
                         </div>
-                        <span class="hint">Get from: https://replicate.com/account/api-tokens</span>
+                        <div style="padding:18px; background:#020f05; display:flex; flex-direction:column; gap:14px;">
+
+                            <div>
+                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                                    <span style="font-weight:700; color:#bbf7d0; font-size:14px;">Inworld AI — API Key</span>
+                                    <span style="background:#166534; color:#86efac; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">REQUIRED</span>
+                                    <span style="background:rgba(34,197,94,0.12); color:#86efac; font-size:11px; padding:2px 7px; border-radius:10px;">AI Voice</span>
+                                    <span style="background:rgba(34,197,94,0.12); color:#86efac; font-size:11px; padding:2px 7px; border-radius:10px;">Text-to-Speech</span>
+                                </div>
+                                <div class="password-input">
+                                    <input type="password" id="inworldKey" placeholder="Enter Inworld API key..." class="input-large">
+                                    <button onclick="togglePassword('inworldKey')" class="btn-toggle">👁️</button>
+                                </div>
+                                <span class="hint">Workspace Settings → API Keys in Inworld Studio.</span>
+                            </div>
+
+                            <div>
+                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                                    <span style="font-weight:700; color:#bbf7d0; font-size:14px;">Inworld AI — API Secret</span>
+                                    <span style="background:#166534; color:#86efac; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">REQUIRED</span>
+                                </div>
+                                <div class="password-input">
+                                    <input type="password" id="inworldSecret" placeholder="Enter Inworld API secret..." class="input-large">
+                                    <button onclick="togglePassword('inworldSecret')" class="btn-toggle">👁️</button>
+                                </div>
+                                <span class="hint">Found alongside the API Key in Inworld Studio settings.</span>
+                            </div>
+
+                        </div>
                     </div>
 
-                    <div class="input-group">
-                        <label>Inworld AI API Key (Required for AI voices)</label>
-                        <div class="password-input">
-                            <input type="password" id="inworldKey" placeholder="Enter Inworld API key..." class="input-large">
-                            <button onclick="togglePassword('inworldKey')" class="btn-toggle">👁️</button>
+                    <!-- ════════════════════════════════════
+                         SECTION 4 — Stock Media
+                    ════════════════════════════════════ -->
+                    <div style="border:1px solid #7e22ce; border-left:5px solid #a855f7; border-radius:10px; margin-bottom:24px; overflow:hidden;">
+                        <div style="background:linear-gradient(135deg,#1a0a2e,#120820); padding:14px 18px; display:flex; align-items:center; gap:12px;">
+                            <span style="font-size:22px;">📸</span>
+                            <div style="flex:1;">
+                                <div style="font-weight:700; font-size:15px; color:#e9d5ff;">Stock Media</div>
+                                <div style="font-size:12px; color:#a855f7; margin-top:2px;">Free stock photos &amp; videos · All optional · Free tiers available</div>
+                            </div>
                         </div>
-                        <span class="hint">Get from: https://studio.inworld.ai/ (Workspace Settings → API Keys)</span>
+                        <div style="padding:18px; background:#0a0314; display:flex; flex-direction:column; gap:14px;">
+
+                            <div>
+                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                                    <span style="font-weight:700; color:#e9d5ff; font-size:14px;">Pexels</span>
+                                    <span style="background:#1e3a5f; color:#93c5fd; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">OPTIONAL</span>
+                                    <span style="background:rgba(168,85,247,0.12); color:#d8b4fe; font-size:11px; padding:2px 7px; border-radius:10px;">Stock Photos</span>
+                                    <span style="background:rgba(168,85,247,0.12); color:#d8b4fe; font-size:11px; padding:2px 7px; border-radius:10px;">Stock Videos</span>
+                                    <a href="https://www.pexels.com/api/" target="_blank" style="font-size:11px; color:#a855f7; text-decoration:none; margin-left:auto;">🔗 Get key →</a>
+                                </div>
+                                <div class="password-input">
+                                    <input type="password" id="pexelsKey" placeholder="Pexels API key..." class="input-large">
+                                    <button onclick="togglePassword('pexelsKey')" class="btn-toggle">👁️</button>
+                                </div>
+                                <span class="hint">Free tier — no billing required.</span>
+                            </div>
+
+                            <div>
+                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                                    <span style="font-weight:700; color:#e9d5ff; font-size:14px;">Pixabay</span>
+                                    <span style="background:#1e3a5f; color:#93c5fd; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">OPTIONAL</span>
+                                    <span style="background:rgba(168,85,247,0.12); color:#d8b4fe; font-size:11px; padding:2px 7px; border-radius:10px;">Stock Images</span>
+                                    <a href="https://pixabay.com/api/docs/" target="_blank" style="font-size:11px; color:#a855f7; text-decoration:none; margin-left:auto;">🔗 Get key →</a>
+                                </div>
+                                <div class="password-input">
+                                    <input type="password" id="pixabayKey" placeholder="Pixabay API key..." class="input-large">
+                                    <button onclick="togglePassword('pixabayKey')" class="btn-toggle">👁️</button>
+                                </div>
+                                <span class="hint">Free tier available at pixabay.com/api/docs/</span>
+                            </div>
+
+                            <div>
+                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                                    <span style="font-weight:700; color:#e9d5ff; font-size:14px;">Unsplash</span>
+                                    <span style="background:#1e3a5f; color:#93c5fd; font-size:11px; font-weight:700; padding:2px 8px; border-radius:12px;">OPTIONAL</span>
+                                    <span style="background:rgba(168,85,247,0.12); color:#d8b4fe; font-size:11px; padding:2px 7px; border-radius:10px;">Stock Photos</span>
+                                    <a href="https://unsplash.com/developers" target="_blank" style="font-size:11px; color:#a855f7; text-decoration:none; margin-left:auto;">🔗 Get key →</a>
+                                </div>
+                                <div class="password-input">
+                                    <input type="password" id="unsplashKey" placeholder="Unsplash access key..." class="input-large">
+                                    <button onclick="togglePassword('unsplashKey')" class="btn-toggle">👁️</button>
+                                </div>
+                                <span class="hint">Free tier available at unsplash.com/developers</span>
+                            </div>
+
+                        </div>
                     </div>
 
-                    <div class="input-group">
-                        <label>Inworld AI API Secret (Required for AI voices)</label>
-                        <div class="password-input">
-                            <input type="password" id="inworldSecret" placeholder="Enter Inworld API secret..." class="input-large">
-                            <button onclick="togglePassword('inworldSecret')" class="btn-toggle">👁️</button>
-                        </div>
-                        <span class="hint">Get from: https://studio.inworld.ai/ (Workspace Settings → API Keys)</span>
-                    </div>
-
-                    <div class="input-group">
-                        <label>Pexels API Key (Optional - for stock footage)</label>
-                        <div class="password-input">
-                            <input type="password" id="pexelsKey" placeholder="Enter Pexels API key..." class="input-large">
-                            <button onclick="togglePassword('pexelsKey')" class="btn-toggle">👁️</button>
-                        </div>
-                        <span class="hint">Get from: https://www.pexels.com/api/</span>
-                    </div>
-
-                    <div class="input-group">
-                        <label>Pixabay API Key (Optional - for stock images)</label>
-                        <div class="password-input">
-                            <input type="password" id="pixabayKey" placeholder="Enter Pixabay API key..." class="input-large">
-                            <button onclick="togglePassword('pixabayKey')" class="btn-toggle">👁️</button>
-                        </div>
-                        <span class="hint">Get from: https://pixabay.com/api/docs/</span>
-                    </div>
-
-                    <div class="input-group">
-                        <label>Unsplash API Key (Optional - for stock images)</label>
-                        <div class="password-input">
-                            <input type="password" id="unsplashKey" placeholder="Enter Unsplash access key..." class="input-large">
-                            <button onclick="togglePassword('unsplashKey')" class="btn-toggle">👁️</button>
-                        </div>
-                        <span class="hint">Get from: https://unsplash.com/developers</span>
-                    </div>
                 </div>
 
                 <!-- Niche Management Section -->
@@ -787,10 +1371,62 @@
                     <div id="nichesList" style="margin-top: 20px;">
                         <!-- Existing niches will be listed here -->
                     </div>
+
+                    <!-- Edit Niche Inline Form (hidden by default) -->
+                    <div id="nicheEditForm" style="display:none; margin-top:16px; background:rgba(102,126,234,0.08); border:2px solid #667eea; border-radius:10px; padding:20px;">
+                        <h4 style="color:#667eea; margin:0 0 16px;">✏️ Edit Niche</h4>
+                        <input type="hidden" id="editNicheId">
+                        <div class="input-group">
+                            <label style="color:#ccc;">Niche Name</label>
+                            <input type="text" id="editNicheName" class="input-large" placeholder="Niche name">
+                        </div>
+                        <div class="input-group" style="margin-top:10px;">
+                            <label style="color:#ccc;">Language</label>
+                            <select id="editNicheLanguage" class="input-large">
+                                <option value="English">English</option>
+                                <option value="French">French</option>
+                                <option value="Spanish">Spanish</option>
+                                <option value="Arabic">Arabic</option>
+                                <option value="German">German</option>
+                                <option value="Portuguese">Portuguese</option>
+                                <option value="Italian">Italian</option>
+                                <option value="Chinese">Chinese</option>
+                            </select>
+                        </div>
+                        <div class="input-group" style="margin-top:10px;">
+                            <label style="color:#ccc;">
+                                Writing Guidelines
+                                <span id="editNicheCharCount" style="font-weight:400; color:#999; margin-left:8px; font-size:12px;">0 chars</span>
+                            </label>
+                            <textarea id="editNicheGuidelines" rows="12" class="textarea-large"
+                                      oninput="updateEditNicheCharCount()"
+                                      placeholder="Writing guidelines (min 100 characters)..."></textarea>
+                        </div>
+                        <div style="display:flex; gap:10px; margin-top:14px;">
+                            <button onclick="saveNicheEdit()" class="btn-primary">💾 Save Changes</button>
+                            <button onclick="cancelNicheEdit()" class="btn-secondary">✕ Cancel</button>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Image Styles Section -->
                 <div class="settings-section">
+                    <!-- Auto Images Formula -->
+                    <h3>🎨 Auto Images Formula</h3>
+                    <p style="color: #666; margin-bottom: 10px;">
+                        This formula controls <strong>how</strong> the Director Gemini writes image prompts — the creative principles, quality rules, and scene distribution strategy.
+                        Both <strong>🎨 Auto Images</strong> and the <strong>Prompts Generator</strong> use this formula.<br>
+                        <span style="color:#a78bfa; font-size:13px;">Available placeholders: <code>{n_images}</code> <code>{style_name}</code> <code>{lighting}</code> <code>{composition}</code> <code>{color_palette}</code></span>
+                    </p>
+                    <div class="input-group">
+                        <textarea id="autoImagesFormulaText" rows="16" class="textarea-large" placeholder="Loading Auto Images Formula..."></textarea>
+                    </div>
+                    <div style="display:flex; gap:10px; margin-top:8px;">
+                        <button onclick="resetAutoImagesFormula()" class="btn-secondary" style="font-size:13px; padding:6px 14px;">↺ Reset to Default</button>
+                    </div>
+
+                    <hr style="margin: 24px 0; border-color: #333;">
+
                     <h3>🎨 Auto Images AI - Custom Styles</h3>
                     <p style="color: #666; margin-bottom: 15px;">Create custom image styles for Auto Images AI. Each style defines visual rules, composition, lighting, and colors that the Director Gemini (gemini-2.5-flash) uses to generate detailed prompts.</p>
 
@@ -808,49 +1444,204 @@
                         <button onclick="openStyleCreator()" class="btn-primary" style="margin-top: 10px;">➕ Create New Style</button>
                     </div>
 
-                    <div id="styleCreatorSection" style="display: none; margin-top: 20px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
-                        <h4 style="margin: 0 0 15px 0;">Create New Style</h4>
+                    <!-- hidden input tracks which style is being edited (empty = create mode) -->
+                    <input type="hidden" id="editingStyleId" value="">
+
+                    <div id="styleCreatorSection" style="display: none; margin-top: 20px; padding: 20px; background: #1a1a2e; border: 1px solid #7c3aed; border-radius: 10px;">
+                        <h4 id="styleCreatorTitle" style="margin: 0 0 15px 0; color: #a78bfa;">✏️ Create New Style</h4>
 
                         <div class="input-group">
-                            <label>Style Name</label>
-                            <input type="text" id="newStyleName" placeholder="e.g., 'Cyberpunk Neon', 'Vintage Film'" class="input-large">
+                            <label>Style Name <span style="color:#ef4444;">*</span></label>
+                            <input type="text" id="newStyleName" placeholder="e.g., 'Black Robot Trader — Cinematic Cartoon'" class="input-large">
                         </div>
 
-                        <div class="input-group">
-                            <label>Description</label>
-                            <textarea id="newStyleDescription" rows="2" placeholder="Brief description of this style..." class="textarea-large"></textarea>
+                        <!-- BIG FORMULA FIELD -->
+                        <div class="input-group" style="margin-top:14px;">
+                            <label style="font-size:14px; color:#a78bfa; font-weight:700;">
+                                🎨 Style Formula
+                                <span style="font-size:12px; color:#888; font-weight:normal; margin-left:8px;">(one big prompt — write everything here, replaces all fields below)</span>
+                            </label>
+                            <textarea id="newStyleFormula" rows="14" class="textarea-large" style="font-family:monospace; font-size:13px; background:#0f0f1a; color:#e2e8f0; border-color:#7c3aed;"
+                                placeholder="Write your full style formula here. Describe the character, visual approach, rules, what to include/avoid, camera instructions, etc.
+
+Example:
+A consistent anthropomorphic character with a perfectly round black head, large glowing green oval eyes, wearing a dark navy business suit with white shirt and red tie. Semi-realistic cartoon illustration style — not childish, not photorealistic. Think animated film concept art meets financial thriller.
+
+RULES:
+- Character stays identical in every scene
+- Background changes to match the script moment
+- Always include accurate trading/financial details specific to the script
+
+AVOID:
+- Changing the character appearance
+- Generic office backgrounds with no relevance to the script
+- Photorealistic style"></textarea>
                         </div>
 
-                        <div class="input-group">
-                            <label>Visual Rules (3-10 items, one per line)</label>
-                            <textarea id="newStyleVisualRules" rows="4" placeholder="Example:&#10;Neon lights with high contrast&#10;Futuristic cyberpunk aesthetic&#10;Dark urban backgrounds" class="textarea-large"></textarea>
-                        </div>
+                        <!-- ADVANCED FIELDS (optional when formula is filled) -->
+                        <details style="margin-top:12px;">
+                            <summary style="cursor:pointer; color:#888; font-size:13px; padding:6px 0;">⚙️ Advanced fields (optional — used only when Style Formula is empty)</summary>
+                            <div style="margin-top:12px;">
+                                <div class="input-group">
+                                    <label>Description</label>
+                                    <textarea id="newStyleDescription" rows="2" placeholder="Brief description..." class="textarea-large"></textarea>
+                                </div>
+                                <div class="input-group">
+                                    <label>Visual Rules (3+ items, one per line)</label>
+                                    <textarea id="newStyleVisualRules" rows="4" placeholder="Rule 1&#10;Rule 2&#10;Rule 3" class="textarea-large"></textarea>
+                                </div>
+                                <div class="input-group">
+                                    <label>Negative Rules (2+ items, one per line)</label>
+                                    <textarea id="newStyleNegativeRules" rows="3" placeholder="Avoid 1&#10;Avoid 2" class="textarea-large"></textarea>
+                                </div>
+                                <div class="input-group">
+                                    <label>Composition Style</label>
+                                    <input type="text" id="newStyleComposition" placeholder="e.g., 'Dynamic angles with rule of thirds'" class="input-large">
+                                </div>
+                                <div class="input-group">
+                                    <label>Lighting Style</label>
+                                    <input type="text" id="newStyleLighting" placeholder="e.g., 'Neon rim lighting with deep shadows'" class="input-large">
+                                </div>
+                                <div class="input-group">
+                                    <label>Color Palette (3+ colors, one per line)</label>
+                                    <textarea id="newStyleColors" rows="3" placeholder="Electric blue&#10;Hot pink&#10;Deep purple" class="textarea-large"></textarea>
+                                </div>
+                            </div>
+                        </details>
 
-                        <div class="input-group">
-                            <label>Negative Rules (2-10 items, one per line)</label>
-                            <textarea id="newStyleNegativeRules" rows="3" placeholder="Example:&#10;No bright daylight scenes&#10;Avoid natural landscapes" class="textarea-large"></textarea>
-                        </div>
-
-                        <div class="input-group">
-                            <label>Composition Style</label>
-                            <input type="text" id="newStyleComposition" placeholder="e.g., 'Dynamic angles with rule of thirds'" class="input-large">
-                        </div>
-
-                        <div class="input-group">
-                            <label>Lighting Style</label>
-                            <input type="text" id="newStyleLighting" placeholder="e.g., 'Neon rim lighting with deep shadows'" class="input-large">
-                        </div>
-
-                        <div class="input-group">
-                            <label>Color Palette (3-10 colors, one per line)</label>
-                            <textarea id="newStyleColors" rows="3" placeholder="Example:&#10;Electric blue&#10;Hot pink&#10;Deep purple" class="textarea-large"></textarea>
-                        </div>
-
-                        <div style="display: flex; gap: 10px; margin-top: 15px;">
+                        <div style="display: flex; gap: 10px; margin-top: 16px;">
                             <button onclick="saveNewStyle()" class="btn-success">💾 Save Style</button>
                             <button onclick="closeStyleCreator()" class="btn-secondary">Cancel</button>
                         </div>
                     </div>
+                </div>
+
+                <!-- Video Styles -->
+                <div class="settings-section" style="border-top:2px solid #dc2626; padding-top:24px; margin-top:8px;">
+                    <h3 style="color:#f87171;">🎬 Video Styles</h3>
+                    <p style="color:#666; margin-bottom:14px; font-size:14px;">
+                        Create custom styles for the <strong>Video Prompts</strong> mode in Prompts Generator.
+                        Each style has a formula that tells the AI how to write video prompts
+                        (camera movement, duration, motion, mood, render quality).<br>
+                        <span style="color:#f87171; font-size:13px;">Built-in: 🎬 Cinematic · 🎥 Documentary · 🎠 Animated</span>
+                    </p>
+
+                    <div id="videoStylesList" style="margin-bottom:14px;">
+                        <p style="color:#666; font-size:14px;">Loading styles…</p>
+                    </div>
+
+                    <button onclick="openVideoStyleCreator()" class="btn-primary" style="background:linear-gradient(135deg,#dc2626,#7f1d1d); font-size:13px; padding:8px 18px;">➕ Create New Video Style</button>
+
+                    <input type="hidden" id="editingVideoStyleId" value="">
+                    <div id="videoStyleCreatorSection" style="display:none; margin-top:18px; padding:18px; background:#1a0a0a; border:1px solid #dc2626; border-radius:10px;">
+                        <h4 id="videoStyleCreatorTitle" style="margin:0 0 14px; color:#f87171;">➕ New Video Style</h4>
+
+                        <div class="input-group">
+                            <label>Style Name <span style="color:#ef4444;">*</span></label>
+                            <input type="text" id="newVideoStyleName" class="input-large" placeholder="e.g., 'Black Robot Trader Video', 'Epic Nature Documentary'">
+                        </div>
+
+                        <div class="input-group" style="margin-top:12px;">
+                            <label style="color:#f87171; font-weight:700;">🎬 Video Style Formula <span style="color:#ef4444;">*</span>
+                                <span style="font-size:12px; color:#888; font-weight:normal; margin-left:6px;">
+                                    Describe camera, motion, duration, mood, render quality
+                                </span>
+                            </label>
+                            <textarea id="newVideoStyleFormula" rows="12" class="textarea-large"
+                                style="font-family:monospace; font-size:13px; background:#0f0505; color:#fca5a5; border-color:#dc2626;"
+                                placeholder="Write your video style formula here.
+
+Example:
+Semi-realistic cartoon animation style, consistent character design. Camera: slow push-in or medium shot. Duration: 6–8 seconds per scene. Motion: smooth, intentional. Mood: dramatic, financial thriller atmosphere. Color: dark navy palette with green screen glow. Every scene shows the robot character reacting to a specific trading moment from the script. End every prompt with: 4K, smooth animation, professional, --no text --no subtitles --no watermarks"></textarea>
+                        </div>
+
+                        <div class="input-group" style="margin-top:12px;">
+                            <label>Description (optional)</label>
+                            <input type="text" id="newVideoStyleDesc" class="input-large" placeholder="Short description of this style">
+                        </div>
+
+                        <div style="display:flex; gap:10px; margin-top:14px;">
+                            <button onclick="saveVideoStylePreset()" class="btn-success">💾 Save Video Style</button>
+                            <button onclick="closeVideoStyleCreator()" class="btn-secondary">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SEO Generator Formulas -->
+                <div class="settings-section" style="border-top:2px solid #065f46; padding-top:24px; margin-top:8px;">
+                    <h3 style="color:#10b981;">🔍 SEO Generator — Formulas</h3>
+                    <p style="color:#666; margin-bottom:14px; font-size:14px;">
+                        Save multiple SEO formula presets. Each formula controls how the AI structures your description and tags.
+                        Choose which one to use each time you generate — different niches, different structures.<br>
+                        <span style="color:#10b981; font-size:13px;">Placeholder: <code>{link}</code> — replaced with the link you enter when generating.</span>
+                    </p>
+
+                    <div class="input-group" style="margin-bottom:14px;">
+                        <label>Default Product / Affiliate Link <span style="color:#888; font-size:12px;">(pre-fills the link field in the SEO Generator)</span></label>
+                        <input type="text" id="seoDefaultLink" class="input-large" placeholder="https://yourlink.com/product">
+                        <button onclick="saveSeoDefaultLink()" class="btn-secondary" style="margin-top:6px; font-size:13px; padding:5px 14px;">💾 Save Link</button>
+                    </div>
+
+                    <!-- Saved presets list -->
+                    <div id="seoFormulasList" style="margin-bottom:14px;">
+                        <p style="color:#666; font-size:14px;">Loading formulas…</p>
+                    </div>
+
+                    <button onclick="openSeoFormulaCreator()" class="btn-primary" style="font-size:13px; padding:8px 18px;">➕ Create New Formula</button>
+
+                    <!-- Create / Edit form -->
+                    <input type="hidden" id="editingSeoFormulaId" value="">
+                    <div id="seoFormulaCreatorSection" style="display:none; margin-top:18px; padding:18px; background:#0f1a15; border:1px solid #065f46; border-radius:10px;">
+                        <h4 id="seoFormulaCreatorTitle" style="margin:0 0 14px; color:#10b981;">➕ New SEO Formula</h4>
+
+                        <div class="input-group">
+                            <label>Formula Name <span style="color:#ef4444;">*</span></label>
+                            <input type="text" id="newSeoFormulaName" class="input-large" placeholder="e.g., Trading French, Book Review English, Arabic Niche">
+                        </div>
+
+                        <div class="input-group" style="margin-top:12px;">
+                            <label style="color:#10b981; font-weight:700;">Formula / Instructions <span style="color:#ef4444;">*</span>
+                                <span style="font-size:12px; color:#888; font-weight:normal; margin-left:6px;">Use <code>{link}</code> where the link should appear</span>
+                            </label>
+                            <textarea id="newSeoFormulaText" rows="14" class="textarea-large"
+                                style="font-family:monospace; font-size:13px; background:#091210; color:#d1fae5; border-color:#065f46;"
+                                placeholder="Write your complete formula here.
+
+Example:
+Write a YouTube description in the video language with:
+1. Hook (2-3 lines) that connects to the title
+2. 4 bullet points with •
+3. CTA section: 👉 {link}
+4. ⏱ CHAPITRES with timestamps
+5. Subscribe call-to-action
+
+TAGS: comma-separated, under 400 chars, match the title keywords"></textarea>
+                        </div>
+
+                        <div style="display:flex; gap:10px; margin-top:14px;">
+                            <button onclick="saveSeoFormulaPreset()" class="btn-success">💾 Save Formula</button>
+                            <button onclick="closeSeoFormulaCreator()" class="btn-secondary">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Alae Baha Settings Vault -->
+                <div class="settings-section" style="border-top:2px solid #b8860b; padding-top:24px; margin-top:8px;">
+                    <h3 style="color:#f5c842; display:flex; align-items:center; gap:10px;">
+                        🔐 Alae Baha – Settings Vault
+                    </h3>
+                    <p style="color:#d4a84b; margin-bottom:18px; font-size:14px;">
+                        Export ALL your settings (APIs, niches, styles, formulas) from this machine, or import them onto any other machine with one click — password protected.
+                    </p>
+                    <div style="display:flex; gap:12px; flex-wrap:wrap;">
+                        <button onclick="alaeBahaOpen('export')" class="btn-primary" style="background:linear-gradient(135deg,#f5c842,#b8860b); color:#1a0a00; font-weight:700; border:none; padding:10px 22px; border-radius:8px; cursor:pointer; font-size:14px;">
+                            📤 Export Settings
+                        </button>
+                        <button onclick="alaeBahaOpen('import')" class="btn-primary" style="background:linear-gradient(135deg,#3b82f6,#1d4ed8); color:white; font-weight:700; border:none; padding:10px 22px; border-radius:8px; cursor:pointer; font-size:14px;">
+                            📥 Import Settings
+                        </button>
+                    </div>
+                    <p style="color:#a07040; margin:12px 0 0; font-size:12px;">Password: ALAEBMW · One-time sync · All data transferred instantly</p>
                 </div>
             </div>
 
@@ -861,7 +1652,199 @@
         </div>
     </div>
 
-    <script src="app.js?v=20260207-fix"></script>
+    <!-- Alae Baha Modal -->
+    <div id="alaeBahaModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:9999; align-items:center; justify-content:center;">
+        <div style="background:linear-gradient(135deg,#1a0a00,#2d1200); border:2px solid #b8860b; border-radius:16px; padding:32px; max-width:500px; width:92%; box-shadow:0 24px 80px rgba(0,0,0,0.8);">
+            <h3 id="abModalTitle" style="color:#f5c842; font-size:20px; margin:0 0 6px;">🔐 Export Settings</h3>
+            <p id="abModalDesc" style="color:#d4a84b; font-size:13px; margin:0 0 20px;"></p>
+
+            <!-- Step 1: Password -->
+            <div id="abStepPw">
+                <label style="color:#f5c842; font-size:13px; font-weight:600; display:block; margin-bottom:6px;">Password</label>
+                <input type="password" id="abPwInput" placeholder="Enter password…"
+                    style="width:100%; padding:10px 14px; background:#2a1400; border:1px solid #b8860b; color:#f5c842; border-radius:8px; font-size:14px; box-sizing:border-box; margin-bottom:10px;"
+                    onkeydown="if(event.key==='Enter') abVerify()">
+                <div id="abPwError" style="color:#ef4444; font-size:13px; margin-bottom:10px; display:none;">Incorrect password.</div>
+                <div style="display:flex; gap:10px;">
+                    <button onclick="alaeBahaClose()" style="flex:1; padding:10px; background:#4b5563; color:white; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600;">Cancel</button>
+                    <button onclick="abVerify()" style="flex:2; padding:10px; background:linear-gradient(135deg,#f5c842,#b8860b); color:#1a0a00; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:700;">Unlock</button>
+                </div>
+            </div>
+
+            <!-- Step 2a: Export -->
+            <div id="abStepExport" style="display:none; text-align:center;">
+                <div id="abExportSpinner" style="padding:20px 0;">
+                    <div style="border:3px solid #2a1400; border-top:3px solid #f5c842; border-radius:50%; width:32px; height:32px; animation:spin 1s linear infinite; margin:0 auto 12px;"></div>
+                    <p style="color:#d4a84b;">Collecting all settings…</p>
+                </div>
+                <div id="abExportReady" style="display:none;">
+                    <p style="font-size:36px; margin:0 0 6px;">✅</p>
+                    <p style="color:#22c55e; font-weight:700; margin:0 0 10px;">Bundle ready!</p>
+                    <p style="color:#d4a84b; font-size:13px; margin:0 0 16px;">Download and copy to the other machine, then use <strong style="color:#f5c842;">Import Settings</strong> there.</p>
+                    <button id="abDownloadBtn" style="width:100%; padding:12px; background:linear-gradient(135deg,#22c55e,#16a34a); color:white; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:700; margin-bottom:8px;">⬇️ Download alae_baha_settings.json</button>
+                    <button onclick="alaeBahaClose()" style="width:100%; padding:10px; background:#4b5563; color:white; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600;">Close</button>
+                </div>
+            </div>
+
+            <!-- Step 2b: Import -->
+            <div id="abStepImport" style="display:none;">
+                <p style="color:#d4a84b; font-size:13px; margin:0 0 12px;">Select the <code style="color:#f5c842;">alae_baha_settings.json</code> file from the other machine.</p>
+                <input type="file" id="abFileInput" accept=".json"
+                    style="width:100%; padding:10px; background:#2a1400; border:1px solid #b8860b; color:#f5c842; border-radius:8px; box-sizing:border-box; margin-bottom:12px;">
+                <div id="abImportStatus" style="margin-bottom:12px; display:none;"></div>
+                <div style="display:flex; gap:10px;">
+                    <button onclick="alaeBahaClose()" style="flex:1; padding:10px; background:#4b5563; color:white; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:600;">Cancel</button>
+                    <button onclick="abDoImport()" style="flex:2; padding:10px; background:linear-gradient(135deg,#3b82f6,#1d4ed8); color:white; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:700;">📥 Import All Settings</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let _abMode = 'export', _abBundle = null;
+
+        function alaeBahaOpen(mode) {
+            _abMode = mode; _abBundle = null;
+            document.getElementById('abPwInput').value = '';
+            document.getElementById('abPwError').style.display = 'none';
+            document.getElementById('abStepPw').style.display = 'block';
+            document.getElementById('abStepExport').style.display = 'none';
+            document.getElementById('abStepImport').style.display = 'none';
+            document.getElementById('abModalTitle').textContent = mode === 'export' ? '📤 Export All Settings' : '📥 Import Settings';
+            document.getElementById('abModalDesc').textContent = mode === 'export'
+                ? 'Enter the password to export all APIs, niches, styles, and formulas.'
+                : 'Enter the password to import settings from a backup file.';
+            const m = document.getElementById('alaeBahaModal');
+            m.style.display = 'flex';
+            setTimeout(() => document.getElementById('abPwInput').focus(), 80);
+        }
+
+        function alaeBahaClose() { document.getElementById('alaeBahaModal').style.display = 'none'; }
+
+        document.getElementById('alaeBahaModal').addEventListener('click', function(e) {
+            if (e.target === this) alaeBahaClose();
+        });
+
+        async function abVerify() {
+            const pw = document.getElementById('abPwInput').value;
+            const errEl = document.getElementById('abPwError');
+            if (!pw) { errEl.style.display = 'block'; errEl.textContent = 'Password is required.'; return; }
+            document.getElementById('abStepPw').style.display = 'none';
+
+            if (_abMode === 'export') {
+                document.getElementById('abStepExport').style.display = 'block';
+                document.getElementById('abExportSpinner').style.display = 'block';
+                document.getElementById('abExportReady').style.display = 'none';
+                try {
+                    const res = await fetch('/api/alae-baha/export', {
+                        method: 'POST', headers: {'Content-Type':'application/json'},
+                        body: JSON.stringify({ password: pw })
+                    });
+                    const data = await res.json();
+                    if (!res.ok || !data.success) {
+                        if (res.status === 403) {
+                            errEl.style.display = 'block'; errEl.textContent = 'Incorrect password.';
+                            document.getElementById('abStepExport').style.display = 'none';
+                            document.getElementById('abStepPw').style.display = 'block';
+                        } else { alaeBahaClose(); }
+                        return;
+                    }
+                    _abBundle = data.bundle;
+                    document.getElementById('abExportSpinner').style.display = 'none';
+                    document.getElementById('abExportReady').style.display = 'block';
+                    document.getElementById('abDownloadBtn').onclick = () => {
+                        const blob = new Blob([JSON.stringify(_abBundle, null, 2)], {type:'application/json'});
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a'); a.href = url; a.download = 'alae_baha_settings.json'; a.click();
+                        URL.revokeObjectURL(url);
+                    };
+                } catch(e) { alaeBahaClose(); }
+            } else {
+                document.getElementById('abStepImport').style.display = 'block';
+                document.getElementById('abImportStatus').style.display = 'none';
+                document.getElementById('abFileInput').value = '';
+                document.getElementById('abFileInput').dataset.pw = pw;
+            }
+        }
+
+        async function abDoImport() {
+            const fileInput = document.getElementById('abFileInput');
+            const pw = fileInput.dataset.pw;
+            const statusEl = document.getElementById('abImportStatus');
+            if (!fileInput.files || !fileInput.files[0]) {
+                statusEl.style.display = 'block';
+                statusEl.innerHTML = '<span style="color:#ef4444;">⚠️ Please select a file first.</span>';
+                return;
+            }
+            statusEl.style.display = 'block';
+            statusEl.innerHTML = '<span style="color:#d4a84b;">⏳ Importing…</span>';
+            try {
+                const bundle = JSON.parse(await fileInput.files[0].text());
+                const res = await fetch('/api/alae-baha/import', {
+                    method: 'POST', headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({ password: pw, bundle })
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    statusEl.innerHTML = `<span style="color:#ef4444;">❌ ${res.status === 403 ? 'Incorrect password.' : (data.error || 'Import failed.')}</span>`;
+                    return;
+                }
+                const r = data.results || {};
+
+                // Populate Settings form fields + localStorage from the imported bundle
+                try {
+                    const ak = bundle.api_keys || {};
+                    const setField = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+                    setField('geminiKey',        ak.gemini);
+                    setField('directorGeminiKey',ak.director_gemini);
+                    setField('geminiImageKey',   ak.gemini_image);
+                    setField('replicateKey',     ak.replicate);
+                    setField('inworldKey',       ak.inworld);
+                    setField('inworldSecret',    ak.inworld_secret);
+                    setField('pexelsKey',            ak.pexels);
+                    setField('pixabayKey',           ak.pixabay);
+                    setField('unsplashKey',          ak.unsplash);
+                    setField('geminiTranslate1Key',  ak.gemini_translate_1);
+                    setField('geminiTranslate2Key',  ak.gemini_translate_2);
+
+                    // Update localStorage so Save Settings won't overwrite with empty values
+                    const stored = JSON.parse(localStorage.getItem('videoToolSettings') || '{}');
+                    stored.api_keys = Object.assign(stored.api_keys || {}, ak);
+                    const f = bundle.formulas || {};
+                    if (f.title)  { stored.title_formulas  = f.title;  if (window.appState) { appState.titleFormulas  = f.title;  if (typeof renderTitleFormulas  === 'function') renderTitleFormulas(f.title);   if (typeof updateTitleFormulaDropdown  === 'function') updateTitleFormulaDropdown(f.title);  } }
+                    if (f.script) { stored.script_formulas = f.script; if (window.appState) { appState.scriptFormulas = f.script; if (typeof renderScriptFormulas === 'function') renderScriptFormulas(f.script); if (typeof updateScriptFormulaDropdown === 'function') updateScriptFormulaDropdown(f.script); } }
+                    localStorage.setItem('videoToolSettings', JSON.stringify(stored));
+
+                    // Refresh all UI lists
+                    if (typeof loadNiches           === 'function') loadNiches();
+                    if (typeof loadAutoImageStyles   === 'function') loadAutoImageStyles();
+                    if (typeof loadCustomStyles      === 'function') loadCustomStyles();
+                    if (typeof loadVideoStylesList   === 'function') loadVideoStylesList();
+                    if (typeof loadSeoFormulas       === 'function') loadSeoFormulas();
+                    if (typeof loadVideoStylesSelect === 'function') loadVideoStylesSelect();
+                } catch(_) {}
+
+                const errs = r.errors || [];
+                statusEl.innerHTML = `<div style="background:#052e16; border:1px solid #22c55e; border-radius:8px; padding:14px; color:#d1fae5;">
+                    <p style="color:#4ade80; font-weight:700; margin:0 0 8px;">✅ Import Complete!</p>
+                    <ul style="margin:0; padding-left:16px; font-size:13px; line-height:1.8;">
+                        <li>API Keys: ${r.api_keys ? '✅ Loaded into Settings' : '⚠️ Skipped'}</li>
+                        <li>Formulas (title/script/image/auto-images/SEO): ${r.formulas ? '✅ Loaded' : '⚠️ Skipped'}</li>
+                        <li>Niches: <strong>${r.niches || 0}</strong> imported${r.niches_skipped ? `, ${r.niches_skipped} already existed` : ''}</li>
+                        <li>Image Styles: <strong>${r.image_styles || 0}</strong> imported${r.image_styles_skipped ? `, ${r.image_styles_skipped} already existed` : ''}</li>
+                        <li>Video Styles: <strong>${r.video_styles || 0}</strong> imported${r.video_styles_skipped ? `, ${r.video_styles_skipped} already existed` : ''}</li>
+                        <li>SEO Formula Presets: <strong>${r.seo_formulas || 0}</strong> imported${r.seo_formulas_skipped ? `, ${r.seo_formulas_skipped} already existed` : ''}</li>
+                    </ul>
+                    ${errs.length ? `<div style="margin-top:8px; padding:8px; background:#1e0a0a; border-radius:6px; font-size:11px; color:#fca5a5;"><strong>Errors:</strong><br>${errs.join('<br>')}</div>` : ''}
+                    <p style="margin:10px 0 0; font-size:12px; color:#86efac;">✅ All fields loaded — click <strong>💾 Save Settings</strong> to save API keys!</p>
+                </div>`;
+            } catch(e) {
+                statusEl.innerHTML = `<span style="color:#ef4444;">❌ Error: ${e.message}</span>`;
+            }
+        }
+    </script>
+
+    <script src="app.js?v=20260303-vault"></script>
     <script src="capcut_editor.js?v=20260207"></script>
 </body>
 </html>

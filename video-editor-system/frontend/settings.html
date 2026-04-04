@@ -189,12 +189,12 @@
         .api-status {
             display: inline-flex;
             align-items: center;
-            gap: 6px;
-            padding: 4px 12px;
+            gap: 4px;
+            padding: 3px 10px;
             border-radius: 20px;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
-            margin-left: 10px;
+            flex-shrink: 0;
         }
 
         .api-status.configured {
@@ -203,9 +203,189 @@
         }
 
         .api-status.not-configured {
-            background: #fee2e2;
-            color: #991b1b;
+            background: #f1f5f9;
+            color: #64748b;
         }
+
+        /* ── Service Group Cards ─────────────────────────────── */
+        .service-group {
+            border-radius: 14px;
+            border: 1.5px solid #e2e8f0;
+            margin-bottom: 20px;
+            overflow: hidden;
+            background: #fff;
+        }
+
+        .service-group-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 16px 22px;
+            border-bottom: 1.5px solid #e2e8f0;
+        }
+
+        .gemini-group  .service-group-header { background: linear-gradient(135deg, #eff6ff 0%, #f5f3ff 100%); border-left: 5px solid #6366f1; }
+        .replicate-group .service-group-header { background: linear-gradient(135deg, #fff7ed 0%, #fef3c7 100%); border-left: 5px solid #f59e0b; }
+        .inworld-group .service-group-header { background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border-left: 5px solid #22c55e; }
+        .pexels-group  .service-group-header { background: linear-gradient(135deg, #fdf4ff 0%, #fae8ff 100%); border-left: 5px solid #a855f7; }
+
+        .service-icon { font-size: 28px; flex-shrink: 0; }
+
+        .service-group-header .service-title { flex: 1; }
+        .service-group-header .service-title h3 { font-size: 16px; font-weight: 700; color: #1e293b; margin: 0 0 2px; }
+        .service-group-header .service-title p  { font-size: 13px; color: #64748b; margin: 0; }
+
+        .service-link {
+            font-size: 12px;
+            font-weight: 600;
+            color: #6366f1;
+            text-decoration: none;
+            padding: 6px 14px;
+            border: 1.5px solid #c7d2fe;
+            border-radius: 8px;
+            white-space: nowrap;
+            background: #fff;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+        .service-link:hover { background: #6366f1; color: #fff; border-color: #6366f1; }
+
+        /* ── Individual Key Rows ──────────────────────────────── */
+        .key-entry {
+            padding: 16px 22px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .key-entry:last-child { border-bottom: none; }
+
+        .key-entry-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+
+        .key-name {
+            font-size: 14px;
+            font-weight: 700;
+            color: #1e293b;
+        }
+
+        .badge-required {
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background: #fee2e2;
+            color: #b91c1c;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+        .badge-optional {
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background: #f1f5f9;
+            color: #64748b;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        .uses-chips {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+            margin-left: auto;
+        }
+
+        .chip {
+            font-size: 11px;
+            font-weight: 500;
+            padding: 2px 9px;
+            border-radius: 12px;
+        }
+        .chip-blue   { background: #dbeafe; color: #1d4ed8; }
+        .chip-purple { background: #ede9fe; color: #6d28d9; }
+        .chip-green  { background: #dcfce7; color: #166534; }
+        .chip-orange { background: #ffedd5; color: #c2410c; }
+        .chip-pink   { background: #fce7f3; color: #9d174d; }
+
+        .key-entry input[type="password"],
+        .key-entry input[type="text"] {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 13px;
+            font-family: 'Courier New', monospace;
+            color: #334155;
+            background: #f8fafc;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .key-entry input:focus {
+            outline: none;
+            border-color: #6366f1;
+            background: #fff;
+        }
+
+        .key-entry small {
+            display: block;
+            margin-top: 6px;
+            font-size: 12px;
+            color: #94a3b8;
+        }
+
+        /* ── Translate Keys sub-group ─────────────────────────── */
+        .translate-sub {
+            background: #f8fafc;
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-top: 10px;
+        }
+
+        .translate-tip {
+            font-size: 12px;
+            color: #4f46e5;
+            background: #eef2ff;
+            border: 1px solid #c7d2fe;
+            border-radius: 7px;
+            padding: 8px 12px;
+            margin-bottom: 12px;
+            line-height: 1.5;
+        }
+
+        .translate-pair {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        @media (max-width: 640px) { .translate-pair { grid-template-columns: 1fr; } }
+
+        .translate-pair label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #475569;
+            margin-bottom: 5px;
+        }
+
+        /* ── Fallback chain hint ──────────────────────────────── */
+        .fallback-chain {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+            font-size: 12px;
+            color: #64748b;
+            padding: 10px 22px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .fallback-chain .chain-item { font-weight: 600; color: #4f46e5; }
+        .fallback-chain .arrow { color: #94a3b8; }
 
         /* Buttons */
         .btn {
@@ -344,6 +524,12 @@
             animation: spin 1s linear infinite;
         }
 
+        /* Niche Cards */
+        .niche-card:hover {
+            border-color: #667eea !important;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+        }
+
         /* Animations */
         @keyframes fadeIn {
             from { opacity: 0; }
@@ -441,85 +627,227 @@
                 <div class="tab" data-tab="formulas">📝 Formulas</div>
                 <div class="tab" data-tab="voices">🎤 Voice Settings</div>
                 <div class="tab" data-tab="image-styles">🎨 Image Styles</div>
+                <div class="tab" data-tab="niches">🎯 Niches</div>
+                <div class="tab" data-tab="alae-baha" style="background:linear-gradient(135deg,#b8860b,#8b0000);color:#fff;font-weight:700;">🔐 Alae Baha</div>
             </div>
 
             <!-- Tab 1: API Keys -->
             <div class="tab-content active" id="api-keys">
                 <div id="alert-api-keys" class="alert"></div>
 
-                <div class="form-section">
-                    <h3>🤖 Gemini API Key (Script Writer)
-                        <span id="status-gemini" class="api-status not-configured">Not Configured</span>
-                    </h3>
-                    <p>Required for AI script generation and title generation</p>
-                    <div class="input-group">
-                        <label for="gemini-key">Gemini API Key</label>
+                <!-- ══════════════════════════════════════════════
+                     GROUP 1 — Google Gemini AI
+                ═══════════════════════════════════════════════ -->
+                <div class="service-group gemini-group">
+                    <div class="service-group-header">
+                        <span class="service-icon">🤖</span>
+                        <div class="service-title">
+                            <h3>Google Gemini AI</h3>
+                            <p>Powers all AI generation — scripts, images, prompts &amp; translation.</p>
+                        </div>
+                        <a href="https://aistudio.google.com/app/apikey" target="_blank" class="service-link">Get keys →</a>
+                    </div>
+
+                    <!-- Fallback chain hint -->
+                    <div class="fallback-chain">
+                        <span>Fallback order:</span>
+                        <span class="chain-item">Script Writer</span>
+                        <span class="arrow">→</span>
+                        <span class="chain-item">Auto Images AI</span>
+                        <span class="arrow">→</span>
+                        <span class="chain-item">Image Generation</span>
+                        <span style="margin-left:8px;color:#94a3b8;">· Translation uses ALL keys at once for max speed</span>
+                    </div>
+
+                    <!-- Script Writer -->
+                    <div class="key-entry">
+                        <div class="key-entry-header">
+                            <span class="key-name">Script Writer</span>
+                            <span class="badge-required">Required</span>
+                            <span id="status-gemini" class="api-status not-configured">Not Configured</span>
+                            <div class="uses-chips">
+                                <span class="chip chip-blue">Script Generation</span>
+                                <span class="chip chip-blue">Title Generation</span>
+                                <span class="chip chip-blue">Translation</span>
+                                <span class="chip chip-blue">Prompts Generator</span>
+                            </div>
+                        </div>
                         <input type="password" id="gemini-key" placeholder="AIza...">
-                        <small>Get your key from: <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a></small>
+                        <small>The main key — used as fallback for all features when other keys are empty. Prompts Generator uses ALL keys below simultaneously.</small>
+                    </div>
+
+                    <!-- Auto Images AI / Director -->
+                    <div class="key-entry">
+                        <div class="key-entry-header">
+                            <span class="key-name">Auto Images AI</span>
+                            <span class="badge-optional">Optional</span>
+                            <span id="status-director-gemini" class="api-status not-configured">Optional</span>
+                            <div class="uses-chips">
+                                <span class="chip chip-purple">Image Scene Planning</span>
+                                <span class="chip chip-purple">Prompts Generator</span>
+                            </div>
+                        </div>
+                        <input type="password" id="director-gemini-key" placeholder="AIza... (empty = uses Script Writer key)">
+                        <small>Separate key recommended — isolates rate limits. Also pooled into Prompts Generator for speed.</small>
+                    </div>
+
+                    <!-- Image Generation -->
+                    <div class="key-entry">
+                        <div class="key-entry-header">
+                            <span class="key-name">Image Generation</span>
+                            <span class="badge-optional">Optional</span>
+                            <span id="status-gemini-image" class="api-status not-configured">Optional</span>
+                            <div class="uses-chips">
+                                <span class="chip chip-green">Avatar Auto</span>
+                                <span class="chip chip-green">Auto Images (Gemini)</span>
+                            </div>
+                        </div>
+                        <input type="password" id="gemini-image-key" placeholder="AIza... (empty = uses Auto Images AI key)">
+                        <small>Enables Gemini 2.5 Flash image generation (1920×1080). Falls back to Auto Images AI key.</small>
+                    </div>
+
+                    <!-- Translation Keys -->
+                    <div class="key-entry">
+                        <div class="key-entry-header">
+                            <span class="key-name">Translation Keys</span>
+                            <span class="badge-optional">Optional</span>
+                            <div class="uses-chips">
+                                <span class="chip chip-orange">Multi-language Translation</span>
+                                <span class="chip chip-orange">Parallel Processing</span>
+                            </div>
+                        </div>
+                        <div class="translate-sub">
+                            <div class="translate-tip">
+                                💡 Add up to 2 extra keys here — the system uses <strong>all configured Gemini keys simultaneously</strong> during translation for maximum speed and zero rate limits. More unique keys = higher throughput.
+                            </div>
+                            <div class="translate-pair">
+                                <div>
+                                    <label>
+                                        Translate Key 1
+                                        <span id="status-translate-1" class="api-status not-configured">Optional</span>
+                                    </label>
+                                    <input type="password" id="gemini-translate-1" placeholder="AIza... (extra translation key)">
+                                </div>
+                                <div>
+                                    <label>
+                                        Translate Key 2
+                                        <span id="status-translate-2" class="api-status not-configured">Optional</span>
+                                    </label>
+                                    <input type="password" id="gemini-translate-2" placeholder="AIza... (extra translation key)">
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <div class="form-section">
-                    <h3>🎬 Director Gemini API Key (Auto Images AI)
-                        <span id="status-director-gemini" class="api-status not-configured">Not Configured</span>
-                    </h3>
-                    <p><strong>SEPARATE KEY RECOMMENDED:</strong> Used ONLY for Auto Images AI scene planning. Using a separate key avoids rate limit conflicts with script generation.</p>
-                    <div class="input-group">
-                        <label for="director-gemini-key">Director Gemini API Key (Optional - uses Script Writer key if empty)</label>
-                        <input type="password" id="director-gemini-key" placeholder="AIza... (leave empty to reuse Script Writer key)">
-                        <small>💡 <strong>Best practice:</strong> Create a separate Gemini API key for Auto Images to isolate rate limits. <a href="https://aistudio.google.com/app/apikey" target="_blank">Get new key from Google AI Studio</a></small>
+                <!-- ══════════════════════════════════════════════
+                     GROUP 2 — Image Generation (Replicate)
+                ═══════════════════════════════════════════════ -->
+                <div class="service-group replicate-group">
+                    <div class="service-group-header">
+                        <span class="service-icon">🎨</span>
+                        <div class="service-title">
+                            <h3>AI Image Generation</h3>
+                            <p>Flux &amp; SDXL image generation via Replicate.</p>
+                        </div>
+                        <a href="https://replicate.com/account/api-tokens" target="_blank" class="service-link">Get key →</a>
                     </div>
-                </div>
 
-                <div class="form-section">
-                    <h3>🎨 Replicate API Token
-                        <span id="status-replicate" class="api-status not-configured">Not Configured</span>
-                    </h3>
-                    <p>Required for AI image generation (Flux model)</p>
-                    <div class="input-group">
-                        <label for="replicate-token">Replicate API Token</label>
+                    <div class="key-entry">
+                        <div class="key-entry-header">
+                            <span class="key-name">Replicate</span>
+                            <span class="badge-required">Required</span>
+                            <span id="status-replicate" class="api-status not-configured">Not Configured</span>
+                            <div class="uses-chips">
+                                <span class="chip chip-orange">Flux Images</span>
+                                <span class="chip chip-orange">SDXL</span>
+                                <span class="chip chip-orange">Auto Images</span>
+                            </div>
+                        </div>
                         <input type="password" id="replicate-token" placeholder="r8_...">
-                        <small>Get your token from: <a href="https://replicate.com/account/api-tokens" target="_blank">Replicate Dashboard</a></small>
+                        <small>Pay-per-use · ~$0.003 per image generated.</small>
                     </div>
                 </div>
 
-                <div class="form-section">
-                    <h3>🎤 Inworld AI API Key
-                        <span id="status-inworld" class="api-status not-configured">Optional</span>
-                    </h3>
-                    <p>Optional: For AI voice generation (text-to-speech)</p>
-                    <div class="input-group">
-                        <label for="inworld-key">Inworld AI API Key (Base64 Credential)</label>
+                <!-- ══════════════════════════════════════════════
+                     GROUP 3 — Voice Generation
+                ═══════════════════════════════════════════════ -->
+                <div class="service-group inworld-group">
+                    <div class="service-group-header">
+                        <span class="service-icon">🎤</span>
+                        <div class="service-title">
+                            <h3>Voice Generation</h3>
+                            <p>AI text-to-speech for video narration.</p>
+                        </div>
+                        <a href="https://studio.inworld.ai/" target="_blank" class="service-link">Get key →</a>
+                    </div>
+
+                    <div class="key-entry">
+                        <div class="key-entry-header">
+                            <span class="key-name">Inworld AI</span>
+                            <span class="badge-optional">Optional</span>
+                            <span id="status-inworld" class="api-status not-configured">Optional</span>
+                            <div class="uses-chips">
+                                <span class="chip chip-green">AI Voice</span>
+                                <span class="chip chip-green">Text-to-Speech</span>
+                            </div>
+                        </div>
                         <input type="password" id="inworld-key" placeholder="Base64 encoded credential">
-                        <small>Get your key from: <a href="https://studio.inworld.ai/" target="_blank">Inworld Studio</a></small>
+                        <small>Base64-encoded API credential from Inworld Studio.</small>
                     </div>
                 </div>
 
-                <div class="form-section">
-                    <h3>📸 Pexels API Key
-                        <span id="status-pexels" class="api-status not-configured">Optional</span>
-                    </h3>
-                    <p>Optional: For stock footage and photos</p>
-                    <div class="input-group">
-                        <label for="pexels-key">Pexels API Key</label>
+                <!-- ══════════════════════════════════════════════
+                     GROUP 4 — Stock Media
+                ═══════════════════════════════════════════════ -->
+                <div class="service-group pexels-group">
+                    <div class="service-group-header">
+                        <span class="service-icon">📸</span>
+                        <div class="service-title">
+                            <h3>Stock Media</h3>
+                            <p>Free stock photos and videos for backgrounds.</p>
+                        </div>
+                        <a href="https://www.pexels.com/api/" target="_blank" class="service-link">Get key →</a>
+                    </div>
+
+                    <div class="key-entry">
+                        <div class="key-entry-header">
+                            <span class="key-name">Pexels</span>
+                            <span class="badge-optional">Optional</span>
+                            <span id="status-pexels" class="api-status not-configured">Optional</span>
+                            <div class="uses-chips">
+                                <span class="chip chip-pink">Stock Photos</span>
+                                <span class="chip chip-pink">Stock Videos</span>
+                            </div>
+                        </div>
                         <input type="password" id="pexels-key" placeholder="Pexels API key">
-                        <small>Get your key from: <a href="https://www.pexels.com/api/" target="_blank">Pexels API</a></small>
+                        <small>Free tier available — no billing required.</small>
                     </div>
                 </div>
 
                 <div class="button-group">
-                    <button class="btn btn-primary" id="save-api-keys">
-                        💾 Save API Keys
-                    </button>
-                    <button class="btn btn-secondary" id="show-keys">
-                        👁️ Show/Hide Keys
-                    </button>
+                    <button class="btn btn-primary" id="save-api-keys">💾 Save API Keys</button>
+                    <button class="btn btn-secondary" id="show-keys">👁️ Show/Hide Keys</button>
                 </div>
             </div>
 
             <!-- Tab 2: Formulas -->
             <div class="tab-content" id="formulas">
                 <div id="alert-formulas" class="alert"></div>
+
+                <div class="form-section" style="background: linear-gradient(135deg, #1e3a5f 0%, #0f2744 100%); border: 1px solid #3b82f6; border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+                    <h3 style="color: #93c5fd; margin-bottom: 8px;">📥 Guide — How to Write a Niche Formula</h3>
+                    <p style="color: #cbd5e1; margin-bottom: 16px; font-size: 14px;">
+                        Download the complete tutorial that teaches you how to write a powerful Content Niche formula
+                        for any niche (trading, story, education, finance, motivation, horror...).
+                        The guide includes an 8-section structure, examples for every niche type, a blank template, and a checklist.
+                    </p>
+                    <a href="/api/settings/formula-guide/download" download="guide-formules-niche.txt">
+                        <button class="btn btn-primary" style="background: #3b82f6;">
+                            📥 Download Formula Writing Guide (TXT)
+                        </button>
+                    </a>
+                </div>
 
                 <div class="form-section">
                     <h3>📌 Title Generation Formula</h3>
@@ -663,6 +991,159 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Tab 5: Niches -->
+            <div class="tab-content" id="niches">
+                <div id="alert-niches" class="alert"></div>
+
+                <div class="form-section">
+                    <h3>🎯 Existing Niches</h3>
+                    <p>View and edit your content niches. Each niche defines the writing style and guidelines for script generation.</p>
+
+                    <button class="btn btn-primary" id="create-niche-btn" style="margin-bottom: 24px;" onclick="showNicheForm(null)">
+                        ➕ Create New Niche
+                    </button>
+
+                    <div id="niches-list">
+                        <p style="color:#999;">Loading niches...</p>
+                    </div>
+                </div>
+
+                <!-- Inline create / edit form (hidden by default) -->
+                <div id="niche-form-section" style="display:none;">
+                    <div style="background:#f8f9fa; border:2px solid #667eea; border-radius:12px; padding:28px; margin-top:10px;">
+                        <h3 id="niche-form-title" style="margin:0 0 20px 0; color:#667eea;">✏️ Edit Niche</h3>
+
+                        <div class="input-group">
+                            <label for="niche-name-input">Niche Name *</label>
+                            <input type="text" id="niche-name-input" placeholder="e.g., Trading Psychology">
+                        </div>
+
+                        <div class="input-group">
+                            <label for="niche-language-input">Language *</label>
+                            <select id="niche-language-input">
+                                <option value="English">English</option>
+                                <option value="French">French</option>
+                                <option value="Spanish">Spanish</option>
+                                <option value="Arabic">Arabic</option>
+                                <option value="German">German</option>
+                                <option value="Portuguese">Portuguese</option>
+                                <option value="Italian">Italian</option>
+                                <option value="Chinese">Chinese</option>
+                                <option value="Japanese">Japanese</option>
+                            </select>
+                        </div>
+
+                        <div class="input-group">
+                            <label for="niche-guidelines-input">
+                                Writing Guidelines *
+                                <span id="niche-char-count" style="font-weight:400; color:#999; margin-left:8px;">0 chars</span>
+                            </label>
+                            <textarea id="niche-guidelines-input"
+                                      rows="16"
+                                      placeholder="Describe tone, structure, key topics, language rules, content requirements... (min 100 characters)"
+                                      oninput="updateNicheCharCount()"></textarea>
+                            <small>Minimum 100 characters. Used by Gemini to generate scripts in this niche's style.</small>
+                        </div>
+
+                        <div class="button-group">
+                            <button class="btn btn-primary" id="niche-save-btn" onclick="saveNiche()">
+                                💾 Save Niche
+                            </button>
+                            <button class="btn btn-secondary" onclick="cancelNicheForm()">
+                                ✕ Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 6: Alae Baha -->
+        <div class="tab-content" id="alae-baha">
+            <div id="alert-alae-baha" class="alert"></div>
+            <div class="form-section" style="text-align:center; background:linear-gradient(135deg,#1a0a00,#3d1a00); border:2px solid #b8860b; border-radius:16px; padding:40px 30px;">
+                <p style="font-size:56px; margin:0 0 12px;">🔐</p>
+                <h3 style="color:#f5c842; font-size:26px; margin:0 0 10px;">Alae Baha – Settings Vault</h3>
+                <p style="color:#d4a84b; margin:0 0 28px; font-size:15px;">Export ALL your settings (APIs, niches, styles, formulas) from this machine, or import them onto a new machine with one click — password protected.</p>
+                <div style="display:flex; gap:16px; justify-content:center; flex-wrap:wrap;">
+                    <button class="btn" onclick="alaeBahaOpen('export')" style="background:linear-gradient(135deg,#f5c842,#b8860b); color:#1a0a00; font-weight:700; font-size:15px; padding:14px 28px;">
+                        📤 Export Settings
+                    </button>
+                    <button class="btn" onclick="alaeBahaOpen('import')" style="background:linear-gradient(135deg,#3b82f6,#1d4ed8); color:white; font-weight:700; font-size:15px; padding:14px 28px;">
+                        📥 Import Settings
+                    </button>
+                </div>
+                <p style="color:#a07040; margin:24px 0 0; font-size:13px;">Password required · One-time sync · All data transferred instantly</p>
+            </div>
+        </div>
+    </div><!-- /.main-card -->
+
+    <!-- Alae Baha Modal -->
+    <div id="alae-baha-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.75); z-index:3000; align-items:center; justify-content:center;">
+        <div style="background:linear-gradient(135deg,#1a0a00,#2d1200); border:2px solid #b8860b; border-radius:16px; padding:36px; max-width:520px; width:92%; box-shadow:0 24px 80px rgba(0,0,0,0.7);">
+            <h3 id="alae-baha-modal-title" style="color:#f5c842; font-size:22px; margin:0 0 8px;">🔐 Alae Baha – Export Settings</h3>
+            <p id="alae-baha-modal-desc" style="color:#d4a84b; font-size:14px; margin:0 0 24px;">Enter the password to export all your settings.</p>
+
+            <!-- Step 1: Password -->
+            <div id="alae-baha-step-password">
+                <div class="input-group" style="margin-bottom:16px;">
+                    <label style="color:#f5c842;">Password</label>
+                    <input type="password" id="alae-baha-password-input" placeholder="Enter password…" style="background:#2a1400; border:1px solid #b8860b; color:#f5c842;" onkeydown="if(event.key==='Enter') alaeBahaVerify()">
+                </div>
+                <div id="alae-baha-pw-error" style="color:#ef4444; font-size:13px; margin-bottom:12px; display:none;">Incorrect password. Try again.</div>
+                <div style="display:flex; gap:12px;">
+                    <button class="btn btn-secondary" onclick="alaeBahaClose()">Cancel</button>
+                    <button class="btn" onclick="alaeBahaVerify()" style="background:linear-gradient(135deg,#f5c842,#b8860b); color:#1a0a00; font-weight:700;">Unlock</button>
+                </div>
+            </div>
+
+            <!-- Step 2a: Export result -->
+            <div id="alae-baha-step-export" style="display:none;">
+                <div id="alae-baha-export-spinner" style="text-align:center; padding:20px 0;">
+                    <div class="spinner" style="margin:0 auto 12px;"></div>
+                    <p style="color:#d4a84b;">Collecting all settings…</p>
+                </div>
+                <div id="alae-baha-export-ready" style="display:none; text-align:center;">
+                    <p style="font-size:40px; margin:0 0 8px;">✅</p>
+                    <p style="color:#22c55e; font-weight:600; margin:0 0 16px;">Settings bundle ready!</p>
+                    <p style="color:#d4a84b; font-size:13px; margin:0 0 20px;">Click below to download. Share this file with yourself on the other machine, then use <strong style="color:#f5c842;">Import Settings</strong> there.</p>
+                    <button class="btn" id="alae-baha-download-btn" style="background:linear-gradient(135deg,#22c55e,#16a34a); color:white; font-weight:700; font-size:15px; width:100%; margin-bottom:12px;">
+                        ⬇️ Download alae_baha_settings.json
+                    </button>
+                    <button class="btn btn-secondary" onclick="alaeBahaClose()" style="width:100%;">Close</button>
+                </div>
+            </div>
+
+            <!-- Step 2b: Import -->
+            <div id="alae-baha-step-import" style="display:none;">
+                <p style="color:#d4a84b; font-size:14px; margin:0 0 16px;">Select the <code style="color:#f5c842;">alae_baha_settings.json</code> file you exported from the other machine.</p>
+                <div class="input-group" style="margin-bottom:16px;">
+                    <label style="color:#f5c842;">Settings File</label>
+                    <input type="file" id="alae-baha-file-input" accept=".json" style="background:#2a1400; border:1px solid #b8860b; color:#f5c842; padding:10px; border-radius:8px; width:100%;">
+                </div>
+                <div id="alae-baha-import-status" style="margin-bottom:16px; display:none;"></div>
+                <div style="display:flex; gap:12px;">
+                    <button class="btn btn-secondary" onclick="alaeBahaClose()">Cancel</button>
+                    <button class="btn" onclick="alaeBahaDoImport()" style="background:linear-gradient(135deg,#3b82f6,#1d4ed8); color:white; font-weight:700; flex:1;">
+                        📥 Import All Settings
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Niche delete confirmation modal -->
+    <div id="niche-delete-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:2000; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:12px; padding:32px; max-width:420px; width:90%; text-align:center; box-shadow:0 20px 60px rgba(0,0,0,0.4);">
+            <p style="font-size:48px; margin:0 0 12px;">🗑️</p>
+            <h3 style="margin:0 0 8px;">Delete Niche?</h3>
+            <p id="niche-delete-name" style="color:#667eea; font-weight:600; margin:0 0 16px;"></p>
+            <p style="color:#666; margin:0 0 24px; font-size:14px;">This cannot be undone. Scripts using this niche will keep their generated content.</p>
+            <div style="display:flex; gap:12px; justify-content:center;">
+                <button class="btn btn-secondary" onclick="closeNicheDeleteModal()">Cancel</button>
+                <button class="btn" id="niche-delete-confirm-btn" style="background:#ef4444; color:white;">🗑️ Delete</button>
+            </div>
         </div>
     </div>
 
@@ -707,11 +1188,14 @@
                     const settings = data.settings;
 
                     // Update API key status indicators
-                    updateStatusIndicator('gemini', settings.api_keys.gemini.configured);
-                    updateStatusIndicator('director-gemini', settings.api_keys.director_gemini?.configured || false);
-                    updateStatusIndicator('replicate', settings.api_keys.replicate.configured);
-                    updateStatusIndicator('inworld', settings.api_keys.inworld.configured);
-                    updateStatusIndicator('pexels', settings.api_keys.pexels.configured);
+                    updateStatusIndicator('gemini',          settings.api_keys.gemini?.configured           || false);
+                    updateStatusIndicator('director-gemini', settings.api_keys.director_gemini?.configured  || false);
+                    updateStatusIndicator('gemini-image',    settings.api_keys.gemini_image?.configured     || false);
+                    updateStatusIndicator('replicate',       settings.api_keys.replicate?.configured        || false);
+                    updateStatusIndicator('inworld',         settings.api_keys.inworld?.configured          || false);
+                    updateStatusIndicator('pexels',          settings.api_keys.pexels?.configured           || false);
+                    updateStatusIndicator('translate-1',     settings.api_keys.gemini_translate_1?.configured || false);
+                    updateStatusIndicator('translate-2',     settings.api_keys.gemini_translate_2?.configured || false);
                 }
             } catch (error) {
                 console.error('Error loading settings:', error);
@@ -721,29 +1205,27 @@
         // Update status indicator
         function updateStatusIndicator(key, configured) {
             const indicator = document.getElementById(`status-${key}`);
+            if (!indicator) return;
             if (configured) {
                 indicator.className = 'api-status configured';
-                indicator.textContent = '✓ Configured';
+                indicator.textContent = '✓ Set';
             } else {
                 indicator.className = 'api-status not-configured';
-                if (key === 'gemini' || key === 'replicate') {
-                    indicator.textContent = 'Required';
-                } else if (key === 'director-gemini') {
-                    indicator.textContent = 'Optional (uses Script Writer key)';
-                } else {
-                    indicator.textContent = 'Optional';
-                }
+                indicator.textContent = (key === 'gemini' || key === 'replicate') ? 'Required' : 'Optional';
             }
         }
 
         // Save API Keys (will be initialized in DOMContentLoaded)
         function initSaveApiKeys() {
             document.getElementById('save-api-keys').addEventListener('click', async () => {
-            const gemini = document.getElementById('gemini-key').value;
-            const director_gemini = document.getElementById('director-gemini-key').value;
-            const replicate = document.getElementById('replicate-token').value;
-            const inworld = document.getElementById('inworld-key').value;
-            const pexels = document.getElementById('pexels-key').value;
+            const gemini            = document.getElementById('gemini-key').value;
+            const director_gemini   = document.getElementById('director-gemini-key').value;
+            const gemini_image      = document.getElementById('gemini-image-key').value;
+            const gemini_translate_1 = document.getElementById('gemini-translate-1').value;
+            const gemini_translate_2 = document.getElementById('gemini-translate-2').value;
+            const replicate         = document.getElementById('replicate-token').value;
+            const inworld           = document.getElementById('inworld-key').value;
+            const pexels            = document.getElementById('pexels-key').value;
 
             const button = document.getElementById('save-api-keys');
             button.disabled = true;
@@ -753,7 +1235,11 @@
                 const response = await fetch('/api/settings/api-keys', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ gemini, director_gemini, replicate, inworld, pexels })
+                    body: JSON.stringify({
+                        gemini, director_gemini, gemini_image,
+                        gemini_translate_1, gemini_translate_2,
+                        replicate, inworld, pexels
+                    })
                 });
 
                 const data = await response.json();
@@ -761,19 +1247,20 @@
                 if (data.success) {
                     showAlert('api-keys', '✓ API keys saved successfully!', 'success');
 
-                    // Update status indicators
-                    if (gemini) updateStatusIndicator('gemini', true);
-                    if (director_gemini) updateStatusIndicator('director-gemini', true);
-                    if (replicate) updateStatusIndicator('replicate', true);
-                    if (inworld) updateStatusIndicator('inworld', true);
-                    if (pexels) updateStatusIndicator('pexels', true);
+                    if (gemini)             updateStatusIndicator('gemini', true);
+                    if (director_gemini)    updateStatusIndicator('director-gemini', true);
+                    if (gemini_image)       updateStatusIndicator('gemini-image', true);
+                    if (gemini_translate_1) updateStatusIndicator('translate-1', true);
+                    if (gemini_translate_2) updateStatusIndicator('translate-2', true);
+                    if (replicate)          updateStatusIndicator('replicate', true);
+                    if (inworld)            updateStatusIndicator('inworld', true);
+                    if (pexels)             updateStatusIndicator('pexels', true);
 
                     // Clear input fields
-                    document.getElementById('gemini-key').value = '';
-                    document.getElementById('director-gemini-key').value = '';
-                    document.getElementById('replicate-token').value = '';
-                    document.getElementById('inworld-key').value = '';
-                    document.getElementById('pexels-key').value = '';
+                    ['gemini-key','director-gemini-key','gemini-image-key',
+                     'gemini-translate-1','gemini-translate-2',
+                     'replicate-token','inworld-key','pexels-key']
+                      .forEach(id => { document.getElementById(id).value = ''; });
                 } else {
                     showAlert('api-keys', '✗ Error: ' + data.error, 'error');
                 }
@@ -789,7 +1276,9 @@
         // Show/Hide Keys (will be initialized in DOMContentLoaded)
         function initShowHideKeys() {
             document.getElementById('show-keys').addEventListener('click', () => {
-                const inputs = ['gemini-key', 'director-gemini-key', 'replicate-token', 'inworld-key', 'pexels-key'];
+                const inputs = ['gemini-key', 'director-gemini-key', 'gemini-image-key',
+                                'gemini-translate-1', 'gemini-translate-2',
+                                'replicate-token', 'inworld-key', 'pexels-key'];
                 inputs.forEach(id => {
                     const input = document.getElementById(id);
                     input.type = input.type === 'password' ? 'text' : 'password';
@@ -1243,6 +1732,321 @@
         }
 
         // Initialize on page load
+        // ─────────────────────────────────────────────────────────────────
+        // NICHES TAB
+        // ─────────────────────────────────────────────────────────────────
+
+        let _editingNicheId = null;   // null = creating, string = editing
+        let _deletingNicheId = null;
+
+        async function loadNichesSettings() {
+            const list = document.getElementById('niches-list');
+            try {
+                const res = await fetch('/api/niches');
+                const data = await res.json();
+                const niches = data.niches || [];
+
+                if (niches.length === 0) {
+                    list.innerHTML = `
+                        <div style="text-align:center; padding:40px; color:#999; border:2px dashed #e0e0e0; border-radius:12px;">
+                            <p style="font-size:40px; margin:0;">🎯</p>
+                            <p style="margin:10px 0 0;">No niches yet. Create your first niche above!</p>
+                        </div>`;
+                    return;
+                }
+
+                list.innerHTML = niches.map(n => `
+                    <div class="niche-card" id="niche-card-${n.id}" style="
+                        background:#f8f9fa; border:2px solid #e0e0e0; border-radius:12px;
+                        padding:20px 24px; margin-bottom:16px; transition:border-color .2s;">
+                        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+                            <div style="flex:1; min-width:0;">
+                                <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                                    <strong style="font-size:17px; color:#333;">${escapeHtml(n.name)}</strong>
+                                    <span style="background:#667eea20; color:#667eea; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:600;">${escapeHtml(n.language)}</span>
+                                    <span style="color:#999; font-size:12px;">${n.writing_guidelines ? n.writing_guidelines.length.toLocaleString() : 0} chars</span>
+                                </div>
+                                <div style="margin-top:8px; color:#666; font-size:13px; line-height:1.5;">
+                                    ${escapeHtml((n.writing_guidelines || '').substring(0, 140))}${n.writing_guidelines && n.writing_guidelines.length > 140 ? '…' : ''}
+                                </div>
+                            </div>
+                            <div style="display:flex; gap:8px; flex-shrink:0;">
+                                <button class="btn btn-secondary" onclick="showNicheForm('${n.id}')"
+                                    style="padding:8px 14px; font-size:13px;">✏️ Edit</button>
+                                <button class="btn" onclick="confirmDeleteNiche('${n.id}','${escapeHtml(n.name).replace(/'/g,"\\'")}' )"
+                                    style="padding:8px 14px; font-size:13px; background:#fee2e2; color:#991b1b;">🗑️</button>
+                            </div>
+                        </div>
+                    </div>`).join('');
+
+            } catch (e) {
+                list.innerHTML = `<p style="color:#ef4444;">Failed to load niches: ${e.message}</p>`;
+            }
+        }
+
+        function showNicheForm(nicheId) {
+            _editingNicheId = nicheId;
+            const formSection = document.getElementById('niche-form-section');
+            const title = document.getElementById('niche-form-title');
+            const saveBtn = document.getElementById('niche-save-btn');
+
+            document.getElementById('niche-name-input').value = '';
+            document.getElementById('niche-language-input').value = 'English';
+            document.getElementById('niche-guidelines-input').value = '';
+            updateNicheCharCount();
+
+            if (nicheId) {
+                title.textContent = '✏️ Edit Niche';
+                saveBtn.textContent = '💾 Save Changes';
+                // Load existing niche data
+                fetch(`/api/niches/${nicheId}`)
+                    .then(r => r.json())
+                    .then(d => {
+                        const n = d.niche;
+                        document.getElementById('niche-name-input').value = n.name || '';
+                        document.getElementById('niche-language-input').value = n.language || 'English';
+                        document.getElementById('niche-guidelines-input').value = n.writing_guidelines || '';
+                        updateNicheCharCount();
+                    });
+            } else {
+                title.textContent = '➕ Create New Niche';
+                saveBtn.textContent = '➕ Create Niche';
+            }
+
+            formSection.style.display = 'block';
+            formSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function cancelNicheForm() {
+            document.getElementById('niche-form-section').style.display = 'none';
+            _editingNicheId = null;
+        }
+
+        function updateNicheCharCount() {
+            const val = document.getElementById('niche-guidelines-input').value;
+            const el = document.getElementById('niche-char-count');
+            el.textContent = val.length.toLocaleString() + ' chars';
+            el.style.color = val.length < 100 ? '#ef4444' : '#22c55e';
+        }
+
+        async function saveNiche() {
+            const name = document.getElementById('niche-name-input').value.trim();
+            const language = document.getElementById('niche-language-input').value;
+            const guidelines = document.getElementById('niche-guidelines-input').value.trim();
+            const alertEl = document.getElementById('alert-niches');
+
+            if (!name) { showAlert('niches', '⚠️ Niche name is required.', 'error'); return; }
+            if (guidelines.length < 100) { showAlert('niches', '⚠️ Writing guidelines must be at least 100 characters.', 'error'); return; }
+
+            const btn = document.getElementById('niche-save-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<div class="spinner"></div> Saving…';
+
+            try {
+                let res;
+                if (_editingNicheId) {
+                    res = await fetch(`/api/niches/${_editingNicheId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, language, writing_guidelines: guidelines })
+                    });
+                } else {
+                    res = await fetch('/api/niches', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, language, writing_guidelines: guidelines })
+                    });
+                }
+
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.error || 'Save failed');
+
+                showAlert('niches', `✓ Niche "${name}" ${_editingNicheId ? 'updated' : 'created'} successfully!`, 'success');
+                cancelNicheForm();
+                await loadNichesSettings();
+
+            } catch (e) {
+                showAlert('niches', '✗ Error: ' + e.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = _editingNicheId ? '💾 Save Changes' : '➕ Create Niche';
+            }
+        }
+
+        function confirmDeleteNiche(nicheId, nicheName) {
+            _deletingNicheId = nicheId;
+            document.getElementById('niche-delete-name').textContent = nicheName;
+            const modal = document.getElementById('niche-delete-modal');
+            modal.style.display = 'flex';
+
+            document.getElementById('niche-delete-confirm-btn').onclick = async () => {
+                try {
+                    const res = await fetch(`/api/niches/${_deletingNicheId}`, { method: 'DELETE' });
+                    const data = await res.json();
+                    if (!res.ok || !data.success) throw new Error(data.error || 'Delete failed');
+                    closeNicheDeleteModal();
+                    showAlert('niches', '✓ Niche deleted.', 'success');
+                    await loadNichesSettings();
+                } catch (e) {
+                    closeNicheDeleteModal();
+                    showAlert('niches', '✗ ' + e.message, 'error');
+                }
+            };
+        }
+
+        function closeNicheDeleteModal() {
+            document.getElementById('niche-delete-modal').style.display = 'none';
+            _deletingNicheId = null;
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        // ─────────────────────────────────────────────────────────────────
+
+        /* ===== Alae Baha ===== */
+        let _alaeBahaMode = 'export';
+        let _alaeBahaBundle = null;
+
+        function alaeBahaOpen(mode) {
+            _alaeBahaMode = mode;
+            _alaeBahaBundle = null;
+            document.getElementById('alae-baha-password-input').value = '';
+            document.getElementById('alae-baha-pw-error').style.display = 'none';
+            document.getElementById('alae-baha-step-password').style.display = 'block';
+            document.getElementById('alae-baha-step-export').style.display = 'none';
+            document.getElementById('alae-baha-step-import').style.display = 'none';
+            if (mode === 'export') {
+                document.getElementById('alae-baha-modal-title').textContent = '📤 Export Settings';
+                document.getElementById('alae-baha-modal-desc').textContent = 'Enter the password to export ALL your settings.';
+            } else {
+                document.getElementById('alae-baha-modal-title').textContent = '📥 Import Settings';
+                document.getElementById('alae-baha-modal-desc').textContent = 'Enter the password to import settings from a backup file.';
+            }
+            const modal = document.getElementById('alae-baha-modal');
+            modal.style.display = 'flex';
+            setTimeout(() => document.getElementById('alae-baha-password-input').focus(), 100);
+        }
+
+        function alaeBahaClose() {
+            document.getElementById('alae-baha-modal').style.display = 'none';
+        }
+
+        async function alaeBahaVerify() {
+            const pw = document.getElementById('alae-baha-password-input').value;
+            const pwErr = document.getElementById('alae-baha-pw-error');
+
+            // Quick client-side gate (real check is server-side)
+            if (!pw) { pwErr.style.display = 'block'; pwErr.textContent = 'Password is required.'; return; }
+
+            document.getElementById('alae-baha-step-password').style.display = 'none';
+
+            if (_alaeBahaMode === 'export') {
+                document.getElementById('alae-baha-step-export').style.display = 'block';
+                document.getElementById('alae-baha-export-spinner').style.display = 'block';
+                document.getElementById('alae-baha-export-ready').style.display = 'none';
+
+                try {
+                    const res = await fetch('/api/alae-baha/export', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ password: pw })
+                    });
+                    const data = await res.json();
+                    if (!res.ok || !data.success) {
+                        if (res.status === 403) {
+                            pwErr.style.display = 'block'; pwErr.textContent = 'Incorrect password.';
+                            document.getElementById('alae-baha-step-export').style.display = 'none';
+                            document.getElementById('alae-baha-step-password').style.display = 'block';
+                        } else {
+                            showAlert('alae-baha', '❌ Export failed: ' + (data.error || 'Unknown error'), 'error');
+                            alaeBahaClose();
+                        }
+                        return;
+                    }
+                    _alaeBahaBundle = data.bundle;
+                    document.getElementById('alae-baha-export-spinner').style.display = 'none';
+                    document.getElementById('alae-baha-export-ready').style.display = 'block';
+                    document.getElementById('alae-baha-download-btn').onclick = () => {
+                        const blob = new Blob([JSON.stringify(_alaeBahaBundle, null, 2)], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a'); a.href = url; a.download = 'alae_baha_settings.json'; a.click();
+                        URL.revokeObjectURL(url);
+                    };
+                } catch (err) {
+                    showAlert('alae-baha', '❌ Network error: ' + err.message, 'error');
+                    alaeBahaClose();
+                }
+
+            } else {
+                // Import mode - show file picker
+                document.getElementById('alae-baha-step-import').style.display = 'block';
+                document.getElementById('alae-baha-import-status').style.display = 'none';
+                document.getElementById('alae-baha-file-input').value = '';
+                // Store password for later use
+                document.getElementById('alae-baha-file-input').dataset.pw = pw;
+            }
+        }
+
+        async function alaeBahaDoImport() {
+            const fileInput = document.getElementById('alae-baha-file-input');
+            const pw = fileInput.dataset.pw;
+            const statusEl = document.getElementById('alae-baha-import-status');
+
+            if (!fileInput.files || !fileInput.files[0]) {
+                statusEl.style.display = 'block';
+                statusEl.innerHTML = '<span style="color:#ef4444;">⚠️ Please select a file first.</span>';
+                return;
+            }
+
+            statusEl.style.display = 'block';
+            statusEl.innerHTML = '<div class="spinner" style="display:inline-block; width:18px; height:18px; border-width:2px; vertical-align:middle; margin-right:8px;"></div><span style="color:#d4a84b;">Importing settings…</span>';
+
+            try {
+                const text = await fileInput.files[0].text();
+                const bundle = JSON.parse(text);
+
+                const res = await fetch('/api/alae-baha/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: pw, bundle })
+                });
+                const data = await res.json();
+
+                if (!res.ok || !data.success) {
+                    const msg = res.status === 403 ? 'Incorrect password.' : (data.error || 'Import failed.');
+                    statusEl.innerHTML = `<span style="color:#ef4444;">❌ ${msg}</span>`;
+                    return;
+                }
+
+                const r = data.results || {};
+                statusEl.innerHTML = `
+                    <div style="background:linear-gradient(135deg,#052e16,#065f46); border:1px solid #22c55e; border-radius:10px; padding:16px; color:#d1fae5; text-align:left;">
+                        <p style="font-size:18px; margin:0 0 8px; color:#4ade80; font-weight:700;">✅ Import Complete!</p>
+                        <ul style="margin:0; padding-left:18px; font-size:13px; line-height:1.8;">
+                            <li>API Keys: ${r.api_keys ? '✅ Saved' : '⚠️ Skipped'}</li>
+                            <li>Formulas: ${r.formulas ? '✅ Saved' : '⚠️ Skipped'}</li>
+                            <li>Niches imported: <strong>${r.niches || 0}</strong></li>
+                            <li>Image Styles imported: <strong>${r.image_styles || 0}</strong></li>
+                        </ul>
+                        <p style="margin:12px 0 0; font-size:13px; color:#86efac;">Refresh the page to see all updated settings.</p>
+                    </div>`;
+            } catch (err) {
+                statusEl.innerHTML = `<span style="color:#ef4444;">❌ Error: ${err.message}</span>`;
+            }
+        }
+
+        // Close Alae Baha modal on backdrop click
+        document.getElementById('alae-baha-modal').addEventListener('click', function(e) {
+            if (e.target === this) alaeBahaClose();
+        });
+
         window.addEventListener('DOMContentLoaded', () => {
             // Initialize all event listeners
             initTabSwitching();
@@ -1258,6 +2062,19 @@
             loadFormulas();
             loadVoices();
             loadImageStyles();
+            loadNichesSettings();
+
+            // Close niche delete modal on backdrop click
+            document.getElementById('niche-delete-modal').addEventListener('click', function(e) {
+                if (e.target === this) closeNicheDeleteModal();
+            });
+
+            // Load niches when switching to niches tab
+            document.querySelectorAll('.tab').forEach(tab => {
+                if (tab.dataset.tab === 'niches') {
+                    tab.addEventListener('click', loadNichesSettings);
+                }
+            });
         });
     </script>
 </body>

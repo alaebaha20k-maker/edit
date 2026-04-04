@@ -16,6 +16,14 @@ class SceneCard(BaseModel):
     image_prompt: str = Field(..., min_length=50, description="Detailed image generation prompt")
     negative_prompt: str = Field(..., description="What to avoid in the image")
 
+    @field_validator('keywords', mode='before')
+    @classmethod
+    def trim_keywords(cls, v):
+        """Auto-trim to 10 items when LLM returns too many — avoids validation error."""
+        if isinstance(v, list) and len(v) > 10:
+            return v[:10]
+        return v
+
     @field_validator('image_prompt')
     @classmethod
     def validate_prompt_quality(cls, v):
@@ -37,6 +45,14 @@ class GlobalStyleBible(BaseModel):
     composition: str = Field(..., description="Overall composition approach")
     lighting: str = Field(..., description="Lighting style")
     color_palette: List[str] = Field(..., min_items=3, max_items=10, description="Color scheme")
+
+    @field_validator('color_palette', mode='before')
+    @classmethod
+    def trim_color_palette(cls, v):
+        """Auto-trim to 10 items when LLM returns too many."""
+        if isinstance(v, list) and len(v) > 10:
+            return v[:10]
+        return v
 
 
 class AutoImagesPlan(BaseModel):

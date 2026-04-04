@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Avatar AI - Video Generator</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #0a0a0a;
+            color: #fff;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 2px solid #333;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            font-size: 36px;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header p {
+            color: #888;
+            margin-top: 10px;
+        }
+
+        .section {
+            background: #1a1a1a;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            border: 1px solid #333;
+        }
+
+        .section h2 {
+            margin-top: 0;
+            color: #667eea;
+            font-size: 24px;
+        }
+
+        .upload-area {
+            border: 2px dashed #667eea;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 20px 0;
+        }
+
+        .upload-area:hover {
+            background: rgba(102, 126, 234, 0.1);
+            border-color: #764ba2;
+        }
+
+        .upload-area.has-file {
+            border-color: #4caf50;
+            background: rgba(76, 175, 80, 0.1);
+        }
+
+        .mode-selector {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .mode-card {
+            background: #2a2a2a;
+            border: 2px solid #444;
+            border-radius: 8px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .mode-card:hover {
+            border-color: #667eea;
+        }
+
+        .mode-card.selected {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.1);
+        }
+
+        .mode-card h3 {
+            margin-top: 0;
+            color: #fff;
+        }
+
+        .mode-card p {
+            color: #888;
+            margin: 10px 0 0 0;
+            font-size: 14px;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+            margin-top: 20px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .progress {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .progress.active {
+            display: block;
+        }
+
+        .progress-bar {
+            background: #444;
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+
+        .progress-bar-fill {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .result {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .result.active {
+            display: block;
+        }
+
+        .result video {
+            width: 100%;
+            max-width: 800px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+
+        .file-info {
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+
+        .file-info p {
+            margin: 5px 0;
+            color: #aaa;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 100px;
+            background: #2a2a2a;
+            border: 1px solid #444;
+            color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back-link">← Back to Main</a>
+
+        <div class="header">
+            <h1>🎬 Avatar AI</h1>
+            <p>Create videos with avatar loops + AI images or stock videos</p>
+        </div>
+
+        <!-- Step 1: Upload Avatar Video -->
+        <div class="section">
+            <h2>📹 Step 1: Upload Avatar Video</h2>
+            <p style="color: #888; margin-bottom: 15px;">Upload your avatar video (e.g., 33 seconds)</p>
+
+            <div class="upload-area" id="avatarUploadArea" onclick="document.getElementById('avatarInput').click()">
+                <div id="avatarPlaceholder">
+                    <p style="font-size: 48px; margin: 0;">📹</p>
+                    <p style="margin: 10px 0 0 0; color: #888;">Click to upload avatar video</p>
+                    <p style="margin: 5px 0 0 0; font-size: 12px; color: #666;">MP4, MOV supported</p>
+                </div>
+            </div>
+
+            <input type="file" id="avatarInput" accept="video/*" onchange="handleAvatarUpload(event)">
+
+            <div id="avatarInfo" class="file-info" style="display: none;">
+                <p><strong>File:</strong> <span id="avatarFileName"></span></p>
+                <p><strong>Path:</strong> <span id="avatarPath"></span></p>
+            </div>
+        </div>
+
+        <!-- Step 2: Upload Audio -->
+        <div class="section">
+            <h2>🔊 Step 2: Upload Audio Narration</h2>
+            <p style="color: #888; margin-bottom: 15px;">Upload your audio narration (e.g., 27 minutes)</p>
+
+            <div class="upload-area" id="audioUploadArea" onclick="document.getElementById('audioInput').click()">
+                <div id="audioPlaceholder">
+                    <p style="font-size: 48px; margin: 0;">🔊</p>
+                    <p style="margin: 10px 0 0 0; color: #888;">Click to upload audio</p>
+                    <p style="margin: 5px 0 0 0; font-size: 12px; color: #666;">MP3, WAV supported</p>
+                </div>
+            </div>
+
+            <input type="file" id="audioInput" accept="audio/*" onchange="handleAudioUpload(event)">
+
+            <div id="audioInfo" class="file-info" style="display: none;">
+                <p><strong>File:</strong> <span id="audioFileName"></span></p>
+                <p><strong>Path:</strong> <span id="audioPath"></span></p>
+            </div>
+        </div>
+
+        <!-- Step 3: Select Mode -->
+        <div class="section">
+            <h2>🎨 Step 3: Select Mode</h2>
+
+            <div class="mode-selector">
+                <div class="mode-card" id="modeAiImages" onclick="selectMode('ai_images')">
+                    <h3>🖼️ AI Images Auto</h3>
+                    <p>Pattern: 50 sec avatar → 10 sec AI image → repeat</p>
+                    <p style="margin-top: 10px;">1 image per minute • Gemini Director plans high-quality prompts (400+ chars)</p>
+                </div>
+
+                <div class="mode-card" id="modeStockVideos" onclick="selectMode('stock_videos')">
+                    <h3>🎥 Videos Stock Auto</h3>
+                    <p>Pattern: 30 sec avatar → 5-10 sec stock video → repeat</p>
+                    <p style="margin-top: 10px;">Searches Pexels & Pixabay APIs</p>
+                </div>
+            </div>
+
+            <!-- AI Images settings (shown only in ai_images mode) -->
+            <div id="aiImagesSettings" style="margin-top: 25px; display: block;">
+                <div style="background: #1e1e2e; border: 1px solid #444; border-radius: 8px; padding: 20px;">
+                    <h3 style="color: #a78bfa; margin: 0 0 15px 0; font-size: 18px;">🖼️ AI Image Settings</h3>
+
+                    <!-- Image Style Selector -->
+                    <div style="margin-bottom: 20px;">
+                        <label style="color: #ccc; font-weight: 600; display: block; margin-bottom: 10px;">Image Style</label>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                            <div class="mode-card selected" id="styleCinematic" onclick="selectStyle('cinematic')" style="padding: 14px;">
+                                <h3 style="font-size: 15px; margin: 0;">🎬 Cinematic</h3>
+                                <p style="font-size: 12px; margin: 6px 0 0 0;">Film-quality visuals with dramatic lighting and composition</p>
+                            </div>
+                            <div class="mode-card" id="stylePhotorealistic" onclick="selectStyle('photorealistic')" style="padding: 14px;">
+                                <h3 style="font-size: 15px; margin: 0;">📷 Photorealistic</h3>
+                                <p style="font-size: 12px; margin: 6px 0 0 0;">Ultra-realistic photography with natural lighting</p>
+                            </div>
+                            <div class="mode-card" id="styleArtistic" onclick="selectStyle('artistic')" style="padding: 14px;">
+                                <h3 style="font-size: 15px; margin: 0;">🎨 Artistic</h3>
+                                <p style="font-size: 12px; margin: 6px 0 0 0;">Creative artistic interpretation with painterly quality</p>
+                            </div>
+                            <div class="mode-card" id="styleAnimated" onclick="selectStyle('animated')" style="padding: 14px;">
+                                <h3 style="font-size: 15px; margin: 0;">🎭 Animated</h3>
+                                <p style="font-size: 12px; margin: 6px 0 0 0;">Clean animated style with vibrant colors</p>
+                            </div>
+                        </div>
+                        <p style="color: #666; font-size: 12px; margin-top: 8px;">Gemini Director will use this style to create 400+ char prompts for every image.</p>
+                    </div>
+
+                    <!-- Custom styles dropdown (loaded from API) -->
+                    <div id="customStylesSection" style="margin-bottom: 15px; display: none;">
+                        <label style="color: #ccc; font-weight: 600; display: block; margin-bottom: 8px;">Or choose a custom style</label>
+                        <select id="imageStyleSelect" onchange="onCustomStyleChange()" style="width: 100%; background: #2a2a3e; border: 1px solid #555; color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 14px;">
+                            <option value="">— Use selected style above —</option>
+                        </select>
+                    </div>
+
+                    <!-- Style preview -->
+                    <div id="stylePreview" style="display: none; background: #12122a; border: 1px solid #333; border-radius: 6px; padding: 12px; margin-top: 10px;">
+                        <p style="color: #a78bfa; font-size: 13px; font-weight: 600; margin: 0 0 6px 0;">Selected Style:</p>
+                        <p id="stylePreviewText" style="color: #aaa; font-size: 13px; margin: 0; line-height: 1.5;"></p>
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-top: 20px;">
+                <label style="color: #888; font-weight: 600; display: block; margin-bottom: 8px;">
+                    📝 Script <span style="color: #a78bfa;">(Required for AI Images mode — Gemini Director reads it to plan image prompts)</span>
+                </label>
+                <textarea id="scriptInput" placeholder="Paste your full video script here. Gemini Director will analyze it and create one high-quality cinematic image per minute of audio..." style="min-height: 140px;"></textarea>
+                <p style="color: #555; font-size: 12px; margin-top: 6px;">Example: 30-min audio + script → 30 images, each with a 400+ char prompt matching the style you chose.</p>
+            </div>
+        </div>
+
+        <!-- Step 4: Generate -->
+        <div class="section">
+            <h2>🚀 Step 4: Generate Video</h2>
+            <p style="color: #888; margin-bottom: 15px;">System will create video matching exact audio length with last 2 minutes as full avatar</p>
+
+            <button id="generateBtn" onclick="generateVideo()" disabled>Generate Avatar Video</button>
+
+            <div id="progress" class="progress">
+                <p><strong id="progressText">Initializing...</strong></p>
+                <div class="progress-bar">
+                    <div class="progress-bar-fill" id="progressBar"></div>
+                </div>
+                <p style="color: #888; font-size: 14px; margin-top: 10px;" id="progressDetails"></p>
+            </div>
+
+            <div id="result" class="result">
+                <h3 style="color: #4caf50;">✅ Video Generated Successfully!</h3>
+                <p><strong>Output:</strong> <span id="resultPath"></span></p>
+                <p><strong>Duration:</strong> <span id="resultDuration"></span></p>
+                <p><strong>Generation Time:</strong> <span id="resultTime"></span></p>
+
+                <video id="resultVideo" controls></video>
+
+                <div style="margin-top: 20px;">
+                    <a id="downloadLink" href="#" download>
+                        <button>Download Video</button>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let avatarPath = null;
+        let audioPath = null;
+        let selectedMode = 'ai_images';
+        let selectedProvider = 'gemini';
+        let availableStyles = [];
+        let selectedStyle = null;
+        let selectedStyleId = 'cinematic';
+
+        // Built-in styles (matching backend AutoImagesStyleManager defaults)
+        const BUILTIN_STYLES = {
+            cinematic: {
+                id: 'cinematic',
+                name: 'Cinematic',
+                description: 'Cinematic film-quality visuals with dramatic lighting and composition',
+                visual_rules: ['Cinematic composition with rule of thirds', 'Film-quality lighting and shadows', 'Dramatic depth of field', 'Professional color grading', 'High production value aesthetic'],
+                negative_rules: ['Low quality, blurry, distorted', 'Amateur photography', 'Flat lighting', 'Poor composition'],
+                composition: 'Wide cinematic shots with professional framing, dramatic angles',
+                lighting: 'Dramatic cinematic lighting with contrast and mood',
+                color_palette: ['Deep blues', 'Rich golds', 'Dramatic shadows', 'Warm highlights']
+            },
+            photorealistic: {
+                id: 'photorealistic',
+                name: 'Photorealistic',
+                description: 'Ultra-realistic photography-style images',
+                visual_rules: ['Photorealistic details and textures', 'Natural lighting and shadows', 'Authentic camera perspective', 'Real-world materials and surfaces', 'Professional photography quality'],
+                negative_rules: ['Cartoon, animated, illustrated', 'Artificial or fake looking', 'Oversaturated colors', 'Unrealistic proportions'],
+                composition: 'Natural photography composition, authentic camera angles',
+                lighting: 'Natural daylight or studio lighting, realistic shadows',
+                color_palette: ['Natural tones', 'Realistic colors', 'Authentic skin tones', 'True-to-life hues']
+            },
+            artistic: {
+                id: 'artistic',
+                name: 'Artistic',
+                description: 'Creative artistic interpretation with painterly quality',
+                visual_rules: ['Artistic interpretation and style', 'Painterly brushwork and textures', 'Creative color choices', 'Expressive composition', 'Fine art aesthetic'],
+                negative_rules: ['Photorealistic', 'Generic or boring', 'Overly technical', 'Sterile composition'],
+                composition: 'Creative and expressive framing, artistic perspective',
+                lighting: 'Dramatic artistic lighting, creative shadows and highlights',
+                color_palette: ['Bold colors', 'Artistic contrasts', 'Creative hues', 'Expressive tones']
+            },
+            animated: {
+                id: 'animated',
+                name: 'Animated',
+                description: 'Clean animated style with vibrant colors',
+                visual_rules: ['Clean 3D animation style', 'Vibrant and appealing colors', 'Smooth surfaces and textures', 'Professional animation quality', 'Stylized but polished look'],
+                negative_rules: ['Photorealistic', 'Rough or unfinished', 'Muddy colors', 'Low-quality rendering'],
+                composition: 'Clean animated framing, balanced and appealing',
+                lighting: 'Bright and clear animated lighting, vibrant atmosphere',
+                color_palette: ['Vibrant colors', 'Clean tones', 'Bright highlights', 'Rich saturation']
+            }
+        };
+
+        // Select AI Images mode by default
+        document.getElementById('modeAiImages').classList.add('selected');
+
+        // Set default style
+        selectedStyle = BUILTIN_STYLES.cinematic;
+
+        // Load custom styles on page load
+        loadCustomStyles();
+
+        async function loadCustomStyles() {
+            try {
+                const res = await fetch('/api/auto-images/styles');
+                const data = await res.json();
+                const styles = (data.styles || []).filter(s => s.custom);
+                availableStyles = styles;
+
+                if (styles.length > 0) {
+                    const sel = document.getElementById('imageStyleSelect');
+                    sel.innerHTML = '<option value="">— Use selected style above —</option>';
+                    styles.forEach(s => {
+                        const opt = document.createElement('option');
+                        opt.value = s.id;
+                        opt.textContent = s.name + (s.description ? ' — ' + s.description.substring(0, 60) : '');
+                        sel.appendChild(opt);
+                    });
+                    document.getElementById('customStylesSection').style.display = 'block';
+                }
+            } catch (e) {
+                console.warn('Could not load custom styles:', e);
+            }
+        }
+
+        function selectStyle(styleId) {
+            selectedStyleId = styleId;
+
+            // Update card selection visuals
+            document.getElementById('styleCinematic').classList.toggle('selected', styleId === 'cinematic');
+            document.getElementById('stylePhotorealistic').classList.toggle('selected', styleId === 'photorealistic');
+            document.getElementById('styleArtistic').classList.toggle('selected', styleId === 'artistic');
+            document.getElementById('styleAnimated').classList.toggle('selected', styleId === 'animated');
+
+            // Set the style object
+            selectedStyle = BUILTIN_STYLES[styleId] || null;
+
+            // Clear custom dropdown if any
+            const sel = document.getElementById('imageStyleSelect');
+            if (sel) sel.value = '';
+
+            // Update preview
+            updateStylePreview();
+        }
+
+        function onCustomStyleChange() {
+            const sel = document.getElementById('imageStyleSelect');
+            const styleId = sel.value;
+
+            if (styleId) {
+                selectedStyle = availableStyles.find(s => s.id === styleId) || null;
+                selectedStyleId = styleId;
+
+                // Deselect all built-in cards
+                document.getElementById('styleCinematic').classList.remove('selected');
+                document.getElementById('stylePhotorealistic').classList.remove('selected');
+                document.getElementById('styleArtistic').classList.remove('selected');
+                document.getElementById('styleAnimated').classList.remove('selected');
+            } else {
+                // Revert to built-in selection
+                selectStyle(selectedStyleId in BUILTIN_STYLES ? selectedStyleId : 'cinematic');
+            }
+
+            updateStylePreview();
+        }
+
+        function updateStylePreview() {
+            const preview = document.getElementById('stylePreview');
+            const previewText = document.getElementById('stylePreviewText');
+
+            if (selectedStyle) {
+                preview.style.display = 'block';
+                const rules = (selectedStyle.visual_rules || []).slice(0, 3).join(' | ');
+                previewText.textContent = `${selectedStyle.description || ''} | ${rules}`;
+            } else {
+                preview.style.display = 'none';
+            }
+        }
+
+        function handleAvatarUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            fetch('/api/avatar/upload-avatar', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    avatarPath = data.file_path;
+                    document.getElementById('avatarUploadArea').classList.add('has-file');
+                    document.getElementById('avatarPlaceholder').innerHTML = '<p style="font-size: 48px; margin: 0;">✅</p><p style="margin: 10px 0 0 0; color: #4caf50;">Avatar uploaded</p>';
+                    document.getElementById('avatarFileName').textContent = data.filename;
+                    document.getElementById('avatarPath').textContent = data.file_path;
+                    document.getElementById('avatarInfo').style.display = 'block';
+                    checkReadyToGenerate();
+                } else {
+                    alert('Upload failed: ' + data.error);
+                }
+            });
+        }
+
+        function handleAudioUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            fetch('/api/avatar/upload-audio', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    audioPath = data.file_path;
+                    document.getElementById('audioUploadArea').classList.add('has-file');
+                    document.getElementById('audioPlaceholder').innerHTML = '<p style="font-size: 48px; margin: 0;">✅</p><p style="margin: 10px 0 0 0; color: #4caf50;">Audio uploaded</p>';
+                    document.getElementById('audioFileName').textContent = data.filename;
+                    document.getElementById('audioPath').textContent = data.file_path;
+                    document.getElementById('audioInfo').style.display = 'block';
+                    checkReadyToGenerate();
+                } else {
+                    alert('Upload failed: ' + data.error);
+                }
+            });
+        }
+
+        function selectMode(mode) {
+            selectedMode = mode;
+
+            document.getElementById('modeAiImages').classList.remove('selected');
+            document.getElementById('modeStockVideos').classList.remove('selected');
+
+            if (mode === 'ai_images') {
+                document.getElementById('modeAiImages').classList.add('selected');
+                document.getElementById('aiImagesSettings').style.display = 'block';
+            } else {
+                document.getElementById('modeStockVideos').classList.add('selected');
+                document.getElementById('aiImagesSettings').style.display = 'none';
+            }
+        }
+
+        function checkReadyToGenerate() {
+            if (avatarPath && audioPath) {
+                document.getElementById('generateBtn').disabled = false;
+            }
+        }
+
+        function generateVideo() {
+            const script = document.getElementById('scriptInput').value;
+
+            document.getElementById('generateBtn').disabled = true;
+            document.getElementById('progress').classList.add('active');
+            document.getElementById('result').classList.remove('active');
+
+            updateProgress(10, 'Starting generation...');
+
+            fetch('/api/avatar/generate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    avatar_video: avatarPath,
+                    audio: audioPath,
+                    mode: selectedMode,
+                    script: script,
+                    stock_apis: ['pexels', 'pixabay'],
+                    image_provider: 'gemini',
+                    image_style: selectedStyle || null,
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    updateProgress(100, 'Complete!');
+
+                    setTimeout(() => {
+                        document.getElementById('progress').classList.remove('active');
+                        document.getElementById('result').classList.add('active');
+
+                        document.getElementById('resultPath').textContent = data.video_path;
+                        document.getElementById('resultDuration').textContent = formatDuration(data.audio_duration);
+                        document.getElementById('resultTime').textContent = formatTime(data.generation_time);
+
+                        const video = document.getElementById('resultVideo');
+                        video.src = '/' + data.video_path;
+
+                        const downloadLink = document.getElementById('downloadLink');
+                        downloadLink.href = '/' + data.video_path;
+
+                        document.getElementById('generateBtn').disabled = false;
+                    }, 500);
+                } else {
+                    alert('Generation failed: ' + data.error);
+                    document.getElementById('progress').classList.remove('active');
+                    document.getElementById('generateBtn').disabled = false;
+                }
+            })
+            .catch(err => {
+                alert('Error: ' + err.message);
+                document.getElementById('progress').classList.remove('active');
+                document.getElementById('generateBtn').disabled = false;
+            });
+        }
+
+        function updateProgress(percent, text, details = '') {
+            document.getElementById('progressBar').style.width = percent + '%';
+            document.getElementById('progressText').textContent = text;
+            document.getElementById('progressDetails').textContent = details;
+        }
+
+        function formatDuration(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}m ${secs}s`;
+        }
+    </script>
+</body>
+</html>

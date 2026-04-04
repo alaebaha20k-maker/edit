@@ -9,7 +9,13 @@ import sys
 import json
 import uuid
 import time
+import threading
+import unicodedata
+import re
+import requests as _http
+from difflib import SequenceMatcher
 import subprocess
+from datetime import datetime
 from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
@@ -20,6 +26,146 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from main import VideoEditorSystem
 from utils import ensure_directory_exists, get_file_size, format_time
+
+
+# ── Persistent Gemini rate limiter (module-level, survives across requests) ──
+#
+# Free-tier limit: 10 RPM per key.
+# We enforce a MINIMUM INTERVAL of 6.5 s between consecutive calls on the
+# same key — this is slightly more than 60/10 = 6 s and prevents bursts.
+# With N keys the effective throughput is N × ~9 RPM with zero 429s.
+#
+# All state is module-level so it persists between back-to-back requests.
+# A fresh request never hammers keys that are still cooling down from the
+# previous translation job.
+
+_gem_lock: threading.Lock       = threading.Lock()
+_gem_last_used:  dict[str, float] = {}   # api_key → time of last dispatched call
+_gem_blocked:    dict[str, float] = {}   # api_key → unblock_at (epoch seconds)
+_GEM_RPM          = 10
+_GEM_MIN_INTERVAL = 60.0 / _GEM_RPM + 0.5   # 6.5 s between calls on same key
+
+
+def _gem_acquire(keys: list[str]) -> str:
+    """Block until a key slot is available; return the chosen key.
+
+    For each key in order:
+      1. Skip if blocked by a 429 window.
+      2. Skip if used too recently (< _GEM_MIN_INTERVAL ago).
+      3. Otherwise claim it: record last-used time and return.
+
+    If no key is ready, sleep EXACTLY until the soonest key becomes
+    available (not a fixed poll interval), then retry.
+    """
+    while True:
+        soonest_wait = _GEM_MIN_INTERVAL   # upper bound for sleep
+        with _gem_lock:
+            now = time.time()
+            for key in keys:
+                unblock = _gem_blocked.get(key, 0)
+                if now < unblock:
+                    soonest_wait = min(soonest_wait, unblock - now)
+                    continue
+                available_at = _gem_last_used.get(key, 0) + _GEM_MIN_INTERVAL
+                if now >= available_at:
+                    _gem_last_used[key] = now
+                    return key
+                soonest_wait = min(soonest_wait, available_at - now)
+        time.sleep(soonest_wait + 0.05)   # wake up just after the slot opens
+
+
+def _gem_block(key: str, seconds: int) -> None:
+    """Mark key as rate-limited for `seconds` seconds.  Called on 429."""
+    with _gem_lock:
+        _gem_blocked[key] = time.time() + seconds
+        # Also push last_used forward so the interval check honours the block
+        _gem_last_used[key] = time.time() + seconds
+
+
+def _gem_parse_retry(text: str) -> int:
+    """Extract retry delay from a Gemini 429 response body.
+
+    Tries all known formats:
+      "retryDelay": "13s"               – JSON error details
+      retry_delay { seconds: 13 }       – proto-text in message string
+      "seconds": 13                     – bare JSON int
+      Retry in 13 / retry after 13      – human-readable fallback
+    """
+    m = (re.search(r'"retryDelay":\s*"(\d+)', text) or
+         re.search(r'retry_delay\s*\{[^}]*seconds:\s*(\d+)', text, re.DOTALL) or
+         re.search(r'"seconds":\s*(\d+)', text) or
+         re.search(r'(?:retry in|retry after)\s*(\d+)', text, re.IGNORECASE) or
+         re.search(r'(\d+)\s*s(?:ec|econds)?\b', text))
+    return min(int(m.group(1)) + 2, 90) if m else 20
+
+
+def _gem_key_label(key: str) -> str:
+    """Return a short, safe display label for a Gemini API key.
+    Shows first 4 + last 4 chars so you can tell keys apart in the terminal
+    without exposing the full secret.  Example: AIza…Xk7m
+    """
+    if not key or len(key) < 10:
+        return '???'
+    return f'{key[:4]}…{key[-4:]}'
+
+
+def _gem_all_keys() -> list[str]:
+    """Return every unique, non-empty Gemini API key from Config (deduplicated).
+
+    Priority: dedicated translate keys first (so they're preferred over shared
+    keys); then shared keys so the user gets maximum throughput from whatever
+    they've configured in Settings.
+    """
+    from config import Config
+    raw = [
+        Config.get_gemini_translate_1_key(),
+        Config.get_gemini_translate_2_key(),
+        Config.get_gemini_api_key(),
+        Config.get_director_gemini_api_key(),
+        Config.get_gemini_image_api_key(),
+    ]
+    return list(dict.fromkeys(k for k in raw if k))
+
+
+def _gem_call_sdk(keys: list[str], model_name: str,
+                  generation_config: dict, prompt_text: str,
+                  retries: int = 6) -> str:
+    """Call Gemini via the Python SDK with full rate-limiting and 429 retry.
+
+    Uses _gem_acquire() to enforce the per-key minimum interval so calls are
+    naturally spaced and never burst.  On ResourceExhausted (429) the key is
+    blocked via _gem_block() and the call is retried with a different key.
+
+    Returns the response text string.
+    """
+    import google.generativeai as genai
+    try:
+        from google.api_core.exceptions import ResourceExhausted
+    except ImportError:
+        ResourceExhausted = Exception  # safety fallback
+
+    last_err = None
+    for attempt in range(retries):
+        key = _gem_acquire(keys)
+        try:
+            genai.configure(api_key=key)
+            model = genai.GenerativeModel(
+                model_name=model_name,
+                generation_config=generation_config,
+            )
+            response = model.generate_content(prompt_text)
+            return response.text
+        except ResourceExhausted as e:
+            err_str = str(e)
+            delay = _gem_parse_retry(err_str)
+            print(f'   ⏳ 429 on key …{key[-6:]} — blocking {delay}s '
+                  f'(attempt {attempt + 1}/{retries})')
+            _gem_block(key, delay)
+            last_err = e
+        except Exception:
+            raise
+    raise RuntimeError(f'Gemini SDK: all {retries} retries exhausted. '
+                       f'Last error: {last_err}')
 
 
 # Initialize Flask app
@@ -722,9 +868,9 @@ def manage_niches():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/niches/<niche_id>', methods=['GET', 'DELETE'])
+@app.route('/api/niches/<niche_id>', methods=['GET', 'PUT', 'DELETE'])
 def manage_niche(niche_id):
-    """Get or delete specific niche by ID"""
+    """Get, update, or delete specific niche by ID"""
     from niche_manager import NicheManager
 
     try:
@@ -735,6 +881,27 @@ def manage_niche(niche_id):
                 return jsonify({'error': 'Niche not found'}), 404
 
             return jsonify({'niche': niche})
+
+        elif request.method == 'PUT':
+            data = request.get_json()
+            if not data:
+                return jsonify({'error': 'No data provided'}), 400
+
+            name = data.get('name')
+            language = data.get('language')
+            writing_guidelines = data.get('writing_guidelines')
+
+            updated = NicheManager.update_niche(
+                niche_id=niche_id,
+                name=name,
+                language=language,
+                writing_guidelines=writing_guidelines
+            )
+
+            if not updated:
+                return jsonify({'error': 'Niche not found'}), 404
+
+            return jsonify({'success': True, 'niche': updated})
 
         elif request.method == 'DELETE':
             success = NicheManager.delete_niche(niche_id)
@@ -951,6 +1118,382 @@ def generate_script():
         })
 
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/translate-script', methods=['POST'])
+def translate_script():
+    """
+    High-quality parallel translation engine.
+
+    Architecture:
+    - Raw REST API calls — fully thread-safe (no genai global state)
+    - All languages translated in parallel (one thread per language)
+    - Chunks within each language processed in parallel (max 3 concurrent)
+    - Shared sliding-window rate limiter across both keys (10 RPM per key)
+    - Paragraph-boundary chunking + ±1-paragraph context window per chunk
+    - Auto-retry reading retry_delay from 429 errors
+
+    Quality:
+    - No parenthetical glosses (enforced via prompt + post-processing strip)
+    - Idiomatic transition words, natural rhetorical questions
+    - Long sentences split for spoken flow
+    - Context window prevents sentence-fragment artifacts
+    - Consecutive duplicate paragraph detection + removal
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from config import Config
+
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        script = data.get('script', '').strip()
+        languages = data.get('languages', [])
+
+        if not script:
+            return jsonify({'error': 'Script is required'}), 400
+        if not languages:
+            return jsonify({'error': 'At least one language is required'}), 400
+
+        # Translation uses ONLY its dedicated keys (Translate 1 + Translate 2).
+        # No fallback to Script Writer / Auto Images / Image keys — each feature
+        # must use its own dedicated API key to keep rate limits fully isolated.
+        _candidate_keys = [
+            Config.get_gemini_translate_1_key(),
+            Config.get_gemini_translate_2_key(),
+        ]
+        keys = list(dict.fromkeys(k for k in _candidate_keys if k))
+        if not keys:
+            return jsonify({'error': 'No Translation API key configured. Add Translation Key 1 in Settings → Google Gemini AI → Translation Keys.'}), 500
+        print(f'🔑 Translation using {len(keys)} dedicated key(s)')
+
+        LANG_NAMES = {
+            'fr': 'French (français)',
+            'es': 'Spanish (español)',
+            'de': 'German (Deutsch)',
+            'en': 'English',
+            'pt': 'Portuguese (português)',
+            'it': 'Italian (italiano)',
+            'nl': 'Dutch (Nederlands)',
+            'pl': 'Polish (polski)',
+            'ru': 'Russian (русский)',
+            'ar': 'Arabic (العربية)',
+            'zh': 'Chinese (中文)',
+            'ja': 'Japanese (日本語)',
+            'ko': 'Korean (한국어)',
+            'tr': 'Turkish (Türkçe)',
+            'hi': 'Hindi (हिन्दी)',
+        }
+
+        # Per-language guide: natural discourse markers used IN the target language.
+        # These are injected into the prompt so the model knows what "natural" means
+        # for each specific language — not just generic "be idiomatic" advice.
+        DISCOURSE_GUIDE: dict = {
+            'fr': {
+                'attention':   'Écoutez, Regardez, Tenez, Voilà',
+                'transition':  'Du coup, En fait, D\'ailleurs, Par contre, Bref, Maintenant',
+                'opener':      'C\'est simple :, La réalité c\'est que..., Ce qu\'il faut comprendre c\'est..., Voici ce que...',
+                'rhetorical':  'Vous voyez ?, C\'est pas génial ça ?, Incroyable non ?',
+            },
+            'es': {
+                'attention':   'Mira, Escucha, Fíjate, Oye, Resulta que',
+                'transition':  'O sea, De hecho, Además, Sin embargo, Es decir, A ver',
+                'opener':      'Aquí está la clave:, La verdad es que..., Y es que..., Lo que pasa es que...',
+                'rhetorical':  '¿Lo ves?, ¿Te das cuenta?, ¿A que no lo sabías?',
+            },
+            'de': {
+                'attention':   'Schau mal, Hör zu, Also, Pass mal auf, Weißt du was',
+                'transition':  'Eigentlich, Jedenfalls, Außerdem, Nämlich, Übrigens, Dabei',
+                'opener':      'Darum geht\'s:, Die Wahrheit ist:, So funktioniert das:, Und hier ist der Punkt:',
+                'rhetorical':  'Weißt du warum?, Kannst du dir das vorstellen?, Klingt das nicht verrückt?',
+            },
+            'en': {
+                'attention':   'Look, Listen, Here\'s the thing, Now, Right,',
+                'transition':  'Actually, Basically, The thing is, On top of that, By the way',
+                'opener':      'Here\'s the deal:, The truth is:, Here\'s the kicker:, And this is key:',
+                'rhetorical':  'Can you believe that?, Right?, Doesn\'t that blow your mind?',
+            },
+            'pt': {
+                'attention':   'Olha, Veja bem, Escuta, Sabe o que é',
+                'transition':  'Na verdade, Aliás, Além disso, Inclusive, Então',
+                'opener':      'Veja bem:, A verdade é que..., E é aí que..., O ponto é:',
+                'rhetorical':  'Acredita nisso?, Entende?, Incrível, não é?',
+            },
+            'it': {
+                'attention':   'Guarda, Senti, Ecco, Sai cosa',
+                'transition':  'Infatti, Quindi, Comunque, Tra l\'altro, In realtà',
+                'opener':      'Ecco il punto:, La verità è che..., Ed è qui che...',
+                'rhetorical':  'Ci credi?, Capisci?, Non è incredibile?',
+            },
+            'nl': {
+                'attention':   'Kijk, Luister, Weet je wat, Oké dus',
+                'transition':  'Eigenlijk, Bovendien, Trouwens, Kortom, Maar goed',
+                'opener':      'Hier is het punt:, De waarheid is:, En dit is cruciaal:',
+                'rhetorical':  'Kun je het geloven?, Toch?, Is dat niet gek?',
+            },
+            'pl': {
+                'attention':   'Słuchaj, Patrz, Wiesz co, No to słuchaj',
+                'transition':  'Właściwie, Poza tym, Zresztą, Tak czy inaczej, W każdym razie',
+                'opener':      'Oto o co chodzi:, Prawda jest taka:, I tu jest clou:',
+                'rhetorical':  'Wierzysz w to?, No nie?, Czy to nie niesamowite?',
+            },
+            'tr': {
+                'attention':   'Bak, Dinle, Şimdi, Şunu söyleyeyim',
+                'transition':  'Aslında, Üstelik, Zaten, Yani, Neyse',
+                'opener':      'İşte mesele şu:, Gerçek şu ki:, Ve işte bu noktada:',
+                'rhetorical':  'İnanabiliyor musun?, Değil mi?, Bu çılgınca değil mi?',
+            },
+        }
+        MODEL      = 'gemini-2.5-flash'
+        GEMINI_URL = f'https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent'
+        MAX_TOKENS = 8192
+        CHUNK_CHARS = 3500   # paragraph-safe max; output ~20 % larger = ~4 200 → fine
+
+        # ── REST call — uses module-level rate limiter (persists across requests) ─
+        def gemini_call(prompt, retries=6):
+            """Send one translation request.
+
+            On 429: marks the offending key as blocked for the retry delay so ALL
+            threads automatically avoid it — no manual sleeping in caller code.
+            Re-acquires immediately (acquire() will block until a key is free).
+            On network error: exponential back-off, max 4×.
+            """
+            body = {
+                'contents': [{'parts': [{'text': prompt}]}],
+                'generationConfig': {
+                    'temperature': 0.3,
+                    'maxOutputTokens': MAX_TOKENS,
+                    'topP': 0.95,
+                },
+            }
+            for attempt in range(retries):
+                api_key = _gem_acquire(keys)   # blocks until a key slot is free
+                try:
+                    r = _http.post(GEMINI_URL, json=body, params={'key': api_key}, timeout=90)
+                    if r.status_code == 429:
+                        wait = _gem_parse_retry(r.text)
+                        print(f'   ⏳ 429 on key …{api_key[-6:]} — blocked {wait}s '
+                              f'(attempt {attempt+1}/{retries})')
+                        _gem_block(api_key, wait)   # mark key; acquire() will skip it
+                        continue                     # re-acquire immediately (no sleep here)
+                    r.raise_for_status()
+                    return r.json()['candidates'][0]['content']['parts'][0]['text'].strip()
+                except (_http.exceptions.Timeout, _http.exceptions.ConnectionError) as e:
+                    if attempt < retries - 1:
+                        time.sleep(min(4 ** attempt, 30))
+                    else:
+                        raise
+            raise RuntimeError(f'Gemini call failed after {retries} attempts')
+
+        # ── Paragraph-boundary chunking ─────────────────────────────────────────
+        def smart_chunks(text):
+            pieces = re.split(r'(\n{2,})', text)   # keep separators
+            chunks, cur = [], ''
+            for piece in pieces:
+                if len(cur) + len(piece) > CHUNK_CHARS and cur.strip():
+                    chunks.append(cur.strip())
+                    cur = '' if re.match(r'^\n+$', piece) else piece
+                else:
+                    cur += piece
+            if cur.strip():
+                chunks.append(cur.strip())
+            return chunks or [text]
+
+        # ── Unicode-aware normaliser (works for ALL scripts) ──────────────────
+        def tnorm(s: str) -> str:
+            """Normalise text for duplicate comparison across any language.
+
+            NFKD decomposition splits accented chars → base + combining mark
+            (é → e + combining acute) so French/German/Spanish/Polish etc.
+            compare correctly even with accent variation.  \w in the final
+            sub matches Unicode word chars, so CJK/Arabic/Cyrillic are kept.
+            """
+            s = unicodedata.normalize('NFKD', s.strip())
+            s = ''.join(c for c in s if not unicodedata.combining(c))
+            s = s.lower()
+            s = re.sub(r'\s+', ' ', s)
+            s = re.sub(r'[^\w\s]', '', s)
+            return s
+
+        def tsimilar(a: str, b: str, threshold: float = 0.88) -> bool:
+            """True if two normalised strings are ≥ threshold similar."""
+            if not a or not b:
+                return False
+            if min(len(a), len(b)) / max(len(a), len(b)) < 0.7:
+                return False
+            return SequenceMatcher(None, a, b).ratio() >= threshold
+
+        # ── Overlap-aware chunk joiner ─────────────────────────────────────────
+        def join_chunks(parts):
+            """Join translated chunks, trimming line-level overlap at boundaries."""
+            if not parts:
+                return ''
+            result = parts[0]
+            for part in parts[1:]:
+                if not part:
+                    continue
+                r_lines = [l for l in result.splitlines() if l.strip()]
+                p_lines = [l for l in part.splitlines()   if l.strip()]
+                overlap = 0
+                for n in range(min(6, len(r_lines), len(p_lines)), 0, -1):
+                    if [tnorm(l) for l in r_lines[-n:]] == [tnorm(l) for l in p_lines[:n]]:
+                        overlap = n
+                        break
+                if overlap:
+                    trimmed = part
+                    for _ in range(overlap):
+                        nl = trimmed.find('\n')
+                        trimmed = trimmed[nl + 1:].lstrip('\n') if nl != -1 else ''
+                    result = result.rstrip('\n') + '\n\n' + trimmed
+                else:
+                    result = result.rstrip('\n') + '\n\n' + part
+            return result
+
+        # ── Post-processing ────────────────────────────────────────────────────
+        def postprocess(text):
+            # Strip parenthetical glosses
+            text = re.sub(
+                r'(?<=\w)\s*\([^()\n]{1,60}\)(?=[^\w(]|$)',
+                lambda m: '' if not re.search(r'[!?,.]', m.group()) else m.group(),
+                text,
+            )
+            # Dedup: exact normalised match + near-duplicate similarity check
+            paras = re.split(r'\n{2,}', text)
+            seen_norm: list = []
+            seen_exact: set = set()
+            deduped = []
+            for p in paras:
+                n = tnorm(p)
+                if not n:
+                    continue
+                if n in seen_exact:
+                    continue
+                if any(tsimilar(n, prev) for prev in seen_norm):
+                    continue
+                seen_exact.add(n)
+                seen_norm.append(n)
+                deduped.append(p)
+            return '\n\n'.join(deduped)
+
+        # ── Single chunk translation ───────────────────────────────────────────
+        def translate_chunk(chunk, prev_ctx, next_ctx, lang_code, lang_name, idx, total):
+            # Build context block
+            ctx = ''
+            if prev_ctx:
+                ctx += f'[PRECEDING CONTEXT — read-only, do NOT output]:\n{prev_ctx[-400:]}\n\n'
+            if next_ctx:
+                ctx += f'[FOLLOWING CONTEXT — read-only, do NOT output]:\n{next_ctx[:400]}\n\n'
+
+            # Pull language-specific discourse guide, fall back to English
+            dg = DISCOURSE_GUIDE.get(lang_code, DISCOURSE_GUIDE['en'])
+
+            prompt = (
+                f'You are an expert professional translator specialising in spoken video scripts.\n'
+                f'Translate the [TEXT] section below into {lang_name}.\n\n'
+                f'STRICT RULES — follow every single rule, no exceptions:\n\n'
+
+                f'1. OUTPUT ONLY the translated text — no preamble, no notes, no headings, '
+                f'no section labels.\n\n'
+
+                f'2. NO PARENTHETICALS — never add parenthetical explanations, '
+                f'original-language terms, or any annotation in parentheses.\n\n'
+
+                f'3. DISCOURSE MARKERS & RHETORICAL OPENERS — CRITICAL:\n'
+                f'   Openers like "Here", "Ici", "Aquí", "Hier", "Now,", "So,", "Look,", '
+                f'"Right,", "Voilà,", "Also,", "Schau mal," and any similar word used to '
+                f'open or punctuate a sentence are RHETORICAL FUNCTIONS, not literal words.\n'
+                f'   → Translate their COMMUNICATIVE FUNCTION, not their literal meaning.\n'
+                f'   → Ask yourself: "What would a native {lang_name} video-script writer '
+                f'say here to create the same energy and effect?"\n'
+                f'   → In {lang_name}, natural attention-getters are: {dg["attention"]}\n'
+                f'   → In {lang_name}, natural rhetorical openers are: {dg["opener"]}\n'
+                f'   → In {lang_name}, natural rhetorical questions are: {dg["rhetorical"]}\n\n'
+
+                f'4. TRANSITION WORDS — connectors (however, therefore, meanwhile, besides, '
+                f'actually, basically, anyway…) must use the most natural, colloquially correct '
+                f'{lang_name} equivalent.\n'
+                f'   → In {lang_name}, natural connectors are: {dg["transition"]}\n'
+                f'   → Never use a word-for-word calque of the source-language connector.\n\n'
+
+                f'5. RHETORICAL QUESTIONS — must sound punchy and completely native in '
+                f'{lang_name}. Restructure the sentence if needed; do not translate literally.\n\n'
+
+                f'6. SENTENCE LENGTH — split any sentence over ~25 words into shorter '
+                f'sentences for natural spoken rhythm.\n\n'
+
+                f'7. STRUCTURE — preserve paragraph breaks and blank lines exactly as in the source.\n\n'
+
+                f'8. CONTEXT SECTIONS — if present above, they are read-only references '
+                f'for continuity. Do NOT include them in your output.\n\n'
+
+                f'{ctx}'
+                f'[TEXT]:\n{chunk}'
+            )
+            result = gemini_call(prompt)
+            print(f'   ✅ [{lang_name}] chunk {idx+1}/{total}: {len(result):,} chars')
+            return idx, result
+
+        # ── Single flat work queue — all languages × all chunks ───────────────
+        # One ThreadPoolExecutor for everything.  max_workers = len(keys) so at
+        # most N threads compete for N keys; _gem_acquire() spaces them out via
+        # the per-key minimum interval (6.5 s) — no bursts, no 429s.
+        chunks_src = smart_chunks(script)
+        n_chunks   = len(chunks_src)
+        print(f'📝 {len(languages)} language(s) × {n_chunks} chunk(s) '
+              f'= {len(languages) * n_chunks} task(s) — {len(keys)} key(s) available')
+
+        # task = (lang_code, lang_name, chunk_text, idx, prev_ctx, next_ctx)
+        tasks = []
+        for lang_code in languages:
+            lang_name = LANG_NAMES.get(lang_code, lang_code)
+            print(f'🌍 [{lang_code}] queued — {n_chunks} chunk(s), {len(script):,} chars')
+            for i, chunk in enumerate(chunks_src):
+                tasks.append((
+                    lang_code, lang_name, chunk, i,
+                    chunks_src[i - 1] if i > 0         else '',
+                    chunks_src[i + 1] if i < n_chunks - 1 else '',
+                ))
+
+        # Accumulate translated parts indexed by (lang_code, chunk_idx)
+        translated: dict[tuple, str] = {}
+        chunk_errors: dict[str, str] = {}
+
+        def run_task(task):
+            lang_code, lang_name, chunk, idx, prev_ctx, next_ctx = task
+            _, text = translate_chunk(chunk, prev_ctx, next_ctx,
+                                      lang_code, lang_name, idx, n_chunks)
+            return (lang_code, idx), text
+
+        with ThreadPoolExecutor(max_workers=len(keys)) as ex:
+            futs = {ex.submit(run_task, t): t for t in tasks}
+            for f in as_completed(futs):
+                task = futs[f]
+                lang_code = task[0]
+                try:
+                    key, text = f.result()
+                    translated[key] = text
+                except Exception as e:
+                    chunk_errors[lang_code] = str(e)
+                    print(f'   ❌ [{lang_code}] chunk {task[3]+1} failed: {e}')
+
+        # Assemble per-language results in original chunk order
+        results, errors = {}, {}
+        for lang_code in languages:
+            if lang_code in chunk_errors and not any(
+                    k[0] == lang_code for k in translated):
+                errors[lang_code] = chunk_errors[lang_code]
+                continue
+            parts = [translated.get((lang_code, i), '') for i in range(n_chunks)]
+            joined = postprocess(join_chunks(parts))
+            print(f'✅ [{lang_code}] done: {len(joined):,} chars')
+            results[lang_code] = joined
+
+        return jsonify({'success': True, 'translations': results, 'errors': errors})
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
@@ -1376,17 +1919,19 @@ def save_api_config():
 
         gemini_key = data.get('gemini_api_key')
         director_gemini_key = data.get('director_gemini_key')
+        gemini_image_key = data.get('gemini_image_key')
         replicate_token = data.get('replicate_api_token')
         inworld_key = data.get('inworld_api_key')
         inworld_secret = data.get('inworld_api_secret')
 
-        if not gemini_key and not director_gemini_key and not replicate_token and not inworld_key and not inworld_secret:
+        if not gemini_key and not director_gemini_key and not gemini_image_key and not replicate_token and not inworld_key and not inworld_secret:
             return jsonify({'error': 'At least one API key must be provided'}), 400
 
         # Save configuration
         Config.save_api_config(
             gemini_key=gemini_key,
             director_gemini_key=director_gemini_key,
+            gemini_image_key=gemini_image_key,
             replicate_token=replicate_token,
             inworld_key=inworld_key,
             inworld_secret=inworld_secret
@@ -1472,9 +2017,47 @@ def get_settings():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/settings/api-keys', methods=['GET'])
+def get_api_keys_status():
+    """Get API keys status (for debugging)"""
+    from settings_manager import SettingsManager
+
+    try:
+        settings = SettingsManager.load_settings()
+        api_keys = settings.get('api_keys', {})
+
+        # Return masked keys (show first 4 chars only)
+        def mask_key(key):
+            if not key or len(key) == 0:
+                return ''
+            if len(key) <= 8:
+                return '***'
+            return key[:4] + '***' + key[-4:]
+
+        return jsonify({
+            'success': True,
+            'api_keys': {
+                'gemini': mask_key(api_keys.get('gemini', '')),
+                'director_gemini': mask_key(api_keys.get('director_gemini', '')),
+                'replicate': mask_key(api_keys.get('replicate', '')),
+                'inworld': mask_key(api_keys.get('inworld', '')),
+                'inworld_secret': mask_key(api_keys.get('inworld_secret', '')),
+                'pexels': mask_key(api_keys.get('pexels', '')),
+                'pixabay': mask_key(api_keys.get('pixabay', ''))
+            },
+            'settings_file': str(SettingsManager.SETTINGS_FILE),
+            'file_exists': SettingsManager.SETTINGS_FILE.exists()
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/settings/api-keys', methods=['POST'])
 def save_api_keys():
-    """Save API keys (Script Writer Gemini, Director Gemini, Replicate, Inworld AI, Pexels)"""
+    """Save API keys (Script Writer Gemini, Director Gemini, Replicate, Inworld AI Key+Secret, Pexels, Pixabay)"""
     from settings_manager import SettingsManager
 
     try:
@@ -1485,17 +2068,49 @@ def save_api_keys():
 
         gemini = data.get('gemini')
         director_gemini = data.get('director_gemini')
+        gemini_image = data.get('gemini_image')
         replicate = data.get('replicate')
         inworld = data.get('inworld')
+        inworld_secret = data.get('inworld_secret')
         pexels = data.get('pexels')
+        pixabay = data.get('pixabay')
+        unsplash = data.get('unsplash')
+        gemini_translate_1 = data.get('gemini_translate_1')
+        gemini_translate_2 = data.get('gemini_translate_2')
+        gemini_prompts     = data.get('gemini_prompts')
+        gemini_seo         = data.get('gemini_seo')
 
-        # Save API keys (Script Writer Gemini and Director Gemini are SEPARATE!)
+        # Debug: Log what keys we received (show length not actual value)
+        print("\n🔑 Received API keys:")
+        print(f"   Gemini: {'SET (' + str(len(gemini)) + ' chars)' if gemini else 'NOT SET'}")
+        print(f"   Director Gemini: {'SET (' + str(len(director_gemini)) + ' chars)' if director_gemini else 'NOT SET'}")
+        print(f"   Gemini Image: {'SET (' + str(len(gemini_image)) + ' chars)' if gemini_image else 'NOT SET'}")
+        print(f"   Replicate: {'SET (' + str(len(replicate)) + ' chars)' if replicate else 'NOT SET'}")
+        print(f"   Inworld: {'SET (' + str(len(inworld)) + ' chars)' if inworld else 'NOT SET'}")
+        print(f"   Inworld Secret: {'SET (' + str(len(inworld_secret)) + ' chars)' if inworld_secret else 'NOT SET'}")
+        print(f"   Pexels: {'SET (' + str(len(pexels)) + ' chars)' if pexels else 'NOT SET'}")
+        print(f"   Pixabay: {'SET (' + str(len(pixabay)) + ' chars)' if pixabay else 'NOT SET'}")
+        print(f"   Unsplash: {'SET (' + str(len(unsplash)) + ' chars)' if unsplash else 'NOT SET'}")
+        print(f"   Translate 1: {'SET (' + str(len(gemini_translate_1)) + ' chars)' if gemini_translate_1 else 'NOT SET'}")
+        print(f"   Translate 2: {'SET (' + str(len(gemini_translate_2)) + ' chars)' if gemini_translate_2 else 'NOT SET'}")
+        print(f"   Prompts Gen: {'SET (' + str(len(gemini_prompts)) + ' chars)' if gemini_prompts else 'NOT SET'}")
+        print(f"   SEO Gen: {'SET (' + str(len(gemini_seo)) + ' chars)' if gemini_seo else 'NOT SET'}")
+
+        # Save API keys (each feature uses its own dedicated key)
         settings = SettingsManager.save_api_keys(
             gemini=gemini,
             director_gemini=director_gemini,
+            gemini_image=gemini_image,
             replicate=replicate,
             inworld=inworld,
-            pexels=pexels
+            inworld_secret=inworld_secret,
+            pexels=pexels,
+            pixabay=pixabay,
+            unsplash=unsplash,
+            gemini_translate_1=gemini_translate_1,
+            gemini_translate_2=gemini_translate_2,
+            gemini_prompts=gemini_prompts,
+            gemini_seo=gemini_seo
         )
 
         # Get validation status
@@ -1522,15 +2137,17 @@ def save_formulas():
         if not data:
             return jsonify({'error': 'No data provided'}), 400
 
-        title_formula = data.get('title_formula')
-        script_formula = data.get('script_formula')
-        image_formula = data.get('image_formula')
+        title_formula       = data.get('title_formula')
+        script_formula      = data.get('script_formula')
+        image_formula       = data.get('image_formula')
+        auto_images_formula = data.get('auto_images_formula')
 
         # Save formulas
         success = SettingsManager.save_formulas(
             title_formula=title_formula,
             script_formula=script_formula,
-            image_formula=image_formula
+            image_formula=image_formula,
+            auto_images_formula=auto_images_formula,
         )
 
         if success:
@@ -1551,8 +2168,8 @@ def get_formula(formula_type):
     from settings_manager import SettingsManager
 
     try:
-        if formula_type not in ['title', 'script', 'image']:
-            return jsonify({'error': 'Invalid formula type. Must be: title, script, or image'}), 400
+        if formula_type not in ['title', 'script', 'image', 'auto_images']:
+            return jsonify({'error': 'Invalid formula type. Must be: title, script, image, or auto_images'}), 400
 
         formula = SettingsManager.load_formula(formula_type)
 
@@ -1564,6 +2181,643 @@ def get_formula(formula_type):
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/settings/formulas/<formula_type>/reset', methods=['POST'])
+def reset_formula(formula_type):
+    """Delete saved formula file so it falls back to the built-in default."""
+    from settings_manager import SettingsManager
+    file_map = {
+        'title':       SettingsManager.TITLE_FORMULA_FILE,
+        'script':      SettingsManager.SCRIPT_FORMULA_FILE,
+        'image':       SettingsManager.IMAGE_FORMULA_FILE,
+        'auto_images': SettingsManager.AUTO_IMAGES_FORMULA_FILE,
+    }
+    if formula_type not in file_map:
+        return jsonify({'error': 'Invalid formula type'}), 400
+    try:
+        f = file_map[formula_type]
+        if f.exists():
+            f.unlink()
+        default = SettingsManager.load_formula(formula_type)
+        return jsonify({'success': True, 'formula': default})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/settings/formula-guide/download', methods=['GET'])
+def download_formula_guide():
+    """Download the complete formula writing tutorial as a TXT file"""
+    from flask import Response
+
+    guide = """================================================================
+GUIDE COMPLET — COMMENT ÉCRIRE UNE FORMULE DE NICHE
+Pour le Générateur de Scripts IA
+Version 1.0
+================================================================
+
+Ce guide t'apprend à écrire une formule de niche complète
+pour n'importe quel sujet : trading, story, horreur, éducation,
+motivation, finance personnelle, crypto, développement personnel, etc.
+
+La formule que tu écris devient la LOI ABSOLUE du générateur.
+L'IA l'exécutera exactement dans l'ordre que tu définis.
+
+
+================================================================
+PARTIE 1 — QU'EST-CE QU'UNE FORMULE DE NICHE ?
+================================================================
+
+Une formule de niche est un document texte qui définit :
+
+1. QUI tu es quand tu écris (la voix, le personnage narrateur)
+2. POUR QUI tu écris (le public exact, ses douleurs, son niveau)
+3. COMMENT tu écris (le style, le rythme, les lois d'écriture)
+4. DANS QUEL ORDRE tu écris (la structure obligatoire du script)
+5. CE QUE TU VENDS (le produit, comment le présenter, les promotions)
+6. CE QUI EST INTERDIT (les phrases mortes, les patterns à éviter)
+
+Sans formule = scripts génériques.
+Avec une bonne formule = scripts impossibles à distinguer d'un humain expert.
+
+
+================================================================
+PARTIE 2 — STRUCTURE OBLIGATOIRE D'UNE FORMULE DE NICHE
+================================================================
+
+Une formule complète contient ces 8 sections dans cet ordre :
+
+SECTION 1 — IDENTITÉ DU SCRIPTEUR
+SECTION 2 — LE PUBLIC CIBLE
+SECTION 3 — LA VOIX ET LE TON
+SECTION 4 — LES LOIS DE RYTHME
+SECTION 5 — LES LOIS D'ÉCRITURE
+SECTION 6 — LA STRUCTURE DU SCRIPT (ordre des parties)
+SECTION 7 — LES RÈGLES DE CHAQUE PARTIE
+SECTION 8 — LES INTERDITS ABSOLUS
+
+Chaque section est expliquée ci-dessous avec instructions
+et exemples concrets que tu peux adapter à ta niche.
+
+
+================================================================
+SECTION 1 — IDENTITÉ DU SCRIPTEUR
+================================================================
+
+Définit QUI parle. Pas un personnage fictif — une identité crédible
+qui a vécu ce que le public vit. La voix doit venir de l'intérieur,
+pas de l'extérieur.
+
+QUESTIONS À RÉPONDRE :
+- Quelle est l'expérience vécue qui donne de la crédibilité ?
+- Est-ce que cette voix enseigne ou témoigne ?
+- Quel est le rapport de cette voix au public : pair, mentor, survivant ?
+- Quelles sont les 3 qualités uniques de cette voix ?
+
+EXEMPLE (niche trading psychologie) :
+  Tu n'es pas un gourou. Tu es quelqu'un qui est passé exactement
+  par où ces traders passent. Les nuits à fixer un écran rouge.
+  Les règles brisées encore et encore malgré la connaissance.
+  Ta voix a trois qualités : Clarté. Vérité. Respect.
+  Jamais condescendant. Jamais énergie artificielle.
+
+EXEMPLE (niche développement personnel) :
+  Tu n'es pas un coach. Tu es quelqu'un qui a tout reconstruit
+  après un échec complet. Tu parles depuis la reconstruction,
+  pas depuis le sommet. Ta voix a trois qualités : honnêteté brute,
+  précision pratique, humour sombre. Jamais de positivité forcée.
+
+EXEMPLE (niche histoire/mystère) :
+  Tu es le narrateur qui sait tout mais révèle au compte-gouttes.
+  Tu contrôles le rythme de l'information. Tu sais exactement
+  quand tendre et quand relâcher. Ta voix est froide, précise,
+  fascinante. Jamais dramatique. Jamais de sensationnalisme vide.
+
+TEMPLATE À REMPLIR :
+  Tu n'es pas [rôle générique].
+  Tu es quelqu'un qui [expérience vécue spécifique].
+  Tu parles depuis [position crédible].
+  Ta voix a trois qualités : [qualité 1]. [qualité 2]. [qualité 3].
+  Jamais [ce que tu refuses absolument].
+  Jamais [deuxième refus].
+
+
+================================================================
+SECTION 2 — LE PUBLIC CIBLE
+================================================================
+
+Définit QUI écoute. Plus tu es précis, plus le script résonne.
+Un public vague produit un script vague.
+
+QUESTIONS À RÉPONDRE :
+- Quel âge approximatif ? Quelle situation de vie ?
+- Quel niveau d'expertise dans le domaine ?
+- Quelles sont leurs 3 douleurs principales ?
+- Qu'ont-ils déjà essayé sans succès ?
+- Quel est le détail émotionnel qui change tout ?
+  (le moment précis où ils souffrent le plus)
+
+EXEMPLE (trading) :
+  Traders particuliers. Forex, crypto, actions.
+  Entre 6 mois et 3 ans d'expérience.
+  Assez de connaissances pour être dangereux.
+  Ils ont lu les livres. Suivi les formations.
+  Ils répètent les mêmes erreurs depuis des mois.
+  Le détail qui change tout : à 23h devant un écran rouge,
+  seuls, honteux d'avoir encore brisé leurs règles.
+
+EXEMPLE (fitness/perte de poids) :
+  Adultes 25-45 ans. Emplois sédentaires. Familles.
+  Ont essayé 3 à 5 régimes différents.
+  Perdent du poids puis reprennent tout dans les 6 mois.
+  Savent ce qu'il faut faire mais ne le font pas.
+  Le détail qui change tout : le lundi matin dans le miroir,
+  la promesse qu'ils se font et qu'ils savent déjà qu'ils vont briser.
+
+TEMPLATE À REMPLIR :
+  [Profil démographique précis].
+  [Niveau d'expérience dans le domaine].
+  [Ce qu'ils savent faire / Ce qui leur manque].
+  [Ce qu'ils ont déjà essayé sans résultat].
+  Le détail qui change tout : [moment émotionnel précis et privé].
+
+
+================================================================
+SECTION 3 — LA VOIX ET LE TON
+================================================================
+
+Définit COMMENT sonne la voix. Chaque adjectif doit être opposé
+à son contraire pour être utile.
+
+FORMAT OBLIGATOIRE :
+  [Adjectif positif] sans être [son excès négatif].
+  Exemple : "Directe sans être brutale."
+  Exemple : "Intime sans être molle."
+  Exemple : "Précise sans être froide."
+
+LISTE D'OPPOSÉS UTILES :
+  Direct / Brutal
+  Intime / Mou
+  Précis / Froid
+  Autoritaire / Arrogant
+  Passionné / Hystérique
+  Calme / Endormi
+  Urgence / Manipulation
+  Profond / Prétentieux
+  Simple / Simplet
+  Émotionnel / Mélodramatique
+
+TEST DE LA VOIX :
+  Si tu retires tout l'enseignement — le spectateur se sent-il compris ?
+  Si tu retires toute l'émotion — a-t-il appris quelque chose de concret ?
+  Les deux ensemble = la voix est juste.
+
+TEMPLATE À REMPLIR :
+  Cette voix est [adjectif] sans être [excès].
+  [Adjectif] sans être [excès].
+  [Adjectif] sans être [excès].
+  Chaque phrase sonne comme quelqu'un qui parle à une vraie personne
+  dans la même pièce. Pas à une caméra. À lui. Directement.
+
+
+================================================================
+SECTION 4 — LES LOIS DE RYTHME
+================================================================
+
+C'est la règle la plus importante. Elle s'applique à chaque paragraphe.
+
+LA LOI DU RYTHME VIVANT :
+  Chaque paragraphe suit ce schéma :
+  — Phrase courte percutante (maximum 8 mots) pour ouvrir
+  — Une ou deux phrases longues (15 à 20 mots) pour développer
+  — Phrase courte mémorable (maximum 8 mots) pour fermer
+
+RYTHME MORT (interdit) :
+  "Tu perds. Tu souffres. Tu recommences. Tu te promets."
+  Ce rythme haché tue l'écoute. Signal d'un script générique.
+
+RYTHME VIVANT (obligatoire) :
+  "Tu perds. Mais ce n'est pas la perte qui te détruit vraiment —
+  c'est la promesse que tu te fais juste après, celle que tu sais
+  déjà que tu vas briser. C'est ce cycle-là. Pas le marché."
+
+RÈGLE DE VÉRIFICATION :
+  Avant de livrer chaque paragraphe — vérifie ce rythme.
+  Si deux phrases courtes se suivent sans phrase longue — réécris.
+
+NOTE POUR TOUTES LES NICHES :
+  Cette loi du rythme vivant s'applique à toutes les niches.
+  Elle ne change jamais. Seule la longueur maximale des phrases
+  peut varier selon la niche (ex: niche story peut aller à 25 mots).
+
+
+================================================================
+SECTION 5 — LES LOIS D'ÉCRITURE
+================================================================
+
+Définit les règles de qualité phrase par phrase.
+
+LES 5 LOIS UNIVERSELLES (à inclure dans toute formule) :
+
+LOI 1 — JAMAIS LA PHRASE ÉVIDENTE
+  Après chaque phrase, pose-toi la question : un scripteur ordinaire
+  écrirait-il exactement cette suite ? Si oui — supprime. Réécris
+  depuis un angle inattendu mais vrai.
+
+LOI 2 — CHAQUE PHRASE SE GAGNE
+  Zéro remplissage. Chaque phrase fait au moins une de ces 4 choses :
+  - Enseigne quelque chose de précis
+  - Crée une émotion inattendue
+  - Fait avancer l'histoire en montant les enjeux
+  - Recadre une croyance tenue pour acquise
+
+LOI 3 — LA SPÉCIFICITÉ EST LA CRÉATIVITÉ
+  Chaque histoire a un prénom unique, un montant exact, une durée précise.
+  Pas "beaucoup d'argent" — "2 340 euros".
+  Pas "longtemps" — "quatorze mois".
+  Deux histoires spécifiques ne peuvent jamais être identiques.
+
+LOI 4 — ÉCRIRE POUR L'OREILLE
+  Maximum 20 mots par phrase longue. Le script sera lu à voix haute.
+  Compte. Coupe si nécessaire. Jamais de phrases qui s'essoufflent.
+
+LOI 5 — L'ÉMOTION SE MÉRITE
+  Ne dis jamais au spectateur ce qu'il doit ressentir.
+  Montre une situation tellement spécifique et vraie
+  que l'émotion arrive d'elle-même.
+
+LOIS SPÉCIFIQUES PAR NICHE (exemples) :
+
+Pour niche FINANCE/TRADING :
+  - Tous les montants en euros, jamais en dollars
+  - Citer des vrais traders : Ed Seykota, Jesse Livermore, Paul Tudor Jones
+  - Nommer des concepts psychologiques précis : aversion à la perte,
+    biais de récence, effet de disposition, déplétion de l'ego
+  - Réalisme sombre — jamais de promesses de richesse rapide
+
+Pour niche HISTOIRE/MYSTÈRE :
+  - Commencer par la conséquence, remonter à la cause
+  - Maintenir la cohérence absolue des faits (noms, lieux, dates)
+  - Révéler l'information au compte-gouttes — jamais tout d'un coup
+  - Tension construite progressivement — pas d'explosions émotionnelles vides
+
+Pour niche ÉDUCATION/EXPLAINER :
+  - Commencer par remettre en question une croyance commune
+  - Expliquer simplement des concepts complexes (jamais de jargon nu)
+  - Un chiffre précis dans les 90 premières secondes
+  - Construire la compréhension comme des marches — jamais de sauts
+
+Pour niche DÉVELOPPEMENT PERSONNEL :
+  - L'identité avant le comportement — toujours
+  - Des exemples de vraies personnes, pas des archétypes génériques
+  - La résistance avant la solution — ne pas promettre la facilité
+  - Finir sur une action précise et immédiate, pas sur un principe vague
+
+
+================================================================
+SECTION 6 — LA STRUCTURE DU SCRIPT (ORDRE OBLIGATOIRE)
+================================================================
+
+Définit l'ordre exact des parties du script.
+L'IA DOIT suivre cet ordre. Aucune déviation permise.
+
+STRUCTURE UNIVERSELLE RECOMMANDÉE :
+  1. LE HOOK
+  2. PROMOTION 1
+  3. LE CORPS
+  4. PROMOTION 2
+  5. LE CLIMAX
+  6. PROMOTION 3
+  7. LA CONCLUSION
+
+VARIANTES PAR NICHE :
+
+Pour niche STORY/HORREUR (pas de promotions visibles) :
+  1. L'ENTRÉE (in medias res)
+  2. LA MONTÉE
+  3. LE PIVOT
+  4. LE CLIMAX
+  5. LA RÉSOLUTION (ou non-résolution intentionnelle)
+  6. [Une seule promotion naturelle intégrée dans l'histoire]
+
+Pour niche ÉDUCATION (structure pédagogique) :
+  1. LE CHOC (croyance fausse détruite)
+  2. PROMOTION 1 (rapide)
+  3. LA PREUVE (pourquoi c'est vrai)
+  4. LE MÉCANISME (comment ça fonctionne)
+  5. PROMOTION 2
+  6. L'APPLICATION (comment utiliser)
+  7. LA CONCLUSION (action unique)
+
+RÈGLE ABSOLUE DE STRUCTURE :
+  Après la CONCLUSION — rien.
+  Le script se termine avec la dernière phrase de la conclusion.
+  Jamais de retour au corps après le climax.
+  Jamais de nouvel enseignement après la conclusion.
+
+
+================================================================
+SECTION 7 — LES RÈGLES DE CHAQUE PARTIE
+================================================================
+
+Définit les règles spécifiques de chaque partie listée en Section 6.
+Voici les règles pour chaque partie de la structure universelle.
+
+---
+LE HOOK — RÈGLES OBLIGATOIRES
+---
+
+Le hook n'est pas une introduction. C'est une collision.
+
+PROCESSUS AVANT D'ÉCRIRE LE HOOK :
+  Étape 1 : Trouve la vraie blessure émotionnelle derrière le titre.
+  Étape 2 : Identifie le comportement privé et honteux de ce public.
+  Étape 3 : Génère 3 angles d'entrée — rejette les 2 premiers.
+  Étape 4 : Entre au milieu d'une action ou d'une sensation.
+  Étape 5 : Applique le rythme vivant dès la première phrase.
+
+LES 3 PORTES D'ENTRÉE DU HOOK (une seule par script) :
+  Porte 1 — MENACE D'IDENTITÉ : décris leur comportement privé.
+  Porte 2 — ÉCART DE CURIOSITÉ : montre ce qu'ils croient vs la réalité.
+  Porte 3 — RECONNAISSANCE ÉMOTIONNELLE : décris leur vie privée précisément.
+
+TEST DU HOOK :
+  Ce hook pourrait-il ouvrir un script différent sur un autre sujet ?
+  Si oui — réécris. La blessure spécifique du TITRE doit être là.
+
+---
+LES PROMOTIONS — RÈGLES OBLIGATOIRES
+---
+
+RÈGLE ABSOLUE : Chaque promotion se termine par le lien en description.
+LONGUEUR : 5 à 8 phrases maximum. Jamais plus.
+
+STRUCTURE DE CHAQUE PROMOTION :
+  Phrase 1-2 : Nomme la douleur exacte activée par le contenu juste avant.
+  Phrase 3-4 : Connecte cette douleur au produit directement.
+  Phrase 5 : Pourquoi ce produit et pas autre chose — en une phrase.
+  Phrase 6 : Lien en description (formulation différente à chaque promo).
+
+INTERDITS ABSOLUS DANS LES PROMOTIONS :
+  - Jamais de prix
+  - Jamais "achetez maintenant"
+  - Jamais de liste de fonctionnalités
+  - Jamais de tactiques d'urgence ou de rareté
+  - La formulation du lien doit être différente dans les 3 promotions
+
+---
+LE CORPS — RÈGLES OBLIGATOIRES
+---
+
+Le corps alterne TOUJOURS entre enseignement et histoire.
+L'enseignement donne quelque chose à penser.
+L'histoire donne quelque chose à ressentir.
+
+ARC ÉMOTIONNEL OBLIGATOIRE (planifier avant d'écrire) :
+  R — RECONNAISSANCE : ils se voient dans le miroir
+  C — CURIOSITÉ : ils réalisent qu'il manque quelque chose
+  E — ESPOIR : quelqu'un a résolu ce problème
+  T — TENSION : c'est plus difficile qu'ils ne pensaient
+  CL — CLARTÉ : une vérité simple se déverrouille
+
+RÈGLE DE RESPIRATION :
+  L'enseignement est l'inspiration.
+  L'histoire est l'expiration.
+  Jamais d'enseignement prolongé sans histoire pour l'ancrer.
+  Jamais d'histoire sans en extraire un insight.
+
+RÈGLE DES PRÉNOMS :
+  Jamais le même prénom deux fois dans le même script.
+  Chaque personnage a : un prénom unique, un marché spécifique,
+  depuis combien de temps il trade/pratique, un chiffre précis.
+
+---
+LE CLIMAX — RÈGLES OBLIGATOIRES
+---
+
+LONGUEUR : 8 à 12 phrases maximum. Pas une de plus.
+
+TYPES DE CLIMAX (un seul par script) :
+  Le Recadrage : leur douleur vue sous un angle radicalement différent.
+  L'Adresse Directe : tu leur dis ce dont ils ont besoin d'entendre.
+  La Vérité Silencieuse : quelque chose de simple qu'ils savaient sans l'admettre.
+
+RÈGLES DU CLIMAX :
+  - Parle directement avec "tu"
+  - Ne reprend AUCUNE idée déjà dite dans le corps
+  - Dernière phrase = la plus courte et la plus mémorable
+  - Lu à voix haute — tu dois ressentir quelque chose
+
+---
+LA CONCLUSION — RÈGLES OBLIGATOIRES
+---
+
+LONGUEUR : 3 à 5 phrases maximum.
+Elle ne résume pas. Elle ne répète pas. Elle ne réenseigne pas.
+Elle laisse le spectateur avec une seule chose à faire ou ressentir.
+Après la conclusion — rien. Le script est terminé.
+
+
+================================================================
+SECTION 8 — LES INTERDITS ABSOLUS
+================================================================
+
+Définit les phrases et patterns que l'IA ne doit JAMAIS utiliser.
+
+PHRASES MORTES UNIVERSELLES (à mettre dans toute formule) :
+  "Vous allez découvrir..." — écris le contenu directement
+  "Je vais vous montrer..." — écris le contenu directement
+  "Sans plus attendre..." — commence au milieu de l'action
+  "Dans cette vidéo je vais..." — commence au milieu de l'action
+  "Soyons honnêtes..." — implique que tu ne l'étais pas avant
+  "Laissez-moi vous expliquer..." — explique-le, c'est tout
+  "Changeur de jeu" — vide et surutilisé
+  "Libérez votre potentiel" — vide et surutilisé
+
+ADVERBES INTERDITS (remplace par des faits) :
+  Jamais "incroyablement douloureux" — écris combien de nuits sans sommeil
+  Jamais "absolument catastrophique" — écris le montant exact perdu
+  Jamais "remarquablement efficace" — écris le pourcentage sur combien de jours
+
+RÈGLE ANTI-DUPLICATION :
+  Aucune idée ne peut apparaître deux fois dans le même script.
+  Pas même reformulée. Pas même résumée.
+  Si le climax reprend une idée du corps — réécris le climax.
+  Si la conclusion reprend une idée du climax — réécris la conclusion.
+
+
+================================================================
+PARTIE 3 — TEMPLATE VIERGE À REMPLIR
+================================================================
+
+Copie ce template, remplis chaque [SECTION] et colle-le
+dans le champ "Script Formula" des settings.
+
+--- DÉBUT DU TEMPLATE ---
+
+================================================================
+FORMULE DE NICHE — [NOM DE TA NICHE]
+Langue : [Français / English / Arabe / etc.]
+================================================================
+
+QUI TU ES QUAND TU ÉCRIS
+Tu n'es pas [rôle générique].
+Tu es [expérience vécue crédible].
+Tu parles depuis [position].
+Ta voix a trois qualités : [qualité 1]. [qualité 2]. [qualité 3].
+Jamais [refus 1].
+Jamais [refus 2].
+
+LE PUBLIC
+[Profil démographique et niveau d'expérience].
+[Ce qu'ils savent / Ce qui leur manque].
+[Ce qu'ils ont essayé sans résultat].
+Le détail qui change tout : [moment émotionnel précis].
+
+LA VOIX
+[Adjectif] sans être [excès].
+[Adjectif] sans être [excès].
+[Adjectif] sans être [excès].
+
+LOI FONDAMENTALE — LE RYTHME VIVANT
+Chaque paragraphe suit : Court (max [X] mots) → Long (15-20 mots) → Court (max [X] mots).
+INTERDIT : deux phrases courtes consécutives.
+
+LES LOIS D'ÉCRITURE
+LOI 1 — [Ta loi spécifique niche #1]
+LOI 2 — [Ta loi spécifique niche #2]
+LOI 3 — LA SPÉCIFICITÉ : chaque chiffre est précis, chaque prénom est unique.
+LOI 4 — ÉCRIRE POUR L'OREILLE : maximum [X] mots par phrase.
+
+STRUCTURE DU SCRIPT — ORDRE FIXE
+1. LE HOOK
+2. PROMOTION 1
+3. LE CORPS
+4. PROMOTION 2
+5. LE CLIMAX
+6. PROMOTION 3
+7. LA CONCLUSION
+
+LE HOOK
+[Décris les 3 portes émotionnelles possibles pour cette niche].
+[Décris le processus de sélection du hook pour cette niche].
+[Test : ce hook pourrait-il ouvrir un autre script ? Si oui — réécris.]
+
+LES PROMOTIONS
+Produit : [Nom du produit]
+Description : [Description en 2 lignes maximum]
+Règle absolue : chaque promotion se termine par le lien en description.
+Longueur : 5 à 8 phrases maximum.
+[Tes règles spécifiques pour les promotions de cette niche]
+
+LE CORPS
+Arc émotionnel obligatoire : R → C → E → T → CL
+[Tes règles d'enseignement spécifiques à cette niche]
+[Tes règles d'histoires spécifiques à cette niche]
+[Prénoms à utiliser — jamais deux fois le même]
+
+LE CLIMAX
+Longueur : 8 à 12 phrases maximum.
+[Tes règles de climax pour cette niche]
+Dernière phrase = la plus courte et la plus mémorable.
+
+LA CONCLUSION
+Longueur : 3 à 5 phrases maximum.
+[Ta règle de clôture pour cette niche]
+Rien après la conclusion.
+
+INTERDITS ABSOLUS
+[Phrases mortes spécifiques à ta niche]
+[Adverbes à remplacer par des faits]
+Zéro duplication d'idées dans le même script.
+
+--- FIN DU TEMPLATE ---
+
+
+================================================================
+PARTIE 4 — EXEMPLES DE FORMULES PAR NICHE
+================================================================
+
+NICHE : HORREUR / FAITS DIVERS / TRUE CRIME
+  Voix : narrateur froid qui sait tout. Jamais dramatique.
+  Public : amateurs de mystère. Veulent les faits, pas les émotions fabriquées.
+  Rythme : court-long-court. Phrases longues peuvent aller à 25 mots.
+  Structure : Entrée in medias res → Montée → Pivot → Climax → Non-résolution
+  Hook : commence par le crime/événement, jamais par le contexte.
+  Corps : faits chronologiques avec détails sensoriels précis.
+  Climax : la révélation finale ou la question qui reste sans réponse.
+  Interdits : "incroyable", "choquant", "vous n'allez pas croire".
+
+NICHE : FINANCE PERSONNELLE / ÉPARGNE
+  Voix : quelqu'un qui a mal géré son argent et reconstruit.
+  Public : 25-40 ans. Revenus moyens. Dettes ou zéro épargne.
+  Rythme : court-long-court. Maximum 18 mots par phrase longue.
+  Structure : Hook → Promo 1 → Corps → Promo 2 → Climax → Promo 3 → Conclusion
+  Hook : le chiffre embarrassant de leur compte en banque, décrit de l'intérieur.
+  Corps : arc R-C-E-T-CL avec des exemples en euros, pas en dollars.
+  Climax : la vérité sur pourquoi l'argent ne change pas avec un salaire plus élevé.
+  Interdits : "richesse", "liberté financière", "investissement magique".
+
+NICHE : MOTIVATION / PRODUCTIVITÉ
+  Voix : quelqu'un qui a arrêté d'être motivé et a commencé à être discipliné.
+  Public : entrepreneurs et freelances. 6h du matin et 23h sont leurs horaires.
+  Rythme : court-long-court. Maximum 17 mots par phrase longue.
+  Structure : Hook → Corps (sans promotions séparées — intégrées naturellement) → Climax → Conclusion
+  Hook : le moment précis où ils ont réalisé que la motivation ne reviendrait pas.
+  Corps : systèmes > motivation. Identité > comportement.
+  Climax : la distinction entre discipline et punition.
+  Interdits : "potentiel", "passion", "succès", "crois en toi".
+
+NICHE : SANTÉ / FITNESS
+  Voix : quelqu'un qui a essayé tous les régimes et trouvé la simplicité.
+  Public : 30-50 ans. Emploi sédentaire. Enfants. Peu de temps.
+  Rythme : court-long-court. Maximum 20 mots par phrase longue.
+  Structure : Hook → Promo 1 → Corps → Promo 2 → Climax → Promo 3 → Conclusion
+  Hook : le matin du lundi dans le miroir, la résolution brisée d'hier.
+  Corps : biologie comportementale > volonté. Petites habitudes > grands efforts ponctuels.
+  Climax : le corps ne punit pas la paresse — il s'adapte à ce qu'on lui montre chaque jour.
+  Interdits : "transformation", "challenge", "détox", "brûle les graisses".
+
+
+================================================================
+PARTIE 5 — CHECKLIST AVANT DE SOUMETTRE TA FORMULE
+================================================================
+
+Vérifie ces points avant de coller ta formule dans les settings :
+
+□ L'identité du scripteur est spécifique et crédible ?
+□ Le public cible a un "détail émotionnel qui change tout" ?
+□ La voix est définie avec des opposés (direct sans être brutal) ?
+□ La loi du rythme vivant court-long-court est explicitement définie ?
+□ Au moins 5 lois d'écriture sont listées ?
+□ La structure liste les parties dans l'ordre exact ?
+□ Les règles du hook incluent les 3 portes émotionnelles ?
+□ Les promotions ont une longueur max (5-8 phrases) définie ?
+□ Le climax a une longueur max (8-12 phrases) définie ?
+□ La conclusion a une longueur max (3-5 phrases) définie ?
+□ La règle "rien après la conclusion" est explicite ?
+□ La règle anti-duplication est incluse ?
+□ Les interdits absolus spécifiques à cette niche sont listés ?
+
+Si une case est vide — complète avant de soumettre.
+Une formule incomplète = scripts incomplèts.
+
+
+================================================================
+FIN DU GUIDE
+================================================================
+Pour toute question ou mise à jour de ce guide,
+modifie directement ta formule dans Settings → Script Formula.
+"""
+
+    return Response(
+        guide,
+        mimetype='text/plain; charset=utf-8',
+        headers={
+            'Content-Disposition': 'attachment; filename="guide-formules-niche.txt"',
+            'Content-Type': 'text/plain; charset=utf-8'
+        }
+    )
 
 
 @app.route('/api/settings/voices', methods=['GET'])
@@ -1835,7 +3089,9 @@ def editor_process_route():
         temp_dir = TEMP_FOLDER
 
         for i, clip in enumerate(clips):
-            clip_path = clip.get('videoPath', '')
+            # Support both 'path' (frontend) and 'videoPath' (legacy) field names
+            clip_path = clip.get('path', clip.get('videoPath', ''))
+            clip_type = clip.get('type', 'video')
             start_time = clip.get('start', 0)
             end_time = clip.get('end', 0)
             duration = end_time - start_time
@@ -1846,18 +3102,37 @@ def editor_process_route():
             # Extract clip segment
             temp_clip = os.path.join(temp_dir, f'clip_{i}.mp4')
 
-            cmd = [
-                'ffmpeg', '-y',
-                '-i', clip_path,
-                '-ss', str(start_time),
-                '-t', str(duration),
-                '-c:v', 'libx264',
-                '-preset', 'fast',
-                '-crf', '23',
-                '-c:a', 'aac',
-                '-b:a', '128k',
-                temp_clip
-            ]
+            if clip_type == 'image':
+                # Convert image to video clip at specified duration
+                cmd = [
+                    'ffmpeg', '-y',
+                    '-loop', '1',
+                    '-framerate', '2',
+                    '-i', clip_path,
+                    '-t', str(duration),
+                    '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2',
+                    '-c:v', 'libx264',
+                    '-preset', 'fast',
+                    '-tune', 'stillimage',
+                    '-crf', '23',
+                    '-an',
+                    temp_clip
+                ]
+            else:
+                # Extract video segment
+                cmd = [
+                    'ffmpeg', '-y',
+                    '-i', clip_path,
+                    '-ss', str(start_time),
+                    '-t', str(duration),
+                    '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=30',
+                    '-c:v', 'libx264',
+                    '-preset', 'fast',
+                    '-crf', '23',
+                    '-c:a', 'aac',
+                    '-b:a', '128k',
+                    temp_clip
+                ]
 
             subprocess.run(cmd, check=True, capture_output=True)
 
@@ -1893,26 +3168,16 @@ def editor_process_route():
                 for clip in temp_clips:
                     f.write(f"file '{os.path.abspath(clip)}'\n")
 
-            # Set quality parameters
-            if quality == '1080':
-                scale = 'scale=1920:1080'
-                crf = '18'
-            else:
-                scale = 'scale=1280:720'
-                crf = '23'
-
-            # Final concatenation
+            # Final concatenation - clips are already at target resolution, use stream copy
             cmd = [
                 'ffmpeg', '-y',
                 '-f', 'concat',
                 '-safe', '0',
                 '-i', concat_file,
-                '-vf', scale,
-                '-c:v', 'libx264',
-                '-preset', 'medium',
-                '-crf', crf,
+                '-c:v', 'copy',
                 '-c:a', 'aac',
                 '-b:a', '192k',
+                '-movflags', '+faststart',
                 output_path
             ]
 
@@ -1946,6 +3211,126 @@ def editor_process_route():
             'success': False,
             'error': str(e)
         }), 500
+
+
+@app.route('/api/list-voices', methods=['GET'])
+def list_voices_route():
+    """
+    Fetch available English voices from Inworld TTS API.
+    Query param: model_id (optional, for filtering - currently Inworld returns same voices for both models)
+    """
+    import base64
+    import requests as req
+    from config import Config
+
+    try:
+        api_key = Config.get_inworld_api_key()
+        api_secret = Config.get_inworld_api_secret()
+
+        if not api_key or not api_secret:
+            return jsonify({'success': False, 'error': 'Inworld API credentials not configured'}), 400
+
+        auth_string = f"{api_key}:{api_secret}"
+        base64_auth = base64.b64encode(auth_string.encode('ascii')).decode('ascii')
+        headers = {
+            'Authorization': f'Basic {base64_auth}',
+            'Content-Type': 'application/json'
+        }
+
+        response = req.get(
+            'https://api.inworld.ai/tts/v1/voices?filter=language=en',
+            headers=headers,
+            timeout=15
+        )
+
+        if response.status_code != 200:
+            return jsonify({'success': False, 'error': f'Inworld API error: {response.status_code}'}), 500
+
+        data = response.json()
+        voices = data.get('voices', [])
+
+        # Normalize to simple list
+        result = []
+        for v in voices:
+            voice_id = v.get('voiceId') or v.get('name', '')
+            if voice_id:
+                result.append({
+                    'id': voice_id,
+                    'displayName': v.get('displayName') or voice_id,
+                    'gender': (v.get('voiceMetadata') or {}).get('gender', 'UNKNOWN'),
+                })
+
+        return jsonify({'success': True, 'voices': result})
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/preview-voice', methods=['POST'])
+def preview_voice_route():
+    """
+    Generate a short voice preview (~5 seconds) for the selected voice.
+    Request JSON: { voice_id, model_id, language }
+    """
+    import base64 as b64
+    import requests as req
+    from config import Config
+
+    PREVIEW_TEXT_EN = "Hello! This is a preview of how this voice sounds. I hope you enjoy the quality."
+    PREVIEW_TEXT_FR = "Bonjour ! Voici un aperçu de cette voix. J'espère que vous apprécierez la qualité."
+
+    try:
+        data = request.get_json() or {}
+        voice_id = data.get('voice_id', 'Olivia')
+        model_id = data.get('model_id', 'inworld-tts-1.5-mini')
+        language = data.get('language', 'en-US')
+
+        preview_text = PREVIEW_TEXT_FR if language == 'fr-FR' else PREVIEW_TEXT_EN
+
+        api_key = Config.get_inworld_api_key()
+        api_secret = Config.get_inworld_api_secret()
+
+        if not api_key or not api_secret:
+            return jsonify({'success': False, 'error': 'Inworld API credentials not configured'}), 400
+
+        auth_string = f"{api_key}:{api_secret}"
+        base64_auth = b64.b64encode(auth_string.encode('ascii')).decode('ascii')
+        headers = {
+            'Authorization': f'Basic {base64_auth}',
+            'Content-Type': 'application/json'
+        }
+
+        payload = {
+            'text': preview_text,
+            'voice_id': voice_id,
+            'language': language,
+            'audio_config': {
+                'audio_encoding': 'MP3',
+                'speaking_rate': 1.0
+            },
+            'temperature': 1.1,
+            'model_id': model_id
+        }
+
+        response = req.post(
+            'https://api.inworld.ai/tts/v1/voice',
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+
+        if response.status_code != 200:
+            return jsonify({'success': False, 'error': f'Inworld API error: {response.status_code} - {response.text}'}), 500
+
+        response_data = response.json()
+        audio_b64 = response_data.get('audioContent')
+        if not audio_b64:
+            return jsonify({'success': False, 'error': 'No audio returned'}), 500
+
+        return jsonify({'success': True, 'audio_base64': audio_b64, 'voice_id': voice_id})
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/generate-voice', methods=['POST'])
@@ -2351,13 +3736,18 @@ def auto_images_generate():
             model_name=Config.get_director_gemini_model()
         )
 
+        # Load the editable Auto Images Formula
+        from settings_manager import SettingsManager as _SM
+        auto_images_formula = _SM.load_formula('auto_images')
+
         plan = director.plan_auto_images(
             script_text=script,
             style=style,
             n_images=n_images,
-            scene_timing_hints=scene_timing_hints,  # Pass timing hints to Director
+            scene_timing_hints=scene_timing_hints,
             force_regenerate=force_regenerate,
-            verbose=True
+            verbose=True,
+            formula=auto_images_formula,
         )
 
         # Step 2: Generate images with Replicate
@@ -2691,7 +4081,8 @@ def auto_images_create_style():
             negative_rules=data.get('negative_rules', []),
             composition=data.get('composition', ''),
             lighting=data.get('lighting', ''),
-            color_palette=data.get('color_palette', [])
+            color_palette=data.get('color_palette', []),
+            style_formula=data.get('style_formula', ''),
         )
 
         return jsonify({
@@ -2743,7 +4134,8 @@ def auto_images_update_style(style_id):
             negative_rules=data.get('negative_rules'),
             composition=data.get('composition'),
             lighting=data.get('lighting'),
-            color_palette=data.get('color_palette')
+            color_palette=data.get('color_palette'),
+            style_formula=data.get('style_formula'),
         )
 
         if style:
@@ -2798,6 +4190,173 @@ def auto_images_delete_style(style_id):
             'success': False,
             'error': str(e)
         }), 500
+
+
+# =============================================================================
+# SEO GENERATOR
+# =============================================================================
+
+
+@app.route('/api/seo-generator', methods=['POST'])
+def seo_generator():
+    """
+    Generate YouTube description + tags from title + script using Gemini.
+
+    Request JSON:
+        {
+            'title': 'Video title',
+            'script': 'Full script text',
+            'link': 'https://...',          (optional)
+            'formula_id': 'seo_abc123',     (optional — use a saved preset)
+            'formula': 'Custom formula...'  (optional — inline override, highest priority)
+        }
+    """
+    try:
+        from settings_manager import SettingsManager
+        from seo_formula_manager import SeoFormulaManager
+
+        data = request.get_json() or {}
+        title            = data.get('title', '').strip()
+        script           = data.get('script', '').strip()
+        link             = data.get('link', '').strip()
+        formula_id       = data.get('formula_id', '').strip()
+        formula_override = data.get('formula', '').strip()
+
+        if not title and not script:
+            return jsonify({'success': False, 'error': 'Provide at least a title or script'}), 400
+
+        # Resolve formula: inline > named preset > default
+        if formula_override:
+            formula = formula_override
+        elif formula_id:
+            preset = SeoFormulaManager.get(formula_id)
+            formula = preset['formula'] if preset else SeoFormulaManager.get_default_formula_text()
+        else:
+            formula = SeoFormulaManager.get_default_formula_text()
+
+        # SEO Generator uses ONLY its own dedicated key. No fallback to other keys.
+        gemini_key = Config.get_gemini_seo_api_key()
+        if not gemini_key:
+            return jsonify({'success': False, 'error': 'No SEO Generator API key configured. Add it in Settings → SEO Generator.'}), 400
+
+        link_instruction = f'Include this link naturally in the description: {link}' if link else 'No product link provided — skip the CTA/link section.'
+
+        prompt = f"""You are a professional YouTube SEO copywriter.
+
+VIDEO TITLE: {title}
+
+SCRIPT / CONTENT:
+{script if script else '(no script provided — base description on the title only)'}
+
+YOUR FORMULA / INSTRUCTIONS:
+{formula}
+
+LINK: {link_instruction}
+
+OUTPUT: Return ONLY valid JSON — no markdown, no backticks, no extra text.
+{{
+  "description": "Full YouTube description following the formula",
+  "tags": "tag1, tag2, tag3, ...",
+  "language": "name of detected language (e.g. French, English, Arabic)"
+}}
+
+CRITICAL RULES:
+- Tags MUST be comma-separated, total under 400 characters
+- Description MUST directly reference and match the exact title
+- Write description AND tags in the same language as the title/script
+- If a link was provided, it MUST appear in the description
+- Include realistic chapter timestamps (based on script flow)
+"""
+
+        import google.generativeai as genai
+        genai.configure(api_key=gemini_key)
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        response = model.generate_content(prompt)
+        raw = response.text.strip()
+
+        if raw.startswith('```'):
+            raw = raw.split('```')[1]
+            if raw.startswith('json'):
+                raw = raw[4:]
+        raw = raw.strip().rstrip('`').strip()
+
+        import json as _json
+        result = _json.loads(raw)
+
+        description = result.get('description', '')
+        tags        = result.get('tags', '')
+        language    = result.get('language', 'Unknown')
+
+        if len(tags) > 400:
+            tags = tags[:397].rsplit(',', 1)[0]
+
+        return jsonify({
+            'success': True,
+            'description': description,
+            'tags': tags,
+            'language': language,
+            'tags_length': len(tags),
+        })
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# SEO Formula Presets CRUD
+@app.route('/api/seo-formulas', methods=['GET'])
+def seo_formulas_list():
+    """Get all saved SEO formula presets"""
+    try:
+        from seo_formula_manager import SeoFormulaManager
+        return jsonify({'success': True, 'formulas': SeoFormulaManager.get_all()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/seo-formulas', methods=['POST'])
+def seo_formulas_create():
+    """Create a new SEO formula preset"""
+    try:
+        from seo_formula_manager import SeoFormulaManager
+        data = request.get_json() or {}
+        preset = SeoFormulaManager.create(
+            name=data.get('name', ''),
+            formula=data.get('formula', ''),
+        )
+        return jsonify({'success': True, 'formula': preset})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/seo-formulas/<formula_id>', methods=['PUT'])
+def seo_formulas_update(formula_id):
+    """Update an existing SEO formula preset"""
+    try:
+        from seo_formula_manager import SeoFormulaManager
+        data = request.get_json() or {}
+        preset = SeoFormulaManager.update(
+            formula_id=formula_id,
+            name=data.get('name'),
+            formula=data.get('formula'),
+        )
+        if preset:
+            return jsonify({'success': True, 'formula': preset})
+        return jsonify({'success': False, 'error': 'Preset not found'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/seo-formulas/<formula_id>', methods=['DELETE'])
+def seo_formulas_delete(formula_id):
+    """Delete an SEO formula preset"""
+    try:
+        from seo_formula_manager import SeoFormulaManager
+        ok = SeoFormulaManager.delete(formula_id)
+        return jsonify({'success': ok, 'error': None if ok else 'Not found'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 # =============================================================================
@@ -3334,6 +4893,1288 @@ def timeline_merge_clips():
             'success': False,
             'error': str(e)
         }), 500
+
+
+# ============================================================================
+# AVATAR AI - Video generation with avatar loops + AI images/stock videos
+# ============================================================================
+
+@app.route('/api/avatar/generate', methods=['POST'])
+def avatar_generate():
+    """
+    Generate avatar video with AI images or stock videos
+
+    Body:
+    {
+        "avatar_video": "path/to/avatar.mp4",
+        "audio": "path/to/audio.mp3",
+        "mode": "ai_images" | "stock_videos",
+        "script": "optional script for context",
+        "stock_apis": ["pexels", "pixabay"]  // optional, for stock_videos mode
+    }
+    """
+    try:
+        from avatar_video_generator import AvatarVideoGenerator
+        from avatar_video_assembler import AvatarVideoAssembler
+
+        data = request.json
+
+        avatar_video_path = data.get('avatar_video')
+        audio_path = data.get('audio')
+        mode = data.get('mode', 'ai_images')
+        script = data.get('script', '')
+        stock_apis = data.get('stock_apis', ['pexels'])
+        use_whisper = data.get('use_whisper', False)  # Default: fast Gemini mode
+        background_music_path = data.get('background_music_path')  # Optional
+        image_provider = data.get('image_provider', 'gemini')  # 'replicate' or 'gemini'
+        image_style = data.get('image_style', None)  # Style dict (or string ID) from frontend
+
+        # Resolve string style ID to full style dict (backwards compat)
+        if isinstance(image_style, str):
+            try:
+                from auto_images_style_manager import AutoImagesStyleManager
+                style_mgr = AutoImagesStyleManager()
+                resolved = style_mgr.get_style(image_style)
+                if resolved:
+                    image_style = resolved
+            except Exception:
+                pass
+
+        if not avatar_video_path or not audio_path:
+            return jsonify({
+                'success': False,
+                'error': 'avatar_video and audio are required'
+            }), 400
+
+        # CRITICAL: Script is REQUIRED so Gemini knows what media to place where
+        if not script or len(script.strip()) < 50:
+            return jsonify({
+                'success': False,
+                'error': 'Script is REQUIRED! Gemini needs the script text to know what videos/images to place at each timing. Please provide the full audio script.'
+            }), 400
+
+        # Validate mode
+        if mode not in ['ai_images', 'stock_videos']:
+            return jsonify({
+                'success': False,
+                'error': 'mode must be "ai_images" or "stock_videos"'
+            }), 400
+
+        print(f"\n🎬 AVATAR AI Generation Starting...")
+        print(f"   Mode: {mode}")
+        print(f"   Avatar: {avatar_video_path}")
+        print(f"   Audio: {audio_path}")
+        print(f"   Timing: {'Whisper STT (slow)' if use_whisper else 'Gemini Direct (fast)'}")
+
+        # Step 1: Generate media plan
+        generator = AvatarVideoGenerator()
+
+        result = generator.generate_avatar_video(
+            avatar_video_path=avatar_video_path,
+            audio_path=audio_path,
+            mode=mode,
+            script=script,
+            stock_apis=stock_apis,
+            use_whisper=use_whisper,
+            image_style=image_style,
+            image_provider=image_provider,
+            verbose=True
+        )
+
+        # Step 2: Assemble video
+        assembler = AvatarVideoAssembler(
+            temp_dir=TEMP_FOLDER,
+            output_dir=OUTPUT_FOLDER  # Use same output folder as other videos
+        )
+
+        final_video = assembler.assemble_video(
+            avatar_video_path=avatar_video_path,
+            audio_path=audio_path,
+            media_plan=result['media_plan'],
+            media_items=result['media_items'],
+            mode=mode,
+            background_music_path=background_music_path,
+            verbose=True
+        )
+
+        # Get just the filename for frontend
+        video_filename = os.path.basename(final_video)
+
+        return jsonify({
+            'success': True,
+            'video_path': video_filename,  # Just filename, not full path
+            'media_plan': result['media_plan'],
+            'audio_duration': result['audio_duration'],
+            'generation_time': result['generation_time'],
+            'mode': mode
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/avatar/upload-avatar', methods=['POST'])
+def avatar_upload_avatar():
+    """Upload avatar video and auto-mute it"""
+    try:
+        if 'avatar' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided'}), 400
+
+        file = request.files['avatar']
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'No file selected'}), 400
+
+        # Save to upload folder
+        filename = secure_filename(file.filename)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"avatar_{timestamp}_{filename}"
+        file_path = os.path.join(UPLOAD_FOLDER, filename)
+
+        file.save(file_path)
+
+        # Get video duration and auto-mute
+        import subprocess
+
+        # Get duration
+        probe_cmd = [
+            'ffprobe', '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            file_path
+        ]
+        duration_result = subprocess.run(probe_cmd, capture_output=True, text=True)
+        duration = float(duration_result.stdout.strip()) if duration_result.stdout.strip() else 0
+
+        # Auto-mute the video
+        muted_filename = f"muted_{filename}"
+        muted_path = os.path.join(UPLOAD_FOLDER, muted_filename)
+
+        mute_cmd = [
+            'ffmpeg', '-i', file_path,
+            '-an',  # Remove audio
+            '-c:v', 'copy',  # Copy video codec (no re-encoding)
+            '-y',
+            muted_path
+        ]
+        subprocess.run(mute_cmd, check=True, capture_output=True)
+
+        # Remove original, keep muted version
+        os.remove(file_path)
+
+        return jsonify({
+            'success': True,
+            'path': muted_path,
+            'filename': muted_filename,
+            'duration': duration
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/avatar/upload-local-images', methods=['POST'])
+def avatar_upload_local_images():
+    """Upload multiple local images (all formats) for Local Images Mix."""
+    import time as _time
+    try:
+        files = request.files.getlist('images')
+        if not files:
+            return jsonify({'success': False, 'error': 'No images provided'}), 400
+
+        ALLOWED = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.avif'}
+        saved = []
+        for file in files:
+            if not file or not file.filename:
+                continue
+            ext = os.path.splitext(file.filename)[1].lower()
+            if ext not in ALLOWED:
+                continue
+            fname = secure_filename(file.filename)
+            fname = f"localimg_{int(_time.time()*1000)}_{fname}"
+            fpath = os.path.join(UPLOAD_FOLDER, fname)
+            file.save(fpath)
+            saved.append({'path': fpath, 'name': file.filename})
+
+        if not saved:
+            return jsonify({'success': False, 'error': 'No valid images found (check format)'}), 400
+
+        return jsonify({'success': True, 'images': saved, 'count': len(saved)})
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/avatar/generate-local-mix', methods=['POST'])
+def avatar_generate_local_mix():
+    """
+    Generate avatar video mixed with user's local images.
+    No AI generation — smart timing calc:
+      Default: 30s avatar + 5s image per cycle.
+      If images run out → avatar loops to end.
+      If too many images → spacing compressed to fit all.
+    """
+    import subprocess as _sp
+    import time as _time
+    try:
+        from avatar_video_assembler import AvatarVideoAssembler
+
+        data = request.json or {}
+        avatar_video_path = data.get('avatar_video')
+        voice_paths       = data.get('voice_paths', [])
+        audio_path        = data.get('audio') or (voice_paths[0] if voice_paths else None)
+        image_paths       = data.get('image_paths', [])
+        background_music  = data.get('background_music')
+
+        if not avatar_video_path or not audio_path:
+            return jsonify({'success': False, 'error': 'avatar_video and audio are required'}), 400
+        if not image_paths:
+            return jsonify({'success': False, 'error': 'At least one image_path is required'}), 400
+
+        start_time = _time.time()
+
+        # Merge multiple voice files if needed
+        if len(voice_paths) > 1:
+            merged = os.path.join(TEMP_FOLDER, f"merged_voice_{int(_time.time())}.mp3")
+            cfile  = os.path.join(TEMP_FOLDER, f"voice_concat_{int(_time.time())}.txt")
+            with open(cfile, 'w') as f:
+                for vp in voice_paths:
+                    f.write(f"file '{os.path.abspath(vp)}'\n")
+            _sp.run(['ffmpeg', '-y', '-f', 'concat', '-safe', '0',
+                     '-i', cfile, '-c', 'copy', merged],
+                    check=True, capture_output=True)
+            audio_path = merged
+
+        # Get audio duration
+        probe = _sp.run(
+            ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+             '-of', 'default=noprint_wrappers=1:nokey=1', audio_path],
+            capture_output=True, text=True
+        )
+        total_duration = float(probe.stdout.strip())
+
+        print(f"\n🖼️  LOCAL IMAGES MIX")
+        print(f"   Audio: {total_duration:.1f}s | Images: {len(image_paths)}")
+
+        # ── Smart timing ──────────────────────────────────────────────────────
+        IMAGE_DUR   = 5.0   # seconds each image is shown
+        DEFAULT_GAP = 30.0  # seconds of avatar between images (default)
+        num_images  = len(image_paths)
+
+        if num_images * (DEFAULT_GAP + IMAGE_DUR) <= total_duration:
+            # Images fit comfortably; use default 30s gap, avatar loops at end
+            avatar_gap = DEFAULT_GAP
+        else:
+            # Too many images: compress spacing so all fit
+            cycle      = total_duration / num_images
+            avatar_gap = max(3.0, cycle - IMAGE_DUR)
+
+        print(f"   Cycle: {avatar_gap:.1f}s avatar + {IMAGE_DUR}s image")
+
+        # ── Build segment list ────────────────────────────────────────────────
+        segments    = []
+        images_used = 0
+        current     = 0.0
+
+        while current < total_duration - 0.5:
+            remaining = total_duration - current
+
+            # If no more images or barely any time left → fill with avatar
+            if images_used >= num_images or remaining <= IMAGE_DUR:
+                segments.append({'type': 'avatar', 'duration': remaining})
+                current = total_duration
+                break
+
+            # Avatar clip
+            avt = min(avatar_gap, remaining)
+            segments.append({'type': 'avatar', 'duration': avt})
+            current += avt
+
+            remaining = total_duration - current
+            if remaining <= 0:
+                break
+
+            # Image clip
+            img = min(IMAGE_DUR, remaining)
+            segments.append({'type': 'ai_image', 'duration': img})
+            current     += img
+            images_used += 1
+
+        # Tail: any leftover time → avatar
+        if total_duration - current > 0.5:
+            segments.append({'type': 'avatar', 'duration': total_duration - current})
+
+        # ── Map images → segment indices ──────────────────────────────────────
+        media_items = []
+        img_idx = 0
+        for seg_idx, seg in enumerate(segments):
+            if seg['type'] == 'ai_image' and img_idx < num_images:
+                media_items.append({'segment_index': seg_idx, 'path': image_paths[img_idx]})
+                img_idx += 1
+
+        media_plan = {'segments': segments}
+        print(f"   Segments: {len(segments)} | Images placed: {images_used}")
+
+        # ── Assemble with the same fast FFmpeg assembler ──────────────────────
+        assembler = AvatarVideoAssembler(temp_dir=TEMP_FOLDER, output_dir=OUTPUT_FOLDER)
+        final_video = assembler.assemble_video(
+            avatar_video_path=avatar_video_path,
+            audio_path=audio_path,
+            media_plan=media_plan,
+            media_items=media_items,
+            mode='ai_images',          # reuses the image→video path
+            background_music_path=background_music,
+            verbose=True
+        )
+
+        return jsonify({
+            'success': True,
+            'video_path': os.path.basename(final_video),
+            'audio_duration': total_duration,
+            'images_used': images_used,
+            'total_images': num_images,
+            'segments_count': len(segments),
+            'avatar_gap': avatar_gap,
+            'generation_time': _time.time() - start_time
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/avatar/upload-audio', methods=['POST'])
+def avatar_upload_audio():
+    """Upload audio for avatar video"""
+    try:
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided'}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'No file selected'}), 400
+
+        # Save to upload folder
+        filename = secure_filename(file.filename)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"avatar_audio_{timestamp}_{filename}"
+        file_path = os.path.join(UPLOAD_FOLDER, filename)
+
+        file.save(file_path)
+
+        return jsonify({
+            'success': True,
+            'file_path': file_path,
+            'filename': filename
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/avatar/status', methods=['GET'])
+def avatar_status():
+    """Get avatar generation status"""
+    # TODO: Implement progress tracking if needed
+    return jsonify({
+        'success': True,
+        'status': 'ready'
+    })
+
+
+@app.route('/api/check-script', methods=['GET'])
+def check_script():
+    """Check if a script file exists in the output folder"""
+    try:
+        import glob
+        import os
+        from datetime import datetime
+
+        # Find all script files in output folder
+        script_pattern = os.path.join(OUTPUT_FOLDER, 'script_*.txt')
+        script_files = glob.glob(script_pattern)
+
+        if not script_files:
+            return jsonify({
+                'success': True,
+                'has_script': False
+            })
+
+        # Get the most recent script file
+        most_recent_script = max(script_files, key=os.path.getmtime)
+
+        # Read the script content
+        with open(most_recent_script, 'r', encoding='utf-8') as f:
+            script_content = f.read()
+
+        # Get file stats
+        file_stats = os.stat(most_recent_script)
+        file_size = file_stats.st_size
+        modified_time = datetime.fromtimestamp(file_stats.st_mtime)
+
+        # Calculate stats
+        char_count = len(script_content)
+        word_count = len(script_content.split())
+
+        return jsonify({
+            'success': True,
+            'has_script': True,
+            'script': script_content,
+            'script_filename': os.path.basename(most_recent_script),
+            'length': char_count,
+            'words': word_count,
+            'file_size': file_size,
+            'modified': modified_time.strftime('%Y-%m-%d %H:%M:%S')
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+ALAE_BAHA_PASSWORD = 'ALAEBMW'
+
+
+@app.route('/api/alae-baha/saved-settings', methods=['GET'])
+def alae_baha_saved_settings():
+    """Return the actual saved API keys + formulas so the frontend form can be populated on startup.
+    This runs on every page load so settings persist even if localStorage is cleared."""
+    from settings_manager import SettingsManager
+    try:
+        settings = SettingsManager.load_settings()
+        api_keys = settings.get('api_keys', {})
+        return jsonify({
+            'success': True,
+            'api_keys': {
+                'gemini':             api_keys.get('gemini', ''),
+                'director_gemini':    api_keys.get('director_gemini', ''),
+                'gemini_image':       api_keys.get('gemini_image', ''),
+                'replicate':          api_keys.get('replicate', ''),
+                'inworld':            api_keys.get('inworld', ''),
+                'inworld_secret':     api_keys.get('inworld_secret', ''),
+                'pexels':             api_keys.get('pexels', ''),
+                'pixabay':            api_keys.get('pixabay', ''),
+                'unsplash':           api_keys.get('unsplash', ''),
+                'gemini_translate_1': api_keys.get('gemini_translate_1', ''),
+                'gemini_translate_2': api_keys.get('gemini_translate_2', ''),
+                'gemini_prompts':     api_keys.get('gemini_prompts', ''),
+                'gemini_seo':         api_keys.get('gemini_seo', ''),
+            },
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/alae-baha/export', methods=['POST'])
+def alae_baha_export():
+    """Export all settings, niches, styles, and formulas as a single JSON bundle."""
+    from settings_manager import SettingsManager
+    from niche_manager import NicheManager
+    from auto_images_style_manager import AutoImagesStyleManager
+    from seo_formula_manager import SeoFormulaManager
+    from video_style_manager import VideoStyleManager
+
+    try:
+        data = request.get_json() or {}
+        if data.get('password') != ALAE_BAHA_PASSWORD:
+            return jsonify({'error': 'Incorrect password'}), 403
+
+        settings = SettingsManager.load_settings()
+
+        bundle = {
+            'alae_baha_bundle': True,
+            'version': '3.0',
+            'exported_at': datetime.utcnow().isoformat(),
+            'api_keys': settings.get('api_keys', {}),
+            'voice_settings': settings.get('voice_settings', {}),
+            'video_settings': settings.get('video_settings', {}),
+            'formulas': {
+                'title':       SettingsManager.load_formula('title'),
+                'script':      SettingsManager.load_formula('script'),
+                'image':       SettingsManager.load_formula('image'),
+                'auto_images': SettingsManager.load_formula('auto_images'),
+                'seo':         SettingsManager.load_formula('seo'),
+            },
+            'niches':       NicheManager.get_all_niches(),
+            'image_styles': AutoImagesStyleManager.get_all_styles(),
+            'seo_formulas': SeoFormulaManager.get_all(),          # named SEO presets
+            'video_styles': [s for s in VideoStyleManager.get_all() if not s.get('built_in')],  # custom only
+        }
+
+        # Also include api_config.json if present
+        from config import Config
+        if Config.API_CONFIG_FILE.exists():
+            try:
+                with open(Config.API_CONFIG_FILE, 'r') as f:
+                    bundle['api_config'] = json.load(f)
+            except Exception:
+                bundle['api_config'] = {}
+
+        print(f"✅ Export bundle v3.0: {len(bundle['niches'])} niches, "
+              f"{len(bundle['image_styles'])} image styles, "
+              f"{len(bundle['video_styles'])} video styles, "
+              f"{len(bundle['seo_formulas'])} SEO formulas")
+        return jsonify({'success': True, 'bundle': bundle})
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/alae-baha/import', methods=['POST'])
+def alae_baha_import():
+    """Import a settings bundle exported from another machine."""
+    from settings_manager import SettingsManager
+    from niche_manager import NicheManager
+    from auto_images_style_manager import AutoImagesStyleManager
+    from seo_formula_manager import SeoFormulaManager
+    from video_style_manager import VideoStyleManager
+
+    BUILTIN_IMAGE_IDS = {'cinematic', 'photorealistic', 'artistic', 'animated'}
+    BUILTIN_VIDEO_IDS = {'cinematic_video', 'documentary_video', 'animated_video'}
+
+    try:
+        data = request.get_json() or {}
+        if data.get('password') != ALAE_BAHA_PASSWORD:
+            return jsonify({'error': 'Incorrect password'}), 403
+
+        bundle = data.get('bundle')
+        if not bundle or not bundle.get('alae_baha_bundle'):
+            return jsonify({'error': 'Invalid bundle format'}), 400
+
+        results = {
+            'api_keys': False, 'formulas': False,
+            'niches': 0, 'niches_skipped': 0,
+            'image_styles': 0, 'image_styles_skipped': 0,
+            'video_styles': 0, 'video_styles_skipped': 0,
+            'seo_formulas': 0, 'seo_formulas_skipped': 0,
+            'errors': []
+        }
+
+        # --- API Keys ---
+        api_keys = bundle.get('api_keys', {})
+        if api_keys:
+            SettingsManager.save_api_keys(
+                gemini=api_keys.get('gemini') or None,
+                director_gemini=api_keys.get('director_gemini') or None,
+                gemini_image=api_keys.get('gemini_image') or None,
+                replicate=api_keys.get('replicate') or None,
+                inworld=api_keys.get('inworld') or None,
+                inworld_secret=api_keys.get('inworld_secret') or None,
+                pexels=api_keys.get('pexels') or None,
+                pixabay=api_keys.get('pixabay') or None,
+                unsplash=api_keys.get('unsplash') or None,
+                gemini_translate_1=api_keys.get('gemini_translate_1') or None,
+                gemini_translate_2=api_keys.get('gemini_translate_2') or None,
+            )
+            results['api_keys'] = True
+
+        # --- Voice & Video Settings ---
+        voice = bundle.get('voice_settings', {})
+        if voice:
+            try:
+                SettingsManager.save_voice_settings(
+                    default_voice=voice.get('default_voice'),
+                    speaking_rate=voice.get('speaking_rate'),
+                )
+            except Exception:
+                pass
+
+        video_set = bundle.get('video_settings', {})
+        if video_set:
+            try:
+                SettingsManager.save_video_settings(
+                    enable_timed_zoom=video_set.get('enable_timed_zoom'),
+                    zoom_direction=video_set.get('zoom_direction'),
+                    zoom_duration=video_set.get('zoom_duration'),
+                    zoom_amount=video_set.get('zoom_amount'),
+                )
+            except Exception:
+                pass
+
+        # --- Formulas (title, script, image, auto_images, seo) ---
+        formulas = bundle.get('formulas', {})
+        if formulas:
+            SettingsManager.save_formulas(
+                title_formula=formulas.get('title'),
+                script_formula=formulas.get('script'),
+                image_formula=formulas.get('image'),
+                auto_images_formula=formulas.get('auto_images'),
+                seo_formula=formulas.get('seo'),
+            )
+            results['formulas'] = True
+
+        # --- Niches (skip duplicates by name) ---
+        existing_niche_names = {n['name'] for n in NicheManager.get_all_niches()}
+        for niche in bundle.get('niches', []):
+            name = niche.get('name', '').strip()
+            if not name:
+                continue
+            if name in existing_niche_names:
+                results['niches_skipped'] += 1
+                continue
+            try:
+                NicheManager.create_niche(
+                    name=name,
+                    language=niche.get('language', 'English'),
+                    writing_guidelines=niche.get('writing_guidelines', ''),
+                )
+                results['niches'] += 1
+                existing_niche_names.add(name)
+                print(f"   ✅ Niche: {name}")
+            except Exception as e:
+                results['errors'].append(f"Niche '{name}': {e}")
+
+        # --- Auto Image Styles (skip built-ins & name duplicates) ---
+        existing_img_names = {s['name'] for s in AutoImagesStyleManager.get_all_styles()}
+        for style in bundle.get('image_styles', []):
+            name     = style.get('name', '').strip()
+            style_id = style.get('id', '')
+            if not name or style_id in BUILTIN_IMAGE_IDS:
+                results['image_styles_skipped'] += 1
+                continue
+            if name in existing_img_names:
+                results['image_styles_skipped'] += 1
+                continue
+            try:
+                style_formula = style.get('style_formula', '')
+                visual_rules  = style.get('visual_rules', [])
+                # If no formula and no rules, build minimal rules from description
+                if not style_formula and len(visual_rules) < 3:
+                    desc = style.get('description', 'Professional style')
+                    visual_rules = [desc, 'High quality output', 'Consistent visual style']
+
+                AutoImagesStyleManager.create_style(
+                    name=name,
+                    description=style.get('description', ''),
+                    style_formula=style_formula,
+                    visual_rules=visual_rules[:10],
+                    negative_rules=style.get('negative_rules', ['Low quality', 'Blurry'])[:10],
+                    composition=style.get('composition', ''),
+                    lighting=style.get('lighting', ''),
+                    color_palette=style.get('color_palette', [])[:10],
+                )
+                results['image_styles'] += 1
+                existing_img_names.add(name)
+                print(f"   ✅ Image style: {name}")
+            except Exception as e:
+                results['errors'].append(f"Image style '{name}': {e}")
+
+        # --- Video Styles (skip built-ins & name duplicates) ---
+        existing_vid_names = {s['name'] for s in VideoStyleManager.get_all() if not s.get('built_in')}
+        for style in bundle.get('video_styles', []):
+            name     = style.get('name', '').strip()
+            style_id = style.get('id', '')
+            if not name or style_id in BUILTIN_VIDEO_IDS:
+                results['video_styles_skipped'] += 1
+                continue
+            if name in existing_vid_names:
+                results['video_styles_skipped'] += 1
+                continue
+            try:
+                VideoStyleManager.create(
+                    name=name,
+                    style_formula=style.get('style_formula', ''),
+                    description=style.get('description', ''),
+                )
+                results['video_styles'] += 1
+                existing_vid_names.add(name)
+                print(f"   ✅ Video style: {name}")
+            except Exception as e:
+                results['errors'].append(f"Video style '{name}': {e}")
+
+        # --- SEO Formula Presets (skip name duplicates) ---
+        existing_seo_names = {f['name'] for f in SeoFormulaManager.get_all()}
+        for preset in bundle.get('seo_formulas', []):
+            name    = preset.get('name', '').strip()
+            formula = preset.get('formula', '').strip()
+            if not name or not formula:
+                continue
+            if name in existing_seo_names:
+                results['seo_formulas_skipped'] += 1
+                continue
+            try:
+                SeoFormulaManager.create(name=name, formula=formula)
+                results['seo_formulas'] += 1
+                existing_seo_names.add(name)
+                print(f"   ✅ SEO formula: {name}")
+            except Exception as e:
+                results['errors'].append(f"SEO formula '{name}': {e}")
+
+        print(f"✅ Import complete: {results['niches']} niches, "
+              f"{results['image_styles']} image styles, "
+              f"{results['video_styles']} video styles, "
+              f"{results['seo_formulas']} SEO formulas, "
+              f"{len(results['errors'])} errors")
+        return jsonify({
+            'success': True,
+            'message': 'All settings imported successfully!',
+            'results': results,
+        })
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# =============================================================================
+# PROMPTS GENERATOR — raw image prompts from script + style (no image generation)
+# =============================================================================
+
+@app.route('/api/generate-prompts-only', methods=['POST'])
+def generate_prompts_only():
+    """
+    Generate image OR video prompts scene-by-scene from a script.
+
+    Request JSON:
+        {
+            "script":         "...",
+            "style_id":       "cinematic",       # image style id  (mode=image)
+            "video_style_id": "cinematic_video", # video style id  (mode=video)
+            "count":          20,
+            "mode":           "image" | "video"  # default: "image"
+        }
+    """
+    from auto_images_style_manager import AutoImagesStyleManager
+    from video_style_manager import VideoStyleManager
+    from settings_manager import SettingsManager
+    from config import Config
+    import google.generativeai as genai
+
+    CHUNK_SIZE = 15
+
+    _auto_images_formula = SettingsManager.load_formula('auto_images')
+
+    class _SafeDict(dict):
+        def __missing__(self, key):
+            return '{' + key + '}'
+
+    # ---- IMAGE prompt builder ------------------------------------------------
+    def build_image_prompt(script_segment, style, chunk_start, chunk_size, total_count, prev_prompts=None):
+        style_name        = style.get('name', 'Cinematic')
+        style_desc        = style.get('description', '')
+        style_formula_raw = style.get('style_formula', '').strip()
+        visual_rules      = style.get('visual_rules', [])
+        negative_rules    = style.get('negative_rules', [])
+        composition       = style.get('composition', '')
+        lighting          = style.get('lighting', '')
+        color_palette     = style.get('color_palette', [])
+
+        color_palette_text = ', '.join(color_palette) if color_palette else 'rich, vivid colors'
+        chunk_end = chunk_start + chunk_size - 1
+
+        # Build style DNA — the mandatory visual fingerprint for EVERY prompt
+        if style_formula_raw:
+            style_dna = style_formula_raw
+        else:
+            dna_parts = [style_desc] if style_desc else []
+            if visual_rules:
+                dna_parts.append('Visual: ' + ' | '.join(visual_rules))
+            if composition:
+                dna_parts.append(f'Composition: {composition}')
+            if lighting:
+                dna_parts.append(f'Lighting: {lighting}')
+            if color_palette_text:
+                dna_parts.append(f'Colors: {color_palette_text}')
+            style_dna = '\n'.join(dna_parts)
+
+        negative_text = ''
+        if negative_rules:
+            negative_text = '\nNEVER include: ' + ', '.join(negative_rules)
+
+        # Previously generated prompts — tell AI what subjects were already covered
+        prev_section = ''
+        if prev_prompts:
+            previews = '\n'.join(f'- {p[:120]}' for p in prev_prompts[-6:])
+            prev_section = f"""
+ALREADY GENERATED — do NOT repeat these subjects or environments:
+{previews}
+"""
+
+        formula_rendered = _auto_images_formula.format_map(_SafeDict(
+            n_images=chunk_size,
+            style_name=style_name,
+            lighting=lighting,
+            composition=composition,
+            color_palette=color_palette_text,
+        ))
+
+        return f"""You are a professional image prompt writer for AI image generators (Flux, Midjourney, SDXL).
+
+════════════════ STYLE CORE — {style_name} ════════════════
+This is the MANDATORY visual DNA. Every single prompt you write MUST reflect this style.
+Apply these parameters as the foundation of every prompt without exception:
+
+{style_dna}{negative_text}
+══════════════════════════════════════════════════════════
+
+TASK: Generate EXACTLY {chunk_size} image prompts covering scenes {chunk_start}–{chunk_end} of {total_count} total.
+Each prompt = one distinct visual scene extracted from the script segment below.
+ALL prompts in ENGLISH. Follow the script CHRONOLOGICALLY. Each prompt covers a different moment.
+{prev_section}
+═══════════════ SCRIPT SEGMENT (scenes {chunk_start}–{chunk_end}) ═══════════════
+{script_segment}
+═══════════════════════════════════════════════════════════════════
+
+{formula_rendered}
+
+OUTPUT RULES:
+1. EXACTLY {chunk_size} prompts separated by ONE blank line between each.
+2. NO numbering, NO labels, NO preamble, NO explanation.
+3. Each prompt = ONE continuous paragraph. NO line breaks inside a prompt.
+4. Every prompt MUST embed the {style_name} style parameters above as its visual core.
+5. Every prompt MUST end with: --no text, no captions, no watermarks, no labels
+6. Every scene DISTINCT — different subject, angle, or environment from all others.
+OUTPUT ONLY THE {chunk_size} PROMPTS. NOTHING ELSE."""
+
+    # ---- VIDEO prompt builder ------------------------------------------------
+    def build_video_prompt(script_segment, style, chunk_start, chunk_size, total_count, prev_prompts=None):
+        style_name    = style.get('name', 'Cinematic')
+        style_formula = style.get('style_formula', '').strip()
+        chunk_end = chunk_start + chunk_size - 1
+
+        style_dna = style_formula or f'Cinematic film quality, smooth controlled camera movement, {style_name} aesthetic, professional grade'
+
+        prev_section = ''
+        if prev_prompts:
+            previews = '\n'.join(f'- {p[:120]}' for p in prev_prompts[-6:])
+            prev_section = f"""
+ALREADY GENERATED — do NOT repeat these subjects or shots:
+{previews}
+"""
+
+        return f"""You are a professional video prompt writer for AI video generators (Sora, Runway Gen-3, Kling, Pika).
+
+════════════════ VIDEO STYLE CORE — {style_name} ════════════════
+This is the MANDATORY visual DNA. Every single prompt you write MUST apply this style as its base:
+
+{style_dna}
+══════════════════════════════════════════════════════════
+
+TASK: Generate EXACTLY {chunk_size} video prompts covering scenes {chunk_start}–{chunk_end} of {total_count} total.
+Each prompt = one distinct video shot extracted from the script segment below.
+ALL prompts in ENGLISH. Follow the script CHRONOLOGICALLY. Each prompt covers a different moment.
+{prev_section}
+═══════════════ SCRIPT SEGMENT (scenes {chunk_start}–{chunk_end}) ═══════════════
+{script_segment}
+═══════════════════════════════════════════════════════════════════
+
+OUTPUT RULES:
+1. EXACTLY {chunk_size} prompts separated by ONE blank line between each.
+2. NO numbering, NO labels, NO preamble, NO explanation.
+3. Each prompt = ONE continuous paragraph. NO line breaks inside a prompt.
+4. Every prompt MUST include in this order:
+   - Duration: "X seconds," (5–10 s per scene)
+   - Specific camera movement (slow dolly-in, wide pan left, aerial descent, static close-up, etc.)
+   - Subject + action EXACTLY matching that script moment
+   - Mood and lighting applying the {style_name} style core above
+   - End with: high quality, smooth motion, --no text --no subtitles --no watermarks
+5. Every scene DISTINCT — vary shot size, angle, camera movement from all others.
+OUTPUT ONLY THE {chunk_size} PROMPTS. NOTHING ELSE."""
+
+    def _dedup_prompts(prompts):
+        """Remove duplicate or near-duplicate prompts based on first 80 chars fingerprint."""
+        seen = set()
+        result = []
+        for p in prompts:
+            fp = re.sub(r'\s+', ' ', p[:80].lower().strip())
+            if fp not in seen:
+                seen.add(fp)
+                result.append(p)
+        return result
+
+    try:
+        data = request.get_json() or {}
+        script         = data.get('script', '').strip()
+        mode           = data.get('mode', 'image')           # 'image' or 'video'
+        style_id       = data.get('style_id', 'cinematic')
+        video_style_id = data.get('video_style_id', 'cinematic_video')
+        count          = int(data.get('count', 20))
+
+        if not script:
+            return jsonify({'error': 'Script is required'}), 400
+        if count < 1 or count > 200:
+            return jsonify({'error': 'count must be between 1 and 200'}), 400
+
+        # Prompts Generator uses ONLY its own dedicated key.
+        prompts_key = Config.get_gemini_prompts_api_key()
+        if not prompts_key:
+            return jsonify({'error': 'No Prompts Generator API key configured. Add it in Settings → Prompts Generator.'}), 500
+        keys = [prompts_key]
+        model_name = Config.get_director_gemini_model()
+        gen_cfg    = {'temperature': 0.85, 'top_p': 0.95, 'max_output_tokens': 32768}
+        print(f'🔑 Prompts generator using dedicated key …{_gem_key_label(prompts_key)}')
+
+        # Resolve style
+        if mode == 'video':
+            style = VideoStyleManager.get(video_style_id)
+            if not style:
+                return jsonify({'error': f'Video style not found: {video_style_id}'}), 404
+            prompt_builder = build_video_prompt
+        else:
+            style = AutoImagesStyleManager.get_style(style_id)
+            if not style:
+                return jsonify({'error': f'Image style not found: {style_id}'}), 404
+            prompt_builder = build_image_prompt
+
+        all_prompts = []
+        remaining   = count
+        chunk_start = 1
+        script_len  = len(script)
+
+        while remaining > 0:
+            chunk_size = min(CHUNK_SIZE, remaining)
+
+            # Slice the script proportionally so each chunk covers its own section
+            seg_start = int((chunk_start - 1) / count * script_len)
+            seg_end   = int((chunk_start + chunk_size - 1) / count * script_len)
+            script_segment = script[seg_start:seg_end].strip() or script
+
+            prompt_text = prompt_builder(
+                script_segment, style, chunk_start, chunk_size, count,
+                prev_prompts=all_prompts[-6:] if all_prompts else None,
+            )
+
+            print(f'\n{"🎬" if mode=="video" else "🎨"} Prompts [{mode}] '
+                  f'chunk {chunk_start}–{chunk_start + chunk_size - 1}/{count}')
+            raw = _gem_call_sdk(keys, model_name, gen_cfg, prompt_text).strip()
+
+            parts = [p.strip() for p in raw.split('\n\n') if p.strip()]
+            clean = [p for p in parts if len(p) > 40]
+            clean = _dedup_prompts(clean)
+            # Only add prompts not already in all_prompts
+            seen_fps = {re.sub(r'\s+', ' ', p[:80].lower().strip()) for p in all_prompts}
+            new_prompts = [p for p in clean if re.sub(r'\s+', ' ', p[:80].lower().strip()) not in seen_fps]
+            all_prompts.extend(new_prompts[:chunk_size])
+
+            chunk_start += chunk_size
+            remaining   -= chunk_size
+            # No explicit sleep — _gem_acquire() handles spacing automatically
+
+        print(f'✅ Prompts [{mode}]: {len(all_prompts)} generated')
+        return jsonify({
+            'success':    True,
+            'prompts':    all_prompts,
+            'count':      len(all_prompts),
+            'mode':       mode,
+            'style_name': style.get('name', style_id),
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# ---- Video Styles CRUD -------------------------------------------------------
+
+@app.route('/api/video-styles', methods=['GET'])
+def video_styles_list():
+    try:
+        from video_style_manager import VideoStyleManager
+        return jsonify({'success': True, 'styles': VideoStyleManager.get_all()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/video-styles', methods=['POST'])
+def video_styles_create():
+    try:
+        from video_style_manager import VideoStyleManager
+        data = request.get_json() or {}
+        style = VideoStyleManager.create(
+            name=data.get('name', ''),
+            style_formula=data.get('style_formula', ''),
+            description=data.get('description', ''),
+        )
+        return jsonify({'success': True, 'style': style})
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/video-styles/<style_id>', methods=['PUT'])
+def video_styles_update(style_id):
+    try:
+        from video_style_manager import VideoStyleManager
+        data = request.get_json() or {}
+        style = VideoStyleManager.update(
+            style_id=style_id,
+            name=data.get('name'),
+            style_formula=data.get('style_formula'),
+            description=data.get('description'),
+        )
+        if style:
+            return jsonify({'success': True, 'style': style})
+        return jsonify({'success': False, 'error': 'Style not found'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/video-styles/<style_id>', methods=['DELETE'])
+def video_styles_delete(style_id):
+    try:
+        from video_style_manager import VideoStyleManager
+        ok = VideoStyleManager.delete(style_id)
+        return jsonify({'success': ok})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# =============================================================================
+# MIXED GENERATOR — first half: video prompts, second half: image prompts
+# =============================================================================
+
+@app.route('/api/generate-mixed-prompts', methods=['POST'])
+def generate_mixed_prompts():
+    """
+    Split script in two at split_char_pos, generate:
+      - video prompts for the first part  (video_style_id, video_count)
+      - image prompts for the second part (style_id,       image_count)
+
+    Request JSON:
+        {
+            "script":         "full script text",
+            "split_char_pos": 6000,          # char index where split happens
+            "video_style_id": "cinematic_video",
+            "video_count":    30,
+            "style_id":       "cinematic",
+            "image_count":    20
+        }
+    """
+    from auto_images_style_manager import AutoImagesStyleManager
+    from video_style_manager import VideoStyleManager
+    from settings_manager import SettingsManager
+    from config import Config
+    import google.generativeai as genai
+    import time as _time
+
+    CHUNK_SIZE = 15
+
+    _auto_images_formula = SettingsManager.load_formula('auto_images')
+
+    class _SafeDict(dict):
+        def __missing__(self, key):
+            return '{' + key + '}'
+
+    # ---- prompt builders (same logic as generate_prompts_only) ---------------
+    def build_image_prompt(script_segment, style, chunk_start, chunk_size, total_count, prev_prompts=None):
+        style_name        = style.get('name', 'Cinematic')
+        style_desc        = style.get('description', '')
+        style_formula_raw = style.get('style_formula', '').strip()
+        visual_rules      = style.get('visual_rules', [])
+        negative_rules    = style.get('negative_rules', [])
+        composition       = style.get('composition', '')
+        lighting          = style.get('lighting', '')
+        color_palette     = style.get('color_palette', [])
+        cp  = ', '.join(color_palette) if color_palette else 'rich, vivid colors'
+        end = chunk_start + chunk_size - 1
+
+        if style_formula_raw:
+            style_dna = style_formula_raw
+        else:
+            dna_parts = [style_desc] if style_desc else []
+            if visual_rules:
+                dna_parts.append('Visual: ' + ' | '.join(visual_rules))
+            if composition:
+                dna_parts.append(f'Composition: {composition}')
+            if lighting:
+                dna_parts.append(f'Lighting: {lighting}')
+            if cp:
+                dna_parts.append(f'Colors: {cp}')
+            style_dna = '\n'.join(dna_parts)
+
+        negative_text = ('\nNEVER include: ' + ', '.join(negative_rules)) if negative_rules else ''
+        prev_section = ''
+        if prev_prompts:
+            previews = '\n'.join(f'- {p[:120]}' for p in prev_prompts[-6:])
+            prev_section = f'\nALREADY GENERATED — do NOT repeat these subjects or environments:\n{previews}\n'
+
+        formula_rendered = _auto_images_formula.format_map(_SafeDict(
+            n_images=chunk_size, style_name=style_name,
+            lighting=lighting, composition=composition, color_palette=cp,
+        ))
+        return f"""You are a professional image prompt writer (Flux, Midjourney, SDXL).
+
+════════════════ STYLE CORE — {style_name} ════════════════
+MANDATORY visual DNA — embed this in EVERY prompt without exception:
+
+{style_dna}{negative_text}
+══════════════════════════════════════════════════════════
+
+TASK: Generate EXACTLY {chunk_size} image prompts — scenes {chunk_start}–{end} of {total_count} total.
+ALL prompts in ENGLISH. Chronological order. Each = a distinct moment from the script segment below.
+{prev_section}
+═══ SCRIPT SEGMENT (scenes {chunk_start}–{end}) ═══
+{script_segment}
+═══════════════════════════════════════════
+
+{formula_rendered}
+
+OUTPUT RULES:
+1. EXACTLY {chunk_size} prompts separated by ONE blank line.
+2. NO labels, NO numbering, NO preamble, NO explanation.
+3. One continuous paragraph per prompt — no internal line breaks.
+4. Every prompt MUST embed the {style_name} style core as its visual foundation.
+5. End each: --no text, no captions, no watermarks, no labels
+6. Every scene DISTINCT — different subject/angle/environment from all others.
+OUTPUT ONLY THE {chunk_size} PROMPTS."""
+
+    def build_video_prompt(script_segment, style, chunk_start, chunk_size, total_count, prev_prompts=None):
+        style_name    = style.get('name', 'Cinematic')
+        style_formula = style.get('style_formula', '').strip()
+        end = chunk_start + chunk_size - 1
+        style_dna = style_formula or f'Cinematic film quality, smooth controlled camera movement, {style_name} aesthetic, professional grade'
+
+        prev_section = ''
+        if prev_prompts:
+            previews = '\n'.join(f'- {p[:120]}' for p in prev_prompts[-6:])
+            prev_section = f'\nALREADY GENERATED — do NOT repeat these subjects or shots:\n{previews}\n'
+
+        return f"""You are a professional video prompt writer (Sora, Runway, Kling, Pika).
+
+════════════════ VIDEO STYLE CORE — {style_name} ════════════════
+MANDATORY visual DNA — apply this as the base of EVERY prompt without exception:
+
+{style_dna}
+══════════════════════════════════════════════════════════
+
+TASK: Generate EXACTLY {chunk_size} video prompts — scenes {chunk_start}–{end} of {total_count} total.
+ALL prompts in ENGLISH. Chronological order. Each = a distinct moment from the script segment below.
+{prev_section}
+═══ SCRIPT SEGMENT (scenes {chunk_start}–{end}) ═══
+{script_segment}
+═══════════════════════════════════════════
+
+OUTPUT RULES:
+1. EXACTLY {chunk_size} prompts separated by ONE blank line.
+2. NO labels, NO numbering, NO preamble, NO explanation.
+3. One continuous paragraph per prompt — no internal line breaks.
+4. Every prompt MUST include: duration ("X seconds,"), specific camera movement, subject + action from that script moment, mood/lighting applying the {style_name} style core, render quality suffix.
+5. End each: high quality, smooth motion, --no text --no subtitles --no watermarks
+6. Every scene DISTINCT — vary shot size, angle, camera movement from all others.
+OUTPUT ONLY THE {chunk_size} PROMPTS."""
+
+    def _dedup_p(prompts):
+        import re as _re
+        seen = set()
+        result = []
+        for p in prompts:
+            fp = _re.sub(r'\s+', ' ', p[:80].lower().strip())
+            if fp not in seen:
+                seen.add(fp)
+                result.append(p)
+        return result
+
+    # ---- main logic ----------------------------------------------------------
+    def run_chunks(script_segment, style, total_count, prompt_builder, keys,
+                   model_name, gen_cfg):
+        import re as _re
+        results = []
+        remaining   = total_count
+        chunk_start = 1
+        seg_len     = len(script_segment)
+        while remaining > 0:
+            chunk_size = min(CHUNK_SIZE, remaining)
+            s_start = int((chunk_start - 1) / total_count * seg_len)
+            s_end   = int((chunk_start + chunk_size - 1) / total_count * seg_len)
+            seg     = script_segment[s_start:s_end].strip() or script_segment
+            pt  = prompt_builder(seg, style, chunk_start, chunk_size, total_count,
+                                 prev_prompts=results[-6:] if results else None)
+            raw = _gem_call_sdk(keys, model_name, gen_cfg, pt).strip()
+            parts = [p.strip() for p in raw.split('\n\n') if p.strip() and len(p.strip()) > 40]
+            parts = _dedup_p(parts)
+            seen_fps = {_re.sub(r'\s+', ' ', p[:80].lower().strip()) for p in results}
+            new = [p for p in parts if _re.sub(r'\s+', ' ', p[:80].lower().strip()) not in seen_fps]
+            results.extend(new[:chunk_size])
+            chunk_start += chunk_size
+            remaining   -= chunk_size
+        return results
+
+    try:
+        data = request.get_json() or {}
+        script        = data.get('script', '').strip()
+        split_pos     = int(data.get('split_char_pos', len(script) // 2))
+        vid_style_id  = data.get('video_style_id', 'cinematic_video')
+        video_count   = int(data.get('video_count', 20))
+        img_style_id  = data.get('style_id', 'cinematic')
+        image_count   = int(data.get('image_count', 20))
+
+        if not script:
+            return jsonify({'error': 'Script is required'}), 400
+
+        # Clamp split
+        split_pos = max(100, min(split_pos, len(script) - 100))
+
+        script_first  = script[:split_pos].strip()
+        script_second = script[split_pos:].strip()
+
+        vid_style = VideoStyleManager.get(vid_style_id)
+        if not vid_style:
+            return jsonify({'error': f'Video style not found: {vid_style_id}'}), 404
+        img_style = AutoImagesStyleManager.get_style(img_style_id)
+        if not img_style:
+            return jsonify({'error': f'Image style not found: {img_style_id}'}), 404
+
+        # Mixed Prompts Generator uses ONLY its own dedicated key.
+        prompts_key = Config.get_gemini_prompts_api_key()
+        if not prompts_key:
+            return jsonify({'error': 'No Prompts Generator API key configured. Add it in Settings → Prompts Generator.'}), 500
+        keys = [prompts_key]
+        model_name = Config.get_director_gemini_model()
+        gen_cfg    = {'temperature': 0.85, 'top_p': 0.95, 'max_output_tokens': 32768}
+        print(f'🔑 Mixed prompts using dedicated key …{_gem_key_label(prompts_key)}')
+
+        # --- generate video prompts (first half) ---
+        print(f'\n🎬 Mixed: generating {video_count} video prompts (first {split_pos} chars)…')
+        video_prompts = run_chunks(script_first, vid_style, video_count,
+                                   build_video_prompt, keys, model_name, gen_cfg)
+
+        # --- generate image prompts (second half) ---
+        # No manual sleep — _gem_acquire() handles key spacing automatically
+        print(f'\n🖼️  Mixed: generating {image_count} image prompts (remaining {len(script)-split_pos} chars)…')
+        image_prompts = run_chunks(script_second, img_style, image_count,
+                                   build_image_prompt, keys, model_name, gen_cfg)
+
+        video_duration_min = round((video_count * 10) / 60, 1)
+
+        return jsonify({
+            'success':       True,
+            'video_prompts': video_prompts,
+            'image_prompts': image_prompts,
+            'video_count':   len(video_prompts),
+            'image_count':   len(image_prompts),
+            'split_pos':     split_pos,
+            'total_chars':   len(script),
+            'video_duration_min': video_duration_min,
+            'vid_style_name': vid_style.get('name'),
+            'img_style_name': img_style.get('name'),
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
