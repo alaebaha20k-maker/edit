@@ -310,16 +310,31 @@ RULES:
             """Parse the response including multi-line CHUNK{i}_CONTENT blocks."""
             text_upper = text.upper()   # for case-insensitive marker search
 
-            # --- Parse single-line fields (case-insensitive key matching) ---
+            # --- Parse single-line fields ONLY outside CHUNK_CONTENT blocks ---
+            # BUG FIX: if we parse ALL lines, a line like "PROMO_COUNT: 1" inside
+            # a CHUNK_CONTENT block (copied from Writing Guidelines) would override
+            # the real PROMO_COUNT. So we track whether we're inside a block.
             lines = text.strip().splitlines()
             line_map: Dict[str, str] = {}
+            inside_content_block = False
             for line in lines:
-                if ":" in line:
-                    key, _, val = line.partition(":")
+                line_stripped = line.strip()
+                line_upper_s  = line_stripped.upper()
+                # Detect entering a content block
+                if any(line_upper_s.startswith(f"CHUNK{i}_CONTENT") for i in range(1, total_chunks + 1)):
+                    inside_content_block = True
+                    continue
+                # Detect leaving a content block
+                if any(line_upper_s.startswith(f"END_CHUNK{i}") for i in range(1, total_chunks + 1)):
+                    inside_content_block = False
+                    continue
+                # Skip all lines inside content blocks
+                if inside_content_block:
+                    continue
+                # Parse scalar key: value lines
+                if ":" in line_stripped:
+                    key, _, val = line_stripped.partition(":")
                     k = key.strip().upper()
-                    # Skip CONTENT block headers and END markers
-                    if k.endswith("_CONTENT") or k.startswith("END_CHUNK"):
-                        continue
                     line_map[k] = val.strip()
 
             # --- Parse multi-line CHUNK{i}_CONTENT blocks (case-insensitive) ---
@@ -350,9 +365,13 @@ RULES:
 
             # --- Scalar fields ---
             anchor    = line_map.get("ANCHOR", title).strip() or title
-            promo_raw = line_map.get("PROMO_COUNT", "0").strip()
+            promo_raw = line_map.get("PROMO_COUNT", "NOT_FOUND").strip()
+            # Debug: show exactly what Gemini returned for PROMO_COUNT
+            if verbose:
+                print(f"   🔍 PROMO_COUNT raw from Gemini: '{promo_raw}'")
             try:
-                promo_count = int(re.sub(r"[^\d]", "", promo_raw) or "0")
+                digits = re.sub(r"[^\d]", "", promo_raw)
+                promo_count = int(digits) if digits else 0
             except ValueError:
                 promo_count = 0
             cta_action = line_map.get("CTA", "subscribe and hit the bell").strip()
@@ -370,22 +389,31 @@ RULES:
             }
 
         try:
+            if verbose:
+                print(f"   📤 Sending to Gemini Flash: {len(prompt):,} chars total")
+                print(f"      └─ Writing Guidelines inside: {len(formula):,} chars")
+
             model    = genai.GenerativeModel(Config.GEMINI_PLAN_MODEL)
             response = model.generate_content(
                 prompt,
                 generation_config={"temperature": 0.05, "max_output_tokens": 16384},
             )
             text = response.text.strip()
+
+            if verbose:
+                print(f"   📥 Gemini Flash response: {len(text):,} chars")
+
             plan = _parse_response(text, total_chunks, title)
 
-            # Warn if content extraction failed
+            # Report content extraction results
             if verbose:
                 content_map = plan.get("chunk_section_content", {})
                 if not content_map:
-                    print("   ⚠️  Section content extraction failed — chunks will use formula via system instruction only")
+                    print("   ⚠️  Section content blocks not found in response — full formula will be injected into chunk prompts as fallback")
                 else:
-                    total_content = sum(len(v) for v in content_map.values())
-                    print(f"   ✅ Section content extracted: {total_content:,} chars across {len(content_map)} chunks")
+                    for ci, cv in content_map.items():
+                        print(f"   ✅ Chunk {ci} rules extracted: {len(cv):,} chars")
+                print(f"   ✅ Promos  : {plan['promo_count']}")
 
             return plan
 
