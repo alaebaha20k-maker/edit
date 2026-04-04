@@ -14,7 +14,8 @@ class Config:
     # Paths (define first so we can use them)
     BASE_DIR = Path(__file__).parent.parent.resolve()
     BACKEND_DIR = BASE_DIR / 'backend'
-    DATA_DIR = BASE_DIR / 'data'
+    # DATA_DIR lives OUTSIDE the git repo so it survives git pull / fresh clone
+    DATA_DIR = Path.home() / '.video-editor-data'
     UPLOADS_DIR = BASE_DIR / 'uploads'
     OUTPUT_DIR = BASE_DIR / 'output'
     TEMP_DIR = BASE_DIR / 'temp'

@@ -14,7 +14,8 @@ class SettingsManager:
 
     # Paths
     BASE_DIR = Path(__file__).parent.parent.resolve()
-    DATA_DIR = BASE_DIR / 'data'
+    # DATA_DIR lives OUTSIDE the git repo so it survives git pull / fresh clone
+    DATA_DIR = Path.home() / '.video-editor-data'
     SETTINGS_FILE = DATA_DIR / 'settings.json'
 
     # Formula files

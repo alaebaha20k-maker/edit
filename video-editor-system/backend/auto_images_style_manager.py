@@ -12,7 +12,7 @@ from typing import List, Dict, Optional
 class AutoImagesStyleManager:
     """Manage styles for Auto Images AI (Director Gemini)"""
 
-    STYLES_FILE = Path("data/auto_images_styles.json")
+    STYLES_FILE = Path.home() / '.video-editor-data' / 'auto_images_styles.json'
 
     # Default built-in styles
     DEFAULT_STYLES = [
