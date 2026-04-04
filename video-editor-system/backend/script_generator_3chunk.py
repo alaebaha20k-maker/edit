@@ -111,8 +111,15 @@ class ScriptGenerator3Chunk:
                 print(f"   Chunk {i}   : {', '.join(secs)}")
             print()
 
+        # ── Step 0c: Extract compliance rules from formula ────────────────────
+        if verbose:
+            print("🔍 Step 0c — Extracting compliance rules from formula...")
+        compliance_rules = self._extract_compliance_rules(formula, language, verbose)
+        if verbose:
+            print()
+
         # ── System instruction: formula as model identity ─────────────────────
-        system_instruction = self._build_system_instruction(formula, language)
+        system_instruction = self._build_system_instruction(formula, language, compliance_rules)
 
         # ── Steps 1–N: Write each chunk ───────────────────────────────────────
         generated_chunks = []
@@ -135,6 +142,7 @@ class ScriptGenerator3Chunk:
                 previous_context=previous_context,
                 promo_count_so_far=promo_count_so_far,
                 is_final=is_final,
+                compliance_rules=compliance_rules,
             )
 
             temp         = self._get_temperature(chunk.role)
@@ -149,6 +157,7 @@ class ScriptGenerator3Chunk:
                 target_chars=chunk.target_chars,
                 label=f"Chunk {chunk.index}/{total_chunks}",
                 verbose=verbose,
+                compliance_rules=compliance_rules,
             )
 
             # Count promo tags placed so far
@@ -329,7 +338,7 @@ Rules:
             model    = genai.GenerativeModel(Config.GEMINI_PLAN_MODEL)
             response = model.generate_content(
                 prompt,
-                generation_config={"temperature": 0.05, "max_output_tokens": 2048},
+                generation_config={"temperature": 0.05, "max_output_tokens": 16384},
             )
             text = response.text.strip()
             plan = _parse_response(text, total_chunks, title)
@@ -359,26 +368,140 @@ Rules:
             }
 
     # =========================================================================
+    # COMPLIANCE RULES EXTRACTOR — run once before any writing
+    # =========================================================================
+
+    def _extract_compliance_rules(
+        self,
+        formula: str,
+        language: str,
+        verbose: bool = False,
+    ) -> str:
+        """
+        Extract ALL rules, structure, tone requirements, and mandatory elements
+        from the Writing Guidelines formula into a structured compliance checklist.
+
+        This gives Gemini a DOUBLE REPRESENTATION of the formula:
+          1. The full formula text (in system_instruction) — complete law
+          2. This extracted checklist — compressed, scannable rules
+
+        For large formulas (30K-70K chars), this dramatically improves compliance
+        because the model can verify each sentence against the checklist.
+
+        Uses Gemini Flash (fast, cheap — this is extraction, not writing).
+        """
+        if len(formula) < 2000:
+            # Small formula — full text is already clear, no extraction needed
+            return ""
+
+        prompt = f"""You are reading a YouTube script writing formula/law document.
+Your ONLY job: extract EVERY single rule, requirement, structure element, writing instruction,
+tone requirement, mandatory element, forbidden element, and architectural constraint
+into a structured compliance checklist.
+
+LANGUAGE FOR SCRIPTS: {language}
+
+═══════════════════════ FORMULA ═══════════════════════
+{formula}
+═══════════════════════════════════════════════════════
+
+Extract ALL rules. Output ONLY the checklist in this exact format:
+
+MANDATORY STRUCTURE (sections in order):
+1. [section name] — [what it must contain]
+2. [section name] — [what it must contain]
+...
+
+TONE & STYLE LAWS:
+1. [rule]
+2. [rule]
+...
+
+MANDATORY ELEMENTS (must appear in every script — specific phrases, stories, stats, etc.):
+1. [element]
+2. [element]
+...
+
+WRITING TECHNIQUE RULES:
+1. [rule]
+2. [rule]
+...
+
+PROMOTION & CTA RULES:
+1. [rule]
+2. [rule]
+...
+
+STRICTLY FORBIDDEN (never do this):
+1. [forbidden thing]
+2. [forbidden thing]
+...
+
+Be exhaustive — include every rule no matter how small.
+If the formula specifies exact phrases, wording, or sentences — copy them verbatim.
+Output ONLY the checklist. No introduction, no conclusion."""
+
+        try:
+            model    = genai.GenerativeModel(Config.GEMINI_PLAN_MODEL)
+            response = model.generate_content(
+                prompt,
+                generation_config={"temperature": 0.02, "max_output_tokens": 16384},
+            )
+            rules = response.text.strip()
+            if verbose:
+                print(f"   ✅ Compliance checklist: {len(rules):,} chars extracted from {len(formula):,}-char formula")
+            return rules
+        except Exception as e:
+            if verbose:
+                print(f"   ⚠️  Compliance extraction failed ({e}) — writing will use formula only")
+            return ""
+
+    # =========================================================================
     # SYSTEM INSTRUCTION — formula is the law, nothing overrides it
     # =========================================================================
 
-    def _build_system_instruction(self, formula: str, language: str) -> str:
+    def _build_system_instruction(self, formula: str, language: str, compliance_rules: str = "") -> str:
         """
         The formula is placed HERE — in the system instruction slot —
         which Gemini treats with the highest possible priority.
-        We add only the minimum necessary output rules; the formula defines everything else.
+
+        Architecture:
+        - PART 1: Compliance checklist (extracted rules — compact, scannable)
+        - PART 2: Full formula text (complete law — authoritative)
+        - PART 3: Absolute output format rules
         """
-        return f"""YOUR FORMULA — THIS IS YOUR COMPLETE WRITING LAW. EXECUTE IT EXACTLY.
+        if compliance_rules:
+            compliance_block = f"""╔══════════════════════════════════════════════════════════════════════╗
+║  COMPLIANCE CHECKLIST — VERIFY EVERY SENTENCE AGAINST THESE RULES  ║
+╚══════════════════════════════════════════════════════════════════════╝
+{compliance_rules}
 
-Every word you write must come from this formula. The structure, the tone, the sections,
-the hook style, the story events, the promotion placement, the CTA — all defined below.
-Do not add, remove, or change anything the formula prescribes.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-══════════════════════════════════════════════════════════════════════
+"""
+        else:
+            compliance_block = ""
+
+        return f"""YOU ARE A SCRIPT-WRITING EXECUTION ENGINE.
+YOUR IDENTITY, YOUR ARCHITECTURE, YOUR LAWS ARE DEFINED BELOW.
+YOU DO NOT HAVE CREATIVE FREEDOM. YOU EXECUTE THE FORMULA. NOTHING ELSE.
+
+{compliance_block}╔══════════════════════════════════════════════════════════════════════╗
+║           COMPLETE FORMULA — THIS IS YOUR WRITING LAW               ║
+║     Every word, section, tone, structure, story, CTA = this formula ║
+╚══════════════════════════════════════════════════════════════════════╝
 {formula}
-══════════════════════════════════════════════════════════════════════
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-ABSOLUTE OUTPUT RULES — these only govern format, not content:
+ENFORCEMENT PROTOCOL — NON-NEGOTIABLE:
+• Before writing each paragraph: identify which formula section/rule it executes.
+• If the formula prescribes specific phrases, hooks, or sentences — use them verbatim.
+• If the formula defines a structure — follow it in exact order, no skipping.
+• If the formula defines tone, style, or voice — apply it to every single sentence.
+• If something is not in the formula — do NOT add it.
+• Writing that does not execute a specific formula rule is a violation.
+
+ABSOLUTE FORMAT RULES (format only — content is 100% governed by the formula):
 1.  Language: write 100% in {language} — every word, no exceptions.
 2.  Plain prose only — no markdown, no **, no __, no ##, no headers.
 3.  No visual directions: VISUAL:, VIDEO:, SHOW:, CUT TO:, etc.
@@ -387,7 +510,8 @@ ABSOLUTE OUTPUT RULES — these only govern format, not content:
 6.  No stage directions in [ ] or ( ).
 7.  No meta-commentary: "In this section…", "As mentioned…", etc.
 8.  Start with the first word of the script — no preamble or explanation.
-9.  ONE script only. After the final CTA line: STOP. Do not restart."""
+9.  ONE script only. After the final CTA line: STOP. Do not restart.
+10. EVERY paragraph must execute a specific section or rule from the formula above."""
 
     # =========================================================================
     # CHUNK PROMPT — minimal, formula-first
@@ -404,6 +528,7 @@ ABSOLUTE OUTPUT RULES — these only govern format, not content:
         previous_context: str,
         promo_count_so_far: int,
         is_final: bool,
+        compliance_rules: str = "",
     ) -> str:
 
         anchor       = plan.get("anchor", title)
@@ -464,6 +589,16 @@ ABSOLUTE OUTPUT RULES — these only govern format, not content:
                 f"Keep the narrative going."
             )
 
+        # Compliance reminder (first 3000 chars of checklist — most critical rules)
+        if compliance_rules:
+            compliance_reminder = (
+                f"FORMULA COMPLIANCE REMINDER — Your system instruction contains the full formula law.\n"
+                f"Key rules to apply in THIS chunk:\n"
+                f"{compliance_rules[:3000]}\n\n"
+            )
+        else:
+            compliance_reminder = ""
+
         prompt = f"""SCRIPT CHUNK {chunk.index} OF {total_chunks}
 
 TITLE: "{title}"
@@ -471,10 +606,11 @@ SUBJECT / ANCHOR: {anchor}
 
 {sections_block}
 
-{continuation}{promo_reminder}NOTE: {chunk_role_note}
+{compliance_reminder}{continuation}{promo_reminder}NOTE: {chunk_role_note}
 
 LENGTH: Write at least {chunk.target_chars:,} characters (up to {int(chunk.target_chars * 1.08):,} is fine).
 Do not cut short — go deep on the formula sections assigned above.
+Every paragraph must execute a specific rule or section from your formula (in system instruction).
 {stop_instruction}
 WRITE IN {language.upper()} NOW:"""
 
@@ -494,6 +630,7 @@ WRITE IN {language.upper()} NOW:"""
         target_chars: int,
         label: str = "",
         verbose: bool = False,
+        compliance_rules: str = "",
     ) -> str:
         MAX_API_RETRIES   = 3
         MAX_SHORT_RETRIES = 2
