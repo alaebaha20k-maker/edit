@@ -262,73 +262,77 @@ class ScriptGenerator3Chunk:
         model has the specific formula rules RIGHT IN FRONT OF IT while writing,
         not buried in a 42K system instruction it has to "look up."
         """
-        # Build the section content format lines for the prompt
-        chunk_content_format = ""
+        # ── Build the dynamic chunk format block for any number of chunks ──────
+        chunk_roles = {1: "opening / hook", total_chunks: "closing / CTA"}
+        chunk_format_block = ""
         for i in range(1, total_chunks + 1):
-            chunk_content_format += f"CHUNK{i}_CONTENT:\n[Copy the exact rules, instructions, tone requirements, and mandatory elements from the Writing Guidelines that apply to this chunk's sections. Be thorough — include every rule verbatim. Up to 800 words.]\nEND_CHUNK{i}\n\n"
+            role_hint = chunk_roles.get(i, "body / development")
+            if i == 1:
+                sections_hint = "<hook section> | <opening section>"
+            elif i == total_chunks:
+                sections_hint = "<closing section> | <CTA section>"
+            else:
+                sections_hint = "<body section> | <development section>"
+            chunk_format_block += (
+                f"CHUNK{i}: {sections_hint}  ({role_hint})\n"
+                f"CHUNK{i}_CONTENT:\n"
+                f"<Copy VERBATIM from the Writing Guidelines: every rule, instruction, tone, mandatory phrase, "
+                f"story/example, writing technique for CHUNK{i} sections. Nothing generic. Up to 800 words.>\n"
+                f"END_CHUNK{i}\n\n"
+            )
 
         prompt = f"""You are reading a YouTube script Writing Guidelines document and creating a production execution plan.
 
 TITLE: "{title}"
 LANGUAGE: {language}
-CHUNKS TO WRITE: {total_chunks}  (chunk 1 = opening/hook, chunk {total_chunks} = closing/CTA)
+CHUNKS TO WRITE: {total_chunks}
 
-════════════ WRITING GUIDELINES (FULL FORMULA) ════════════
+════════════════════════ WRITING GUIDELINES ════════════════════════
 {formula}
-═══════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════
 
-YOUR TASK: Create the execution plan in this EXACT format. No JSON. No markdown.
+YOUR TASK: Output the execution plan below. No JSON. No markdown. Follow the format EXACTLY.
 
-SECTIONS: <section1> | <section2> | <section3> | ... (ALL sections in order from the formula)
-CHUNK1: <section A> | <section B>  (sections for chunk 1)
-CHUNK1_CONTENT:
-<Copy VERBATIM from the Writing Guidelines: every rule, instruction, tone requirement, writing technique, mandatory phrase, story element, structure rule that applies to the sections assigned to CHUNK1. Include ALL details — nothing generic. Up to 800 words.>
-END_CHUNK1
+SECTIONS: <section1> | <section2> | <section3> | ...  (ALL sections from Writing Guidelines, in order)
 
-CHUNK2: <section C> | <section D>  (sections for chunk 2)
-CHUNK2_CONTENT:
-<Copy VERBATIM from the Writing Guidelines: every rule, instruction, tone requirement, writing technique, mandatory phrase, story element, structure rule that applies to the sections assigned to CHUNK2. Include ALL details — nothing generic. Up to 800 words.>
-END_CHUNK2
-{f"""
-CHUNK3: <last sections>  (closing + CTA sections)
-CHUNK3_CONTENT:
-<Copy VERBATIM from the Writing Guidelines: every rule for closing, CTA, final section. Up to 800 words.>
-END_CHUNK3
-""" if total_chunks >= 3 else ""}
-ANCHOR: <main subject/person of the script — infer from title>
-PROMO_COUNT: <integer — exact number of promotional blocks the Writing Guidelines requires. Use 0 if none.>
-CTA: <copy the exact CTA text/action from the Writing Guidelines>
-CLOSING: <one sentence — how the formula closes the script>
+{chunk_format_block}ANCHOR: <main subject/person — infer from title>
+PROMO_COUNT: <integer — how many promotional blocks the Writing Guidelines requires. Write 0 if none.>
+CTA: <copy the exact CTA text from the Writing Guidelines>
+CLOSING: <one sentence — how the Writing Guidelines says to close>
 
-CRITICAL RULES:
-- CHUNK_CONTENT sections: copy the ACTUAL TEXT from the Writing Guidelines, not summaries. If the formula says "use this exact phrase: X" — copy that. If it says "tell this story" — copy that instruction.
-- Use exact section names from the Writing Guidelines
-- PROMO_COUNT must be 0 if the Writing Guidelines has no promotional blocks
-- Every CHUNK line (CHUNK1, CHUNK2...) must be present"""
+RULES:
+- CHUNK_CONTENT: copy ACTUAL TEXT from the Writing Guidelines — specific phrases, exact instructions, story elements, mandatory requirements. Not summaries.
+- PROMO_COUNT = 0 if the Writing Guidelines has no promotional blocks
+- All CHUNK lines must be present (CHUNK1 through CHUNK{total_chunks})
+- Use section names as they appear in the Writing Guidelines"""
 
         def _parse_response(text: str, total_chunks: int, title: str) -> dict:
             """Parse the response including multi-line CHUNK{i}_CONTENT blocks."""
-            # --- Parse single-line fields ---
+            text_upper = text.upper()   # for case-insensitive marker search
+
+            # --- Parse single-line fields (case-insensitive key matching) ---
             lines = text.strip().splitlines()
             line_map: Dict[str, str] = {}
             for line in lines:
                 if ":" in line:
                     key, _, val = line.partition(":")
                     k = key.strip().upper()
-                    # Only capture single-line keys (not CONTENT blocks)
-                    if not k.endswith("_CONTENT") and k not in ("END_CHUNK1", "END_CHUNK2", "END_CHUNK3", "END_CHUNK4"):
-                        line_map[k] = val.strip()
+                    # Skip CONTENT block headers and END markers
+                    if k.endswith("_CONTENT") or k.startswith("END_CHUNK"):
+                        continue
+                    line_map[k] = val.strip()
 
-            # --- Parse multi-line CHUNK{i}_CONTENT blocks ---
+            # --- Parse multi-line CHUNK{i}_CONTENT blocks (case-insensitive) ---
             chunk_section_content: Dict[str, str] = {}
             for i in range(1, total_chunks + 1):
                 start_marker = f"CHUNK{i}_CONTENT:"
                 end_marker   = f"END_CHUNK{i}"
-                start_idx = text.find(start_marker)
-                end_idx   = text.find(end_marker)
+                # Case-insensitive search
+                start_idx = text_upper.find(start_marker.upper())
+                end_idx   = text_upper.find(end_marker.upper())
                 if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
                     content = text[start_idx + len(start_marker):end_idx].strip()
-                    if content:
+                    if content and len(content) > 50:   # must have real content
                         chunk_section_content[str(i)] = content
 
             # --- Sections ---
@@ -357,7 +361,8 @@ CRITICAL RULES:
             return {
                 "sections"             : sections,
                 "chunk_sections"       : chunk_sections,
-                "chunk_section_content": chunk_section_content,   # ← THE KEY NEW FIELD
+                "chunk_section_content": chunk_section_content,   # ← verbatim rules per chunk
+                "_formula_text"        : formula,                 # ← stored for fallback injection
                 "anchor"               : anchor,
                 "promo_count"          : promo_count,
                 "cta_action"           : cta_action,
@@ -392,6 +397,7 @@ CRITICAL RULES:
                 "sections"             : fallback_sections,
                 "chunk_sections"       : {str(i): [fallback_sections[i - 1]] for i in range(1, total_chunks + 1)},
                 "chunk_section_content": {},
+                "_formula_text"        : formula,   # fallback: full formula injected into prompts
                 "anchor"               : title,
                 "promo_count"          : 0,
                 "cta_action"           : "subscribe and hit the bell",
@@ -456,19 +462,32 @@ OUTPUT FORMAT RULES (format only — all content is 100% governed by Writing Gui
         # If not extracted (fallback), list section names and reference system instruction.
         section_content = plan.get("chunk_section_content", {}).get(str(chunk.index), "")
 
+        # Get the formula for fallback injection (passed via plan)
+        formula_fallback = plan.get("_formula_text", "")
+
         if section_content:
+            # PRIMARY PATH: verbatim rules extracted from Writing Guidelines — injected directly
             sections_block = (
-                f"FORMULA RULES TO EXECUTE IN THIS CHUNK (extracted from your Writing Guidelines):\n"
+                f"WRITING GUIDELINES RULES FOR THIS CHUNK:\n"
                 f"{'─' * 60}\n"
                 f"{section_content}\n"
                 f"{'─' * 60}\n"
-                f"Sections: {' | '.join(sections_now)}"
+                f"Sections assigned: {' | '.join(sections_now)}"
+            )
+        elif formula_fallback:
+            # FALLBACK: section extraction failed — inject full Writing Guidelines directly here
+            sections_block = (
+                f"FULL WRITING GUIDELINES — execute these rules for this chunk:\n"
+                f"{'─' * 60}\n"
+                f"{formula_fallback}\n"
+                f"{'─' * 60}\n"
+                f"Sections assigned: {' | '.join(sections_now) if sections_now else 'appropriate portion for chunk ' + str(chunk.index)}"
             )
         elif sections_now:
             sections_block = (
-                f"FORMULA SECTIONS TO WRITE IN THIS CHUNK:\n"
+                f"SECTIONS TO WRITE:\n"
                 + "\n".join(f"  → {s}" for s in sections_now)
-                + "\n(Refer to your Writing Guidelines in the system instruction for the exact rules.)"
+                + "\n(Follow your Writing Guidelines in the system instruction exactly.)"
             )
         else:
             sections_block = "Write the appropriate portion of the Writing Guidelines for this chunk position."
