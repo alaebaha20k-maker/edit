@@ -124,9 +124,11 @@ class ScriptGenerator3Chunk:
         previous_context = ""
         promo_count_so_far = 0
 
+        formula_chars = len(formula)
         for chunk in chunks:
             if verbose:
                 print(f"✍️  PHASE {chunk.index + 1} — WRITE Chunk {chunk.index}/{total_chunks}: {chunk.role}...")
+                print(f"   📋 Writing Guidelines injected into prompt: {formula_chars:,} chars")
 
             is_final = (chunk.index == total_chunks)
 
@@ -277,7 +279,7 @@ class ScriptGenerator3Chunk:
                 f"CHUNK{i}: {sections_hint}  ({role_hint})\n"
                 f"CHUNK{i}_CONTENT:\n"
                 f"<Copy VERBATIM from the Writing Guidelines: every rule, instruction, tone, mandatory phrase, "
-                f"story/example, writing technique for CHUNK{i} sections. Nothing generic. Up to 800 words.>\n"
+                f"story/example, writing technique for CHUNK{i} sections. Nothing generic. Be exhaustive — copy EVERY rule, instruction, phrase, example, technique. No word limit.>\n"
                 f"END_CHUNK{i}\n\n"
             )
 
@@ -484,41 +486,42 @@ OUTPUT FORMAT RULES (format only — all content is 100% governed by Writing Gui
         cta_action   = plan.get("cta_action", "subscribe and hit the bell")
         sections_now = plan.get("chunk_sections", {}).get(str(chunk.index), [])
 
-        # ── Section content injection (THE CORE FIX) ──────────────────────────
-        # Get the actual formula rules extracted for this chunk (not just names).
-        # If extracted, inject them directly so the model has them RIGHT HERE.
-        # If not extracted (fallback), list section names and reference system instruction.
+        # ── Full Writing Guidelines always injected (guaranteed compliance) ──────
+        # The full formula goes in BOTH:
+        #   1. system_instruction (model identity — set once per session)
+        #   2. HERE in every chunk prompt (explicit reminder at write time)
+        # This double-injection ensures the model cannot ignore any rule,
+        # even for a 40K-70K formula where "lost in the middle" is a risk.
+        full_formula = plan.get("_formula_text", "")
         section_content = plan.get("chunk_section_content", {}).get(str(chunk.index), "")
+        sections_label = " | ".join(sections_now) if sections_now else f"part {chunk.index} of {total_chunks}"
 
-        # Get the formula for fallback injection (passed via plan)
-        formula_fallback = plan.get("_formula_text", "")
-
-        if section_content:
-            # PRIMARY PATH: verbatim rules extracted from Writing Guidelines — injected directly
-            sections_block = (
-                f"WRITING GUIDELINES RULES FOR THIS CHUNK:\n"
-                f"{'─' * 60}\n"
-                f"{section_content}\n"
-                f"{'─' * 60}\n"
-                f"Sections assigned: {' | '.join(sections_now)}"
-            )
-        elif formula_fallback:
-            # FALLBACK: section extraction failed — inject full Writing Guidelines directly here
-            sections_block = (
-                f"FULL WRITING GUIDELINES — execute these rules for this chunk:\n"
-                f"{'─' * 60}\n"
-                f"{formula_fallback}\n"
-                f"{'─' * 60}\n"
-                f"Sections assigned: {' | '.join(sections_now) if sections_now else 'appropriate portion for chunk ' + str(chunk.index)}"
-            )
-        elif sections_now:
-            sections_block = (
-                f"SECTIONS TO WRITE:\n"
-                + "\n".join(f"  → {s}" for s in sections_now)
-                + "\n(Follow your Writing Guidelines in the system instruction exactly.)"
-            )
+        if full_formula:
+            if section_content:
+                # Full formula + focused section rules for this chunk
+                sections_block = (
+                    f"══════════ YOUR COMPLETE WRITING GUIDELINES ══════════\n"
+                    f"{full_formula}\n"
+                    f"══════════════════════════════════════════════════════\n\n"
+                    f"FOCUSED RULES FOR THIS CHUNK ({sections_label}):\n"
+                    f"{'─' * 54}\n"
+                    f"{section_content}\n"
+                    f"{'─' * 54}"
+                )
+            else:
+                # Full formula only (section extraction didn't produce results)
+                sections_block = (
+                    f"══════════ YOUR COMPLETE WRITING GUIDELINES ══════════\n"
+                    f"{full_formula}\n"
+                    f"══════════════════════════════════════════════════════\n"
+                    f"Sections for this chunk: {sections_label}"
+                )
         else:
-            sections_block = "Write the appropriate portion of the Writing Guidelines for this chunk position."
+            # Should never happen — formula is always stored in plan
+            sections_block = (
+                f"SECTIONS TO WRITE: {sections_label}\n"
+                f"Follow your Writing Guidelines in the system instruction exactly."
+            )
 
         # ── Continuation context ───────────────────────────────────────────────
         if previous_context:
