@@ -82,11 +82,13 @@ class SuperAutoEditor:
 
     def __init__(
         self,
-        gemini_keys:  list  = None,
-        pexels_key:   str   = "",
-        pixabay_key:  str   = "",
-        unsplash_key: str   = "",
-        progress_cb         = None,
+        gemini_keys:       list = None,
+        pexels_key:        str  = "",
+        pixabay_key:       str  = "",
+        unsplash_key:      str  = "",
+        brave_search_key:  str  = "",
+        serper_key:        str  = "",
+        progress_cb              = None,
     ):
         self.output_dir = Path(Config.OUTPUT_DIR)
         self.temp_dir   = Path(Config.TEMP_DIR)
@@ -102,10 +104,12 @@ class SuperAutoEditor:
                     break
 
         self.keys = {
-            "gemini"  : gem,
-            "pexels"  : pexels_key or "",
-            "pixabay" : pixabay_key or "",
-            "unsplash": unsplash_key or "",
+            "gemini"      : gem,
+            "pexels"      : pexels_key       or "",
+            "pixabay"     : pixabay_key      or "",
+            "unsplash"    : unsplash_key     or "",
+            "brave_search": brave_search_key or "",
+            "serper"      : serper_key       or "",
         }
         self._progress_cb = progress_cb  # callable(pct: int, msg: str) | None
 
@@ -315,8 +319,23 @@ Return ONLY valid JSON (no markdown, no explanation):
         return plan
 
     # ─────────────────────────────────────────────────────────────────────────
-    # PHASE 2 — MEDIA SEARCH & DOWNLOAD
+    # PHASE 2 — SMART MEDIA SEARCH & DOWNLOAD
+    #
+    # Strategy (per scene, per insertion point):
+    #   1. Run EVERY query through EVERY available API (no early break)
+    #   2. Search priority: Brave Images → Serper Images → Pexels → Pixabay → Unsplash
+    #      • Brave/Serper: broad web-level coverage, often the most specific hits
+    #      • Pexels/Pixabay: reliable direct-download stock (video + photo)
+    #      • Unsplash: high-quality photos as last resort for images
+    #   3. Apply query-rank bonus: query[0] (most specific) gets +25, query[1] +18,
+    #      query[2] +10, query[3] +5 — so relevant hits float to the top
+    #   4. Video preference bonus when scene wants video
+    #   5. Try up to 8 top candidates for download until one succeeds
+    #   6. Never reuse a URL that was already placed in the video
     # ─────────────────────────────────────────────────────────────────────────
+
+    # Query-rank score bonuses (most specific query should win)
+    _QUERY_BONUS = [25, 18, 10, 5, 2, 0]
 
     def _search_and_download(self, plan: Dict, job_dir: Path) -> Dict:
         """Search APIs and download best matching media for each scene."""
@@ -332,12 +351,13 @@ Return ONLY valid JSON (no markdown, no explanation):
                 continue
 
             pct = 28 + int((idx / max(n, 1)) * 30)
-            self._progress(pct, f"Searching media for scene {idx+1}/{n}: {scene.get('title','')[:40]}")
+            apis_used = self._available_api_labels()
+            self._progress(pct,
+                f"Scene {idx+1}/{n} — searching [{apis_used}]: {scene.get('title','')[:35]}")
 
-            queries  = scene.get("search_queries", [])
-            pref     = scene.get("media_type_preferred", "video")
-            inserts  = scene.get("insertion_points", [])
-            n_needed = max(1, len(inserts))
+            queries = scene.get("search_queries", [])
+            pref    = scene.get("media_type_preferred", "video")
+            inserts = scene.get("insertion_points", [])
 
             selected = []
             for insert in inserts[:2]:   # max 2 inserts per scene
@@ -357,53 +377,198 @@ Return ONLY valid JSON (no markdown, no explanation):
 
         return plan
 
+    def _available_api_labels(self) -> str:
+        """Return a compact string of which APIs are active."""
+        labels = []
+        if self.keys["brave_search"]: labels.append("Brave")
+        if self.keys["serper"]:       labels.append("Serper")
+        if self.keys["pexels"]:       labels.append("Pexels")
+        if self.keys["pixabay"]:      labels.append("Pixabay")
+        if self.keys["unsplash"]:     labels.append("Unsplash")
+        return ", ".join(labels) if labels else "no APIs configured"
+
     def _find_best_media(
         self,
-        queries: List[str],
+        queries:    List[str],
         media_type: str,
-        media_dir: Path,
-        used_urls: set,
-        scene_id: int,
+        media_dir:  Path,
+        used_urls:  set,
+        scene_id:   int,
     ) -> Optional[Dict]:
-        """Try all queries across all available APIs, return best match."""
-        candidates = []
+        """
+        Core smart search:
+         - Runs every query through every available API
+         - Brave/Serper searched FIRST (richer web coverage)
+         - Query-rank bonus applied so specific queries win
+         - Video scenes prefer videos; image scenes prefer images
+         - Tries up to 8 download attempts before giving up
+        """
+        candidates: List[Dict] = []
+        want_video = (media_type == "video")
 
-        for query in queries[:4]:
-            # Pexels
+        for q_idx, query in enumerate(queries[:6]):
+            bonus = self._QUERY_BONUS[min(q_idx, len(self._QUERY_BONUS) - 1)]
+
+            # ── BRAVE: images (direct downloadable URLs from the open web) ──
+            if self.keys["brave_search"]:
+                for item in self._search_brave_images(query):
+                    item["score"] += bonus
+                    candidates.append(item)
+
+            # ── SERPER: Google Images proxy (direct image URLs) ──────────────
+            if self.keys["serper"]:
+                for item in self._search_serper_images(query):
+                    item["score"] += bonus
+                    candidates.append(item)
+
+            # ── PEXELS: stock photos + videos (always reliable download) ─────
             if self.keys["pexels"]:
-                results = self._search_pexels(query, media_type)
-                candidates.extend(results)
-            # Pixabay
-            if self.keys["pixabay"]:
-                results = self._search_pixabay(query, media_type)
-                candidates.extend(results)
-            # Unsplash (images only)
-            if self.keys["unsplash"] and media_type in ("image", "photo"):
-                results = self._search_unsplash(query)
-                candidates.extend(results)
-            if candidates:
-                break   # first query that gets results is sufficient
+                # If scene wants video, search videos; also grab photos as fallback
+                if want_video:
+                    for item in self._search_pexels(query, "video"):
+                        item["score"] += bonus + 10   # extra boost for exact type
+                        candidates.append(item)
+                for item in self._search_pexels(query, "image"):
+                    item["score"] += bonus
+                    candidates.append(item)
 
-        # Filter out used URLs and score
-        candidates = [c for c in candidates if c.get("url") not in used_urls]
+            # ── PIXABAY: stock photos + videos ───────────────────────────────
+            if self.keys["pixabay"]:
+                if want_video:
+                    for item in self._search_pixabay(query, "video"):
+                        item["score"] += bonus + 10
+                        candidates.append(item)
+                for item in self._search_pixabay(query, "image"):
+                    item["score"] += bonus
+                    candidates.append(item)
+
+            # ── UNSPLASH: high-quality photos ────────────────────────────────
+            if self.keys["unsplash"]:
+                for item in self._search_unsplash(query):
+                    item["score"] += bonus
+                    candidates.append(item)
+
         if not candidates:
+            print(f"   ⚠ scene {scene_id}: no candidates found for queries: {queries[:3]}")
             return None
 
-        candidates.sort(key=lambda x: x.get("score", 0), reverse=True)
-        best = candidates[0]
+        # Deduplicate by URL, remove already-used
+        seen: set = set()
+        unique = []
+        for c in candidates:
+            u = c.get("url", "")
+            if u and u not in used_urls and u not in seen:
+                seen.add(u)
+                unique.append(c)
 
-        # Download
-        ext      = ".mp4" if best.get("type") == "video" else ".jpg"
-        filename = f"scene{scene_id}_{hashlib.md5(best['url'].encode()).hexdigest()[:8]}{ext}"
-        local_path = media_dir / filename
+        if not unique:
+            return None
 
-        if not local_path.exists():
-            ok = self._download(best["url"], local_path)
-            if not ok:
-                return None
+        # Sort: videos first if wanted, then by score descending
+        unique.sort(
+            key=lambda x: (
+                (1 if (x.get("type") == "video") == want_video else 0),
+                x.get("score", 0),
+            ),
+            reverse=True,
+        )
 
-        best["local_path"] = str(local_path)
-        return best
+        # Try downloading top-N candidates until one works
+        for candidate in unique[:8]:
+            ext        = ".mp4" if candidate.get("type") == "video" else ".jpg"
+            filename   = f"s{scene_id}_{hashlib.md5(candidate['url'].encode()).hexdigest()[:10]}{ext}"
+            local_path = media_dir / filename
+
+            if local_path.exists() and local_path.stat().st_size > 5000:
+                candidate["local_path"] = str(local_path)
+                return candidate
+
+            ok = self._download(candidate["url"], local_path)
+            if ok:
+                candidate["local_path"] = str(local_path)
+                print(f"   ✔ scene {scene_id} — {candidate['source']} {candidate['type']}"
+                      f"  score={candidate['score']:.0f}  {candidate.get('width',0)}×{candidate.get('height',0)}")
+                return candidate
+
+        print(f"   ✗ scene {scene_id}: all {min(len(unique),8)} download attempts failed")
+        return None
+
+    # ── Brave Image Search ────────────────────────────────────────────────────
+    # Returns direct image URLs from the open web — best for specific/niche topics.
+
+    def _search_brave_images(self, query: str) -> List[Dict]:
+        key = self.keys["brave_search"]
+        if not key:
+            return []
+        results = []
+        try:
+            r = requests.get(
+                "https://api.search.brave.com/res/v1/images/search",
+                headers={
+                    "Accept"              : "application/json",
+                    "Accept-Encoding"     : "gzip",
+                    "X-Subscription-Token": key,
+                },
+                params={"q": query, "count": 10, "safesearch": "off",
+                        "search_lang": "en", "spellcheck": 1},
+                timeout=10,
+            )
+            if r.ok:
+                for item in r.json().get("results", []):
+                    props = item.get("properties", {})
+                    url   = props.get("url") or item.get("url", "")
+                    w     = props.get("width",  0)
+                    h     = props.get("height", 0)
+                    # Skip tiny/portrait images
+                    if not url or w < 800 or (h > 0 and w / h < 1.0):
+                        continue
+                    results.append({
+                        "type"  : "image",
+                        "source": "brave",
+                        "url"   : url,
+                        "width" : w or 1280,
+                        "height": h or 720,
+                        "score" : self._score(w or 1280, h or 720, "image"),
+                    })
+        except Exception as e:
+            print(f"   Brave images error: {e}")
+        return results
+
+    # ── Serper Image Search ───────────────────────────────────────────────────
+    # Google Images via Serper.dev — excellent keyword coverage.
+
+    def _search_serper_images(self, query: str) -> List[Dict]:
+        key = self.keys["serper"]
+        if not key:
+            return []
+        results = []
+        try:
+            r = requests.post(
+                "https://google.serper.dev/images",
+                headers={"X-API-KEY": key, "Content-Type": "application/json"},
+                json={"q": query, "num": 10},
+                timeout=10,
+            )
+            if r.ok:
+                for item in r.json().get("images", []):
+                    url = item.get("imageUrl", "")
+                    w   = item.get("imageWidth",  0)
+                    h   = item.get("imageHeight", 0)
+                    if not url or (w > 0 and w < 800):
+                        continue
+                    if h > 0 and w > 0 and w / h < 1.0:
+                        continue  # skip portrait
+                    results.append({
+                        "type"  : "image",
+                        "source": "serper",
+                        "url"   : url,
+                        "width" : w or 1280,
+                        "height": h or 720,
+                        "score" : self._score(w or 1280, h or 720, "image"),
+                    })
+        except Exception as e:
+            print(f"   Serper images error: {e}")
+        return results
 
     # ── Pexels ────────────────────────────────────────────────────────────────
 
@@ -415,52 +580,52 @@ Return ONLY valid JSON (no markdown, no explanation):
         try:
             if media_type == "video":
                 url = "https://api.pexels.com/videos/search"
-                params = {"query": query, "per_page": 8, "orientation": "landscape",
-                          "size": "large"}
+                params = {"query": query, "per_page": 8,
+                          "orientation": "landscape", "size": "large"}
                 r = requests.get(url, headers={"Authorization": key},
                                  params=params, timeout=10)
                 if r.ok:
                     for v in r.json().get("videos", []):
-                        # Pick best file (HD landscape)
                         files = sorted(
                             [f for f in v.get("video_files", [])
-                             if f.get("width", 0) >= 1280 and f.get("height", 0) <= 1080],
+                             if f.get("width", 0) >= 1280],
                             key=lambda f: f.get("width", 0), reverse=True
                         )
                         if not files:
                             files = v.get("video_files", [])
                         if files:
                             results.append({
-                                "type"   : "video",
-                                "source" : "pexels",
-                                "url"    : files[0]["link"],
-                                "width"  : files[0].get("width", 1920),
-                                "height" : files[0].get("height", 1080),
-                                "score"  : self._score(files[0].get("width", 0),
-                                                       files[0].get("height", 0), "video"),
+                                "type"  : "video",
+                                "source": "pexels",
+                                "url"   : files[0]["link"],
+                                "width" : files[0].get("width",  1920),
+                                "height": files[0].get("height", 1080),
+                                "score" : self._score(files[0].get("width", 0),
+                                                      files[0].get("height", 0), "video"),
                             })
             else:
                 url = "https://api.pexels.com/v1/search"
-                params = {"query": query, "per_page": 8, "orientation": "landscape",
-                          "size": "large"}
+                params = {"query": query, "per_page": 8,
+                          "orientation": "landscape", "size": "large"}
                 r = requests.get(url, headers={"Authorization": key},
                                  params=params, timeout=10)
                 if r.ok:
                     for p in r.json().get("photos", []):
-                        src = p.get("src", {})
-                        img_url = src.get("large2x") or src.get("large") or src.get("original")
+                        src     = p.get("src", {})
+                        img_url = (src.get("large2x") or src.get("large")
+                                   or src.get("original"))
                         if img_url:
                             results.append({
                                 "type"  : "image",
                                 "source": "pexels",
                                 "url"   : img_url,
-                                "width" : p.get("width", 1920),
+                                "width" : p.get("width",  1920),
                                 "height": p.get("height", 1080),
                                 "score" : self._score(p.get("width", 0),
                                                       p.get("height", 0), "image"),
                             })
         except Exception as e:
-            print(f"   Pexels search error: {e}")
+            print(f"   Pexels error [{media_type}]: {e}")
         return results
 
     # ── Pixabay ───────────────────────────────────────────────────────────────
@@ -472,11 +637,11 @@ Return ONLY valid JSON (no markdown, no explanation):
         results = []
         try:
             if media_type == "video":
-                url = "https://pixabay.com/api/videos/"
+                url    = "https://pixabay.com/api/videos/"
                 params = {"key": key, "q": query, "per_page": 8,
                           "video_type": "film", "min_width": 1280}
             else:
-                url = "https://pixabay.com/api/"
+                url    = "https://pixabay.com/api/"
                 params = {"key": key, "q": query, "per_page": 8,
                           "image_type": "photo", "orientation": "horizontal",
                           "min_width": 1280}
@@ -484,14 +649,16 @@ Return ONLY valid JSON (no markdown, no explanation):
             if r.ok:
                 for item in r.json().get("hits", []):
                     if media_type == "video":
-                        videos = item.get("videos", {})
-                        file = (videos.get("large") or videos.get("medium")
-                                or videos.get("small") or {})
+                        vids   = item.get("videos", {})
+                        file   = (vids.get("large") or vids.get("medium")
+                                  or vids.get("small") or {})
                         dl_url = file.get("url")
-                        w, h = file.get("width", 1280), file.get("height", 720)
+                        w, h   = file.get("width", 1280), file.get("height", 720)
                     else:
-                        dl_url = item.get("largeImageURL") or item.get("webformatURL")
-                        w, h = item.get("imageWidth", 1280), item.get("imageHeight", 720)
+                        dl_url = (item.get("largeImageURL")
+                                  or item.get("webformatURL"))
+                        w, h   = (item.get("imageWidth",  1280),
+                                  item.get("imageHeight", 720))
                     if dl_url:
                         results.append({
                             "type"  : "video" if media_type == "video" else "image",
@@ -501,7 +668,7 @@ Return ONLY valid JSON (no markdown, no explanation):
                             "score" : self._score(w, h, media_type),
                         })
         except Exception as e:
-            print(f"   Pixabay search error: {e}")
+            print(f"   Pixabay error [{media_type}]: {e}")
         return results
 
     # ── Unsplash ──────────────────────────────────────────────────────────────
@@ -512,16 +679,17 @@ Return ONLY valid JSON (no markdown, no explanation):
             return []
         results = []
         try:
-            url = "https://api.unsplash.com/search/photos"
-            params = {"query": query, "per_page": 8, "orientation": "landscape"}
-            r = requests.get(url, headers={"Authorization": f"Client-ID {key}"},
-                             params=params, timeout=10)
+            r = requests.get(
+                "https://api.unsplash.com/search/photos",
+                headers={"Authorization": f"Client-ID {key}"},
+                params={"query": query, "per_page": 8, "orientation": "landscape"},
+                timeout=10,
+            )
             if r.ok:
                 for p in r.json().get("results", []):
-                    urls = p.get("urls", {})
+                    urls    = p.get("urls", {})
                     img_url = urls.get("full") or urls.get("regular")
-                    w = p.get("width", 1920)
-                    h = p.get("height", 1080)
+                    w, h    = p.get("width", 1920), p.get("height", 1080)
                     if img_url and w >= 1280:
                         results.append({
                             "type"  : "image",
@@ -531,26 +699,31 @@ Return ONLY valid JSON (no markdown, no explanation):
                             "score" : self._score(w, h, "image"),
                         })
         except Exception as e:
-            print(f"   Unsplash search error: {e}")
+            print(f"   Unsplash error: {e}")
         return results
 
     # ── Scoring ───────────────────────────────────────────────────────────────
 
     def _score(self, w: int, h: int, media_type: str) -> float:
-        """Higher is better. Rewards landscape HD, penalises portrait/tiny."""
+        """
+        Base score (0–100) before query-rank bonus.
+        Rewards 1080p+ landscape. Discards portrait.
+        Videos get a +20 bonus over images (richer visual impact).
+        """
         if w <= 0 or h <= 0:
             return 0.0
         res_score = min(w / 1920, 1.0) * 40
         ratio     = w / h
-        # Strongly prefer landscape (16:9 ≈ 1.78)
         if ratio < 1.0:
-            ratio_score = 0   # portrait — discard
+            ratio_score = 0        # portrait — never use
         elif 1.5 <= ratio <= 2.2:
-            ratio_score = 40  # ideal
+            ratio_score = 40       # ideal 16:9
+        elif 1.2 <= ratio < 1.5:
+            ratio_score = 25       # 4:3 / slight landscape — acceptable
         else:
-            ratio_score = 20
-        bonus = 20 if media_type == "video" else 15  # slight video preference
-        return res_score + ratio_score + bonus
+            ratio_score = 15       # ultra-wide or weird ratio
+        type_bonus = 20 if media_type == "video" else 0
+        return res_score + ratio_score + type_bonus
 
     # ── Downloader ────────────────────────────────────────────────────────────
 

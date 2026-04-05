@@ -6251,9 +6251,11 @@ def super_auto_editor_start():
         if isinstance(gemini_keys, str):
             gemini_keys = [k.strip() for k in gemini_keys.split(',') if k.strip()]
 
-        pexels_key   = api_keys.get('pexels', '')
-        pixabay_key  = api_keys.get('pixabay', '')
-        unsplash_key = api_keys.get('unsplash', '')
+        pexels_key        = api_keys.get('pexels',       '')
+        pixabay_key       = api_keys.get('pixabay',      '')
+        unsplash_key      = api_keys.get('unsplash',     '')
+        brave_search_key  = api_keys.get('brave_search', '')
+        serper_key        = api_keys.get('serper',       '')
 
         # ── create job ───────────────────────────────────────────────────────
         job_id = str(uuid.uuid4())
@@ -6275,11 +6277,13 @@ def super_auto_editor_start():
                     super_editor_jobs[job_id]['message']  = msg
 
                 editor = SuperAutoEditor(
-                    gemini_keys  = gemini_keys,
-                    pexels_key   = pexels_key,
-                    pixabay_key  = pixabay_key,
-                    unsplash_key = unsplash_key,
-                    progress_cb  = _progress,
+                    gemini_keys      = gemini_keys,
+                    pexels_key       = pexels_key,
+                    pixabay_key      = pixabay_key,
+                    unsplash_key     = unsplash_key,
+                    brave_search_key = brave_search_key,
+                    serper_key       = serper_key,
+                    progress_cb      = _progress,
                 )
                 result = editor.run(
                     avatar_path = avatar_path,
