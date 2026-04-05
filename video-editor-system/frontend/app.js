@@ -6435,3 +6435,163 @@ function copySeoTags() {
     }, { threshold: 0.1 });
     io.observe(seoSection);
 })();
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SUPER AUTO EDITOR
+// ─────────────────────────────────────────────────────────────────────────────
+
+let _saeAvatarFile  = null;   // File object from <input>
+let _saeJobId       = null;   // current job ID
+let _saePollTimer   = null;   // setInterval handle
+let _saeDownloadUrl = null;   // final download URL
+
+// ── Drop-zone helpers ─────────────────────────────────────────────────────────
+
+function saeDrop(e, type) {
+    e.preventDefault();
+    const zone = document.getElementById('saeAvatarDropZone');
+    if (zone) zone.style.borderColor = 'rgba(139,92,246,0.4)';
+    const file = e.dataTransfer?.files?.[0];
+    if (!file) return;
+    if (type === 'avatar') _saeSetAvatar(file);
+}
+
+function saePickAvatar(e) {
+    const file = e.target.files?.[0];
+    if (file) _saeSetAvatar(file);
+}
+
+function _saeSetAvatar(file) {
+    _saeAvatarFile = file;
+    const label = document.getElementById('saeAvatarLabel');
+    const zone  = document.getElementById('saeAvatarDropZone');
+    if (label) label.innerHTML = `<strong style="color:#a78bfa">${file.name}</strong><br><span style="font-size:11px;color:#6b7280">${(file.size/1048576).toFixed(1)} MB</span>`;
+    if (zone)  zone.style.borderColor = '#7c3aed';
+}
+
+// ── Start job ─────────────────────────────────────────────────────────────────
+
+async function saeStartJob() {
+    const script = (document.getElementById('saeScript')?.value || '').trim();
+    const title  = (document.getElementById('saeTitle')?.value  || '').trim();
+
+    if (!_saeAvatarFile) {
+        showNotification('Please upload an avatar video first.', 'error');
+        return;
+    }
+    if (!script) {
+        showNotification('Please paste your script first.', 'error');
+        return;
+    }
+
+    // Reset UI
+    _saeReset();
+    document.getElementById('saeProgress').style.display = 'block';
+    document.getElementById('saeGenerateBtn').disabled = true;
+
+    // Build multipart form
+    const fd = new FormData();
+    fd.append('avatar_file', _saeAvatarFile);
+    fd.append('script', script);
+    if (title) fd.append('title', title);
+
+    try {
+        const res  = await fetch('/api/super-auto-editor/start', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Unknown error');
+        _saeJobId = data.job_id;
+        _saePollStatus();
+    } catch (err) {
+        _saeShowError('Failed to start: ' + err.message);
+    }
+}
+
+// ── Polling ───────────────────────────────────────────────────────────────────
+
+function _saePollStatus() {
+    if (_saePollTimer) clearInterval(_saePollTimer);
+    _saePollTimer = setInterval(_saeFetchStatus, 3000);
+    _saeFetchStatus(); // immediate first check
+}
+
+async function _saeFetchStatus() {
+    if (!_saeJobId) return;
+    try {
+        const res  = await fetch(`/api/super-auto-editor/status/${_saeJobId}`);
+        const data = await res.json();
+
+        // Update progress bar
+        const pct = data.progress || 0;
+        const bar = document.getElementById('saeBar');
+        const pctEl = document.getElementById('saePct');
+        const msgEl = document.getElementById('saeMsg');
+        if (bar)   bar.style.width   = pct + '%';
+        if (pctEl) pctEl.textContent = pct + '%';
+        if (msgEl) msgEl.textContent = data.message || '';
+
+        if (data.status === 'done') {
+            clearInterval(_saePollTimer);
+            _saePollTimer = null;
+            _saeDownloadUrl = data.download_url || `/api/super-auto-editor/download/${_saeJobId}`;
+            _saeShowResult(data.result || {});
+        } else if (data.status === 'error') {
+            clearInterval(_saePollTimer);
+            _saePollTimer = null;
+            _saeShowError(data.error || data.message || 'Job failed');
+        }
+    } catch (err) {
+        console.warn('SAE poll error:', err);
+    }
+}
+
+// ── Result / Error display ────────────────────────────────────────────────────
+
+function _saeShowResult(result) {
+    document.getElementById('saeProgress').style.display = 'none';
+    document.getElementById('saeGenerateBtn').disabled = false;
+
+    const infoEl = document.getElementById('saeInfo');
+    if (infoEl) {
+        infoEl.innerHTML = [
+            result.duration_fmt  ? `⏱ Duration: <strong>${result.duration_fmt}</strong>` : '',
+            result.file_size_mb  ? `💾 Size: <strong>${result.file_size_mb} MB</strong>` : '',
+            result.scenes_count  ? `🎬 Scenes: <strong>${result.scenes_count}</strong>` : '',
+            result.broll_count   ? `🖼 B-roll clips: <strong>${result.broll_count}</strong>` : '',
+        ].filter(Boolean).join('&nbsp;&nbsp;•&nbsp;&nbsp;');
+    }
+
+    document.getElementById('saeResult').style.display = 'block';
+    showNotification('✅ Super Auto Video ready!', 'success');
+}
+
+function _saeShowError(msg) {
+    document.getElementById('saeProgress').style.display = 'none';
+    document.getElementById('saeGenerateBtn').disabled = false;
+    const el = document.getElementById('saeError');
+    if (el) { el.textContent = '❌ ' + msg; el.style.display = 'block'; }
+}
+
+function _saeReset() {
+    document.getElementById('saeResult').style.display = 'none';
+    document.getElementById('saeError').style.display  = 'none';
+    const bar = document.getElementById('saeBar');
+    const pctEl = document.getElementById('saePct');
+    const msgEl = document.getElementById('saeMsg');
+    if (bar)   bar.style.width   = '0%';
+    if (pctEl) pctEl.textContent = '0%';
+    if (msgEl) msgEl.textContent = 'Starting…';
+    if (_saePollTimer) { clearInterval(_saePollTimer); _saePollTimer = null; }
+}
+
+// ── Download ──────────────────────────────────────────────────────────────────
+
+function saeDownload() {
+    if (!_saeDownloadUrl) return;
+    const a = document.createElement('a');
+    a.href = _saeDownloadUrl;
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+}
