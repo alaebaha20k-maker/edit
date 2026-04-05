@@ -120,12 +120,15 @@ class ScriptGenerator3Chunk:
         generated_chunks = []
         previous_context = ""
         promo_count_so_far = 0
+        sections_done: List[str] = []   # sections already written — passed to each chunk
 
         formula_chars = len(formula)
         for chunk in chunks:
             if verbose:
                 print(f"✍️  PHASE {chunk.index + 1} — WRITE Chunk {chunk.index}/{total_chunks}: {chunk.role}...")
                 print(f"   📋 Writing Guidelines injected into prompt: {formula_chars:,} chars")
+                if sections_done:
+                    print(f"   ✅ Sections done (forbidden to reopen): {', '.join(sections_done)}")
 
             is_final = (chunk.index == total_chunks)
 
@@ -139,6 +142,7 @@ class ScriptGenerator3Chunk:
                 previous_context=previous_context,
                 promo_count_so_far=promo_count_so_far,
                 is_final=is_final,
+                sections_already_done=sections_done,
             )
 
             temp         = self._get_temperature(chunk.role)
@@ -163,6 +167,10 @@ class ScriptGenerator3Chunk:
             generated_chunks.append(chunk_text)
             if verbose:
                 print(f"   ✅ {len(chunk_text):,} chars (raw)")
+
+            # Mark this chunk's sections as done so next chunk won't reopen them
+            this_chunk_sections = plan.get("chunk_sections", {}).get(str(chunk.index), [])
+            sections_done.extend(s for s in this_chunk_sections if s not in sections_done)
 
             if chunk.index < total_chunks:
                 sents = [s.strip() for s in re.split(r'[.!?]', chunk_text) if len(s.strip()) > 15]
@@ -202,6 +210,7 @@ class ScriptGenerator3Chunk:
                 niche=niche,
                 formula=formula,
                 plan=plan,
+                sections_done=sections_done,
                 verbose=verbose,
             )
             full_script = self._clean_script(full_script)
@@ -468,6 +477,7 @@ OUTPUT FORMAT — strict:
         previous_context: str,
         promo_count_so_far: int,
         is_final: bool,
+        sections_already_done: List[str] = None,
     ) -> str:
 
         anchor       = plan.get("anchor", title)
@@ -539,29 +549,54 @@ OUTPUT FORMAT — strict:
         else:
             promo_reminder = f"PRODUCT: {product}\n\n" if promo_count > 0 else ""
 
+        # ── Section boundary lock — what is already done and MUST NOT be reopened ─
+        if sections_already_done:
+            boundary_block = (
+                f"⛔ SECTIONS ALREADY WRITTEN — DO NOT REVISIT, DO NOT REOPEN, DO NOT RE-EXPLAIN:\n"
+                + "".join(f"   ✓ {s}\n" for s in sections_already_done)
+                + f"\n"
+                f"The script has ALREADY covered all of the above. Going backward in the formula\n"
+                f"is STRICTLY FORBIDDEN. Every sentence you write must move FORWARD.\n\n"
+                f"FORMULA DIRECTION: hook → mechanism → proof → protocol → ending\n"
+                f"You are currently past: {', '.join(sections_already_done)}\n"
+                f"Write ONLY what comes NEXT in that progression.\n\n"
+            )
+        else:
+            boundary_block = ""
+
         # ── Final chunk stop ───────────────────────────────────────────────────
         if is_final:
             stop_instruction = (
-                f"\nHARD STOP: After the final CTA ('{cta_action}'), write:\n"
+                f"\n⛔ HARD STOP RULE:\n"
+                f"After you write the final CTA ('{cta_action}'), you MUST immediately write:\n"
                 f"{STOP_SIGNAL}\n"
-                f"Then output NOTHING.\n"
+                f"Then output NOTHING AT ALL. Not one more word. Not a summary. Not a new section.\n"
+                f"The script is COMPLETE once the CTA is written. STOP.\n"
             )
-            role_note = "FINAL CHUNK — write the closing and CTA exactly as the Writing Guidelines prescribe. After the CTA, STOP."
+            role_note = (
+                f"FINAL CHUNK — write the closing and CTA exactly as the Writing Guidelines prescribe.\n"
+                f"Once the CTA lands, the payoff is complete. STOP immediately. Do not add more.\n"
+                f"Protect the payoff — continuing after it weakens it."
+            )
         else:
             stop_instruction = ""
             role_note = (
                 f"Chunk {chunk.index} of {total_chunks} — MID-SCRIPT ONLY.\n"
-                f"FORBIDDEN: do NOT write a conclusion, do NOT write a CTA, do NOT say 'subscribe' or 'like'.\n"
-                f"FORBIDDEN: do NOT end the script — it will be continued in the next chunk.\n"
-                f"Stop mid-sentence if needed rather than write a fake ending."
+                f"⛔ FORBIDDEN: conclusion, CTA, 'subscribe', 'like', 'share', any ending signal.\n"
+                f"⛔ FORBIDDEN: ending the script — it continues in the next chunk.\n"
+                f"⛔ FORBIDDEN: reopening any section listed above as already done.\n"
+                f"⛔ FORBIDDEN: repeating the same idea in different words (no padding).\n"
+                f"Stop mid-sentence if needed rather than fake an ending."
             )
 
         prompt = (
             f"{formula_block}"
             f"═══ WRITING TASK: CHUNK {chunk.index}/{total_chunks} ═══\n\n"
             f"VIDEO TITLE: \"{title}\"\n"
+            f"TITLE IS A CONTRACT — every mechanism you describe must deliver exactly what the title promises.\n"
             f"ANCHOR / SUBJECT: {anchor}\n"
             f"LANGUAGE: {language.upper()} — every single word in {language}\n\n"
+            f"{boundary_block}"
             f"{task_block}\n\n"
             f"{continuation}"
             f"{promo_reminder}"
@@ -647,6 +682,7 @@ OUTPUT FORMAT — strict:
         niche: dict,
         formula: str,
         plan: dict,
+        sections_done: List[str] = None,
         verbose: bool = False,
     ) -> str:
         """
@@ -659,11 +695,24 @@ OUTPUT FORMAT — strict:
         language    = niche.get("language", "English")
         anchor      = plan.get("anchor", title)
         body_secs   = plan.get("sections", [])
-        # Middle sections hint (exclude first and last — those are hook/close)
-        mid_secs = body_secs[1:-1] if len(body_secs) > 2 else body_secs
+        done_list   = sections_done or []
+
+        # Find sections not yet written — prefer extending those
+        remaining_secs = [s for s in body_secs if s not in done_list]
+        mid_secs = remaining_secs[:-1] if len(remaining_secs) > 1 else remaining_secs
         body_hint = (
-            "Continue these body sections from the Writing Guidelines: " + ", ".join(mid_secs)
+            "Continue these REMAINING body sections from the Writing Guidelines: " + ", ".join(mid_secs)
         ) if mid_secs else "Continue the body / development sections prescribed by your Writing Guidelines."
+
+        # Build forbidden block for extension prompts
+        if done_list:
+            forbidden_ext = (
+                f"\n⛔ ALREADY WRITTEN — DO NOT REVISIT, DO NOT REPEAT, DO NOT REOPEN:\n"
+                + "".join(f"  ✓ {s}\n" for s in done_list)
+                + f"\nEvery sentence must move FORWARD in the formula. Backward = forbidden.\n"
+            )
+        else:
+            forbidden_ext = ""
 
         system_instruction = self._build_system_instruction(language)
 
@@ -680,13 +729,15 @@ OUTPUT FORMAT — strict:
             prompt = f"""══════════ WRITING GUIDELINES (execute ALL rules) ══════════
 {formula}
 ════════════════════════════════════════════════════════════
-
+{forbidden_ext}
 ⚠️  SCRIPT EXTENSION — YOU ARE CONTINUING A SCRIPT ALREADY IN PROGRESS.
 DO NOT start a new intro. DO NOT write a new hook. DO NOT say 'Bonjour' or 'Hello' or any greeting.
 DO NOT write 'Subscribe', 'Abonnez-vous', or any CTA — the script is not finished yet.
+DO NOT repeat ideas already covered above. Every sentence must add NEW information.
 The script is mid-way through. You MUST continue from the last sentence below.
 
 TITLE: "{title}"
+TITLE IS A CONTRACT — stay locked to the exact promise in the title.
 SUBJECT: {anchor}
 
 THE SCRIPT ENDED HERE — CONTINUE FROM THIS EXACT POINT:
@@ -734,52 +785,56 @@ WRITE IN {language.upper()} — CONTINUE NOW:"""
 
     def _cut_at_restart(self, text: str, cta_action: str, verbose: bool = False) -> str:
         """
-        Detect and cut when the script ends then restarts.
-        Pattern: CTA phrase → substantial new content that looks like a fresh opening.
+        Cut the script at the LAST natural ending point.
 
-        This happens when a non-final chunk writes a CTA, or when the extension
-        model starts a new intro instead of continuing.
+        Strategy (in order of priority):
+        1. STOP_SIGNAL anywhere → cut there (already handled in _clean_script, but safety)
+        2. Find the LAST CTA occurrence in the whole text.
+           If substantial content (>150 chars) follows it → cut right after it.
+           This covers: restart after CTA, double ending, payoff-then-more.
+        3. Detect explicit restart patterns after any CTA → cut there.
+
+        By cutting at the LAST CTA (not the first), we protect the real ending
+        while still removing any tail that leaks after it.
         """
-        # Restart markers: phrases that only appear at the very START of a script
-        restart_patterns = [
-            # Opening greetings in various languages
-            r'\b(bonjour|salut|hey|hello|bienvenue|welcome)\b',
-            # "In this video / Dans cette vidéo"
-            r'\b(dans\s+cette\s+vid[eé]o|in\s+this\s+video|aujourd.hui\s+on\s+va|today\s+we.re\s+going)\b',
-            # Title re-introduction
-            r'\b(on\s+parle|we.re\s+talking|this\s+video\s+is\s+about)\b',
-        ]
-
-        # CTA patterns — when these appear and are followed by 500+ chars, it's a restart
+        # CTA trigger phrases (multi-language)
         cta_patterns = [
-            r'\b(abonnez.vous|subscribe|abonne.toi)\b',
-            r'\b(clique sur la cloche|hit the bell|ring the bell)\b',
-            r'\b(like\s+et\s+commente|like\s+and\s+comment)\b',
+            r'\b(abonnez[\s\-]vous|subscribe|abonne[\s\-]toi|s\'abonner)\b',
+            r'\b(clique\s+sur\s+la\s+cloche|hit\s+the\s+bell|ring\s+the\s+bell)\b',
+            r'\b(like\s+et\s+commente|like\s+and\s+comment|liken?\s+und\s+kommentier)\b',
+            r'\b(active\s+les\s+notifications|turn\s+on\s+notifications)\b',
+            r'\b(partage\s+(cette|la)\s+vid[eé]o|share\s+this\s+video)\b',
         ]
-        if cta_action and len(cta_action) > 10:
-            # Add the specific CTA from the plan (first 25 chars as trigger)
-            safe = re.escape(cta_action[:25].lower())
-            cta_patterns.append(safe)
+        if cta_action and len(cta_action) > 8:
+            cta_patterns.append(re.escape(cta_action[:30].lower()))
 
         text_lower = text.lower()
 
-        # Find all CTA occurrences
+        # ── Find the LAST CTA sentence boundary ──────────────────────────────
+        last_cut_pos = -1
+
         for pat in cta_patterns:
             for m in re.finditer(pat, text_lower):
-                cta_end = m.end()
-                after = text[cta_end:].strip()
-                if len(after) < 300:
-                    continue  # normal ending, CTA is near the end
-                # Check if what follows looks like a fresh opening
-                after_lower = after[:500].lower()
-                for rp in restart_patterns:
-                    if re.search(rp, after_lower):
-                        # Found restart — cut right after the CTA sentence
-                        sentence_end = re.search(r'[.!?]', text[cta_end:])
-                        cut = cta_end + (sentence_end.end() if sentence_end else 0)
-                        if verbose:
-                            print(f"   ✂️  Restart detected after pos {cut:,} — cutting there")
-                        return text[:cut].strip()
+                # Find the end of the sentence that contains this CTA match
+                sentence_end = re.search(r'[.!?]', text[m.end():])
+                cut_candidate = m.end() + (sentence_end.end() if sentence_end else 0)
+
+                after_content = text[cut_candidate:].strip()
+                if len(after_content) > 150:
+                    # Meaningful content after this CTA → this is a cut candidate
+                    if cut_candidate > last_cut_pos:
+                        last_cut_pos = cut_candidate
+
+        if last_cut_pos > 0:
+            # Only cut if the cut point is not near the very end (≥5% of text remaining)
+            remaining_ratio = (len(text) - last_cut_pos) / max(len(text), 1)
+            if remaining_ratio >= 0.03:
+                if verbose:
+                    chars_cut = len(text) - last_cut_pos
+                    print(f"   ✂️  End-completion cut: removed {chars_cut:,} chars after last CTA "
+                          f"(pos {last_cut_pos:,}/{len(text):,})")
+                return text[:last_cut_pos].strip()
+
         return text
 
     def _clean_script(self, text: str) -> str:
@@ -815,29 +870,71 @@ WRITE IN {language.upper()} — CONTINUE NOW:"""
 
         return text.strip()
 
+    # Stopwords to strip before similarity comparison (French + English)
+    _STOPWORDS = {
+        "le","la","les","de","du","des","un","une","et","est","en","au","aux",
+        "que","qui","par","sur","dans","avec","pour","pas","plus","mais","ou",
+        "donc","or","ni","car","si","ce","se","il","elle","ils","elles","on",
+        "nous","vous","je","tu","me","te","lui","leur","y","a","être","avoir",
+        "the","a","an","and","or","but","in","on","at","to","of","for","with",
+        "is","are","was","were","be","been","have","has","had","do","does","did",
+        "this","that","these","those","it","its","we","you","he","she","they",
+        "not","no","so","if","as","by","from","up","about","than","into",
+    }
+
+    def _sentence_key(self, sent: str) -> frozenset:
+        """Return a frozenset of meaningful words (stopwords removed)."""
+        words = re.sub(r"[^\w\s]", "", sent.lower()).split()
+        return frozenset(w for w in words if w not in self._STOPWORDS and len(w) > 2)
+
+    def _jaccard(self, a: frozenset, b: frozenset) -> float:
+        if not a or not b:
+            return 0.0
+        return len(a & b) / len(a | b)
+
     def _remove_duplicate_sentences(self, text: str, verbose: bool = False) -> str:
+        """
+        Remove duplicate AND near-duplicate sentences.
+        Two sentences are considered duplicates if:
+          - They are identical after normalisation (exact), OR
+          - Their Jaccard similarity on meaningful words is ≥ 0.72
+            (catches the same idea paraphrased with slightly different words)
+        Short sentences (<40 chars) are always kept — they are transitions,
+        not padding.
+        """
+        SIMILARITY_THRESHOLD = 0.72
+
         sentences = re.split(r"(?<=[.!?])\s+", text)
-        seen: set = set()
+        kept_keys: List[frozenset] = []
         unique: List[str] = []
         removed = 0
 
         for sent in sentences:
-            norm = re.sub(r"[^\w\s]", "", sent.lower())
-            norm = re.sub(r"\s+", " ", norm).strip()
-
+            norm = re.sub(r"\s+", " ", sent).strip()
             if len(norm) < 40:
                 unique.append(sent)
                 continue
 
-            if norm in seen:
-                removed += 1
+            key = self._sentence_key(norm)
+            if not key:
+                unique.append(sent)
                 continue
 
-            seen.add(norm)
-            unique.append(sent)
+            # Check against every kept sentence
+            is_dup = False
+            for kept in kept_keys:
+                if self._jaccard(key, kept) >= SIMILARITY_THRESHOLD:
+                    is_dup = True
+                    break
+
+            if is_dup:
+                removed += 1
+            else:
+                kept_keys.append(key)
+                unique.append(sent)
 
         if verbose and removed:
-            print(f"   🧹 Duplicate scanner: removed {removed} sentence(s)")
+            print(f"   🧹 Semantic dedup: removed {removed} near-duplicate sentence(s)")
 
         return " ".join(unique)
 
