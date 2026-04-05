@@ -396,18 +396,74 @@ async function resetAutoImagesFormula() {
 // =============================================================================
 // NICHE MANAGEMENT SYSTEM
 // =============================================================================
+// ── Niche localStorage backup ─────────────────────────────────────────────────
+// Niches are saved to the backend JSON file, but we also cache them in
+// localStorage so the UI stays populated even if the server data directory
+// is ephemeral (e.g. container restart). On every successful load we overwrite
+// the cache; if the backend returns empty but the cache has data we restore it.
+const NICHES_CACHE_KEY = 'video_tool_niches_cache';
+
+function _saveNichesCache(niches) {
+    try { localStorage.setItem(NICHES_CACHE_KEY, JSON.stringify(niches)); } catch(_) {}
+}
+function _loadNichesCache() {
+    try { return JSON.parse(localStorage.getItem(NICHES_CACHE_KEY) || '[]'); } catch(_) { return []; }
+}
+
 async function loadNiches() {
+    // ── 1. Immediately show cached niches so the UI is never blank ────────────
+    const cached = _loadNichesCache();
+    if (cached.length > 0) {
+        appState.niches = cached;
+        renderNichesList(cached);
+        updateNicheDropdown(cached);
+    }
+
+    // ── 2. Fetch from backend ─────────────────────────────────────────────────
     try {
         const response = await fetch('/api/niches');
         const data = await response.json();
 
-        if (data.niches) {
+        if (data.niches && data.niches.length > 0) {
+            // Backend has data → use it and update cache
             appState.niches = data.niches;
             renderNichesList(data.niches);
             updateNicheDropdown(data.niches);
+            _saveNichesCache(data.niches);
+
+        } else if (cached.length > 0 && (!data.niches || data.niches.length === 0)) {
+            // Backend empty but cache has data → auto-restore to backend
+            console.warn('Backend niches empty — restoring from localStorage cache...');
+            let restored = 0;
+            for (const niche of cached) {
+                try {
+                    await fetch('/api/niches', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            name: niche.name,
+                            language: niche.language,
+                            writing_guidelines: niche.writing_guidelines,
+                        })
+                    });
+                    restored++;
+                } catch(_) {}
+            }
+            if (restored > 0) {
+                showNotification(`♻️ Restored ${restored} niche(s) from local backup`, 'success');
+                // Reload from backend now that they're restored
+                const r2 = await fetch('/api/niches');
+                const d2 = await r2.json();
+                if (d2.niches && d2.niches.length > 0) {
+                    appState.niches = d2.niches;
+                    renderNichesList(d2.niches);
+                    updateNicheDropdown(d2.niches);
+                    _saveNichesCache(d2.niches);
+                }
+            }
         }
     } catch (error) {
-        console.error('Failed to load niches:', error);
+        console.error('Failed to load niches from backend:', error);
     }
 }
 
@@ -449,7 +505,7 @@ async function createNiche() {
         document.getElementById('newNicheName').value = '';
         document.getElementById('newNicheGuidelines').value = '';
 
-        // Reload niches
+        // Reload niches (also updates localStorage cache)
         await loadNiches();
 
         // Auto-select the new niche
