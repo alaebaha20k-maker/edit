@@ -116,8 +116,8 @@ class ScriptGenerator3Chunk:
                 print(f"   ✅ Chunk {i}  : {', '.join(secs)}  [{content_len:,} chars of rules injected]")
             print()
 
-        # ── System instruction: full formula = model identity ─────────────────
-        system_instruction = self._build_system_instruction(formula, language)
+        # ── System instruction: short format rules only (formula goes in user msg)
+        system_instruction = self._build_system_instruction(language)
 
         # ── PHASE 2–N — WRITE each chunk ──────────────────────────────────────
         generated_chunks = []
@@ -407,7 +407,8 @@ CRITICAL REQUIREMENTS:
                 print(f"   📤 Sending to Gemini Flash for outline generation...")
                 print(f"      └─ Writing Guidelines: {len(formula):,} chars | Title: \"{title}\"")
 
-            model    = genai.GenerativeModel(Config.GEMINI_PLAN_MODEL)
+            # Use the same Pro model as writing — Flash misses nuances in long formulas
+            model    = genai.GenerativeModel(Config.GEMINI_SCRIPT_MODEL)
             response = model.generate_content(
                 prompt,
                 generation_config={"temperature": 0.1, "max_output_tokens": 32768},
@@ -447,42 +448,32 @@ CRITICAL REQUIREMENTS:
             }
 
     # =========================================================================
-    # SYSTEM INSTRUCTION — full Writing Guidelines as model identity
+    # SYSTEM INSTRUCTION — short & focused (formula goes in user message)
     # =========================================================================
 
-    def _build_system_instruction(self, formula: str, language: str) -> str:
+    def _build_system_instruction(self, language: str) -> str:
         """
-        The Writing Guidelines go here — in the system instruction slot —
-        which Gemini treats as the model's core identity.
+        Keep the system instruction SHORT.
 
-        This sets WHO the model is. The chunk prompts tell it WHAT to write next
-        (with the specific formula rules for that section injected directly).
+        Research shows LLMs ignore the "middle" of very long system instructions
+        (the "lost in the middle" problem). A 40K formula buried there becomes
+        background noise — the model defaults to its built-in writing style.
+
+        The formula MUST be at the TOP of the user message where the model
+        pays full attention to it. The system instruction only sets format rules.
         """
-        return f"""YOU ARE A PROFESSIONAL SCRIPT WRITER. YOUR ENTIRE WRITING STYLE, STRUCTURE, TONE, AND CONTENT RULES ARE DEFINED BY THE WRITING GUIDELINES BELOW. YOU MUST EXECUTE THEM WITH ABSOLUTE PRECISION.
+        return f"""You are a professional video script writer.
+Your job is to execute the Writing Guidelines given to you EXACTLY — sentence by sentence.
+You do not improvise style, structure, or content. You execute the formula.
 
-THESE WRITING GUIDELINES ARE YOUR COMPLETE LAW:
-══════════════════════════════════════════════════════════════════════════════════════
-{formula}
-══════════════════════════════════════════════════════════════════════════════════════
-
-HOW TO APPLY THESE GUIDELINES:
-- Every sentence you write MUST execute a specific rule from the guidelines above.
-- Follow the section structure EXACTLY as prescribed.
-- Use the exact tone, hooks, phrases, and techniques specified.
-- Do NOT invent a different structure or style — follow the formula.
-- If the guidelines say to use a specific phrase or story: USE IT.
-- If the guidelines specify a sequence of steps: FOLLOW that sequence.
-
-OUTPUT FORMAT (applies to all chunks):
+OUTPUT FORMAT — strict:
 1. Write 100% in {language} — every word, no exceptions.
-2. Plain prose only — no markdown, no **, no __, no ##, no bullet points in the script.
+2. Plain prose only. No markdown (**, __, ##). No bullet points.
 3. No visual directions: VISUAL:, VIDEO:, SHOW:, CUT TO:
-4. No speaker/narrator labels: NARRATOR:, SPEAKER:, HOST:
-5. No timestamps or time markers.
-6. No stage directions in brackets [ ] or parentheses ( ).
-7. No meta-commentary about the script.
-8. Start directly with the first word of content.
-9. After the final CTA line, STOP immediately."""
+4. No speaker labels: NARRATOR:, HOST:, SPEAKER:
+5. No timestamps. No stage directions. No meta-commentary.
+6. Start with the first word of content. Nothing before it.
+7. Stop immediately after the final CTA line."""
 
     # =========================================================================
     # CHUNK PROMPT — minimal, formula-first
@@ -502,43 +493,46 @@ OUTPUT FORMAT (applies to all chunks):
     ) -> str:
 
         anchor       = plan.get("anchor", title)
+        full_formula = plan.get("_formula_text", "")
         promo_count  = plan.get("promo_count", 0)
         cta_action   = plan.get("cta_action", "subscribe and hit the bell")
         sections_now = plan.get("chunk_sections", {}).get(str(chunk.index), [])
         outline      = plan.get("chunk_section_content", {}).get(str(chunk.index), "")
         sections_label = " | ".join(sections_now) if sections_now else f"part {chunk.index} of {total_chunks}"
 
-        # ── Build the writing directive ────────────────────────────────────────
-        # Primary: inject the prescriptive outline produced in PHASE 1.
-        #   The outline is a step-by-step recipe specific to this title + formula.
-        #   Much more effective than telling the model to "apply guidelines."
-        # Fallback: if outline extraction failed, inject the full formula directly.
-        if outline:
-            writing_directive = (
-                f"SECTIONS FOR THIS CHUNK: {sections_label}\n\n"
-                f"YOUR STEP-BY-STEP WRITING RECIPE FOR THIS CHUNK:\n"
-                f"{'═' * 65}\n"
-                f"{outline}\n"
-                f"{'═' * 65}\n"
-                f"Execute this recipe exactly. Every paragraph must follow the step assigned to it.\n"
-                f"Your full Writing Guidelines are in your identity — stay 100% true to their style and rules."
+        # ── Formula block — ALWAYS at the top of the prompt ───────────────────
+        # Critical: LLMs suffer from "lost in the middle" for long contexts.
+        # The formula MUST be position-0 in the user message so the model reads
+        # it with full attention. System instruction is kept short (format only).
+        if full_formula:
+            formula_block = (
+                f"════════════════ YOUR WRITING GUIDELINES ════════════════\n"
+                f"READ THIS COMPLETELY BEFORE WRITING. EXECUTE EVERY RULE.\n"
+                f"{'─' * 56}\n"
+                f"{full_formula}\n"
+                f"{'─' * 56}\n"
+                f"END OF WRITING GUIDELINES — every sentence must execute a rule from above.\n"
+                f"{'═' * 56}\n\n"
             )
         else:
-            # Fallback: full formula — the model must apply it directly
-            full_formula = plan.get("_formula_text", "")
-            if full_formula:
-                writing_directive = (
-                    f"SECTIONS TO WRITE: {sections_label}\n\n"
-                    f"YOUR WRITING GUIDELINES — execute ALL rules exactly:\n"
-                    f"{'═' * 65}\n"
-                    f"{full_formula}\n"
-                    f"{'═' * 65}"
-                )
-            else:
-                writing_directive = (
-                    f"SECTIONS TO WRITE: {sections_label}\n"
-                    f"Execute ALL rules from your Writing Guidelines exactly."
-                )
+            formula_block = ""
+
+        # ── Step-by-step outline for this chunk ───────────────────────────────
+        # Produced by PHASE 1: specific recipe for this title + chunk's sections.
+        if outline:
+            task_block = (
+                f"SECTIONS FOR THIS CHUNK: {sections_label}\n\n"
+                f"STEP-BY-STEP WRITING RECIPE FOR THIS CHUNK (from your Writing Guidelines):\n"
+                f"{'─' * 56}\n"
+                f"{outline}\n"
+                f"{'─' * 56}\n"
+                f"Execute EVERY step in sequence."
+            )
+        else:
+            task_block = (
+                f"SECTIONS TO WRITE: {sections_label}\n"
+                f"Apply your Writing Guidelines above exactly — follow the structure, tone, and rules."
+            )
 
         # ── Continuation context ───────────────────────────────────────────────
         if previous_context:
@@ -555,43 +549,44 @@ OUTPUT FORMAT (applies to all chunks):
         elif chunk.index > 1:
             remaining = promo_count - promo_count_so_far
             promo_reminder = (
-                f"PROMO COUNTER: {promo_count_so_far}/{promo_count} written. "
-                f"Place exactly {remaining} more promo block(s) in this chunk per the Writing Guidelines.\n"
+                f"PROMO: {promo_count_so_far}/{promo_count} done. "
+                f"Place {remaining} more promo block(s) per your Writing Guidelines.\n"
                 f"PRODUCT: {product}\n\n"
             ) if remaining > 0 else (
-                f"PROMO COUNTER: All {promo_count} promo block(s) done. Do NOT add more.\n\n"
+                f"PROMO: All {promo_count} done. Do NOT add more.\n\n"
             )
         else:
             promo_reminder = f"PRODUCT: {product}\n\n" if promo_count > 0 else ""
 
-        # ── Final chunk stop rule ──────────────────────────────────────────────
+        # ── Final chunk stop ───────────────────────────────────────────────────
         if is_final:
             stop_instruction = (
-                f"\nHARD STOP: After writing the final CTA ('{cta_action}'), immediately write:\n"
+                f"\nHARD STOP: After the final CTA ('{cta_action}'), write:\n"
                 f"{STOP_SIGNAL}\n"
-                f"Output NOTHING after that line.\n"
+                f"Then output NOTHING.\n"
             )
-            chunk_role_note = "FINAL CHUNK — write the closing and CTA exactly as prescribed."
+            role_note = "FINAL CHUNK — write the closing and CTA exactly as the Writing Guidelines prescribe."
         else:
             stop_instruction = ""
-            chunk_role_note = (
-                f"Chunk {chunk.index} of {total_chunks}. "
+            role_note = (
+                f"Chunk {chunk.index}/{total_chunks}. "
                 f"Do NOT write the closing or CTA — those come in the final chunk."
             )
 
-        prompt = f"""═══ CHUNK {chunk.index}/{total_chunks} ═══
-
-VIDEO TITLE: "{title}"
-ANCHOR / SUBJECT: {anchor}
-LANGUAGE: {language.upper()} — every word must be in {language}
-
-{writing_directive}
-
-{continuation}{promo_reminder}ROLE: {chunk_role_note}
-
-LENGTH: Minimum {chunk.target_chars:,} characters (max {int(chunk.target_chars * 1.08):,}).
-{stop_instruction}
-WRITE NOW:"""
+        prompt = (
+            f"{formula_block}"
+            f"═══ WRITING TASK: CHUNK {chunk.index}/{total_chunks} ═══\n\n"
+            f"VIDEO TITLE: \"{title}\"\n"
+            f"ANCHOR / SUBJECT: {anchor}\n"
+            f"LANGUAGE: {language.upper()} — every single word in {language}\n\n"
+            f"{task_block}\n\n"
+            f"{continuation}"
+            f"{promo_reminder}"
+            f"ROLE: {role_note}\n"
+            f"LENGTH: Minimum {chunk.target_chars:,} characters (max {int(chunk.target_chars * 1.08):,}).\n"
+            f"{stop_instruction}\n"
+            f"WRITE NOW:"
+        )
 
         return prompt
 
@@ -687,7 +682,7 @@ WRITE NOW:"""
             "Continue these body sections from the Writing Guidelines: " + ", ".join(mid_secs)
         ) if mid_secs else "Continue the body / development sections prescribed by your Writing Guidelines."
 
-        system_instruction = self._build_system_instruction(formula, language)
+        system_instruction = self._build_system_instruction(language)
 
         for attempt in range(MAX_RETRIES):
             shortage = target_length - len(current_script)
