@@ -475,23 +475,87 @@ Return ONLY valid JSON (no markdown, no explanation):
 
         # Try downloading top-N candidates until one works
         for candidate in unique[:8]:
-            ext        = ".mp4" if candidate.get("type") == "video" else ".jpg"
-            filename   = f"s{scene_id}_{hashlib.md5(candidate['url'].encode()).hexdigest()[:10]}{ext}"
-            local_path = media_dir / filename
+            is_video   = candidate.get("type") == "video"
+            ext        = ".mp4" if is_video else ".jpg"
+            uid        = hashlib.md5(candidate["url"].encode()).hexdigest()[:10]
+            local_path = media_dir / f"s{scene_id}_{uid}{ext}"
 
-            if local_path.exists() and local_path.stat().st_size > 5000:
-                candidate["local_path"] = str(local_path)
-                return candidate
+            # Cache hit: already downloaded in a previous attempt
+            if local_path.exists() and local_path.stat().st_size > (100_000 if is_video else 15_000):
+                if self._is_valid_media(local_path):
+                    candidate["local_path"] = str(local_path)
+                    return candidate
+                else:
+                    local_path.unlink(missing_ok=True)
 
             ok = self._download(candidate["url"], local_path)
             if ok:
+                # Auto-detect real media type from what was actually downloaded
+                detected = self._detect_media_type(local_path)
+                if detected == "unknown":
+                    local_path.unlink(missing_ok=True)
+                    continue
+                # Rename to correct extension if needed
+                real_ext = ".mp4" if detected == "video" else self._real_img_ext(local_path)
+                if local_path.suffix.lower() != real_ext:
+                    new_path = local_path.with_suffix(real_ext)
+                    local_path.rename(new_path)
+                    local_path = new_path
+                candidate["type"]       = detected
                 candidate["local_path"] = str(local_path)
-                print(f"   ✔ scene {scene_id} — {candidate['source']} {candidate['type']}"
-                      f"  score={candidate['score']:.0f}  {candidate.get('width',0)}×{candidate.get('height',0)}")
+                print(f"   ✔ scene {scene_id} — {candidate['source']} {detected}"
+                      f"  score={candidate['score']:.0f}"
+                      f"  {candidate.get('width',0)}×{candidate.get('height',0)}")
                 return candidate
 
-        print(f"   ✗ scene {scene_id}: all {min(len(unique),8)} download attempts failed")
+        print(f"   ✗ scene {scene_id}: all {min(len(unique),8)} candidates failed")
         return None
+
+    def _detect_media_type(self, path: Path) -> str:
+        """Ask ffprobe what kind of media this file contains."""
+        try:
+            cmd = [
+                "ffprobe", "-v", "error",
+                "-show_entries", "stream=codec_type",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                str(path),
+            ]
+            out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL,
+                                          timeout=10).decode().strip().lower()
+            if "video" in out:
+                return "video"
+            if "audio" in out:
+                return "unknown"   # audio-only — skip
+            # No streams but file exists → might be raw image (JPEG/PNG/WEBP)
+            # ffprobe can't always decode images; try header magic bytes
+            with open(path, "rb") as f:
+                header = f.read(12)
+            if (header[:3] == b"\xff\xd8\xff"           # JPEG
+                    or header[:8] == b"\x89PNG\r\n\x1a\n"  # PNG
+                    or header[:4] in (b"RIFF", b"WEBP")    # WEBP
+                    or header[:6] in (b"GIF87a", b"GIF89a")  # GIF
+                    or header[:2] in (b"BM",)):               # BMP
+                return "image"
+            return "unknown"
+        except Exception:
+            return "unknown"
+
+    def _real_img_ext(self, path: Path) -> str:
+        """Return the real image extension from magic bytes."""
+        try:
+            with open(path, "rb") as f:
+                h = f.read(12)
+            if h[:3] == b"\xff\xd8\xff":
+                return ".jpg"
+            if h[:8] == b"\x89PNG\r\n\x1a\n":
+                return ".png"
+            if b"WEBP" in h:
+                return ".webp"
+            if h[:6] in (b"GIF87a", b"GIF89a"):
+                return ".gif"
+        except Exception:
+            pass
+        return ".jpg"  # safe default
 
     # ── Brave Image Search ────────────────────────────────────────────────────
     # Returns direct image URLs from the open web — best for specific/niche topics.
@@ -727,19 +791,115 @@ Return ONLY valid JSON (no markdown, no explanation):
 
     # ── Downloader ────────────────────────────────────────────────────────────
 
-    def _download(self, url: str, dest: Path, timeout: int = 60) -> bool:
-        try:
-            headers = {"User-Agent": "Mozilla/5.0 (compatible; VideoEditor/1.0)"}
-            r = requests.get(url, stream=True, timeout=timeout, headers=headers)
-            r.raise_for_status()
-            with open(dest, "wb") as f:
-                for chunk in r.iter_content(65536):
-                    f.write(chunk)
-            return dest.stat().st_size > 5000
-        except Exception as e:
-            print(f"   Download error {url[:60]}: {e}")
+    # Rotate real browser User-Agents to defeat hotlink protection
+    _USER_AGENTS = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+        "(KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
+        "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0",
+    ]
+    _ua_idx: int = 0
+
+    def _next_ua(self) -> str:
+        ua = self._USER_AGENTS[self._ua_idx % len(self._USER_AGENTS)]
+        self._ua_idx += 1
+        return ua
+
+    # MIME types we accept as valid media
+    _VALID_IMAGE_MIME = {
+        "image/jpeg", "image/jpg", "image/png", "image/webp",
+        "image/gif", "image/bmp", "image/tiff",
+    }
+    _VALID_VIDEO_MIME = {
+        "video/mp4", "video/mpeg", "video/webm", "video/quicktime",
+        "video/x-msvideo", "video/x-matroska", "application/octet-stream",
+    }
+
+    def _download(self, url: str, dest: Path, timeout: int = 90,
+                  retries: int = 3) -> bool:
+        """
+        Download url → dest with:
+         - rotating User-Agent + Referer derived from url host
+         - 3 retry attempts with 1s backoff
+         - Content-Type guard: reject HTML/text responses (hotlink blocked)
+         - Minimum size guard: images ≥ 15 KB, videos ≥ 100 KB
+         - Final validation via ffprobe to confirm readable media
+        """
+        import urllib.parse as _up
+
+        parsed  = _up.urlparse(url)
+        referer = f"{parsed.scheme}://{parsed.netloc}/"
+
+        for attempt in range(retries):
             if dest.exists():
                 dest.unlink()
+            try:
+                headers = {
+                    "User-Agent"     : self._next_ua(),
+                    "Referer"        : referer,
+                    "Accept"         : "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Accept-Encoding": "gzip, deflate, br",
+                    "Connection"     : "keep-alive",
+                }
+                r = requests.get(url, stream=True, timeout=timeout,
+                                 headers=headers, allow_redirects=True)
+
+                # Hard reject non-media content-type
+                ct = r.headers.get("Content-Type", "").lower().split(";")[0].strip()
+                if ct.startswith("text/") or ct in ("application/json",
+                                                     "application/xml"):
+                    print(f"   ✗ blocked [{ct}] {url[:70]}")
+                    return False
+
+                if not r.ok:
+                    raise requests.HTTPError(f"HTTP {r.status_code}")
+
+                with open(dest, "wb") as fh:
+                    for chunk in r.iter_content(65536):
+                        if chunk:
+                            fh.write(chunk)
+
+                size = dest.stat().st_size
+                # Minimum size checks
+                is_video = dest.suffix.lower() == ".mp4"
+                min_size = 100_000 if is_video else 15_000
+                if size < min_size:
+                    print(f"   ✗ too small ({size} B) {url[:70]}")
+                    dest.unlink()
+                    return False
+
+                # Final sanity: ffprobe must read at least one stream
+                if not self._is_valid_media(dest):
+                    print(f"   ✗ ffprobe invalid {url[:70]}")
+                    dest.unlink()
+                    return False
+
+                return True
+
+            except Exception as e:
+                print(f"   ✗ attempt {attempt+1}/{retries} — {url[:70]}: {e}")
+                if dest.exists():
+                    dest.unlink()
+                if attempt < retries - 1:
+                    time.sleep(1.0 * (attempt + 1))
+
+        return False
+
+    def _is_valid_media(self, path: Path) -> bool:
+        """Return True if ffprobe can read at least one stream from path."""
+        try:
+            cmd = [
+                "ffprobe", "-v", "error",
+                "-show_entries", "stream=codec_type",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                str(path),
+            ]
+            out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL,
+                                          timeout=10).decode().strip()
+            return bool(out)   # non-empty → valid
+        except Exception:
             return False
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -808,36 +968,70 @@ Return ONLY valid JSON (no markdown, no explanation):
         return clean
 
     def _make_clip(self, src: str, dst: str, duration: float, media_type: str) -> bool:
-        """Produce a 1920×1080 muted clip of exact duration."""
+        """
+        Produce a 1920×1080 muted H.264 clip of exact duration.
+        Handles: JPEG, PNG, WEBP, GIF, MP4, MOV, WEBM, MKV, AVI, and anything
+        else FFmpeg can decode. Re-detects media type from file if uncertain.
+        """
         scale_filter = (
             "scale=1920:1080:force_original_aspect_ratio=decrease,"
-            "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black"
+            "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1"
         )
-        if media_type == "image":
-            return _run_ffmpeg([
+        src_path = Path(src)
+
+        # Re-detect actual type from file (Brave/Serper may serve WEBP as .jpg etc.)
+        actual_type = self._detect_media_type(src_path)
+        if actual_type == "unknown":
+            print(f"   ✗ _make_clip: unreadable file {src}")
+            return False
+
+        if actual_type == "image":
+            # All still-image formats (JPEG, PNG, WEBP, GIF, BMP, …)
+            # Use -vcodec to auto-detect and force yuv420p output
+            ok = _run_ffmpeg([
                 "-loop", "1",
                 "-framerate", "25",
                 "-i", src,
                 "-vf", scale_filter,
-                "-t", str(duration),
+                "-t", str(round(duration, 3)),
                 "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
                 "-pix_fmt", "yuv420p", "-an",
+                "-movflags", "+faststart",
                 dst,
             ], label="img→clip")
-        else:
-            # Video: trim to duration and mute
+            return ok
+
+        else:  # video
             src_dur = _ffprobe_duration(src)
             if src_dur <= 0:
+                print(f"   ✗ _make_clip: zero-duration video {src}")
                 return False
             trim = min(duration, src_dur)
-            return _run_ffmpeg([
+
+            # Re-encode with -ss 0 to handle odd container issues
+            ok = _run_ffmpeg([
+                "-ss", "0",
                 "-i", src,
-                "-t", str(trim),
+                "-t", str(round(trim, 3)),
                 "-vf", scale_filter,
                 "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
                 "-pix_fmt", "yuv420p", "-an",
+                "-movflags", "+faststart",
                 dst,
             ], label="vid→clip")
+
+            if not ok:
+                # Fallback: try with -vsync vfr for weird frame-rate videos
+                ok = _run_ffmpeg([
+                    "-i", src,
+                    "-t", str(round(trim, 3)),
+                    "-vf", scale_filter,
+                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
+                    "-pix_fmt", "yuv420p", "-vsync", "vfr", "-an",
+                    "-movflags", "+faststart",
+                    dst,
+                ], label="vid→clip-vfr")
+            return ok
 
     # ─────────────────────────────────────────────────────────────────────────
     # PHASE 4 — RENDER
@@ -852,16 +1046,16 @@ Return ONLY valid JSON (no markdown, no explanation):
         """
         if not timeline:
             # No B-roll: just re-encode avatar to 1080p
-            self._progress(80, "No B-roll — encoding avatar to 1080p…")
-            _run_ffmpeg([
-                "-i", avatar_path,
-                "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,"
-                        "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black",
-                "-c:v", "libx264", "-preset", "fast", "-crf", "22",
-                "-c:a", "aac", "-b:a", "192k",
-                "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-                out_path,
-            ], label="avatar-only")
+            self._progress(80, "No B-roll found — encoding avatar to 1080p…")
+            self._render_avatar_only(avatar_path, out_path)
+            return
+
+        # Filter out any clips that don't exist on disk (safety)
+        timeline = [t for t in timeline if Path(t["clip_path"]).exists()
+                    and Path(t["clip_path"]).stat().st_size > 1000]
+        if not timeline:
+            self._progress(80, "All clips invalid after processing — avatar-only output…")
+            self._render_avatar_only(avatar_path, out_path)
             return
 
         n = len(timeline)
@@ -873,20 +1067,25 @@ Return ONLY valid JSON (no markdown, no explanation):
             inputs += ["-i", item["clip_path"]]
 
         # ── Build filter_complex ──────────────────────────────────────────────
-        # Scale avatar base
-        parts = [
+        # Each filter part is a separate string; they are joined by ";" at end.
+        # We split setpts and overlay into separate filter chains to avoid
+        # mis-parsing when the label contains numbers that confuse some FFmpeg builds.
+        scale_base = (
             "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,"
-            "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black[base]"
-        ]
+            "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1[base]"
+        )
+        parts = [scale_base]
 
         prev = "base"
         for i, item in enumerate(timeline):
-            idx     = i + 1            # input index (0 = avatar)
+            idx     = i + 1
             s, e    = item["start"], item["end"]
-            out_lbl = f"v{i+1}"
+            clbl    = f"c{idx}"
+            out_lbl = f"v{idx}"
+            # setpts resets timestamps so the clip always starts at t=0 in its stream
+            parts.append(f"[{idx}:v]setpts=PTS-STARTPTS,setsar=1[{clbl}]")
             parts.append(
-                f"[{idx}:v]setpts=PTS-STARTPTS[c{idx}];"
-                f"[{prev}][c{idx}]overlay="
+                f"[{prev}][{clbl}]overlay="
                 f"enable='between(t,{s:.3f},{e:.3f})':x=0:y=0[{out_lbl}]"
             )
             prev = out_lbl
@@ -909,14 +1108,18 @@ Return ONLY valid JSON (no markdown, no explanation):
         if not ok:
             # Fallback: avatar only
             self._progress(90, "Overlay render failed — falling back to avatar-only…")
-            _run_ffmpeg([
-                "-i", avatar_path,
-                "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,"
-                        "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black",
-                "-c:v", "libx264", "-preset", "fast", "-crf", "22",
-                "-c:a", "aac", "-b:a", "192k",
-                "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-                out_path,
-            ], label="fallback")
+            self._render_avatar_only(avatar_path, out_path)
+
+    def _render_avatar_only(self, avatar_path: str, out_path: str):
+        """Encode avatar to 1080p H.264 with no overlays."""
+        _run_ffmpeg([
+            "-i", avatar_path,
+            "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,"
+                    "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+            "-c:a", "aac", "-b:a", "192k",
+            "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+            out_path,
+        ], label="avatar-only")
 
 
