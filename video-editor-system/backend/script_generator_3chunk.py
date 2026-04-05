@@ -108,12 +108,9 @@ class ScriptGenerator3Chunk:
             print(f"   Parsing sections + extracting rules per chunk...")
         plan = self._parse_formula(title, formula, language, total_chunks, verbose)
         if verbose:
-            print(f"   ✅ Anchor  : {plan.get('anchor', '—')}")
-            print(f"   ✅ Promos  : {plan.get('promo_count', '—')}")
-            print(f"   ✅ CTA     : {plan.get('cta_action', '—')}")
-            for i, secs in plan.get("chunk_sections", {}).items():
-                content_len = len(plan.get("chunk_section_content", {}).get(i, ""))
-                print(f"   ✅ Chunk {i}  : {', '.join(secs)}  [{content_len:,} chars of rules injected]")
+            outline_map = plan.get("chunk_section_content", {})
+            status = f"{len(outline_map)}/{total_chunks} chunk outlines extracted"
+            print(f"   Plan status: {status}")
             print()
 
         # ── System instruction: short format rules only (formula goes in user msg)
@@ -270,107 +267,87 @@ class ScriptGenerator3Chunk:
         """
         chunk_roles = {1: "HOOK / OPENING", total_chunks: "CLOSING / CTA"}
 
-        # Build the outline request block for each chunk
+        # Build per-chunk outline request using XML tags (Gemini respects these reliably)
         outline_format = ""
         for i in range(1, total_chunks + 1):
             role = chunk_roles.get(i, "BODY / DEVELOPMENT")
             outline_format += (
-                f"CHUNK{i}_SECTIONS: <which formula sections belong to chunk {i}>\n"
-                f"CHUNK{i}_OUTLINE:\n"
-                f"[Write a DETAILED, STEP-BY-STEP writing recipe for Chunk {i} ({role}).\n"
-                f" This must be 100% derived from the Writing Guidelines AND 100% specific to: \"{title}\"\n"
-                f" Include for EACH paragraph/step:\n"
-                f"   STEP X: [What to write — be specific to the title, not generic]\n"
-                f"   TECHNIQUE: [The exact formula technique to use for this step]\n"
-                f"   MANDATORY: [Any mandatory phrase from guidelines — copy VERBATIM]\n"
-                f"   TRANSITION: [How to move to the next step]\n"
-                f" Do NOT say 'follow the guidelines'. Write the actual recipe.]\n"
-                f"END_CHUNK{i}\n\n"
+                f"<chunk_{i}_sections>which formula sections go in chunk {i}</chunk_{i}_sections>\n"
+                f"<chunk_{i}_outline>\n"
+                f"Write a STEP-BY-STEP writing recipe for Chunk {i} ({role}).\n"
+                f"MUST be 100% specific to the title \"{title}\" AND 100% derived from the Writing Guidelines.\n"
+                f"For each step include:\n"
+                f"  STEP N – what to write (specific content for this title, not generic)\n"
+                f"  TECHNIQUE – exact formula technique/structure to use\n"
+                f"  MANDATORY – any required phrase from guidelines (copy VERBATIM)\n"
+                f"  TRANSITION – how to move to the next step\n"
+                f"Do NOT say 'follow the guidelines'. Write the actual recipe.\n"
+                f"</chunk_{i}_outline>\n\n"
             )
 
-        prompt = f"""You are an elite YouTube script production planner. Your mission: read the Writing Guidelines and create a PRESCRIPTIVE SCRIPT OUTLINE that a writer can execute WITHOUT needing to re-read the original guidelines.
+        prompt = f"""You are an elite YouTube script production planner. Read the Writing Guidelines below and create a PRESCRIPTIVE SCRIPT OUTLINE for each chunk.
 
 VIDEO TITLE: "{title}"
 LANGUAGE: {language}
-CHUNKS: {total_chunks}  (Chunk 1 = hook/opening, Chunk {total_chunks} = closing/CTA)
+CHUNKS: {total_chunks}  (chunk 1 = hook/opening, chunk {total_chunks} = closing/CTA)
 
-══════════════════════ WRITING GUIDELINES ══════════════════════
+<writing_guidelines>
 {formula}
-══════════════════════════════════════════════════════════════
+</writing_guidelines>
 
-OUTPUT FORMAT — follow EXACTLY, no markdown, no JSON:
+OUTPUT the following XML structure EXACTLY. Do not add markdown. Do not wrap in code blocks.
 
-SECTIONS: <all section names from the Writing Guidelines, pipe-separated>
-ANCHOR: <the main subject, person, mechanism, or story at the heart of this title>
-PROMO_COUNT: <integer — how many [PROMO] ad blocks the guidelines require. Write 0 if none.>
-CTA: <copy the exact CTA text/instructions from the Writing Guidelines>
+<sections>all section names from the Writing Guidelines, pipe-separated</sections>
+<anchor>main subject, person, or story at the heart of this video title</anchor>
+<promo_count>integer — how many [PROMO] ad blocks the guidelines require. 0 if none.</promo_count>
+<cta>copy the exact CTA text from the Writing Guidelines</cta>
 
 {outline_format}
-
-CRITICAL REQUIREMENTS:
-1. Each CHUNK_OUTLINE must be a STEP-BY-STEP RECIPE — not a list of rules, not "apply technique X", but "write this specific thing in this specific way for this title"
-2. Every step must mention the ACTUAL CONTENT to write (specific to "{title}") AND the formula technique that governs it
-3. Copy mandatory phrases, hooks, or required sentences VERBATIM from the Writing Guidelines
-4. PROMO_COUNT = 0 unless the Writing Guidelines explicitly prescribes promotional blocks
-5. All CHUNK blocks (CHUNK1 through CHUNK{total_chunks}) MUST appear in output"""
+RULES:
+- Each chunk outline must be a CONCRETE recipe — not vague rules, but specific instructions for THIS title
+- Mandatory phrases must be copied VERBATIM from the Writing Guidelines
+- promo_count must be 0 if the Writing Guidelines has no promotional blocks
+- ALL chunk tags (chunk_1 through chunk_{total_chunks}) must be present"""
 
         def _parse_plan_response(text: str) -> dict:
-            """Parse the prescriptive outline response."""
-            text_upper = text.upper()
+            """Parse the XML-format prescriptive outline response."""
 
-            # ── Extract multi-line CHUNK{i}_OUTLINE blocks ─────────────────────
+            # Strip markdown code blocks if model added them
+            text = re.sub(r'```[^\n]*\n', '', text)
+            text = re.sub(r'```', '', text)
+
+            # ── Extract per-chunk outlines using regex (XML tags) ─────────────
             chunk_section_content: Dict[str, str] = {}
             chunk_sections: Dict[str, List[str]] = {}
-            for i in range(1, total_chunks + 1):
-                # Parse CHUNK{i}_SECTIONS (single line)
-                sec_marker = f"CHUNK{i}_SECTIONS:"
-                sec_idx = text_upper.find(sec_marker.upper())
-                if sec_idx != -1:
-                    sec_line_end = text.find("\n", sec_idx)
-                    sec_val = text[sec_idx + len(sec_marker): sec_line_end if sec_line_end != -1 else sec_idx + 200].strip()
-                    secs = [s.strip() for s in sec_val.split("|") if s.strip()]
-                    chunk_sections[str(i)] = secs if secs else [f"Part {i}"]
 
-                # Parse CHUNK{i}_OUTLINE block
-                start_marker = f"CHUNK{i}_OUTLINE:"
-                end_marker   = f"END_CHUNK{i}"
-                start_idx = text_upper.find(start_marker.upper())
-                end_idx   = text_upper.find(end_marker.upper())
-                if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-                    content = text[start_idx + len(start_marker):end_idx].strip()
+            for i in range(1, total_chunks + 1):
+                # Extract sections tag
+                sec_match = re.search(
+                    rf'<chunk_{i}_sections>(.*?)</chunk_{i}_sections>',
+                    text, re.DOTALL | re.IGNORECASE
+                )
+                if sec_match:
+                    raw = sec_match.group(1).strip()
+                    secs = [s.strip() for s in raw.split("|") if s.strip()]
+                    if secs:
+                        chunk_sections[str(i)] = secs
+
+                # Extract outline tag
+                out_match = re.search(
+                    rf'<chunk_{i}_outline>(.*?)</chunk_{i}_outline>',
+                    text, re.DOTALL | re.IGNORECASE
+                )
+                if out_match:
+                    content = out_match.group(1).strip()
                     if content and len(content) > 80:
                         chunk_section_content[str(i)] = content
 
-            # ── Parse scalar fields (outside outline blocks) ────────────────────
-            lines = text.strip().splitlines()
-            line_map: Dict[str, str] = {}
-            inside_block = False
-            for line in lines:
-                ls = line.strip()
-                lsu = ls.upper()
-                if any(lsu.startswith(f"CHUNK{i}_OUTLINE") or lsu.startswith(f"CHUNK{i}_SECTIONS") for i in range(1, total_chunks + 1)):
-                    inside_block = lsu.endswith("OUTLINE:") or lsu.endswith("OUTLINE")
-                    if not lsu.endswith("SECTIONS:") and not lsu.endswith("SECTIONS"):
-                        inside_block = "_OUTLINE" in lsu
-                    # CHUNK{i}_SECTIONS lines are single-line, handle them above
-                    # Only block on _OUTLINE start
-                    if "_OUTLINE:" in lsu:
-                        inside_block = True
-                        continue
-                if any(lsu.startswith(f"END_CHUNK{i}") for i in range(1, total_chunks + 1)):
-                    inside_block = False
-                    continue
-                if inside_block:
-                    continue
-                if ":" in ls:
-                    key, _, val = ls.partition(":")
-                    k = key.strip().upper()
-                    # Only capture simple scalar fields
-                    if k in ("SECTIONS", "ANCHOR", "PROMO_COUNT", "CTA", "CLOSING") or k.startswith("CHUNK") and "_" not in k:
-                        line_map[k] = val.strip()
+            # ── Extract scalar fields using XML tags ──────────────────────────
+            def _xml(tag: str, fallback: str = "") -> str:
+                m = re.search(rf'<{tag}>(.*?)</{tag}>', text, re.DOTALL | re.IGNORECASE)
+                return m.group(1).strip() if m else fallback
 
-            # ── Build sections list ─────────────────────────────────────────────
-            raw_sections = line_map.get("SECTIONS", "")
+            raw_sections = _xml("sections", "")
             sections = [s.strip() for s in raw_sections.split("|") if s.strip()] if raw_sections else []
 
             # Fill missing chunk_sections from sections list
@@ -378,9 +355,8 @@ CRITICAL REQUIREMENTS:
                 if str(i) not in chunk_sections:
                     chunk_sections[str(i)] = [sections[i - 1]] if i <= len(sections) else [f"Part {i}"]
 
-            # ── Scalar fields ───────────────────────────────────────────────────
-            anchor    = line_map.get("ANCHOR", title).strip() or title
-            promo_raw = line_map.get("PROMO_COUNT", "0").strip()
+            anchor    = _xml("anchor", title) or title
+            promo_raw = _xml("promo_count", "0")
             if verbose:
                 print(f"   🔍 PROMO_COUNT raw: '{promo_raw}'")
             try:
@@ -388,26 +364,24 @@ CRITICAL REQUIREMENTS:
                 promo_count = int(digits) if digits else 0
             except ValueError:
                 promo_count = 0
-            cta_action = line_map.get("CTA", "subscribe and hit the bell").strip()
-            closing    = line_map.get("CLOSING", "close with subscribe CTA").strip()
+            cta_action = _xml("cta", "subscribe and hit the bell") or "subscribe and hit the bell"
 
             return {
                 "sections"             : sections,
                 "chunk_sections"       : chunk_sections,
-                "chunk_section_content": chunk_section_content,  # ← prescriptive outline per chunk
-                "_formula_text"        : formula,                # ← full formula for system instruction
+                "chunk_section_content": chunk_section_content,
+                "_formula_text"        : formula,
                 "anchor"               : anchor,
                 "promo_count"          : promo_count,
                 "cta_action"           : cta_action,
-                "closing_note"         : closing,
+                "closing_note"         : "close with subscribe CTA",
             }
 
         try:
             if verbose:
-                print(f"   📤 Sending to Gemini Flash for outline generation...")
-                print(f"      └─ Writing Guidelines: {len(formula):,} chars | Title: \"{title}\"")
+                print(f"   📤 PHASE 1 — generating prescriptive outline (Pro model)...")
+                print(f"      Formula: {len(formula):,} chars | Title: \"{title}\"")
 
-            # Use the same Pro model as writing — Flash misses nuances in long formulas
             model    = genai.GenerativeModel(Config.GEMINI_SCRIPT_MODEL)
             response = model.generate_content(
                 prompt,
@@ -423,10 +397,11 @@ CRITICAL REQUIREMENTS:
             if verbose:
                 outline_map = plan.get("chunk_section_content", {})
                 if not outline_map:
-                    print("   ⚠️  Outline blocks empty — full formula will be used as fallback in chunk prompts")
+                    print("   ⚠️  No outline extracted — full formula injected into every chunk prompt (fallback)")
                 else:
                     for ci, cv in outline_map.items():
-                        print(f"   ✅ Chunk {ci} outline: {len(cv):,} chars")
+                        secs = ", ".join(plan["chunk_sections"].get(ci, []))
+                        print(f"   ✅ Chunk {ci} outline: {len(cv):,} chars  [{secs}]")
                 print(f"   ✅ Anchor : {plan['anchor']}")
                 print(f"   ✅ Promos : {plan['promo_count']}")
 
@@ -434,7 +409,7 @@ CRITICAL REQUIREMENTS:
 
         except Exception as e:
             if verbose:
-                print(f"   ⚠️  Plan generation failed ({e}) — using fallback (full formula in system instruction)")
+                print(f"   ⚠️  PHASE 1 failed ({e}) — fallback: full formula in every chunk prompt")
             fallback_sections = [f"Part {i+1}" for i in range(total_chunks)]
             return {
                 "sections"             : fallback_sections,
