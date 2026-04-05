@@ -178,6 +178,9 @@ class ScriptGenerator3Chunk:
             print(f"\n🔗 Merging {len(generated_chunks)} chunks...")
         full_script = self._merge_chunks(generated_chunks)
         full_script = self._clean_script(full_script)            # strips stop signal first
+        full_script = self._cut_at_restart(                      # cuts if script restarts after CTA
+            full_script, plan.get("cta_action", ""), verbose=verbose
+        )
         full_script = self._remove_duplicate_sentences(full_script, verbose=verbose)
 
         # ── Length enforcement ────────────────────────────────────────────────
@@ -512,8 +515,11 @@ OUTPUT FORMAT — strict:
         # ── Continuation context ───────────────────────────────────────────────
         if previous_context:
             continuation = (
-                f"CONTINUE SEAMLESSLY — do NOT repeat anything already written:\n"
-                f'"...{previous_context}"\n\n'
+                f"⚠️  YOU ARE IN THE MIDDLE OF A SCRIPT THAT ALREADY STARTED.\n"
+                f"DO NOT write a new intro, new hook, or new opening. The script is already underway.\n"
+                f"DO NOT write 'subscribe', 'like', or any CTA — that is ONLY for the final chunk.\n"
+                f"CONTINUE DIRECTLY from the last line already written:\n"
+                f'"{previous_context}"\n\n'
             )
         else:
             continuation = ""
@@ -540,12 +546,14 @@ OUTPUT FORMAT — strict:
                 f"{STOP_SIGNAL}\n"
                 f"Then output NOTHING.\n"
             )
-            role_note = "FINAL CHUNK — write the closing and CTA exactly as the Writing Guidelines prescribe."
+            role_note = "FINAL CHUNK — write the closing and CTA exactly as the Writing Guidelines prescribe. After the CTA, STOP."
         else:
             stop_instruction = ""
             role_note = (
-                f"Chunk {chunk.index}/{total_chunks}. "
-                f"Do NOT write the closing or CTA — those come in the final chunk."
+                f"Chunk {chunk.index} of {total_chunks} — MID-SCRIPT ONLY.\n"
+                f"FORBIDDEN: do NOT write a conclusion, do NOT write a CTA, do NOT say 'subscribe' or 'like'.\n"
+                f"FORBIDDEN: do NOT end the script — it will be continued in the next chunk.\n"
+                f"Stop mid-sentence if needed rather than write a fake ending."
             )
 
         prompt = (
@@ -673,18 +681,21 @@ OUTPUT FORMAT — strict:
 {formula}
 ════════════════════════════════════════════════════════════
 
-SCRIPT EXTENSION — TITLE: "{title}"
+⚠️  SCRIPT EXTENSION — YOU ARE CONTINUING A SCRIPT ALREADY IN PROGRESS.
+DO NOT start a new intro. DO NOT write a new hook. DO NOT say 'Bonjour' or 'Hello' or any greeting.
+DO NOT write 'Subscribe', 'Abonnez-vous', or any CTA — the script is not finished yet.
+The script is mid-way through. You MUST continue from the last sentence below.
+
+TITLE: "{title}"
 SUBJECT: {anchor}
 
-CONTINUE FROM HERE (do NOT repeat what was already written):
-"...{tail}"
+THE SCRIPT ENDED HERE — CONTINUE FROM THIS EXACT POINT:
+"{tail}"
 
 TASK: {body_hint}
-You must write at least {extend_chars:,} characters of new content.
-Apply the Writing Guidelines exactly — same tone, style, structure, and rules.
-Do NOT write a conclusion or CTA in this extension.
+Write at least {extend_chars:,} characters. Apply the Writing Guidelines tone, style, structure.
 
-WRITE IN {language.upper()} NOW:"""
+WRITE IN {language.upper()} — CONTINUE NOW:"""
 
             try:
                 extension = self._call_api(
@@ -720,6 +731,56 @@ WRITE IN {language.upper()} NOW:"""
         merged = re.sub(r"(?i)(in the previous (section|part|chunk))", "", merged)
         merged = re.sub(r"  +", " ", merged)
         return merged.strip()
+
+    def _cut_at_restart(self, text: str, cta_action: str, verbose: bool = False) -> str:
+        """
+        Detect and cut when the script ends then restarts.
+        Pattern: CTA phrase → substantial new content that looks like a fresh opening.
+
+        This happens when a non-final chunk writes a CTA, or when the extension
+        model starts a new intro instead of continuing.
+        """
+        # Restart markers: phrases that only appear at the very START of a script
+        restart_patterns = [
+            # Opening greetings in various languages
+            r'\b(bonjour|salut|hey|hello|bienvenue|welcome)\b',
+            # "In this video / Dans cette vidéo"
+            r'\b(dans\s+cette\s+vid[eé]o|in\s+this\s+video|aujourd.hui\s+on\s+va|today\s+we.re\s+going)\b',
+            # Title re-introduction
+            r'\b(on\s+parle|we.re\s+talking|this\s+video\s+is\s+about)\b',
+        ]
+
+        # CTA patterns — when these appear and are followed by 500+ chars, it's a restart
+        cta_patterns = [
+            r'\b(abonnez.vous|subscribe|abonne.toi)\b',
+            r'\b(clique sur la cloche|hit the bell|ring the bell)\b',
+            r'\b(like\s+et\s+commente|like\s+and\s+comment)\b',
+        ]
+        if cta_action and len(cta_action) > 10:
+            # Add the specific CTA from the plan (first 25 chars as trigger)
+            safe = re.escape(cta_action[:25].lower())
+            cta_patterns.append(safe)
+
+        text_lower = text.lower()
+
+        # Find all CTA occurrences
+        for pat in cta_patterns:
+            for m in re.finditer(pat, text_lower):
+                cta_end = m.end()
+                after = text[cta_end:].strip()
+                if len(after) < 300:
+                    continue  # normal ending, CTA is near the end
+                # Check if what follows looks like a fresh opening
+                after_lower = after[:500].lower()
+                for rp in restart_patterns:
+                    if re.search(rp, after_lower):
+                        # Found restart — cut right after the CTA sentence
+                        sentence_end = re.search(r'[.!?]', text[cta_end:])
+                        cut = cta_end + (sentence_end.end() if sentence_end else 0)
+                        if verbose:
+                            print(f"   ✂️  Restart detected after pos {cut:,} — cutting there")
+                        return text[:cut].strip()
+        return text
 
     def _clean_script(self, text: str) -> str:
         # Strip everything at/after the hard stop signal FIRST
