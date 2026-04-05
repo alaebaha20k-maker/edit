@@ -232,6 +232,11 @@ function _applyApiKeysToForm(api_keys) {
     setField('pexelsKey',           api_keys.pexels);
     setField('pixabayKey',          api_keys.pixabay);
     setField('unsplashKey',         api_keys.unsplash);
+    setField('braveSearchKey',      api_keys.brave_search);
+    setField('serperKey',           api_keys.serper);
+    setField('googleSearchKey',     api_keys.google_search);
+    setField('videvoKey',           api_keys.videvo);
+    setField('coverrKey',           api_keys.coverr);
     setField('geminiTranslate1Key', api_keys.gemini_translate_1);
     setField('geminiTranslate2Key', api_keys.gemini_translate_2);
     setField('geminiPromptsKey',    api_keys.gemini_prompts);
@@ -304,6 +309,11 @@ const saveSettings = async () => {
                 pexels: document.getElementById('pexelsKey')?.value || '',
                 pixabay: document.getElementById('pixabayKey')?.value || '',
                 unsplash: document.getElementById('unsplashKey')?.value || '',
+                brave_search: document.getElementById('braveSearchKey')?.value || '',
+                serper: document.getElementById('serperKey')?.value || '',
+                google_search: document.getElementById('googleSearchKey')?.value || '',
+                videvo: document.getElementById('videvoKey')?.value || '',
+                coverr: document.getElementById('coverrKey')?.value || '',
                 gemini_translate_1: document.getElementById('geminiTranslate1Key')?.value || '',
                 gemini_translate_2: document.getElementById('geminiTranslate2Key')?.value || '',
                 gemini_prompts:     document.getElementById('geminiPromptsKey')?.value || '',
@@ -333,6 +343,11 @@ const saveSettings = async () => {
                     pexels: settings.api_keys.pexels,
                     pixabay: settings.api_keys.pixabay,
                     unsplash: settings.api_keys.unsplash,
+                    brave_search: settings.api_keys.brave_search,
+                    serper: settings.api_keys.serper,
+                    google_search: settings.api_keys.google_search,
+                    videvo: settings.api_keys.videvo,
+                    coverr: settings.api_keys.coverr,
                     gemini_translate_1: settings.api_keys.gemini_translate_1,
                     gemini_translate_2: settings.api_keys.gemini_translate_2,
                     gemini_prompts: settings.api_keys.gemini_prompts,
