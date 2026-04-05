@@ -2075,6 +2075,11 @@ def save_api_keys():
         pexels = data.get('pexels')
         pixabay = data.get('pixabay')
         unsplash = data.get('unsplash')
+        brave_search  = data.get('brave_search')
+        serper        = data.get('serper')
+        google_search = data.get('google_search')
+        videvo        = data.get('videvo')
+        coverr        = data.get('coverr')
         gemini_translate_1 = data.get('gemini_translate_1')
         gemini_translate_2 = data.get('gemini_translate_2')
         gemini_prompts     = data.get('gemini_prompts')
@@ -2107,6 +2112,11 @@ def save_api_keys():
             pexels=pexels,
             pixabay=pixabay,
             unsplash=unsplash,
+            brave_search=brave_search,
+            serper=serper,
+            google_search=google_search,
+            videvo=videvo,
+            coverr=coverr,
             gemini_translate_1=gemini_translate_1,
             gemini_translate_2=gemini_translate_2,
             gemini_prompts=gemini_prompts,
@@ -5374,6 +5384,11 @@ def alae_baha_saved_settings():
                 'pexels':             api_keys.get('pexels', ''),
                 'pixabay':            api_keys.get('pixabay', ''),
                 'unsplash':           api_keys.get('unsplash', ''),
+                'brave_search':       api_keys.get('brave_search', ''),
+                'serper':             api_keys.get('serper', ''),
+                'google_search':      api_keys.get('google_search', ''),
+                'videvo':             api_keys.get('videvo', ''),
+                'coverr':             api_keys.get('coverr', ''),
                 'gemini_translate_1': api_keys.get('gemini_translate_1', ''),
                 'gemini_translate_2': api_keys.get('gemini_translate_2', ''),
                 'gemini_prompts':     api_keys.get('gemini_prompts', ''),

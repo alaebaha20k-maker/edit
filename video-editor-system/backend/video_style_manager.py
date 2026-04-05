@@ -11,7 +11,7 @@ from typing import List, Dict, Optional
 
 
 class VideoStyleManager:
-    STYLES_FILE = Path("data/video_styles.json")
+    STYLES_FILE = Path.home() / '.video-editor-data' / 'video_styles.json'
 
     # Built-in read-only styles
     BUILTIN_STYLES = [

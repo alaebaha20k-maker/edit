@@ -34,7 +34,7 @@ LANGUAGE: Auto-detect from title and script. Write EVERYTHING in that language."
 class SeoFormulaManager:
     """Manage named SEO formula presets."""
 
-    FORMULAS_FILE = Path("data/seo_formulas.json")
+    FORMULAS_FILE = Path.home() / '.video-editor-data' / 'seo_formulas.json'
 
     @classmethod
     def _ensure_file(cls):

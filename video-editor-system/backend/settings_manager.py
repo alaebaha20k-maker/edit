@@ -14,7 +14,8 @@ class SettingsManager:
 
     # Paths
     BASE_DIR = Path(__file__).parent.parent.resolve()
-    DATA_DIR = BASE_DIR / 'data'
+    # DATA_DIR lives OUTSIDE the git repo so it survives git pull / fresh clone
+    DATA_DIR = Path.home() / '.video-editor-data'
     SETTINGS_FILE = DATA_DIR / 'settings.json'
 
     # Formula files
@@ -471,6 +472,8 @@ LANGUAGE: Auto-detect from title and script. Write EVERYTHING in that language."
                      gemini_image: str = None,
                      replicate: str = None, inworld: str = None, inworld_secret: str = None,
                      pexels: str = None, pixabay: str = None, unsplash: str = None,
+                     brave_search: str = None, serper: str = None,
+                     google_search: str = None, videvo: str = None, coverr: str = None,
                      gemini_translate_1: str = None, gemini_translate_2: str = None,
                      gemini_prompts: str = None, gemini_seo: str = None) -> Dict:
         """
@@ -515,6 +518,16 @@ LANGUAGE: Auto-detect from title and script. Write EVERYTHING in that language."
             settings['api_keys']['pixabay'] = pixabay
         if unsplash is not None and unsplash != '':
             settings['api_keys']['unsplash'] = unsplash
+        if brave_search is not None and brave_search != '':
+            settings['api_keys']['brave_search'] = brave_search
+        if serper is not None and serper != '':
+            settings['api_keys']['serper'] = serper
+        if google_search is not None and google_search != '':
+            settings['api_keys']['google_search'] = google_search
+        if videvo is not None and videvo != '':
+            settings['api_keys']['videvo'] = videvo
+        if coverr is not None and coverr != '':
+            settings['api_keys']['coverr'] = coverr
         if gemini_translate_1 is not None and gemini_translate_1 != '':
             settings['api_keys']['gemini_translate_1'] = gemini_translate_1
         if gemini_translate_2 is not None and gemini_translate_2 != '':
