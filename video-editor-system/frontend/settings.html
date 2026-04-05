@@ -805,9 +805,8 @@
                         <span class="service-icon">📸</span>
                         <div class="service-title">
                             <h3>Stock Media</h3>
-                            <p>Free stock photos and videos for backgrounds.</p>
+                            <p>Free stock photos, videos and search APIs. All optional.</p>
                         </div>
-                        <a href="https://www.pexels.com/api/" target="_blank" class="service-link">Get key →</a>
                     </div>
 
                     <div class="key-entry">
@@ -821,7 +820,99 @@
                             </div>
                         </div>
                         <input type="password" id="pexels-key" placeholder="Pexels API key">
-                        <small>Free tier available — no billing required.</small>
+                        <small>Free tier — <a href="https://www.pexels.com/api/" target="_blank">pexels.com/api</a></small>
+                    </div>
+
+                    <div class="key-entry">
+                        <div class="key-entry-header">
+                            <span class="key-name">Pixabay</span>
+                            <span class="badge-optional">Optional</span>
+                            <span id="status-pixabay" class="api-status not-configured">Optional</span>
+                            <div class="uses-chips">
+                                <span class="chip chip-pink">Stock Photos</span>
+                                <span class="chip chip-pink">Stock Videos</span>
+                            </div>
+                        </div>
+                        <input type="password" id="pixabay-key" placeholder="Pixabay API key">
+                        <small>Free tier — <a href="https://pixabay.com/api/docs/" target="_blank">pixabay.com/api/docs</a></small>
+                    </div>
+
+                    <div class="key-entry">
+                        <div class="key-entry-header">
+                            <span class="key-name">Unsplash</span>
+                            <span class="badge-optional">Optional</span>
+                            <span id="status-unsplash" class="api-status not-configured">Optional</span>
+                            <div class="uses-chips">
+                                <span class="chip chip-pink">Stock Photos</span>
+                            </div>
+                        </div>
+                        <input type="password" id="unsplash-key" placeholder="Unsplash access key">
+                        <small>Free tier — <a href="https://unsplash.com/developers" target="_blank">unsplash.com/developers</a></small>
+                    </div>
+
+                    <div class="key-entry">
+                        <div class="key-entry-header">
+                            <span class="key-name">Brave Search</span>
+                            <span class="badge-optional">Optional</span>
+                            <span id="status-brave-search" class="api-status not-configured">Optional</span>
+                            <div class="uses-chips">
+                                <span class="chip chip-pink">Web Search</span>
+                            </div>
+                        </div>
+                        <input type="password" id="brave-search-key" placeholder="Brave Search API key">
+                        <small>Free tier — <a href="https://api.search.brave.com/" target="_blank">api.search.brave.com</a></small>
+                    </div>
+
+                    <div class="key-entry">
+                        <div class="key-entry-header">
+                            <span class="key-name">Serper</span>
+                            <span class="badge-optional">Optional</span>
+                            <span id="status-serper" class="api-status not-configured">Optional</span>
+                            <div class="uses-chips">
+                                <span class="chip chip-pink">Google Search API</span>
+                            </div>
+                        </div>
+                        <input type="password" id="serper-key" placeholder="Serper API key">
+                        <small>Free tier — <a href="https://serper.dev/" target="_blank">serper.dev</a></small>
+                    </div>
+
+                    <div class="key-entry">
+                        <div class="key-entry-header">
+                            <span class="key-name">Google Custom Search</span>
+                            <span class="badge-optional">Optional</span>
+                            <span id="status-google-search" class="api-status not-configured">Optional</span>
+                            <div class="uses-chips">
+                                <span class="chip chip-pink">Web Search</span>
+                            </div>
+                        </div>
+                        <input type="password" id="google-search-key" placeholder="Google Custom Search API key">
+                        <small>100 queries/day free — <a href="https://developers.google.com/custom-search/v1/overview" target="_blank">developers.google.com</a></small>
+                    </div>
+
+                    <div class="key-entry">
+                        <div class="key-entry-header">
+                            <span class="key-name">Videvo</span>
+                            <span class="badge-optional">Optional</span>
+                            <span id="status-videvo" class="api-status not-configured">Optional</span>
+                            <div class="uses-chips">
+                                <span class="chip chip-pink">Stock Videos</span>
+                            </div>
+                        </div>
+                        <input type="password" id="videvo-key" placeholder="Videvo API key">
+                        <small>Free stock footage — <a href="https://www.videvo.net/" target="_blank">videvo.net</a></small>
+                    </div>
+
+                    <div class="key-entry">
+                        <div class="key-entry-header">
+                            <span class="key-name">Coverr</span>
+                            <span class="badge-optional">Optional</span>
+                            <span id="status-coverr" class="api-status not-configured">Optional</span>
+                            <div class="uses-chips">
+                                <span class="chip chip-pink">Stock Videos</span>
+                            </div>
+                        </div>
+                        <input type="password" id="coverr-key" placeholder="Coverr API key">
+                        <small>Free stock videos — <a href="https://coverr.co/" target="_blank">coverr.co</a></small>
                     </div>
                 </div>
 
@@ -1226,6 +1317,13 @@
             const replicate         = document.getElementById('replicate-token').value;
             const inworld           = document.getElementById('inworld-key').value;
             const pexels            = document.getElementById('pexels-key').value;
+            const pixabay           = document.getElementById('pixabay-key').value;
+            const unsplash          = document.getElementById('unsplash-key').value;
+            const brave_search      = document.getElementById('brave-search-key').value;
+            const serper            = document.getElementById('serper-key').value;
+            const google_search     = document.getElementById('google-search-key').value;
+            const videvo            = document.getElementById('videvo-key').value;
+            const coverr            = document.getElementById('coverr-key').value;
 
             const button = document.getElementById('save-api-keys');
             button.disabled = true;
@@ -1238,7 +1336,9 @@
                     body: JSON.stringify({
                         gemini, director_gemini, gemini_image,
                         gemini_translate_1, gemini_translate_2,
-                        replicate, inworld, pexels
+                        replicate, inworld,
+                        pexels, pixabay, unsplash,
+                        brave_search, serper, google_search, videvo, coverr
                     })
                 });
 
@@ -1255,11 +1355,21 @@
                     if (replicate)          updateStatusIndicator('replicate', true);
                     if (inworld)            updateStatusIndicator('inworld', true);
                     if (pexels)             updateStatusIndicator('pexels', true);
+                    if (pixabay)            updateStatusIndicator('pixabay', true);
+                    if (unsplash)           updateStatusIndicator('unsplash', true);
+                    if (brave_search)       updateStatusIndicator('brave-search', true);
+                    if (serper)             updateStatusIndicator('serper', true);
+                    if (google_search)      updateStatusIndicator('google-search', true);
+                    if (videvo)             updateStatusIndicator('videvo', true);
+                    if (coverr)             updateStatusIndicator('coverr', true);
 
                     // Clear input fields
                     ['gemini-key','director-gemini-key','gemini-image-key',
                      'gemini-translate-1','gemini-translate-2',
-                     'replicate-token','inworld-key','pexels-key']
+                     'replicate-token','inworld-key',
+                     'pexels-key','pixabay-key','unsplash-key',
+                     'brave-search-key','serper-key','google-search-key',
+                     'videvo-key','coverr-key']
                       .forEach(id => { document.getElementById(id).value = ''; });
                 } else {
                     showAlert('api-keys', '✗ Error: ' + data.error, 'error');
@@ -1278,7 +1388,10 @@
             document.getElementById('show-keys').addEventListener('click', () => {
                 const inputs = ['gemini-key', 'director-gemini-key', 'gemini-image-key',
                                 'gemini-translate-1', 'gemini-translate-2',
-                                'replicate-token', 'inworld-key', 'pexels-key'];
+                                'replicate-token', 'inworld-key',
+                                'pexels-key', 'pixabay-key', 'unsplash-key',
+                                'brave-search-key', 'serper-key', 'google-search-key',
+                                'videvo-key', 'coverr-key'];
                 inputs.forEach(id => {
                     const input = document.getElementById(id);
                     input.type = input.type === 'password' ? 'text' : 'password';
