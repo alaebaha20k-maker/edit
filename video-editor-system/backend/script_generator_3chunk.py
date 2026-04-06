@@ -1,22 +1,27 @@
 #!/usr/bin/env python3
 """
-Script Generator — Formula-First Architecture
+Script Generator — Formula-DNA Architecture
 
-The user's niche Writing Guidelines IS the complete law.
+The user's niche Writing Guidelines IS the complete law — any size, any length.
 Every sentence must execute a specific rule from that formula.
 
 Workflow:
-  PHASE 1 — PLAN (gemini-2.5-flash, 1 call):
-    Read the full Writing Guidelines.
-    Extract every section in order WITH its actual rules/content from the formula.
-    Assign sections+content to chunks. Lock anchor, promo count, CTA.
-    *** KEY: section CONTENT (not just names) is stored in the plan ***
+  PHASE 1 — PLAN (Gemini, 1 call):
+    Read the FULL Writing Guidelines (any size — 1K to 300K+ chars).
+    Extract formula_dna: ALL laws organized into 10 categories
+      (opening, tone, structure, mandatory phrases, forbidden words,
+       storytelling, engagement, promo/CTA, language, niche-specific).
+    Build per-chunk step-by-step recipe, specific to this title.
+    Lock anchor, promo count, CTA.
 
-  PHASE 2–N — WRITE (gemini-2.5-pro, 1 call per chunk):
-    System instruction = full Writing Guidelines (model identity = formula)
-    Chunk prompt = specific section RULES extracted from formula (injected directly)
-    The model has the formula both as identity AND as explicit rules per section.
-    This guarantees compliance even for 40K-70K char formulas.
+  PHASE 2–N — WRITE (Gemini Pro, 1 call per chunk):
+    When DNA extraction succeeded:
+      → laws_block (formula_dna) at position-0 = all niche laws in working memory
+      → step-by-step outline at position-1
+      → raw formula NOT re-injected (DNA covers everything, avoids prompt bloat)
+    When DNA extraction failed (fallback):
+      → full raw formula injected as primary source
+    This handles formulas of ANY size correctly.
 
   PHASE FINAL — POST: Merge → strip stop → clean → dedup → length enforce.
 """
@@ -126,15 +131,17 @@ class ScriptGenerator3Chunk:
         for chunk in chunks:
             if verbose:
                 dna_preview = plan.get("formula_dna", "")
+                dna_ok      = len(dna_preview) >= 1500
                 print(f"✍️  PHASE {chunk.index + 1} — WRITE Chunk {chunk.index}/{total_chunks}: {chunk.role}...")
-                print(f"   📋 Raw formula: {formula_chars:,} chars")
-                if dna_preview:
+                print(f"   📋 Niche formula : {formula_chars:,} chars total")
+                if dna_ok:
                     dna_lines = len([l for l in dna_preview.split('\n') if l.strip()])
-                    print(f"   ⚖️  Formula DNA: {dna_lines} law-lines ({len(dna_preview):,} chars) at position-0")
+                    print(f"   ⚖️  Formula DNA  : {dna_lines} law-lines ({len(dna_preview):,} chars) "
+                          f"@ position-0 — raw formula NOT re-injected")
                 else:
-                    print(f"   ⚠️  No formula DNA — raw formula injected directly")
+                    print(f"   ⚠️  DNA failed   : raw formula ({formula_chars:,} chars) injected as fallback")
                 if sections_done:
-                    print(f"   ✅ Sections done (forbidden to reopen): {', '.join(sections_done)}")
+                    print(f"   ✅ Sections done : {', '.join(sections_done)}")
 
             is_final = (chunk.index == total_chunks)
 
@@ -575,57 +582,58 @@ OUTPUT FORMAT — strict:
         outline      = plan.get("chunk_section_content", {}).get(str(chunk.index), "")
         sections_label = " | ".join(sections_now) if sections_now else f"part {chunk.index} of {total_chunks}"
 
-        # ── FORMULA DNA BLOCK — position-0 (highest attention) ────────────────
-        # formula_dna is the COMPLETE extraction of ALL laws from the niche formula,
-        # organized by type (opening, tone, structure, mandatory phrases, forbidden words…).
-        # Extracted once by PHASE 1 — injected into every chunk at position-0.
+        # ── FORMULA BLOCK — adaptive based on what PHASE 1 extracted ────────────
         #
-        # WHY: A raw 70K formula injected as-is = "lost in the middle" = model ignores
-        # most of it. The formula_dna is compact, organized, and always in working memory.
-        # The model gets 100% of the formula's content in a format it can follow.
-        if formula_dna:
+        # CASE A — formula_dna extraction succeeded (>= 1500 chars):
+        #   laws_block  = formula_dna at position-0 (organized, complete, in attention)
+        #   formula_block = EMPTY — DNA has everything, re-injecting raw formula would:
+        #                   (a) bloat prompts to 200K+ chars for large formulas
+        #                   (b) create "lost in the middle" again despite the DNA fix
+        #                   (c) waste tokens on every chunk call
+        #
+        # CASE B — formula_dna is empty or too short (PHASE 1 failed):
+        #   laws_block  = empty
+        #   formula_block = FULL raw formula — model must read it directly
+        #
+        # This means formulas of ANY size (10K or 300K) are handled correctly:
+        # large formulas → DNA extraction → compact prompt per chunk
+        # tiny formulas → DNA also fine, or fallback to raw
+        DNA_MIN_CHARS = 1500   # minimum chars to trust the DNA extraction
+
+        dna_good = len(formula_dna) >= DNA_MIN_CHARS
+
+        if dna_good:
             laws_block = (
                 f"╔{'═' * 66}╗\n"
-                f"║  ⚖️  COMPLETE NICHE FORMULA — ALL LAWS EXTRACTED FROM GUIDELINES  ║\n"
+                f"║     COMPLETE NICHE FORMULA — ALL LAWS EXTRACTED FROM GUIDELINES     ║\n"
                 f"╚{'═' * 66}╝\n"
-                f"This is the COMPLETE DNA of your niche formula, extracted from the full\n"
-                f"Writing Guidelines. EVERY law here is mandatory. No exceptions.\n"
-                f"Read ALL sections before writing a single word.\n"
+                f"CRITICAL: This is the FULL DNA of your niche formula.\n"
+                f"Every law below was extracted from the Writing Guidelines by the planner.\n"
+                f"EVERY law is mandatory. Read ALL 10 sections before writing a single word.\n"
                 f"{'─' * 68}\n"
                 f"{formula_dna}\n"
                 f"{'─' * 68}\n"
-                f"⚠️  COMPLIANCE CHECK: Before writing each paragraph, verify it satisfies\n"
-                f"    the Opening Laws, Tone Laws, Structure Laws, Mandatory Phrases,\n"
-                f"    Forbidden Words, and all Niche-Specific Laws above.\n\n"
+                f"COMPLIANCE: Before each paragraph check —\n"
+                f"  ✓ Opening laws followed?  ✓ Tone correct?  ✓ Mandatory phrases used?\n"
+                f"  ✓ Forbidden words avoided?  ✓ Structure correct?  ✓ Niche laws applied?\n\n"
+            )
+            formula_block = ""   # DNA covers everything — raw formula NOT re-injected
+
+        elif full_formula:
+            # DNA extraction failed — inject the raw formula as the primary reference
+            laws_block = ""
+            formula_block = (
+                f"════════════════ YOUR WRITING GUIDELINES — READ EVERY RULE ════════════════\n"
+                f"This is your niche formula. EVERY rule, law, phrase, and technique below\n"
+                f"must be applied. The formula is {len(full_formula):,} characters — read it ALL.\n"
+                f"{'─' * 68}\n"
+                f"{full_formula}\n"
+                f"{'─' * 68}\n"
+                f"END OF WRITING GUIDELINES — every sentence must execute a rule from above.\n"
+                f"{'═' * 68}\n\n"
             )
         else:
-            laws_block = ""
-
-        # ── Formula block — raw Writing Guidelines (reference / fallback) ──────
-        # If formula_dna extraction succeeded: formula_block is a shorter reference.
-        # If formula_dna is empty (extraction failed): formula_block is the full text.
-        if full_formula:
-            if formula_dna:
-                # DNA extracted — full formula is reference material, clearly labeled
-                formula_block = (
-                    f"════════ FULL WRITING GUIDELINES (reference — all laws already extracted above) ════════\n"
-                    f"{'─' * 68}\n"
-                    f"{full_formula}\n"
-                    f"{'─' * 68}\n"
-                    f"END OF WRITING GUIDELINES\n"
-                    f"{'═' * 68}\n\n"
-                )
-            else:
-                # No DNA — inject full formula as primary source
-                formula_block = (
-                    f"════════════════ YOUR WRITING GUIDELINES — READ EVERY RULE ════════════════\n"
-                    f"{'─' * 68}\n"
-                    f"{full_formula}\n"
-                    f"{'─' * 68}\n"
-                    f"END OF WRITING GUIDELINES — every sentence executes a rule from above.\n"
-                    f"{'═' * 68}\n\n"
-                )
-        else:
+            laws_block    = ""
             formula_block = ""
 
         # ── Current section label ──────────────────────────────────────────────
