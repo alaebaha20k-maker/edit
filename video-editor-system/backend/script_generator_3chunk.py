@@ -150,10 +150,22 @@ class ScriptGenerator3Chunk:
             temp         = self._get_temperature(chunk.role)
             chunk_tokens = min(65536, max(int(chunk.target_chars / 3 * 1.25) + 2000, 4000))
 
+            # Speed strategy: Pro only for hook (chunk 1) and close (final chunk).
+            # Flash for all body chunks — 3-5× faster, quality preserved by formula injection.
+            is_hook_or_close = (chunk.index == 1 or is_final)
+            write_model = (
+                Config.GEMINI_SCRIPT_MODEL   # Pro — max quality for opening & ending
+                if is_hook_or_close
+                else Config.GEMINI_PLAN_MODEL  # Flash — fast for body development
+            )
+            if verbose:
+                model_label = "Pro" if is_hook_or_close else "Flash"
+                print(f"   🤖 Model: {model_label} ({write_model})")
+
             chunk_text = self._call_api(
                 prompt=prompt,
                 system_instruction=system_instruction,
-                model_name=Config.GEMINI_SCRIPT_MODEL,
+                model_name=write_model,
                 temperature=temp,
                 max_output_tokens=chunk_tokens,
                 target_chars=chunk.target_chars,
@@ -181,7 +193,7 @@ class ScriptGenerator3Chunk:
                     if len(sents) >= 3
                     else chunk_text[-300:]
                 )
-                time.sleep(4)
+                time.sleep(1)   # was 4s — reduced now that Flash handles body chunks faster
 
         # ── Post-processing ───────────────────────────────────────────────────
         if verbose:
@@ -648,6 +660,7 @@ OUTPUT FORMAT — strict:
         MAX_API_RETRIES   = 3
         MAX_SHORT_RETRIES = 2
 
+        text = ""
         for short_attempt in range(MAX_SHORT_RETRIES + 1):
             for attempt in range(MAX_API_RETRIES + 1):
                 try:
@@ -664,7 +677,35 @@ OUTPUT FORMAT — strict:
                             "top_k"            : 40,
                         },
                     )
+
+                    # ── Safe text extraction ──────────────────────────────────
+                    # response.text raises ValueError when finish_reason is
+                    # SAFETY (2), RECITATION (4), or OTHER (3).
+                    # We catch it and treat it as empty (triggers short-retry).
+                    try:
+                        text = response.text.strip()
+                    except Exception:
+                        # Try manual extraction from parts
+                        text = ""
+                        try:
+                            for cand in response.candidates:
+                                for part in cand.content.parts:
+                                    text += getattr(part, "text", "")
+                            text = text.strip()
+                        except Exception:
+                            pass
+                        if not text:
+                            fr = 0
+                            try:
+                                fr = response.candidates[0].finish_reason
+                            except Exception:
+                                pass
+                            reason = {2: "SAFETY", 3: "OTHER", 4: "RECITATION"}.get(fr, f"code {fr}")
+                            if verbose:
+                                print(f"   ⚠️  {label} blocked by Gemini ({reason}) — retrying...")
+                            # Don't raise — let the short-retry loop handle it
                     break
+
                 except Exception as e:
                     err = str(e)
                     is_quota = (
@@ -681,14 +722,13 @@ OUTPUT FORMAT — strict:
                               f"(attempt {attempt + 1}/{MAX_API_RETRIES})...")
                     time.sleep(wait)
 
-            text    = response.text.strip()
-            min_ok  = int(target_chars * 0.50)
+            min_ok = int(target_chars * 0.50)
             if len(text) >= min_ok or short_attempt == MAX_SHORT_RETRIES:
                 return text
             if verbose:
                 print(f"   ⚠️  {label} too short ({len(text):,} < {min_ok:,}) "
                       f"— retrying (attempt {short_attempt + 1}/{MAX_SHORT_RETRIES})...")
-            time.sleep(4)
+            time.sleep(2)   # was 4s — reduced to 2s between short retries
 
         return text
 
@@ -786,7 +826,7 @@ WRITE IN {language.upper()} — CONTINUE NOW:"""
                 if verbose:
                     remaining = max(0, target_length - new_total)
                     print(f"   Extension {attempt+1}: +{len(extension):,} chars → total {new_total:,} / {target_length:,}  (still need: {remaining:,})")
-                time.sleep(4)
+                time.sleep(1)
             except Exception as e:
                 if verbose:
                     print(f"   ⚠️  Extension {attempt + 1} failed: {e}")
