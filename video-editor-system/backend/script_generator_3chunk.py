@@ -148,19 +148,15 @@ class ScriptGenerator3Chunk:
             )
 
             temp         = self._get_temperature(chunk.role)
-            chunk_tokens = min(65536, max(int(chunk.target_chars / 3 * 1.25) + 2000, 4000))
+            # Generous token budget: target chars / 3.5 chars-per-token × 1.6 buffer + 2500
+            # This ensures Flash/Pro never hit the token ceiling before filling the target.
+            chunk_tokens = min(65536, max(int(chunk.target_chars / 3.5 * 1.6) + 2500, 5000))
 
-            # Speed strategy: Pro only for hook (chunk 1) and close (final chunk).
-            # Flash for all body chunks — 3-5× faster, quality preserved by formula injection.
-            is_hook_or_close = (chunk.index == 1 or is_final)
-            write_model = (
-                Config.GEMINI_SCRIPT_MODEL   # Pro — max quality for opening & ending
-                if is_hook_or_close
-                else Config.GEMINI_PLAN_MODEL  # Flash — fast for body development
-            )
+            # Use Pro for ALL chunks — Flash under-produces and forces slow extensions.
+            # Speed comes from 1s inter-chunk sleep (was 4s), not model downgrade.
+            write_model = Config.GEMINI_SCRIPT_MODEL  # Pro for every chunk
             if verbose:
-                model_label = "Pro" if is_hook_or_close else "Flash"
-                print(f"   🤖 Model: {model_label} ({write_model})")
+                print(f"   🤖 Model: Pro ({write_model})  tokens_budget: {chunk_tokens:,}")
 
             chunk_text = self._call_api(
                 prompt=prompt,
@@ -579,16 +575,20 @@ OUTPUT FORMAT — strict:
             promo_reminder = f"PRODUCT: {product}\n\n" if promo_count > 0 else ""
 
         # ── Section boundary lock — what is already done and MUST NOT be reopened ─
+        # Cap at last 10 entries — the model doesn't need the full history,
+        # only recent context. A 20+ item list bloats the prompt and degrades quality.
         if sections_already_done:
+            recent_done = sections_already_done[-10:]
+            summary_line = (
+                f"   (+ {len(sections_already_done) - len(recent_done)} earlier sections)\n"
+                if len(sections_already_done) > len(recent_done) else ""
+            )
             boundary_block = (
-                f"⛔ SECTIONS ALREADY WRITTEN — DO NOT REVISIT, DO NOT REOPEN, DO NOT RE-EXPLAIN:\n"
-                + "".join(f"   ✓ {s}\n" for s in sections_already_done)
-                + f"\n"
-                f"The script has ALREADY covered all of the above. Going backward in the formula\n"
-                f"is STRICTLY FORBIDDEN. Every sentence you write must move FORWARD.\n\n"
-                f"FORMULA DIRECTION: hook → mechanism → proof → protocol → ending\n"
-                f"You are currently past: {', '.join(sections_already_done)}\n"
-                f"Write ONLY what comes NEXT in that progression.\n\n"
+                f"⛔ SECTIONS ALREADY WRITTEN — DO NOT REVISIT OR REOPEN:\n"
+                + summary_line
+                + "".join(f"   ✓ {s}\n" for s in recent_done)
+                + f"Every sentence must move FORWARD in the formula.\n"
+                f"Write ONLY what comes NEXT — not what is listed above.\n\n"
             )
         else:
             boundary_block = ""
@@ -722,11 +722,14 @@ OUTPUT FORMAT — strict:
                               f"(attempt {attempt + 1}/{MAX_API_RETRIES})...")
                     time.sleep(wait)
 
-            min_ok = int(target_chars * 0.50)
+            # Require 72% of target before accepting — forces retry on short outputs.
+            # This catches Flash/Pro undershoot EARLY (within the chunk call)
+            # rather than relying on the slow extension pass later.
+            min_ok = int(target_chars * 0.72)
             if len(text) >= min_ok or short_attempt == MAX_SHORT_RETRIES:
                 return text
             if verbose:
-                print(f"   ⚠️  {label} too short ({len(text):,} < {min_ok:,}) "
+                print(f"   ⚠️  {label} too short ({len(text):,} < {min_ok:,} = 72% of {target_chars:,}) "
                       f"— retrying (attempt {short_attempt + 1}/{MAX_SHORT_RETRIES})...")
             time.sleep(2)   # was 4s — reduced to 2s between short retries
 
