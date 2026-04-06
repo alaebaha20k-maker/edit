@@ -503,16 +503,11 @@ OUTPUT FORMAT — strict:
         # Critical: LLMs suffer from "lost in the middle" for long contexts.
         # The formula MUST be position-0 in the user message so the model reads
         # it with full attention. System instruction is kept short (format only).
-        brand_identity = (
-            f"CHANNEL / BRAND: {niche_name}\n"
-            f"You ARE this channel. Write like its best-performing video — "
-            f"distinctive, creative, never generic.\n\n"
-        ) if niche_name else ""
-
+        # NOTE: Brand identity lives ONLY in system_instruction — never here,
+        # so it cannot leak into the script output.
         if full_formula:
             formula_block = (
                 f"════════════════ YOUR WRITING GUIDELINES ════════════════\n"
-                f"{brand_identity}"
                 f"READ EVERY RULE BELOW. EXECUTE EACH ONE. DO NOT IMPROVISE.\n"
                 f"{'─' * 56}\n"
                 f"{full_formula}\n"
@@ -933,8 +928,10 @@ WRITE IN {language.upper()} — CONTINUE NOW:"""
         text = re.sub(r"#{1,6}\s+",          "",    text)
         text = re.sub(r"\*",                 "",    text)
 
-        # Labels / cues
+        # Labels / cues (including any prompt-structure labels that leaked into output)
         text = re.sub(r"(?i)(VISUAL|VIDEO|NARRATOR|SPEAKER|SHOW|CUT TO)\s*:", "", text)
+        text = re.sub(r"(?i)^(CHANNEL\s*/\s*BRAND|BRAND|NICHE|CHANNEL)\s*:.*$", "", text, flags=re.MULTILINE)
+        text = re.sub(r"(?i)^(WRITING GUIDELINES|YOUR WRITING GUIDELINES|END OF WRITING GUIDELINES).*$", "", text, flags=re.MULTILINE)
 
         # Timestamps
         text = re.sub(r"\(\s*\d+:\d+\s*-\s*\d+:\d+\s*\)", "", text)
