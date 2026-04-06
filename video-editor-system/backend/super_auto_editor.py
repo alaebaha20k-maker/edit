@@ -19,6 +19,7 @@ import uuid
 import hashlib
 import subprocess
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed, Future
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -80,22 +81,35 @@ class SuperAutoEditor:
     # Fraction of video that may be covered by B-roll (prevents over-saturation)
     MAX_BROLL_COVERAGE = 0.45
 
+    # ── Global coverage targets ────────────────────────────────────────────────
+    MIN_COVERAGE     = 0.40   # at least 40 % of video must have media
+    MAX_COVERAGE     = 0.50   # never exceed 50 %
+    IMAGE_MAX_DUR    = 3.0    # hard cap: images never longer than 3 s
+    VIDEO_MIN_DUR    = 5.0    # videos at least 5 s
+    VIDEO_MAX_DUR    = 10.0   # videos at most 10 s
+    MIN_GAP          = 4.0    # minimum silence between inserts
+    MAX_GAP          = 25.0   # max silence before we MUST insert if budget allows
+    SEARCH_TIMEOUT   = 2.5    # per-provider timeout in parallel search
+    GOOD_SCORE_THRESH = 65.0  # early stop if we have 3+ candidates above this
+
     def __init__(
         self,
-        gemini_keys:       list = None,
-        pexels_key:        str  = "",
-        pixabay_key:       str  = "",
-        unsplash_key:      str  = "",
-        brave_search_key:  str  = "",
-        serper_key:        str  = "",
-        progress_cb              = None,
+        gemini_keys:        list = None,
+        pexels_key:         str  = "",
+        pixabay_key:        str  = "",
+        unsplash_key:       str  = "",
+        brave_search_key:   str  = "",
+        serper_key:         str  = "",
+        google_search_key:  str  = "",   # format "API_KEY::CX_ID"
+        videvo_key:         str  = "",
+        coverr_key:         str  = "",
+        progress_cb               = None,
     ):
         self.output_dir = Path(Config.OUTPUT_DIR)
         self.temp_dir   = Path(Config.TEMP_DIR)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.temp_dir.mkdir(parents=True, exist_ok=True)
 
-        # Pick first non-empty Gemini key
         gem = ""
         if gemini_keys:
             for k in (gemini_keys if isinstance(gemini_keys, list) else [gemini_keys]):
@@ -103,15 +117,28 @@ class SuperAutoEditor:
                     gem = k.strip()
                     break
 
+        # Google Custom Search: key and CX stored as "key::cx"
+        gcs_key, gcs_cx = "", ""
+        if google_search_key and "::" in google_search_key:
+            parts = google_search_key.split("::", 1)
+            gcs_key, gcs_cx = parts[0].strip(), parts[1].strip()
+        elif google_search_key:
+            gcs_key = google_search_key.strip()
+
         self.keys = {
             "gemini"      : gem,
-            "pexels"      : pexels_key       or "",
-            "pixabay"     : pixabay_key      or "",
-            "unsplash"    : unsplash_key     or "",
-            "brave_search": brave_search_key or "",
-            "serper"      : serper_key       or "",
+            "pexels"      : pexels_key        or "",
+            "pixabay"     : pixabay_key       or "",
+            "unsplash"    : unsplash_key      or "",
+            "brave_search": brave_search_key  or "",
+            "serper"      : serper_key        or "",
+            "gcs_key"     : gcs_key,
+            "gcs_cx"      : gcs_cx,
+            "videvo"      : videvo_key        or "",
+            "coverr"      : coverr_key        or "",
         }
-        self._progress_cb = progress_cb  # callable(pct: int, msg: str) | None
+        self._progress_cb  = progress_cb
+        self._url_cache: Dict[str, str] = {}   # url → local_path (session cache)
 
     # ─────────────────────────────────────────────────────────────────────────
     # PROGRESS REPORTER
@@ -338,54 +365,315 @@ Return ONLY valid JSON (no markdown, no explanation):
     _QUERY_BONUS = [25, 18, 10, 5, 2, 0]
 
     def _search_and_download(self, plan: Dict, job_dir: Path) -> Dict:
-        """Search APIs and download best matching media for each scene."""
+        """
+        Brain-driven search: score every scene, plan global density,
+        search APIs in parallel waves, rank, download best candidates.
+        """
         media_dir = job_dir / "media"
         media_dir.mkdir(exist_ok=True)
         used_urls: set = set()
 
-        scenes = plan.get("scenes", [])
-        n = len(scenes)
+        scenes   = plan.get("scenes", [])
+        n        = len(scenes)
+        duration = float(plan.get("total_duration", 0)) or sum(
+            float(s.get("duration_seconds", 30)) for s in scenes
+        )
+
+        density  = self._plan_density(duration, n)
+        apis_lbl = self._available_api_labels()
+        self._progress(28, f"Media plan: target {density['target_inserts']} inserts "
+                           f"| APIs: [{apis_lbl}]")
+
+        inserts_placed = 0
+        broll_seconds  = 0.0
+        last_media_end = 0.0
+        consecutive    = 0
 
         for idx, scene in enumerate(scenes):
-            if scene.get("decision") == "avatar_only":
+            pct = 28 + int((idx / max(n, 1)) * 30)
+
+            # ── Score the scene ───────────────────────────────────────────────
+            score = self._score_scene(scene)
+            scene["_brain"] = score   # store for debug
+
+            if score["decision"] == "avatar_only":
+                scene["selected_media"] = []
+                consecutive = 0
                 continue
 
-            pct = 28 + int((idx / max(n, 1)) * 30)
-            apis_used = self._available_api_labels()
-            self._progress(pct,
-                f"Scene {idx+1}/{n} — searching [{apis_used}]: {scene.get('title','')[:35]}")
+            scene_start = float(scene.get("start_time", 0))
+            scene_end   = float(scene.get("end_time", scene_start + 30))
 
-            queries = scene.get("search_queries", [])
-            pref    = scene.get("media_type_preferred", "video")
-            inserts = scene.get("insertion_points", [])
+            # ── Global density guards ─────────────────────────────────────────
+            if inserts_placed >= density["max_inserts"]:
+                scene["selected_media"] = []
+                continue
+            if broll_seconds >= duration * self.MAX_COVERAGE:
+                scene["selected_media"] = []
+                continue
+            # Enforce minimum gap
+            if scene_start < last_media_end + density["min_gap"]:
+                scene["selected_media"] = []
+                continue
+            # Avoid 3 media scenes in a row (give avatar time)
+            if consecutive >= 3:
+                scene["selected_media"] = []
+                consecutive = 0
+                continue
 
-            selected = []
-            for insert in inserts[:2]:   # max 2 inserts per scene
-                media = self._find_best_media(
-                    queries, pref, media_dir, used_urls,
-                    scene_id=scene["scene_id"]
-                )
-                if media:
-                    media["insertion_offset"] = insert.get("offset_from_scene_start", 0)
-                    media["clip_duration"]    = insert.get("duration", 7)
-                    media["placement"]        = insert.get("placement", "middle")
-                    media["reason"]           = insert.get("reason", "")
-                    selected.append(media)
-                    used_urls.add(media.get("url", ""))
+            # ── Build parallel query waves ────────────────────────────────────
+            wanted_type   = score["media_type"]   # "video" or "image"
+            query_waves   = self._build_query_waves(scene)
+            n_inserts     = min(score["insert_count"],
+                                density["max_inserts"] - inserts_placed,
+                                2)
+
+            self._progress(pct, f"Scene {idx+1}/{n} [{wanted_type}] "
+                                f"parallel search: {scene.get('title','')[:35]}")
+
+            # ── Parallel search (waves) ───────────────────────────────────────
+            candidates = self._parallel_search(query_waves, wanted_type)
+
+            # Fallback: if wanted video but got nothing, try image
+            if not candidates and wanted_type == "video":
+                candidates = self._parallel_search(query_waves, "image")
+                wanted_type = "image"
+
+            if not candidates:
+                scene["selected_media"] = []
+                continue
+
+            # Filter already-used
+            candidates = [c for c in candidates if c.get("url") not in used_urls]
+            if not candidates:
+                scene["selected_media"] = []
+                continue
+
+            # Sort by score (best first)
+            candidates.sort(key=lambda x: x.get("score", 0), reverse=True)
+
+            # ── Download top candidates for each insert ───────────────────────
+            inserts_info = scene.get("insertion_points", [])
+            if not inserts_info:
+                inserts_info = [{
+                    "offset_from_scene_start": scene_end * 0.3 - scene_start * 0.3,
+                    "duration": 7 if wanted_type == "video" else 3,
+                    "placement": "middle",
+                }]
+
+            selected   = []
+            pool       = list(candidates)   # shrinks as we place items
+
+            for insert in inserts_info[:n_inserts]:
+                if not pool:
+                    break
+
+                raw_dur = float(insert.get("duration", 7 if wanted_type == "video" else 3))
+                if wanted_type == "image":
+                    clip_dur = min(raw_dur, self.IMAGE_MAX_DUR)
+                else:
+                    clip_dur = max(min(raw_dur, self.VIDEO_MAX_DUR), self.VIDEO_MIN_DUR)
+
+                offset  = float(insert.get("offset_from_scene_start", 0))
+                start_t = scene_start + offset
+                end_t   = min(start_t + clip_dur, scene_end, duration - 0.5)
+                actual  = end_t - start_t
+
+                if actual < 1.5:
+                    continue
+                if start_t < last_media_end + density["min_gap"]:
+                    continue
+                if broll_seconds + actual > duration * self.MAX_COVERAGE:
+                    break
+
+                # Try downloading top candidates
+                downloaded = self._download_best(pool[:6], media_dir,
+                                                  scene["scene_id"])
+                if not downloaded:
+                    continue
+
+                downloaded["insertion_offset"] = offset
+                downloaded["clip_duration"]    = actual
+                downloaded["placement"]        = insert.get("placement", "middle")
+                selected.append(downloaded)
+                used_urls.add(downloaded["url"])
+                pool = [c for c in pool if c.get("url") != downloaded["url"]]
+
+                broll_seconds  += actual
+                last_media_end  = end_t
+                inserts_placed += 1
+                consecutive    += 1
 
             scene["selected_media"] = selected
 
+        coverage = broll_seconds / max(duration, 1) * 100
+        self._progress(58, f"Media brain done — {inserts_placed} inserts, "
+                           f"{coverage:.0f}% coverage")
         return plan
 
     def _available_api_labels(self) -> str:
-        """Return a compact string of which APIs are active."""
         labels = []
         if self.keys["brave_search"]: labels.append("Brave")
         if self.keys["serper"]:       labels.append("Serper")
         if self.keys["pexels"]:       labels.append("Pexels")
         if self.keys["pixabay"]:      labels.append("Pixabay")
         if self.keys["unsplash"]:     labels.append("Unsplash")
+        if self.keys["gcs_key"]:      labels.append("Google")
+        if self.keys["coverr"]:       labels.append("Coverr")
+        if self.keys["videvo"]:       labels.append("Videvo")
         return ", ".join(labels) if labels else "no APIs configured"
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # MEDIA BRAIN — scene scoring, density planning, query waves
+    # ─────────────────────────────────────────────────────────────────────────
+
+    _MOTION_WORDS = {
+        "action","drive","run","walk","build","grow","move","fly","crash","fight",
+        "swim","race","work","create","manufacture","produce","travel","climb","fall",
+        "rise","flow","explode","launch","rush","evolve","transform","spread","attack",
+        "march","celebrate","dance","compete","parade","fire","burn","flood","charge",
+        "protest","fight","battle","war","storm","wave","speed","jump","leap",
+    }
+    _STATIC_WORDS = {
+        "show","display","compare","define","explain","chart","logo","brand","person",
+        "portrait","face","map","graph","data","statistics","product","object",
+        "building","monument","symbol","document","certificate","flag","icon",
+        "screen","interface","photo","image","picture","diagram","infographic",
+    }
+    _EMOTIONAL_WORDS = {
+        "love","fear","hope","joy","pain","success","failure","dream","struggle",
+        "victory","loss","grief","pride","anger","passion","inspiration","motivation",
+        "courage","sacrifice","betrayal","emotion","feeling","heart","soul",
+    }
+    _DOCUMENTARY_WORDS = {
+        "history","historical","war","factory","city","nature","documentary","archive",
+        "archival","vintage","classic","era","period","decade","century","event",
+        "revolution","movement","discovery","invention","industrial","ancient",
+    }
+    _TRANSITION_WORDS = {
+        "now","next","so","but","therefore","however","meanwhile","finally","also",
+        "remember","consider","think","imagine","let","as","while","although",
+    }
+
+    def _score_scene(self, scene: Dict) -> Dict:
+        """
+        Score a scene on 6 dimensions and return decision + media_type.
+        Returns dict: {visual_need, decision, media_type, insert_count}
+        """
+        text = (
+            (scene.get("title", "") + " " +
+             scene.get("summary", "") + " " +
+             scene.get("script_excerpt", "")).lower()
+        )
+        words = set(re.findall(r"\b\w+\b", text))
+        dur   = float(scene.get("duration_seconds", 30))
+
+        # Dimension scores 0-100
+        motion_hits      = len(words & self._MOTION_WORDS)
+        static_hits      = len(words & self._STATIC_WORDS)
+        emotional_hits   = len(words & self._EMOTIONAL_WORDS)
+        documentary_hits = len(words & self._DOCUMENTARY_WORDS)
+        transition_hits  = len(words & self._TRANSITION_WORDS)
+
+        visual_need  = min(100, (motion_hits * 15) + (static_hits * 10) + (documentary_hits * 12))
+        emotional    = min(100, emotional_hits * 20)
+        explanatory  = min(100, static_hits * 15)
+        importance_map = {"high": 80, "medium": 50, "low": 20}
+        importance   = importance_map.get(scene.get("importance", "medium"), 50)
+        richness_map = {"rich": 80, "moderate": 50, "sparse": 20}
+        richness     = richness_map.get(scene.get("visual_richness", "moderate"), 50)
+
+        # Is this mostly a transition sentence?
+        is_transition = (transition_hits >= 3 and motion_hits == 0
+                         and static_hits == 0 and dur < 20)
+
+        media_priority = (
+            visual_need  * 0.30 +
+            emotional    * 0.15 +
+            explanatory  * 0.15 +
+            importance   * 0.25 +
+            richness     * 0.15
+        )
+
+        # Decision logic
+        if is_transition or media_priority < 28:
+            decision   = "avatar_only"
+            media_type = "none"
+        elif motion_hits > static_hits or documentary_hits >= 2 or media_priority >= 70:
+            decision   = "video_support"
+            media_type = "video"
+        else:
+            decision   = "image_support"
+            media_type = "image"
+
+        # How many inserts this scene can have (1 normally, 2 if high importance)
+        insert_count = 2 if (importance >= 70 and dur >= 40) else 1
+
+        return {
+            "visual_need"    : visual_need,
+            "media_priority" : media_priority,
+            "decision"       : decision,
+            "media_type"     : media_type,
+            "insert_count"   : insert_count,
+        }
+
+    def _plan_density(self, duration: float, n_scenes: int) -> Dict:
+        """
+        Compute target insert count and per-minute budget to hit 40-50 % coverage.
+        """
+        minutes = duration / 60.0
+        # Rough target: each insert ~7s average → inserts needed for 45 % coverage
+        avg_insert_dur = 6.5
+        target_inserts = int((duration * 0.45) / avg_insert_dur)
+        max_inserts    = int((duration * self.MAX_COVERAGE) / avg_insert_dur)
+
+        # Sanity caps
+        if minutes <= 1:
+            target_inserts = min(target_inserts, 5)
+        elif minutes <= 5:
+            target_inserts = min(target_inserts, 18)
+        elif minutes <= 10:
+            target_inserts = min(target_inserts, 30)
+        else:
+            target_inserts = min(target_inserts, int(minutes * 2.5))
+
+        return {
+            "target_inserts" : max(2, target_inserts),
+            "max_inserts"    : max(2, max_inserts),
+            "min_gap"        : self.MIN_GAP,
+            "max_gap"        : self.MAX_GAP,
+        }
+
+    def _build_query_waves(self, scene: Dict) -> List[List[str]]:
+        """
+        Return 3 waves of queries:
+          Wave 0 — exact/factual (primary)
+          Wave 1 — cinematic/documentary variants
+          Wave 2 — conceptual fallback
+        """
+        base   = scene.get("search_queries", [])
+        title  = scene.get("title", "")
+        summ   = scene.get("summary", "")
+        topic  = title or summ[:60]
+
+        # Wave 0: Gemini queries as-is (already specific)
+        wave0 = base[:3] if base else [topic]
+
+        # Wave 1: cinematic/documentary rewrites
+        wave1 = []
+        for q in wave0[:2]:
+            wave1.append(f"cinematic {q}")
+            wave1.append(f"documentary footage {q}")
+
+        # Wave 2: broader fallback (remove rare words, keep nouns)
+        words   = [w for w in topic.split() if len(w) > 4][:4]
+        wave2q  = " ".join(words) if words else topic
+        wave2 = [
+            f"stock footage {wave2q}",
+            f"stock photo {wave2q}",
+            wave2q,
+        ]
+        return [wave0, wave1, wave2]
 
     def _find_best_media(
         self,
@@ -511,6 +799,245 @@ Return ONLY valid JSON (no markdown, no explanation):
         print(f"   ✗ scene {scene_id}: all {min(len(unique),8)} candidates failed")
         return None
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # PARALLEL WAVE SEARCH
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _parallel_search(self, query_waves: List[List[str]], media_type: str) -> List[Dict]:
+        """
+        Wave-based parallel search.  Wave 0 → 1 → 2.
+        Early stop when 3+ candidates score >= GOOD_SCORE_THRESH.
+        Provider priority:
+          video : Pexels > Pixabay > Coverr > Videvo > Brave > Serper
+          image : Unsplash > Pexels > Pixabay > Google > Brave > Serper
+        """
+        want_video = (media_type == "video")
+        k = self.keys
+
+        if want_video:
+            providers = [
+                ("pexels_v",  lambda q: self._search_pexels(q, "video")    if k["pexels"]        else []),
+                ("pixabay_v", lambda q: self._search_pixabay(q, "video")   if k["pixabay"]       else []),
+                ("coverr",    lambda q: self._search_coverr(q)             if k["coverr"]        else []),
+                ("videvo",    lambda q: self._search_videvo(q)             if k["videvo"]        else []),
+                ("brave",     lambda q: self._search_brave_images(q)       if k["brave_search"]  else []),
+                ("serper",    lambda q: self._search_serper_images(q)      if k["serper"]        else []),
+            ]
+        else:
+            providers = [
+                ("unsplash",  lambda q: self._search_unsplash(q)           if k["unsplash"]      else []),
+                ("pexels_i",  lambda q: self._search_pexels(q, "image")    if k["pexels"]        else []),
+                ("pixabay_i", lambda q: self._search_pixabay(q, "image")   if k["pixabay"]       else []),
+                ("google",    lambda q: self._search_google_images(q)      if k["gcs_key"]       else []),
+                ("brave",     lambda q: self._search_brave_images(q)       if k["brave_search"]  else []),
+                ("serper",    lambda q: self._search_serper_images(q)      if k["serper"]        else []),
+            ]
+
+        all_candidates: List[Dict] = []
+        seen_urls: set = set()
+
+        for wave_idx, queries in enumerate(query_waves):
+            if not queries:
+                continue
+
+            with ThreadPoolExecutor(max_workers=min(len(queries) * len(providers), 16)) as exe:
+                futs: Dict[Future, int] = {}
+                for q_idx, q in enumerate(queries[:4]):
+                    bonus = self._QUERY_BONUS[min(q_idx, len(self._QUERY_BONUS) - 1)]
+                    for _, fn in providers:
+                        fut = exe.submit(fn, q)
+                        futs[fut] = bonus
+
+                for fut in as_completed(futs, timeout=self.SEARCH_TIMEOUT * 3):
+                    bonus = futs[fut]
+                    try:
+                        for item in (fut.result(timeout=0) or []):
+                            u = item.get("url", "")
+                            if u and u not in seen_urls:
+                                seen_urls.add(u)
+                                item["score"] = item.get("score", 0) + bonus
+                                all_candidates.append(item)
+                    except Exception:
+                        pass
+
+            # Early stop: 3+ strong candidates already found
+            if sum(1 for c in all_candidates if c.get("score", 0) >= self.GOOD_SCORE_THRESH) >= 3:
+                break
+
+        return all_candidates
+
+    def _download_best(
+        self,
+        candidates: List[Dict],
+        media_dir: Path,
+        scene_id: int,
+    ) -> Optional[Dict]:
+        """
+        Try candidates in order (best score first) until one downloads successfully.
+        Uses session URL cache to skip re-downloads.
+        """
+        for candidate in candidates[:8]:
+            url = candidate.get("url", "")
+            if not url:
+                continue
+
+            # Session-level cache hit (same URL already on disk this run)
+            if url in self._url_cache:
+                cached = self._url_cache[url]
+                if Path(cached).exists():
+                    candidate["local_path"] = cached
+                    return candidate
+
+            is_video   = candidate.get("type") == "video"
+            ext        = ".mp4" if is_video else ".jpg"
+            uid        = hashlib.md5(url.encode()).hexdigest()[:10]
+            local_path = media_dir / f"s{scene_id}_{uid}{ext}"
+
+            # Disk cache hit (previous phase)
+            if local_path.exists():
+                sz = local_path.stat().st_size
+                if sz > (100_000 if is_video else 15_000) and self._is_valid_media(local_path):
+                    candidate["local_path"] = str(local_path)
+                    self._url_cache[url]    = str(local_path)
+                    return candidate
+                local_path.unlink(missing_ok=True)
+
+            ok = self._download(url, local_path)
+            if not ok:
+                continue
+
+            detected = self._detect_media_type(local_path)
+            if detected == "unknown":
+                local_path.unlink(missing_ok=True)
+                continue
+
+            real_ext = ".mp4" if detected == "video" else self._real_img_ext(local_path)
+            if local_path.suffix.lower() != real_ext:
+                new_path = local_path.with_suffix(real_ext)
+                local_path.rename(new_path)
+                local_path = new_path
+
+            candidate["type"]       = detected
+            candidate["local_path"] = str(local_path)
+            self._url_cache[url]    = str(local_path)
+            print(f"   ✔ scene {scene_id} — {candidate.get('source','?')} {detected}"
+                  f"  score={candidate.get('score', 0):.0f}"
+                  f"  {candidate.get('width',0)}×{candidate.get('height',0)}")
+            return candidate
+
+        print(f"   ✗ scene {scene_id}: all {min(len(candidates), 8)} candidates failed")
+        return None
+
+    # ── Coverr ────────────────────────────────────────────────────────────────
+
+    def _search_coverr(self, query: str) -> List[Dict]:
+        key = self.keys["coverr"]
+        if not key:
+            return []
+        results = []
+        try:
+            r = requests.get(
+                "https://api.coverr.co/videos",
+                params={"query": query, "per_page": 8},
+                headers={"Authorization": f"Bearer {key}"},
+                timeout=2,
+            )
+            if r.ok:
+                for v in r.json().get("hits", []):
+                    enc = v.get("encodings", {})
+                    url = (enc.get("mp4", {}).get("url")
+                           or enc.get("hd", {}).get("url")
+                           or v.get("url", ""))
+                    w   = int(v.get("width",  1920))
+                    h   = int(v.get("height", 1080))
+                    if url and w >= 1280:
+                        results.append({
+                            "type"  : "video",
+                            "source": "coverr",
+                            "url"   : url,
+                            "width" : w, "height": h,
+                            "score" : self._score(w, h, "video"),
+                        })
+        except Exception as e:
+            print(f"   Coverr error: {e}")
+        return results
+
+    # ── Videvo ────────────────────────────────────────────────────────────────
+
+    def _search_videvo(self, query: str) -> List[Dict]:
+        key = self.keys["videvo"]
+        if not key:
+            return []
+        results = []
+        try:
+            r = requests.get(
+                "https://www.videvo.net/api/v1/search",
+                params={"keyword": query, "type": "footage",
+                        "page": 1, "per_page": 8},
+                headers={"Authorization": f"Bearer {key}"},
+                timeout=2,
+            )
+            if r.ok:
+                for v in r.json().get("results", []):
+                    url = v.get("video_url") or v.get("url", "")
+                    w   = int(v.get("width",  1920))
+                    h   = int(v.get("height", 1080))
+                    if url and w >= 1280:
+                        results.append({
+                            "type"  : "video",
+                            "source": "videvo",
+                            "url"   : url,
+                            "width" : w, "height": h,
+                            "score" : self._score(w, h, "video"),
+                        })
+        except Exception as e:
+            print(f"   Videvo error: {e}")
+        return results
+
+    # ── Google Custom Search Images ───────────────────────────────────────────
+
+    def _search_google_images(self, query: str) -> List[Dict]:
+        key = self.keys["gcs_key"]
+        cx  = self.keys["gcs_cx"]
+        if not key:
+            return []
+        results = []
+        try:
+            r = requests.get(
+                "https://www.googleapis.com/customsearch/v1",
+                params={
+                    "key"       : key,
+                    "cx"        : cx,
+                    "q"         : query,
+                    "searchType": "image",
+                    "imgType"   : "photo",
+                    "imgSize"   : "XLARGE",
+                    "num"       : 8,
+                },
+                timeout=2,
+            )
+            if r.ok:
+                for item in r.json().get("items", []):
+                    img = item.get("image", {})
+                    url = item.get("link", "")
+                    w   = int(img.get("width",  0))
+                    h   = int(img.get("height", 0))
+                    if not url or w < 800:
+                        continue
+                    if h > 0 and w / h < 1.0:
+                        continue   # skip portrait
+                    results.append({
+                        "type"  : "image",
+                        "source": "google",
+                        "url"   : url,
+                        "width" : w or 1280,
+                        "height": h or 720,
+                        "score" : self._score(w or 1280, h or 720, "image"),
+                    })
+        except Exception as e:
+            print(f"   Google CSE error: {e}")
+        return results
+
     def _detect_media_type(self, path: Path) -> str:
         """Ask ffprobe what kind of media this file contains."""
         try:
@@ -575,7 +1102,7 @@ Return ONLY valid JSON (no markdown, no explanation):
                 },
                 params={"q": query, "count": 10, "safesearch": "off",
                         "search_lang": "en", "spellcheck": 1},
-                timeout=10,
+                timeout=2,
             )
             if r.ok:
                 for item in r.json().get("results", []):
@@ -611,7 +1138,7 @@ Return ONLY valid JSON (no markdown, no explanation):
                 "https://google.serper.dev/images",
                 headers={"X-API-KEY": key, "Content-Type": "application/json"},
                 json={"q": query, "num": 10},
-                timeout=10,
+                timeout=2,
             )
             if r.ok:
                 for item in r.json().get("images", []):
@@ -647,7 +1174,7 @@ Return ONLY valid JSON (no markdown, no explanation):
                 params = {"query": query, "per_page": 8,
                           "orientation": "landscape", "size": "large"}
                 r = requests.get(url, headers={"Authorization": key},
-                                 params=params, timeout=10)
+                                 params=params, timeout=2)
                 if r.ok:
                     for v in r.json().get("videos", []):
                         files = sorted(
@@ -672,7 +1199,7 @@ Return ONLY valid JSON (no markdown, no explanation):
                 params = {"query": query, "per_page": 8,
                           "orientation": "landscape", "size": "large"}
                 r = requests.get(url, headers={"Authorization": key},
-                                 params=params, timeout=10)
+                                 params=params, timeout=2)
                 if r.ok:
                     for p in r.json().get("photos", []):
                         src     = p.get("src", {})
@@ -709,7 +1236,7 @@ Return ONLY valid JSON (no markdown, no explanation):
                 params = {"key": key, "q": query, "per_page": 8,
                           "image_type": "photo", "orientation": "horizontal",
                           "min_width": 1280}
-            r = requests.get(url, params=params, timeout=10)
+            r = requests.get(url, params=params, timeout=2)
             if r.ok:
                 for item in r.json().get("hits", []):
                     if media_type == "video":
@@ -747,7 +1274,7 @@ Return ONLY valid JSON (no markdown, no explanation):
                 "https://api.unsplash.com/search/photos",
                 headers={"Authorization": f"Client-ID {key}"},
                 params={"query": query, "per_page": 8, "orientation": "landscape"},
-                timeout=10,
+                timeout=2,
             )
             if r.ok:
                 for p in r.json().get("results", []):
@@ -911,12 +1438,16 @@ Return ONLY valid JSON (no markdown, no explanation):
     ) -> List[Dict]:
         """
         For every media insert, produce a 1920×1080 muted clip of exact duration.
+        Clips are encoded in parallel (max 4 workers) for speed.
         Returns timeline list: [{start, end, clip_path}, …]
         """
         clips_dir = job_dir / "clips"
         clips_dir.mkdir(exist_ok=True)
-        timeline = []
-        broll_seconds = 0.0
+
+        # Collect all pending clip jobs first (for budget accounting)
+        jobs = []
+        broll_budget = avatar_duration * self.MAX_BROLL_COVERAGE
+        broll_acc    = 0.0
 
         for scene in plan.get("scenes", []):
             scene_start = float(scene.get("start_time", 0))
@@ -930,39 +1461,63 @@ Return ONLY valid JSON (no markdown, no explanation):
                 insert_offset = float(media.get("insertion_offset", 0))
                 clip_dur      = float(media.get("clip_duration", 7))
 
-                # Clamp to scene boundaries
                 start_t = min(scene_start + insert_offset, scene_end - clip_dur)
                 start_t = max(start_t, scene_start)
                 end_t   = min(start_t + clip_dur, scene_end, avatar_duration - 0.5)
 
-                if end_t - start_t < 2:
-                    continue  # too short to bother
-
-                # Check total B-roll budget
-                if broll_seconds + (end_t - start_t) > avatar_duration * self.MAX_BROLL_COVERAGE:
+                actual = end_t - start_t
+                if actual < 2:
+                    continue
+                if broll_acc + actual > broll_budget:
                     continue
 
-                clip_dur_actual = end_t - start_t
-                out_clip = clips_dir / f"clip_{scene['scene_id']}_{int(start_t)}.mp4"
+                broll_acc += actual
+                out_clip   = clips_dir / f"clip_{scene['scene_id']}_{int(start_t)}.mp4"
+                jobs.append({
+                    "src"      : lp,
+                    "dst"      : str(out_clip),
+                    "duration" : actual,
+                    "media_type": media.get("type", "image"),
+                    "start_t"  : start_t,
+                    "end_t"    : end_t,
+                    "type"     : media.get("type"),
+                    "source"   : media.get("source"),
+                })
 
-                ok = self._make_clip(lp, str(out_clip), clip_dur_actual,
-                                     media.get("type", "image"))
-                if ok:
-                    timeline.append({
-                        "start"    : start_t,
-                        "end"      : end_t,
-                        "clip_path": str(out_clip),
-                        "type"     : media.get("type"),
-                        "source"   : media.get("source"),
+        if not jobs:
+            return []
+
+        # Parallel encode (max 4 workers — FFmpeg uses all cores internally)
+        results: List[Dict] = []
+        lock = threading.Lock()
+
+        def _encode_job(job: Dict):
+            ok = self._make_clip(job["src"], job["dst"],
+                                 job["duration"], job["media_type"])
+            if ok:
+                with lock:
+                    results.append({
+                        "start"    : job["start_t"],
+                        "end"      : job["end_t"],
+                        "clip_path": job["dst"],
+                        "type"     : job["type"],
+                        "source"   : job["source"],
                     })
-                    broll_seconds += clip_dur_actual
+
+        with ThreadPoolExecutor(max_workers=4) as exe:
+            futs = [exe.submit(_encode_job, j) for j in jobs]
+            for f in as_completed(futs):
+                try:
+                    f.result()
+                except Exception as exc:
+                    print(f"   ✗ clip encode error: {exc}")
 
         # Sort by start time, remove overlaps
-        timeline.sort(key=lambda x: x["start"])
+        results.sort(key=lambda x: x["start"])
         clean = []
         last_end = 0.0
-        for item in timeline:
-            if item["start"] >= last_end + 0.5:
+        for item in results:
+            if Path(item["clip_path"]).exists() and item["start"] >= last_end + 0.5:
                 clean.append(item)
                 last_end = item["end"]
         return clean
@@ -1096,7 +1651,7 @@ Return ONLY valid JSON (no markdown, no explanation):
             inputs
             + ["-filter_complex", filter_complex]
             + ["-map", f"[{prev}]", "-map", "0:a?"]
-            + ["-c:v", "libx264", "-preset", "fast", "-crf", "22"]
+            + ["-c:v", "libx264", "-preset", "ultrafast", "-threads", "0", "-crf", "24"]
             + ["-c:a", "aac", "-b:a", "192k"]
             + ["-pix_fmt", "yuv420p", "-movflags", "+faststart"]
             + [out_path]
@@ -1116,7 +1671,7 @@ Return ONLY valid JSON (no markdown, no explanation):
             "-i", avatar_path,
             "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,"
                     "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+            "-c:v", "libx264", "-preset", "ultrafast", "-threads", "0", "-crf", "24",
             "-c:a", "aac", "-b:a", "192k",
             "-pix_fmt", "yuv420p", "-movflags", "+faststart",
             out_path,
