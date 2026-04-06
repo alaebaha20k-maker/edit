@@ -394,7 +394,7 @@ RULES:
                 print(f"   📤 PHASE 1 — generating prescriptive outline (Pro model)...")
                 print(f"      Formula: {len(formula):,} chars | Title: \"{title}\"")
 
-            model    = genai.GenerativeModel(Config.GEMINI_SCRIPT_MODEL)
+            model    = genai.GenerativeModel(Config.GEMINI_PLAN_MODEL)
             response = model.generate_content(
                 prompt,
                 generation_config={"temperature": 0.1, "max_output_tokens": 32768},
@@ -523,12 +523,16 @@ OUTPUT FORMAT — strict:
             )
 
         # ── Continuation context ───────────────────────────────────────────────
+        current_section_label = " | ".join(sections_now) if sections_now else f"part {chunk.index}"
         if previous_context:
             continuation = (
-                f"⚠️  YOU ARE IN THE MIDDLE OF A SCRIPT THAT ALREADY STARTED.\n"
-                f"DO NOT write a new intro, new hook, or new opening. The script is already underway.\n"
-                f"DO NOT write 'subscribe', 'like', or any CTA — that is ONLY for the final chunk.\n"
-                f"CONTINUE DIRECTLY from the last line already written:\n"
+                f"⚠️  MID-SCRIPT — you are writing [{current_section_label}].\n"
+                f"THE VIDEO HAS ALREADY STARTED. Do NOT write any of these — they are FORBIDDEN:\n"
+                f"  • Greetings: 'Bonjour', 'Hello', 'Welcome', 'Salut', 'Hi everyone'\n"
+                f"  • New openers: 'Today', 'Dans cette vidéo', 'In this video', 'Aujourd'hui'\n"
+                f"  • New hooks: 'Imagine', 'Picture this', 'What if', 'Did you know'\n"
+                f"  • Any CTA: 'Subscribe', 'Abonnez-vous', 'Like', 'Share' — CTA is FINAL chunk only.\n"
+                f"CONTINUE THE SENTENCE directly after the last written line:\n"
                 f'"{previous_context}"\n\n'
             )
         else:
@@ -581,12 +585,17 @@ OUTPUT FORMAT — strict:
         else:
             stop_instruction = ""
             role_note = (
-                f"Chunk {chunk.index} of {total_chunks} — MID-SCRIPT ONLY.\n"
-                f"⛔ FORBIDDEN: conclusion, CTA, 'subscribe', 'like', 'share', any ending signal.\n"
-                f"⛔ FORBIDDEN: ending the script — it continues in the next chunk.\n"
-                f"⛔ FORBIDDEN: reopening any section listed above as already done.\n"
-                f"⛔ FORBIDDEN: repeating the same idea in different words (no padding).\n"
-                f"Stop mid-sentence if needed rather than fake an ending."
+                f"Chunk {chunk.index} of {total_chunks} — MID-SCRIPT BODY [{current_section_label}].\n"
+                f"⛔ FORBIDDEN — any intro/hook/greeting (the video ALREADY STARTED):\n"
+                f"   'Bonjour' / 'Hello' / 'Welcome' / 'Today' / 'Dans cette vidéo' / 'Aujourd'hui'\n"
+                f"   'Imagine' / 'Picture this' / 'In this video' — these restart the script.\n"
+                f"⛔ FORBIDDEN — any ending, CTA, conclusion:\n"
+                f"   'Subscribe' / 'Abonnez-vous' / 'Like' / 'Share' / 'See you next time'\n"
+                f"   These belong ONLY in the final chunk ({total_chunks}).\n"
+                f"⛔ FORBIDDEN — reopening any section already written (listed above).\n"
+                f"⛔ FORBIDDEN — repeating the same idea in different words (padding).\n"
+                f"Write the body content for [{current_section_label}] and stop. "
+                f"The next chunk continues the script."
             )
 
         prompt = (
@@ -777,63 +786,92 @@ WRITE IN {language.upper()} — CONTINUE NOW:"""
     # =========================================================================
 
     def _merge_chunks(self, chunks: List[str]) -> str:
-        merged = " ".join(chunks)
+        # Join with double newline so restart-detection patterns are preserved
+        merged = "\n\n".join(c.strip() for c in chunks if c.strip())
         merged = re.sub(r"(?i)(continuing from|as we discussed|as mentioned earlier)", "", merged)
         merged = re.sub(r"(?i)(in the previous (section|part|chunk))", "", merged)
+        merged = re.sub(r"\n{3,}", "\n\n", merged)
         merged = re.sub(r"  +", " ", merged)
         return merged.strip()
 
+    # Opening/intro sentence patterns that signal a restart (multi-language)
+    _RESTART_PATTERNS = [
+        r"(?:^|\n\n|\. |\! |\? )"
+        r"(aujourd'?hui|today|dans cette vid[eé]o|in this video|"
+        r"bienvenue|bonjour|hello|welcome back|salut|"
+        r"dans cette nouvelle|in today's video|"
+        r"nous allons (voir|d[eé]couvrir|parler|explorer)|"
+        r"we('re| are) going to|i'm going to (show|tell|reveal)|"
+        r"let me (tell|show|introduce)|picture this:|imagine)",
+    ]
+
     def _cut_at_restart(self, text: str, cta_action: str, verbose: bool = False) -> str:
         """
-        Cut the script at the LAST natural ending point.
+        Cut everything after the last real ending of the script.
 
-        Strategy (in order of priority):
-        1. STOP_SIGNAL anywhere → cut there (already handled in _clean_script, but safety)
-        2. Find the LAST CTA occurrence in the whole text.
-           If substantial content (>150 chars) follows it → cut right after it.
-           This covers: restart after CTA, double ending, payoff-then-more.
-        3. Detect explicit restart patterns after any CTA → cut there.
-
-        By cutting at the LAST CTA (not the first), we protect the real ending
-        while still removing any tail that leaks after it.
+        Strategy (in priority order):
+        1. STOP_SIGNAL → already handled in _clean_script (safety net here too).
+        2. Find the LAST CTA phrase. If >50 chars follow it → cut right after the
+           CTA sentence.  The old ≥3% gate is REMOVED — even a 100-char restart
+           after the CTA must be dropped.
+        3. Restart-sentence detection: after the last CTA, look for opening/greeting
+           patterns that signal the model started a new script section.  Cut there.
         """
         # CTA trigger phrases (multi-language)
         cta_patterns = [
             r'\b(abonnez[\s\-]vous|subscribe|abonne[\s\-]toi|s\'abonner)\b',
             r'\b(clique\s+sur\s+la\s+cloche|hit\s+the\s+bell|ring\s+the\s+bell)\b',
-            r'\b(like\s+et\s+commente|like\s+and\s+comment|liken?\s+und\s+kommentier)\b',
+            r'\b(like\s+et\s+commente|like\s+and\s+comment)\b',
             r'\b(active\s+les\s+notifications|turn\s+on\s+notifications)\b',
             r'\b(partage\s+(cette|la)\s+vid[eé]o|share\s+this\s+video)\b',
+            r'\b(à\s+la\s+prochaine|see\s+you\s+(next|in\s+the\s+next))\b',
         ]
         if cta_action and len(cta_action) > 8:
-            cta_patterns.append(re.escape(cta_action[:30].lower()))
+            cta_patterns.append(re.escape(cta_action[:40].lower()))
 
         text_lower = text.lower()
 
-        # ── Find the LAST CTA sentence boundary ──────────────────────────────
+        # ── Step 1: Find the LAST CTA sentence boundary ───────────────────────
         last_cut_pos = -1
 
         for pat in cta_patterns:
             for m in re.finditer(pat, text_lower):
-                # Find the end of the sentence that contains this CTA match
                 sentence_end = re.search(r'[.!?]', text[m.end():])
                 cut_candidate = m.end() + (sentence_end.end() if sentence_end else 0)
-
                 after_content = text[cut_candidate:].strip()
-                if len(after_content) > 150:
-                    # Meaningful content after this CTA → this is a cut candidate
+                # Cut if ANY meaningful content follows (lowered from 150 → 50)
+                if len(after_content) > 50:
                     if cut_candidate > last_cut_pos:
                         last_cut_pos = cut_candidate
 
         if last_cut_pos > 0:
-            # Only cut if the cut point is not near the very end (≥5% of text remaining)
-            remaining_ratio = (len(text) - last_cut_pos) / max(len(text), 1)
-            if remaining_ratio >= 0.03:
-                if verbose:
-                    chars_cut = len(text) - last_cut_pos
-                    print(f"   ✂️  End-completion cut: removed {chars_cut:,} chars after last CTA "
-                          f"(pos {last_cut_pos:,}/{len(text):,})")
-                return text[:last_cut_pos].strip()
+            if verbose:
+                chars_cut = len(text) - last_cut_pos
+                print(f"   ✂️  CTA-cut: removed {chars_cut:,} chars after last CTA "
+                      f"(pos {last_cut_pos:,}/{len(text):,})")
+            return text[:last_cut_pos].strip()
+
+        # ── Step 2: Restart-sentence detection (no CTA found above) ───────────
+        # Look for intro/greeting sentences anywhere past the 60% mark of the text
+        # (before that they're legitimate in some formulas).
+        search_start = int(len(text) * 0.60)
+        tail         = text_lower[search_start:]
+
+        for pat in self._RESTART_PATTERNS:
+            m = re.search(pat, tail, re.IGNORECASE)
+            if m:
+                # Absolute position in full text
+                abs_pos = search_start + m.start()
+                # Move to the start of the sentence (after the delimiter)
+                # Skip leading newlines/spaces
+                while abs_pos < len(text) and text[abs_pos] in ('\n', ' ', '.', '!', '?'):
+                    abs_pos += 1
+                after_content = text[abs_pos:].strip()
+                if len(after_content) > 80:
+                    if verbose:
+                        print(f"   ✂️  Restart-cut: detected new intro at pos {abs_pos:,} "
+                              f"({len(after_content):,} chars removed)")
+                    return text[:abs_pos].strip()
 
         return text
 
