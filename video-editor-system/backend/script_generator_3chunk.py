@@ -76,7 +76,6 @@ class ScriptGenerator3Chunk:
         formula  = niche["writing_guidelines"]
         language = niche["language"]
         product  = niche.get("product", "our platform")
-        niche_name = niche.get("name", "")
 
         if verbose:
             print(f"\n{'='*70}")
@@ -115,7 +114,7 @@ class ScriptGenerator3Chunk:
             print()
 
         # ── System instruction: short format rules only (formula goes in user msg)
-        system_instruction = self._build_system_instruction(language, niche_name)
+        system_instruction = self._build_system_instruction(language)
 
         # ── PHASE 2–N — WRITE each chunk ──────────────────────────────────────
         generated_chunks = []
@@ -137,7 +136,6 @@ class ScriptGenerator3Chunk:
                 title=title,
                 language=language,
                 product=product,
-                niche_name=niche_name,
                 chunk=chunk,
                 total_chunks=total_chunks,
                 plan=plan,
@@ -148,20 +146,12 @@ class ScriptGenerator3Chunk:
             )
 
             temp         = self._get_temperature(chunk.role)
-            # Generous token budget: target chars / 3.5 chars-per-token × 1.6 buffer + 2500
-            # This ensures Flash/Pro never hit the token ceiling before filling the target.
-            chunk_tokens = min(65536, max(int(chunk.target_chars / 3.5 * 1.6) + 2500, 5000))
-
-            # Use Pro for ALL chunks — Flash under-produces and forces slow extensions.
-            # Speed comes from 1s inter-chunk sleep (was 4s), not model downgrade.
-            write_model = Config.GEMINI_SCRIPT_MODEL  # Pro for every chunk
-            if verbose:
-                print(f"   🤖 Model: Pro ({write_model})  tokens_budget: {chunk_tokens:,}")
+            chunk_tokens = min(65536, max(int(chunk.target_chars / 3 * 1.25) + 2000, 4000))
 
             chunk_text = self._call_api(
                 prompt=prompt,
                 system_instruction=system_instruction,
-                model_name=write_model,
+                model_name=Config.GEMINI_SCRIPT_MODEL,
                 temperature=temp,
                 max_output_tokens=chunk_tokens,
                 target_chars=chunk.target_chars,
@@ -183,13 +173,10 @@ class ScriptGenerator3Chunk:
             sections_done.extend(s for s in this_chunk_sections if s not in sections_done)
 
             if chunk.index < total_chunks:
-                sents = [s.strip() for s in re.split(r'[.!?]', chunk_text) if len(s.strip()) > 15]
-                previous_context = (
-                    ". ".join(sents[-3:]) + "."
-                    if len(sents) >= 3
-                    else chunk_text[-300:]
-                )
-                time.sleep(1)   # was 4s — reduced now that Flash handles body chunks faster
+                # Use last 500 chars as continuation context — gives the next chunk
+                # enough sentence fragments to continue naturally without restarting.
+                previous_context = chunk_text[-500:].strip()
+                time.sleep(1)   # was 4s — reduced for speed
 
         # ── Post-processing ───────────────────────────────────────────────────
         if verbose:
@@ -203,17 +190,13 @@ class ScriptGenerator3Chunk:
 
         # ── Length enforcement ────────────────────────────────────────────────
         # Overshoot tolerance: 1 % of target (min 300, max 2000 chars).
+        # This prevents trimming a 100K script that comes out at 100,500 chars.
         MAX_OVERSHOOT = max(300, min(int(length * 0.01), 2000))
-        # Undershoot tolerance: only extend if genuinely far short.
-        # Being within 7% (min 1 000 chars) of target is acceptable — no extension.
-        # e.g. 9 491 / 10 000 (5.1% short) → skip extension.
-        MIN_SHORTAGE_TO_EXTEND = max(1000, int(length * 0.07))
-        char_count = len(full_script)
+        char_count    = len(full_script)
         if verbose:
-            print(f"\n📏 Length: {char_count:,} / {length:,} target"
-                  f"  (extend if short > {MIN_SHORTAGE_TO_EXTEND:,} | trim if over +{MAX_OVERSHOOT:,})")
+            print(f"\n📏 Length: {char_count:,} / {length:,} target  (tolerance: +{MAX_OVERSHOOT:,})")
 
-        if char_count < length - MIN_SHORTAGE_TO_EXTEND:
+        if char_count < length:
             shortage_pct = round((length - char_count) / length * 100, 1)
             if verbose:
                 print(f"   ⚠️  Short by {length - char_count:,} chars ({shortage_pct}%) — extending...")
@@ -452,7 +435,7 @@ RULES:
     # SYSTEM INSTRUCTION — short & focused (formula goes in user message)
     # =========================================================================
 
-    def _build_system_instruction(self, language: str, niche_name: str = "") -> str:
+    def _build_system_instruction(self, language: str) -> str:
         """
         Keep the system instruction SHORT.
 
@@ -461,15 +444,11 @@ RULES:
         background noise — the model defaults to its built-in writing style.
 
         The formula MUST be at the TOP of the user message where the model
-        pays full attention to it. The system instruction only sets identity + format.
+        pays full attention to it. The system instruction only sets format rules.
         """
-        brand_line = (
-            f"You ARE the voice of [{niche_name}]. "
-            f"Every sentence must sound like that channel's best video — not generic YouTube.\n"
-        ) if niche_name else ""
-        return f"""You are an elite video script writer executing a specific channel formula.
-{brand_line}Your ONLY job: execute the Writing Guidelines in the user message sentence by sentence.
-You do NOT improvise style, structure, or content. You ARE the formula. You execute it.
+        return f"""You are a professional video script writer.
+Your job is to execute the Writing Guidelines given to you EXACTLY — sentence by sentence.
+You do not improvise style, structure, or content. You execute the formula.
 
 OUTPUT FORMAT — strict:
 1. Write 100% in {language} — every word, no exceptions.
@@ -496,7 +475,6 @@ OUTPUT FORMAT — strict:
         promo_count_so_far: int,
         is_final: bool,
         sections_already_done: List[str] = None,
-        niche_name: str = "",
     ) -> str:
 
         anchor       = plan.get("anchor", title)
@@ -511,49 +489,60 @@ OUTPUT FORMAT — strict:
         # Critical: LLMs suffer from "lost in the middle" for long contexts.
         # The formula MUST be position-0 in the user message so the model reads
         # it with full attention. System instruction is kept short (format only).
-        # NOTE: Brand identity lives ONLY in system_instruction — never here,
-        # so it cannot leak into the script output.
         if full_formula:
             formula_block = (
                 f"════════════════ YOUR WRITING GUIDELINES ════════════════\n"
-                f"READ EVERY RULE BELOW. EXECUTE EACH ONE. DO NOT IMPROVISE.\n"
+                f"READ THIS COMPLETELY BEFORE WRITING. EXECUTE EVERY RULE.\n"
                 f"{'─' * 56}\n"
                 f"{full_formula}\n"
                 f"{'─' * 56}\n"
-                f"END OF WRITING GUIDELINES — every sentence executes a rule from above.\n"
+                f"END OF WRITING GUIDELINES — every sentence must execute a rule from above.\n"
                 f"{'═' * 56}\n\n"
             )
         else:
             formula_block = ""
 
-        # ── Step-by-step outline for this chunk ───────────────────────────────
-        # Produced by PHASE 1: specific recipe for this title + chunk's sections.
+        # ── Current section label ──────────────────────────────────────────────
+        current_section_label = " | ".join(sections_now) if sections_now else f"part {chunk.index}"
+
+        # ── Step-by-step outline for this chunk (MUST come first in prompt) ───
+        # CRITICAL: The outline is the most specific instruction for this chunk.
+        # It must be at the TOP of the prompt so the model gives it full attention.
+        # The "lost in the middle" problem means anything buried after a long formula
+        # gets ignored. Outline-first solves this.
+        word_target = int(chunk.target_chars / 5.2)   # ~5.2 chars per word average
         if outline:
             task_block = (
-                f"SECTIONS FOR THIS CHUNK: {sections_label}\n\n"
-                f"STEP-BY-STEP WRITING RECIPE FOR THIS CHUNK (from your Writing Guidelines):\n"
-                f"{'─' * 56}\n"
+                f"════════════════ CHUNK {chunk.index}/{total_chunks} — YOUR WRITING TASK ════════════════\n"
+                f"SECTIONS: {sections_label}\n"
+                f"VIDEO TITLE: \"{title}\"\n"
+                f"ANCHOR / SUBJECT: {anchor}\n"
+                f"LANGUAGE: {language.upper()} — every single word in {language}\n\n"
+                f"STEP-BY-STEP WRITING RECIPE — execute EVERY step in order:\n"
+                f"{'─' * 60}\n"
                 f"{outline}\n"
-                f"{'─' * 56}\n"
-                f"Execute EVERY step in sequence."
+                f"{'─' * 60}\n"
+                f"Every sentence must execute a step from this recipe.\n"
+                f"TITLE IS A CONTRACT — deliver exactly what the title promises.\n\n"
             )
         else:
             task_block = (
-                f"SECTIONS TO WRITE: {sections_label}\n"
-                f"Apply your Writing Guidelines above exactly — follow the structure, tone, and rules."
+                f"════════════════ CHUNK {chunk.index}/{total_chunks} — YOUR WRITING TASK ════════════════\n"
+                f"SECTIONS: {sections_label}\n"
+                f"VIDEO TITLE: \"{title}\"\n"
+                f"ANCHOR / SUBJECT: {anchor}\n"
+                f"LANGUAGE: {language.upper()} — every single word in {language}\n\n"
+                f"Apply your Writing Guidelines below exactly — follow the structure, tone, and rules.\n"
+                f"TITLE IS A CONTRACT — deliver exactly what the title promises.\n\n"
             )
 
         # ── Continuation context ───────────────────────────────────────────────
-        current_section_label = " | ".join(sections_now) if sections_now else f"part {chunk.index}"
         if previous_context:
             continuation = (
-                f"⚠️  MID-SCRIPT — you are writing [{current_section_label}].\n"
-                f"THE VIDEO HAS ALREADY STARTED. Do NOT write any of these — they are FORBIDDEN:\n"
-                f"  • Greetings: 'Bonjour', 'Hello', 'Welcome', 'Salut', 'Hi everyone'\n"
-                f"  • New openers: 'Today', 'Dans cette vidéo', 'In this video', 'Aujourd'hui'\n"
-                f"  • New hooks: 'Imagine', 'Picture this', 'What if', 'Did you know'\n"
-                f"  • Any CTA: 'Subscribe', 'Abonnez-vous', 'Like', 'Share' — CTA is FINAL chunk only.\n"
-                f"CONTINUE THE SENTENCE directly after the last written line:\n"
+                f"⚠️  MID-SCRIPT — writing [{current_section_label}]. Script already in progress.\n"
+                f"FORBIDDEN OPENERS: 'Bonjour' / 'Hello' / 'Today' / 'Dans cette vidéo' / "
+                f"'Imagine' / 'Welcome' / 'Subscribe' — any of these = restart = forbidden.\n"
+                f"CONTINUE directly after:\n"
                 f'"{previous_context}"\n\n'
             )
         else:
@@ -574,21 +563,16 @@ OUTPUT FORMAT — strict:
         else:
             promo_reminder = f"PRODUCT: {product}\n\n" if promo_count > 0 else ""
 
-        # ── Section boundary lock — what is already done and MUST NOT be reopened ─
-        # Cap at last 10 entries — the model doesn't need the full history,
-        # only recent context. A 20+ item list bloats the prompt and degrades quality.
+        # ── Section boundary lock (last 8 only — prevents prompt bloat) ───────
         if sections_already_done:
-            recent_done = sections_already_done[-10:]
-            summary_line = (
-                f"   (+ {len(sections_already_done) - len(recent_done)} earlier sections)\n"
-                if len(sections_already_done) > len(recent_done) else ""
-            )
+            recent_done = sections_already_done[-8:]
+            older_count = len(sections_already_done) - len(recent_done)
+            summary_line = f"   (+ {older_count} earlier sections already written)\n" if older_count else ""
             boundary_block = (
-                f"⛔ SECTIONS ALREADY WRITTEN — DO NOT REVISIT OR REOPEN:\n"
+                f"⛔ DO NOT REVISIT — already written:\n"
                 + summary_line
                 + "".join(f"   ✓ {s}\n" for s in recent_done)
-                + f"Every sentence must move FORWARD in the formula.\n"
-                f"Write ONLY what comes NEXT — not what is listed above.\n\n"
+                + f"Move FORWARD only. Write what comes NEXT in the formula.\n\n"
             )
         else:
             boundary_block = ""
@@ -596,46 +580,36 @@ OUTPUT FORMAT — strict:
         # ── Final chunk stop ───────────────────────────────────────────────────
         if is_final:
             stop_instruction = (
-                f"\n⛔ HARD STOP RULE:\n"
-                f"After you write the final CTA ('{cta_action}'), you MUST immediately write:\n"
+                f"\n⛔ HARD STOP: After writing the final CTA ('{cta_action}') write:\n"
                 f"{STOP_SIGNAL}\n"
-                f"Then output NOTHING AT ALL. Not one more word. Not a summary. Not a new section.\n"
-                f"The script is COMPLETE once the CTA is written. STOP.\n"
+                f"Then STOP. Nothing after. Not one word.\n"
             )
             role_note = (
-                f"FINAL CHUNK — write the closing and CTA exactly as the Writing Guidelines prescribe.\n"
-                f"Once the CTA lands, the payoff is complete. STOP immediately. Do not add more.\n"
-                f"Protect the payoff — continuing after it weakens it."
+                f"FINAL CHUNK — write closing + CTA per the Writing Guidelines.\n"
+                f"After CTA: STOP immediately. The payoff is complete."
             )
         else:
             stop_instruction = ""
             role_note = (
-                f"Chunk {chunk.index} of {total_chunks} — MID-SCRIPT BODY [{current_section_label}].\n"
-                f"⛔ FORBIDDEN — any intro/hook/greeting (the video ALREADY STARTED):\n"
-                f"   'Bonjour' / 'Hello' / 'Welcome' / 'Today' / 'Dans cette vidéo' / 'Aujourd'hui'\n"
-                f"   'Imagine' / 'Picture this' / 'In this video' — these restart the script.\n"
-                f"⛔ FORBIDDEN — any ending, CTA, conclusion:\n"
-                f"   'Subscribe' / 'Abonnez-vous' / 'Like' / 'Share' / 'See you next time'\n"
-                f"   These belong ONLY in the final chunk ({total_chunks}).\n"
-                f"⛔ FORBIDDEN — reopening any section already written (listed above).\n"
-                f"⛔ FORBIDDEN — repeating the same idea in different words (padding).\n"
-                f"Write the body content for [{current_section_label}] and stop. "
-                f"The next chunk continues the script."
+                f"MID-SCRIPT chunk {chunk.index}/{total_chunks} [{current_section_label}].\n"
+                f"⛔ NO intro / hook / greeting / CTA — forbidden (video already started).\n"
+                f"Write {word_target} words of body content then stop (next chunk continues)."
             )
 
+        # ── Prompt assembly (OUTLINE-FIRST architecture) ──────────────────────
+        # Order: task/outline → continuation → boundary → formula → role → length
+        # Outline at position-0 = highest model attention (solves "lost in the middle").
+        # Formula after outline = full reference available without burying the recipe.
         prompt = (
-            f"{formula_block}"
-            f"═══ WRITING TASK: CHUNK {chunk.index}/{total_chunks} ═══\n\n"
-            f"VIDEO TITLE: \"{title}\"\n"
-            f"TITLE IS A CONTRACT — every mechanism you describe must deliver exactly what the title promises.\n"
-            f"ANCHOR / SUBJECT: {anchor}\n"
-            f"LANGUAGE: {language.upper()} — every single word in {language}\n\n"
-            f"{boundary_block}"
-            f"{task_block}\n\n"
+            f"{task_block}"
             f"{continuation}"
+            f"{boundary_block}"
             f"{promo_reminder}"
+            f"{formula_block}"
             f"ROLE: {role_note}\n"
-            f"LENGTH: Minimum {chunk.target_chars:,} characters (max {int(chunk.target_chars * 1.08):,}).\n"
+            f"LENGTH: Write at least {chunk.target_chars:,} characters "
+            f"(~{word_target} words, max {int(chunk.target_chars * 1.20):,} chars).\n"
+            f"Fill every word with formula content. Do NOT rush. Do NOT stop early.\n"
             f"{stop_instruction}\n"
             f"WRITE NOW:"
         )
@@ -660,7 +634,6 @@ OUTPUT FORMAT — strict:
         MAX_API_RETRIES   = 3
         MAX_SHORT_RETRIES = 2
 
-        text = ""
         for short_attempt in range(MAX_SHORT_RETRIES + 1):
             for attempt in range(MAX_API_RETRIES + 1):
                 try:
@@ -677,35 +650,7 @@ OUTPUT FORMAT — strict:
                             "top_k"            : 40,
                         },
                     )
-
-                    # ── Safe text extraction ──────────────────────────────────
-                    # response.text raises ValueError when finish_reason is
-                    # SAFETY (2), RECITATION (4), or OTHER (3).
-                    # We catch it and treat it as empty (triggers short-retry).
-                    try:
-                        text = response.text.strip()
-                    except Exception:
-                        # Try manual extraction from parts
-                        text = ""
-                        try:
-                            for cand in response.candidates:
-                                for part in cand.content.parts:
-                                    text += getattr(part, "text", "")
-                            text = text.strip()
-                        except Exception:
-                            pass
-                        if not text:
-                            fr = 0
-                            try:
-                                fr = response.candidates[0].finish_reason
-                            except Exception:
-                                pass
-                            reason = {2: "SAFETY", 3: "OTHER", 4: "RECITATION"}.get(fr, f"code {fr}")
-                            if verbose:
-                                print(f"   ⚠️  {label} blocked by Gemini ({reason}) — retrying...")
-                            # Don't raise — let the short-retry loop handle it
                     break
-
                 except Exception as e:
                     err = str(e)
                     is_quota = (
@@ -722,16 +667,14 @@ OUTPUT FORMAT — strict:
                               f"(attempt {attempt + 1}/{MAX_API_RETRIES})...")
                     time.sleep(wait)
 
-            # Require 72% of target before accepting — forces retry on short outputs.
-            # This catches Flash/Pro undershoot EARLY (within the chunk call)
-            # rather than relying on the slow extension pass later.
-            min_ok = int(target_chars * 0.72)
+            text    = response.text.strip()
+            min_ok  = int(target_chars * 0.50)
             if len(text) >= min_ok or short_attempt == MAX_SHORT_RETRIES:
                 return text
             if verbose:
-                print(f"   ⚠️  {label} too short ({len(text):,} < {min_ok:,} = 72% of {target_chars:,}) "
+                print(f"   ⚠️  {label} too short ({len(text):,} < {min_ok:,}) "
                       f"— retrying (attempt {short_attempt + 1}/{MAX_SHORT_RETRIES})...")
-            time.sleep(2)   # was 4s — reduced to 2s between short retries
+            time.sleep(4)
 
         return text
 
@@ -829,7 +772,7 @@ WRITE IN {language.upper()} — CONTINUE NOW:"""
                 if verbose:
                     remaining = max(0, target_length - new_total)
                     print(f"   Extension {attempt+1}: +{len(extension):,} chars → total {new_total:,} / {target_length:,}  (still need: {remaining:,})")
-                time.sleep(1)
+                time.sleep(4)
             except Exception as e:
                 if verbose:
                     print(f"   ⚠️  Extension {attempt + 1} failed: {e}")
@@ -932,40 +875,10 @@ WRITE IN {language.upper()} — CONTINUE NOW:"""
         return text
 
     def _clean_script(self, text: str) -> str:
-        # Strip at the hard stop signal and common variants FIRST
-        for stop_variant in [
-            STOP_SIGNAL,
-            "=== END OF SCRIPT",
-            "--- END OF SCRIPT",
-            "END OF SCRIPT",
-            "FIN DU SCRIPT",
-            "FIN DE SCRIPT",
-            "--- THE END ---",
-            "=== THE END ===",
-            "Script ends here",
-            "This script ends",
-        ]:
-            idx = text.upper().find(stop_variant.upper())
-            if idx != -1:
-                text = text[:idx]
-                break
-
-        # Strip model meta-commentary lines appended after the real ending.
-        # IMPORTANT: patterns must be SPECIFIC — broad matches like
-        # "This video.*" would delete real script sentences.
-        text = re.sub(
-            r'\n+(Note\s*:[ \t].*'                           # "Note: ..."
-            r'|This (script|video script)\s+(ends|is complete|follows|was written).*'
-            r'|I (hope|trust) (this|you|that)\s.*'           # "I hope this helps..."
-            r'|Here\'?s?\s+(the|your|a)\s.*script.*'         # "Here's the script..."
-            r'|The\s+above\s+(script|text|content).*'        # "The above script..."
-            r'|This\s+(completes|concludes)\s+the.*'         # "This completes the script"
-            r'|Word\s+count\s*:.*'                           # "Word count: 1234"
-            r'|Character\s+count\s*:.*)$',                   # "Character count: 5678"
-            '', text, flags=re.IGNORECASE | re.MULTILINE
-        )
-        # Remove trailing separator lines (----, ====, etc.)
-        text = re.sub(r'\n+[-=]{3,}\s*$', '', text)
+        # Strip everything at/after the hard stop signal FIRST
+        idx = text.find(STOP_SIGNAL)
+        if idx != -1:
+            text = text[:idx]
 
         # Markdown
         text = re.sub(r"\*\*\*(.+?)\*\*\*", r"\1", text)
@@ -977,10 +890,8 @@ WRITE IN {language.upper()} — CONTINUE NOW:"""
         text = re.sub(r"#{1,6}\s+",          "",    text)
         text = re.sub(r"\*",                 "",    text)
 
-        # Labels / cues (including any prompt-structure labels that leaked into output)
+        # Labels / cues
         text = re.sub(r"(?i)(VISUAL|VIDEO|NARRATOR|SPEAKER|SHOW|CUT TO)\s*:", "", text)
-        text = re.sub(r"(?i)^(CHANNEL\s*/\s*BRAND|BRAND|NICHE|CHANNEL)\s*:.*$", "", text, flags=re.MULTILINE)
-        text = re.sub(r"(?i)^(WRITING GUIDELINES|YOUR WRITING GUIDELINES|END OF WRITING GUIDELINES).*$", "", text, flags=re.MULTILINE)
 
         # Timestamps
         text = re.sub(r"\(\s*\d+:\d+\s*-\s*\d+:\d+\s*\)", "", text)
