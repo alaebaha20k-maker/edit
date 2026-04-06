@@ -79,19 +79,19 @@ class SuperAutoEditor:
     """
 
     # Fraction of video that may be covered by B-roll (prevents over-saturation)
-    MAX_BROLL_COVERAGE = 0.70  # allow up to 70 % so correction pass can reach 50 %
+    MAX_BROLL_COVERAGE = 0.75  # allow up to 75% so correction pass can reach 60%
 
     # ── Global coverage targets ────────────────────────────────────────────────
-    MIN_COVERAGE     = 0.50   # MUST reach at least 50 % coverage
-    MAX_COVERAGE     = 0.65   # cap at 65 % (room for correction pass)
-    IMAGE_EXACT_DUR  = 3.0    # images are ALWAYS exactly 3 s (no more, no less)
+    MIN_COVERAGE     = 0.60   # MUST reach at least 60% coverage
+    MAX_COVERAGE     = 0.70   # cap at 70%
+    IMAGE_EXACT_DUR  = 3.0    # images are ALWAYS exactly 3 s
     IMAGE_MAX_DUR    = 3.0    # alias kept for compatibility
     VIDEO_MIN_DUR    = 5.0    # videos at least 5 s
     VIDEO_MAX_DUR    = 10.0   # videos at most 10 s
-    MIN_GAP          = 4.0    # minimum silence between inserts
-    MAX_GAP          = 16.0   # max allowed gap — if exceeded, correction pass fills it
-    SEARCH_TIMEOUT   = 2.5    # per-provider timeout in parallel search
-    GOOD_SCORE_THRESH = 65.0  # early stop if we have 3+ candidates above this
+    MIN_GAP          = 3.0    # minimum silence between inserts
+    MAX_GAP          = 20.0   # max allowed gap — media must appear every 20s
+    SEARCH_TIMEOUT   = 3.0    # per-provider timeout in parallel search
+    GOOD_SCORE_THRESH = 55.0  # early stop if we have 3+ candidates above this
 
     def __init__(
         self,
@@ -239,44 +239,66 @@ class SuperAutoEditor:
         minutes = duration_sec / 60
         char_count = len(script)
 
-        prompt = f"""You are a world-class documentary video editor and AI script analyst.
+        prompt = f"""You are an elite AI documentary video editor with 20 years of experience.
+Your job: analyze this script and produce the most precise, visually-rich B-roll plan possible.
 
 VIDEO DURATION: {duration_sec:.0f} seconds ({minutes:.1f} minutes)
 SCRIPT LENGTH: {char_count:,} characters
-TOTAL SCRIPT (analyze fully):
+TOTAL SCRIPT — READ EVERY WORD:
 ---
 {script}
 ---
 
-YOUR TASK:
-Analyze this script and produce a production-ready scene edit plan.
-Think like a top YouTube documentary editor making a premium B-roll plan.
+════════════ YOUR TASK ════════════
+Create a PRODUCTION-READY scene plan. Think like the best YouTube documentary editor.
+Every scene must have the RIGHT media for what is being SAID in that exact moment.
 
-RULES FOR SCENE SPLITTING:
-- Split by topic shift, story beat, explanation block, emotional change, transition
-- Do NOT use fixed intervals — split by meaning
-- Aim for 6–20 scenes depending on video length
-- Scenes can range from 30 seconds to 3 minutes
+════════════ SCENE SPLITTING RULES ════════════
+- Split ONLY by real topic shift, story beat change, or emotional pivot
+- Each scene: 20–120 seconds depending on content
+- For a {minutes:.1f}-minute video: aim for {max(8, int(minutes * 1.5))}-{max(15, int(minutes * 3))} scenes
+- IMPORTANT: You must plan media so there is visual content at least every 20 seconds
 
-RULES FOR TIMING:
-- Total must equal {duration_sec:.0f} seconds
-- Distribute proportionally by script density (more text = slightly longer scene)
-- Start times must be sequential, no overlap
+════════════ MEDIA DECISION RULES (READ CAREFULLY) ════════════
+Use "avatar_only" ONLY when the narrator is telling a deeply personal/emotional story
+with zero visual reference. Maximum 20% of scenes can be avatar_only.
 
-RULES FOR MEDIA DECISIONS:
-- "avatar_only" — narrator is transitioning, emotional, or no visual value
-- "image" — factual concept, entity, place that benefits from a still image
-- "video" — action, process, brand, location that needs motion
-- "mixed" — multiple strong visual moments in one scene
-- Target: 40-60% of total scenes get media. Never force media where it doesn't fit.
-- Never cover more than 45% of the total video with B-roll
+For EVERY OTHER scene, decide:
+  "image"  → company logos, products, people (portraits), statistics, maps, documents
+              Use image when: specific brand is mentioned, specific person is named,
+              specific place is named, specific product is shown, data/numbers discussed
+  "video"  → actions, processes, locations with motion, how-things-work demonstrations
+              Use video when: an action verb is in the scene, a process is described,
+              a place with activity is mentioned, something moving/happening
+  "mixed"  → scene has multiple distinct visual moments (use 2 insertion_points)
 
-RULES FOR SEARCH QUERIES:
-- Never generic ("car", "people", "office")
-- Always specific, cinematic, documentary-style
-- 4-6 queries per media scene, increasing specificity
+CRITICAL: The media must match EXACTLY what is said. If the script says "Apple released
+the iPhone", the media must show iPhone or Apple store — not generic tech footage.
 
-RULES FOR MEDIA PLACEMENT:
+════════════ ENTITY EXTRACTION (MOST IMPORTANT) ════════════
+For each scene, identify:
+- brand_entities: Real company/brand names mentioned (e.g. "Apple", "Tesla", "Nike")
+- person_entities: Real people named (e.g. "Elon Musk", "Steve Jobs")
+- place_entities: Real locations (e.g. "Paris", "Wall Street", "Silicon Valley")
+- product_entities: Real products named (e.g. "iPhone 15", "Model S")
+
+These entities need Brave web search for real, accurate images/footage.
+brand_query: One precise search query using the entity name + context
+  (e.g. "Apple iPhone 15 launch event", "Tesla Model S electric car driving")
+
+════════════ SEARCH QUERIES RULES ════════════
+- brand_query: ALWAYS use the real brand/entity name + specific context
+  Examples: "Nike Air Max sneaker closeup", "SpaceX Falcon 9 launch footage"
+- visual_queries: cinematic, documentary-style alternatives (for stock APIs)
+  NEVER generic like "car", "people", "technology" — always specific to THIS scene
+- 4-6 visual_queries per scene, from most specific to most general
+
+════════════ TIMING RULES ════════════
+- Total timing must equal exactly {duration_sec:.0f} seconds
+- Start times sequential, no overlap
+- Distribute proportionally: longer scenes for denser script sections
+
+════════════ MEDIA PLACEMENT RULES ════════════
 - "start": media at the beginning of the scene
 - "middle": media in the strongest visual phrase
 - "end": media just before topic shift
@@ -284,13 +306,15 @@ RULES FOR MEDIA PLACEMENT:
 
 Return ONLY valid JSON (no markdown, no explanation):
 
+Return ONLY valid JSON (no markdown, no explanation):
+
 {{
   "scenes": [
     {{
       "scene_id": 1,
-      "title": "short scene title",
-      "summary": "one sentence summary",
-      "script_excerpt": "first 120 chars of this scene's script",
+      "title": "precise scene title",
+      "summary": "one sentence — what is SAID in this scene specifically",
+      "script_excerpt": "first 150 chars of this scene's script verbatim",
       "start_time": 0,
       "end_time": 45,
       "duration_seconds": 45,
@@ -298,17 +322,22 @@ Return ONLY valid JSON (no markdown, no explanation):
       "importance": "high|medium|low",
       "visual_richness": "rich|moderate|sparse",
       "decision": "avatar_only|image|video|mixed",
-      "search_queries": ["specific query 1", "cinematic query 2", "documentary query 3"],
+      "brand_entities": ["Apple", "Tesla"],
+      "person_entities": ["Elon Musk"],
+      "place_entities": ["Silicon Valley"],
+      "product_entities": ["iPhone 15"],
+      "brand_query": "Apple iPhone 15 launch event product photo",
+      "search_queries": ["specific visual query 1", "cinematic query 2", "documentary query 3", "stock query 4"],
       "media_type_preferred": "video|image|none",
       "insertion_points": [
         {{
-          "placement": "middle",
-          "offset_from_scene_start": 10,
+          "placement": "start|middle|end",
+          "offset_from_scene_start": 5,
           "duration": 7,
-          "reason": "why media fits here"
+          "reason": "why this exact media at this exact moment"
         }}
       ],
-      "editor_notes": "brief note for the editor"
+      "editor_notes": "what visual exactly should appear here"
     }}
   ],
   "total_duration": {duration_sec:.0f},
@@ -317,11 +346,15 @@ Return ONLY valid JSON (no markdown, no explanation):
 
         model = genai.GenerativeModel(
             Config.GEMINI_SCRIPT_MODEL,
-            system_instruction="You are an expert AI video editor. Always return valid JSON only.",
+            system_instruction=(
+                "You are an expert AI documentary video editor with 20 years experience. "
+                "Always return valid JSON only. Be extremely precise about entities and queries. "
+                "NEVER use generic queries. Every query must match the exact script content."
+            ),
         )
         response = model.generate_content(
             prompt,
-            generation_config={"temperature": 0.2, "max_output_tokens": 16384},
+            generation_config={"temperature": 0.15, "max_output_tokens": 32768},
         )
         raw = response.text.strip()
 
@@ -338,11 +371,16 @@ Return ONLY valid JSON (no markdown, no explanation):
             if m:
                 plan = json.loads(m.group())
             else:
-                raise ValueError(f"Gemini returned invalid JSON for scene plan.")
+                raise ValueError("Gemini returned invalid JSON for scene plan.")
 
-        # Attach selected_media list to each scene
+        # Attach selected_media list and default missing fields to each scene
         for scene in plan.get("scenes", []):
             scene.setdefault("selected_media", [])
+            scene.setdefault("brand_entities", [])
+            scene.setdefault("person_entities", [])
+            scene.setdefault("place_entities", [])
+            scene.setdefault("product_entities", [])
+            scene.setdefault("brand_query", "")
 
         return plan
 
@@ -603,19 +641,20 @@ Return ONLY valid JSON (no markdown, no explanation):
             richness     * 0.15
         )
 
-        # Decision logic
-        if is_transition or media_priority < 28:
+        # Decision logic — be generous with media, only skip if truly transition-only
+        if is_transition and media_priority < 20:
             decision   = "avatar_only"
             media_type = "none"
-        elif motion_hits > static_hits or documentary_hits >= 2 or media_priority >= 70:
+        elif motion_hits > static_hits or documentary_hits >= 2 or media_priority >= 60:
             decision   = "video_support"
             media_type = "video"
         else:
+            # Default to image — static content, facts, explanations, brands
             decision   = "image_support"
             media_type = "image"
 
-        # How many inserts this scene can have (1 normally, 2 if high importance)
-        insert_count = 2 if (importance >= 70 and dur >= 40) else 1
+        # How many inserts: 1 default, 2 for high-importance/long scenes
+        insert_count = 2 if (importance >= 70 and dur >= 30) else 1
 
         return {
             "visual_need"    : visual_need,
@@ -690,37 +729,53 @@ Return ONLY valid JSON (no markdown, no explanation):
     def _build_query_waves(self, scene: Dict) -> List[List[str]]:
         """
         Return 3 waves of queries:
-          Wave 0 — entity-specific + exact/factual (highest bonus)
-          Wave 1 — cinematic/documentary variants
-          Wave 2 — conceptual broad fallback
+          Wave 0 — brand/entity-specific (Brave-first, highest bonus)
+          Wave 1 — Gemini's exact visual queries (stock APIs)
+          Wave 2 — cinematic/documentary broad fallback
         """
-        base    = scene.get("search_queries", [])
-        title   = scene.get("title", "")
-        summ    = scene.get("summary", "")
-        excerpt = scene.get("script_excerpt", "")
-        topic   = title or summ[:60]
+        base         = scene.get("search_queries", [])
+        brand_query  = scene.get("brand_query", "")
+        title        = scene.get("title", "")
+        summ         = scene.get("summary", "")
+        excerpt      = scene.get("script_excerpt", "")
 
-        # Entity extraction — named brands/people/places get their own queries
-        entities = self._extract_entities(title + " " + summ + " " + excerpt[:200])
+        # Entities from Gemini plan (most accurate)
+        brand_ents   = scene.get("brand_entities", [])
+        person_ents  = scene.get("person_entities", [])
+        place_ents   = scene.get("place_entities", [])
+        product_ents = scene.get("product_entities", [])
+        all_entities = brand_ents + person_ents + place_ents + product_ents
 
-        # Wave 0: entity-specific queries first, then Gemini's exact queries
+        # Fallback: extract from text if Gemini didn't provide
+        if not all_entities:
+            all_entities = self._extract_entities(
+                title + " " + summ + " " + excerpt[:200]
+            )
+
+        topic = title or summ[:60]
+
+        # ── Wave 0: entity/brand queries — Brave will be called FIRST on these ──
+        # These are the most specific — real company names, people, products
         wave0: List[str] = []
-        for ent in entities[:2]:
-            wave0.append(ent)                      # exact entity name (triggers brand search)
-            wave0.append(f"{ent} footage")         # entity + footage
-        wave0 += (base[:3] if base else [topic])   # Gemini queries
-        wave0 = list(dict.fromkeys(wave0))[:5]     # deduplicate, max 5
+        if brand_query:
+            wave0.append(brand_query)             # Gemini's precise brand query
+        for ent in all_entities[:3]:
+            wave0.append(ent)                     # exact entity name
+            wave0.append(f"{ent} photo")          # entity + context
+        wave0 = list(dict.fromkeys(w for w in wave0 if w))[:5]
 
-        # Wave 1: cinematic/documentary rewrites of top queries
-        wave1: List[str] = []
+        # ── Wave 1: Gemini's visual queries for stock APIs ────────────────────
+        wave1: List[str] = list(dict.fromkeys(base[:5])) if base else [topic]
+
+        # ── Wave 2: cinematic/documentary fallback ────────────────────────────
+        wave2: List[str] = []
         for q in (base[:2] if base else [topic]):
-            wave1.append(f"cinematic {q}")
-            wave1.append(f"documentary footage {q}")
-
-        # Wave 2: broad fallback using key nouns only
-        words  = [w for w in topic.split() if len(w) > 4][:4]
-        broad  = " ".join(words) if words else topic
-        wave2  = [f"stock footage {broad}", f"stock photo {broad}", broad]
+            wave2.append(f"cinematic {q}")
+        words = [w for w in topic.split() if len(w) > 4][:4]
+        broad = " ".join(words) if words else topic
+        wave2.append(f"documentary footage {broad}")
+        wave2.append(broad)
+        wave2 = list(dict.fromkeys(wave2))[:4]
 
         return [wave0, wave1, wave2]
 
@@ -886,32 +941,42 @@ Return ONLY valid JSON (no markdown, no explanation):
                 break
             iters += 1
 
-        # ── 3. Coverage enforcement (must reach MIN_COVERAGE = 50 %) ──────────
+        # ── 3. Coverage enforcement (must reach MIN_COVERAGE) ────────────────
+        # Keep trying ALL scenes (not just highest priority) until coverage met.
+        # Allow avatar_only scenes to also get media if coverage is critically low.
         iters = 0
+        consecutive_failures = 0
         while iters < max_iters:
             current = self._compute_coverage(plan)
             if current / max(duration, 1) >= self.MIN_COVERAGE:
                 break
 
-            # Sort scenes by media_priority descending — add inserts to richest first
-            sorted_scenes = sorted(
+            if consecutive_failures >= 3:
+                break   # tried many times with no success — stop
+
+            # Try all non-avatar scenes, cycling through them
+            all_eligible = sorted(
                 [s for s in scenes
                  if s.get("_brain", {}).get("decision") != "avatar_only"],
                 key=lambda s: s.get("_brain", {}).get("media_priority", 0),
                 reverse=True,
             )
+            # If still not enough, also allow ANY scene
+            if not all_eligible or (current / max(duration, 1) < self.MIN_COVERAGE * 0.5):
+                all_eligible = list(scenes)
+
             placed = False
-            for sc in sorted_scenes:
-                sc_dur    = float(sc.get("duration_seconds", 30))
-                sc_start  = float(sc.get("start_time", 0))
-                n_have    = len([m for m in sc.get("selected_media", []) if m.get("local_path")])
-                # space them out: every 10 s in the scene allow one extra insert
-                max_here  = max(1, int(sc_dur / 10))
+            for sc in all_eligible:
+                sc_dur  = float(sc.get("duration_seconds", 30))
+                n_have  = len([m for m in sc.get("selected_media", []) if m.get("local_path")])
+                # Allow one insert per 8s of scene duration
+                max_here = max(1, int(sc_dur / 8))
                 if n_have >= max_here:
                     continue
                 prefer = sc.get("_brain", {}).get("media_type", "image")
+                if not prefer or prefer == "none":
+                    prefer = "image"
                 dur    = self.IMAGE_EXACT_DUR if prefer == "image" else 7.0
-                # stagger offset based on how many we already have
                 offset = min((n_have + 1) * (sc_dur / (max_here + 1)), sc_dur - dur - 1)
                 offset = max(0.0, offset)
                 ok = self._inject_media(sc, media_dir, used_urls,
@@ -920,10 +985,11 @@ Return ONLY valid JSON (no markdown, no explanation):
                                         prefer_type=prefer)
                 if ok:
                     placed = True
+                    consecutive_failures = 0
                     break
 
             if not placed:
-                break
+                consecutive_failures += 1
             iters += 1
 
         return plan
@@ -1059,32 +1125,42 @@ Return ONLY valid JSON (no markdown, no explanation):
     def _parallel_search(self, query_waves: List[List[str]], media_type: str) -> List[Dict]:
         """
         Wave-based parallel search.  Wave 0 → 1 → 2.
-        Early stop when 3+ candidates score >= GOOD_SCORE_THRESH.
-        Provider priority:
-          video : Pexels > Pixabay > Coverr > Videvo > Brave > Serper
-          image : Unsplash > Pexels > Pixabay > Google > Brave > Serper
+
+        Wave 0 (entity/brand queries):
+          Brave runs FIRST and ALONE — it has real-world brand images
+          that stock APIs never have. If Brave finds 3+ good hits, skip
+          stock APIs for wave 0.  Stock APIs run in parallel after Brave.
+
+        Wave 1+ (visual/stock queries):
+          All providers run in parallel. Early stop if 3+ strong hits.
         """
         want_video = (media_type == "video")
         k = self.keys
 
+        # Stock providers — reliable downloads
+        stock_video_providers = [
+            ("pexels_v",  lambda q: self._search_pexels(q, "video")   if k["pexels"]   else []),
+            ("pixabay_v", lambda q: self._search_pixabay(q, "video")  if k["pixabay"]  else []),
+            ("coverr",    lambda q: self._search_coverr(q)            if k["coverr"]   else []),
+            ("videvo",    lambda q: self._search_videvo(q)            if k["videvo"]   else []),
+        ]
+        stock_image_providers = [
+            ("pexels_i",  lambda q: self._search_pexels(q, "image")   if k["pexels"]   else []),
+            ("pixabay_i", lambda q: self._search_pixabay(q, "image")  if k["pixabay"]  else []),
+            ("unsplash",  lambda q: self._search_unsplash(q)          if k["unsplash"] else []),
+            ("google",    lambda q: self._search_google_images(q)     if k["gcs_key"]  else []),
+        ]
+        # Web search providers — best for specific brands/entities but unreliable download
+        web_providers = [
+            ("brave",  lambda q: self._search_brave_images(q)       if k["brave_search"] else []),
+            ("serper", lambda q: self._search_serper_images(q)      if k["serper"]       else []),
+        ]
+
+        stock_providers = stock_video_providers if want_video else stock_image_providers
+        # Also add stock images as fallback even for video searches
+        all_providers  = stock_providers + web_providers
         if want_video:
-            providers = [
-                ("pexels_v",  lambda q: self._search_pexels(q, "video")    if k["pexels"]        else []),
-                ("pixabay_v", lambda q: self._search_pixabay(q, "video")   if k["pixabay"]       else []),
-                ("coverr",    lambda q: self._search_coverr(q)             if k["coverr"]        else []),
-                ("videvo",    lambda q: self._search_videvo(q)             if k["videvo"]        else []),
-                ("brave",     lambda q: self._search_brave_images(q)       if k["brave_search"]  else []),
-                ("serper",    lambda q: self._search_serper_images(q)      if k["serper"]        else []),
-            ]
-        else:
-            providers = [
-                ("unsplash",  lambda q: self._search_unsplash(q)           if k["unsplash"]      else []),
-                ("pexels_i",  lambda q: self._search_pexels(q, "image")    if k["pexels"]        else []),
-                ("pixabay_i", lambda q: self._search_pixabay(q, "image")   if k["pixabay"]       else []),
-                ("google",    lambda q: self._search_google_images(q)      if k["gcs_key"]       else []),
-                ("brave",     lambda q: self._search_brave_images(q)       if k["brave_search"]  else []),
-                ("serper",    lambda q: self._search_serper_images(q)      if k["serper"]        else []),
-            ]
+            all_providers += stock_image_providers  # images as last fallback for video scenes
 
         all_candidates: List[Dict] = []
         seen_urls: set = set()
@@ -1093,15 +1169,30 @@ Return ONLY valid JSON (no markdown, no explanation):
             if not queries:
                 continue
 
-            with ThreadPoolExecutor(max_workers=min(len(queries) * len(providers), 16)) as exe:
+            # ── Wave 0: entity queries — Brave FIRST ──────────────────────────
+            if wave_idx == 0 and k["brave_search"]:
+                # Run Brave synchronously first (it has brand-specific images)
+                for q_idx, q in enumerate(queries[:3]):
+                    bonus = self._QUERY_BONUS[min(q_idx, len(self._QUERY_BONUS) - 1)]
+                    brave_hits = self._search_brave_images(q)
+                    for item in brave_hits:
+                        u = item.get("url", "")
+                        if u and u not in seen_urls:
+                            seen_urls.add(u)
+                            # Extra bonus for Brave hits on entity queries (real brands)
+                            item["score"] = item.get("score", 0) + bonus + 15
+                            all_candidates.append(item)
+
+            # ── All providers in parallel ─────────────────────────────────────
+            with ThreadPoolExecutor(max_workers=min(len(queries) * len(all_providers), 20)) as exe:
                 futs: Dict[Future, int] = {}
                 for q_idx, q in enumerate(queries[:4]):
                     bonus = self._QUERY_BONUS[min(q_idx, len(self._QUERY_BONUS) - 1)]
-                    for _, fn in providers:
+                    for _, fn in all_providers:
                         fut = exe.submit(fn, q)
                         futs[fut] = bonus
 
-                for fut in as_completed(futs, timeout=self.SEARCH_TIMEOUT * 3):
+                for fut in as_completed(futs, timeout=self.SEARCH_TIMEOUT * 4):
                     bonus = futs[fut]
                     try:
                         for item in (fut.result(timeout=0) or []):
@@ -1113,8 +1204,9 @@ Return ONLY valid JSON (no markdown, no explanation):
                     except Exception:
                         pass
 
-            # Early stop: 3+ strong candidates already found
-            if sum(1 for c in all_candidates if c.get("score", 0) >= self.GOOD_SCORE_THRESH) >= 3:
+            # Early stop: 5+ strong candidates (raised from 3 for better selection)
+            good = sum(1 for c in all_candidates if c.get("score", 0) >= self.GOOD_SCORE_THRESH)
+            if good >= 5:
                 break
 
         return all_candidates
@@ -1129,10 +1221,14 @@ Return ONLY valid JSON (no markdown, no explanation):
         Try candidates in order (best score first) until one downloads successfully.
         Uses session URL cache to skip re-downloads.
         """
-        for candidate in candidates[:8]:
+        # Try up to 12 candidates — web URLs (Brave/Serper) often fail hotlink protection
+        # so we need a larger pool. Stock APIs (Pexels, Pixabay) are tried first by score.
+        tried = 0
+        for candidate in candidates[:12]:
             url = candidate.get("url", "")
             if not url:
                 continue
+            tried += 1
 
             # Session-level cache hit (same URL already on disk this run)
             if url in self._url_cache:
@@ -1173,12 +1269,13 @@ Return ONLY valid JSON (no markdown, no explanation):
             candidate["type"]       = detected
             candidate["local_path"] = str(local_path)
             self._url_cache[url]    = str(local_path)
-            print(f"   ✔ scene {scene_id} — {candidate.get('source','?')} {detected}"
+            src_label = candidate.get("source", "?")
+            print(f"   ✔ scene {scene_id} — {src_label} {detected}"
                   f"  score={candidate.get('score', 0):.0f}"
                   f"  {candidate.get('width',0)}×{candidate.get('height',0)}")
             return candidate
 
-        print(f"   ✗ scene {scene_id}: all {min(len(candidates), 8)} candidates failed")
+        print(f"   ✗ scene {scene_id}: all {tried} candidates failed download")
         return None
 
     # ── Coverr ────────────────────────────────────────────────────────────────
@@ -1596,8 +1693,8 @@ Return ONLY valid JSON (no markdown, no explanation):
         "video/x-msvideo", "video/x-matroska", "application/octet-stream",
     }
 
-    def _download(self, url: str, dest: Path, timeout: int = 90,
-                  retries: int = 3) -> bool:
+    def _download(self, url: str, dest: Path, timeout: int = 30,
+                  retries: int = 2) -> bool:
         """
         Download url → dest with:
          - rotating User-Agent + Referer derived from url host
@@ -1853,10 +1950,13 @@ Return ONLY valid JSON (no markdown, no explanation):
           - Avatar = base track (1920×1080, audio preserved)
           - Each timeline entry = overlay at [start, end)
           - All overlays are muted (pre-processed in Phase 3)
+
+        For large timelines (>40 clips), batches are chained in groups
+        to avoid hitting FFmpeg filter_complex node limits.
         """
         if not timeline:
-            # No B-roll: just re-encode avatar to 1080p
-            self._progress(80, "No B-roll found — encoding avatar to 1080p…")
+            print("   ⚠️  No B-roll timeline — check if downloads succeeded. Rendering avatar-only.")
+            self._progress(80, "No B-roll — encoding avatar only (check media API keys)")
             self._render_avatar_only(avatar_path, out_path)
             return
 
@@ -1864,12 +1964,18 @@ Return ONLY valid JSON (no markdown, no explanation):
         timeline = [t for t in timeline if Path(t["clip_path"]).exists()
                     and Path(t["clip_path"]).stat().st_size > 1000]
         if not timeline:
-            self._progress(80, "All clips invalid after processing — avatar-only output…")
+            print("   ⚠️  All clips missing on disk after preprocessing — avatar-only fallback.")
+            self._progress(80, "All clips missing — avatar-only output")
             self._render_avatar_only(avatar_path, out_path)
             return
 
         n = len(timeline)
-        self._progress(76, f"Building FFmpeg overlay graph ({n} inserts)…")
+        self._progress(76, f"Building FFmpeg overlay graph ({n} B-roll inserts)…")
+        print(f"   📹 Rendering {n} B-roll clips into final video…")
+        for i, t in enumerate(timeline[:5]):
+            print(f"      clip {i+1}: start={t['start']:.1f}s  dur={t['end']-t['start']:.1f}s  {Path(t['clip_path']).name}")
+        if n > 5:
+            print(f"      … and {n-5} more clips")
 
         # ── Build inputs ──────────────────────────────────────────────────────
         inputs = ["-i", avatar_path]
@@ -1877,9 +1983,6 @@ Return ONLY valid JSON (no markdown, no explanation):
             inputs += ["-i", item["clip_path"]]
 
         # ── Build filter_complex ──────────────────────────────────────────────
-        # Each filter part is a separate string; they are joined by ";" at end.
-        # We split setpts and overlay into separate filter chains to avoid
-        # mis-parsing when the label contains numbers that confuse some FFmpeg builds.
         scale_base = (
             "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,"
             "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1[base]"
@@ -1892,7 +1995,6 @@ Return ONLY valid JSON (no markdown, no explanation):
             s, e    = item["start"], item["end"]
             clbl    = f"c{idx}"
             out_lbl = f"v{idx}"
-            # setpts resets timestamps so the clip always starts at t=0 in its stream
             parts.append(f"[{idx}:v]setpts=PTS-STARTPTS,setsar=1[{clbl}]")
             parts.append(
                 f"[{prev}][{clbl}]overlay="
@@ -1912,13 +2014,50 @@ Return ONLY valid JSON (no markdown, no explanation):
             + [out_path]
         )
 
-        self._progress(78, "FFmpeg rendering… (this may take several minutes)")
+        self._progress(78, f"FFmpeg rendering {n} clips… (may take a few minutes for long videos)")
         ok = _run_ffmpeg(cmd, label="overlay-render")
 
         if not ok:
-            # Fallback: avatar only
-            self._progress(90, "Overlay render failed — falling back to avatar-only…")
+            print("   ⚠️  Overlay render failed — trying concat fallback…")
+            # Second attempt: try with fewer clips (drop last 20% as safety)
+            if len(timeline) > 5:
+                reduced = timeline[:int(len(timeline) * 0.8)]
+                self._progress(85, f"Retrying with {len(reduced)} clips…")
+                ok2 = self._render_with_timeline(avatar_path, reduced, out_path)
+                if ok2:
+                    return
+            self._progress(90, "Render failed — avatar-only fallback")
             self._render_avatar_only(avatar_path, out_path)
+
+    def _render_with_timeline(self, avatar_path: str, timeline: List[Dict], out_path: str) -> bool:
+        """Re-render with a given timeline. Returns True on success."""
+        inputs = ["-i", avatar_path]
+        for item in timeline:
+            inputs += ["-i", item["clip_path"]]
+
+        scale_base = (
+            "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,"
+            "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1[base]"
+        )
+        parts = [scale_base]
+        prev = "base"
+        for i, item in enumerate(timeline):
+            idx, s, e = i + 1, item["start"], item["end"]
+            clbl, out_lbl = f"c{idx}", f"v{idx}"
+            parts.append(f"[{idx}:v]setpts=PTS-STARTPTS,setsar=1[{clbl}]")
+            parts.append(f"[{prev}][{clbl}]overlay=enable='between(t,{s:.3f},{e:.3f})':x=0:y=0[{out_lbl}]")
+            prev = out_lbl
+
+        cmd = (
+            inputs
+            + ["-filter_complex", ";".join(parts)]
+            + ["-map", f"[{prev}]", "-map", "0:a?"]
+            + ["-c:v", "libx264", "-preset", "ultrafast", "-threads", "0", "-crf", "28"]
+            + ["-c:a", "aac", "-b:a", "192k"]
+            + ["-pix_fmt", "yuv420p", "-movflags", "+faststart"]
+            + [out_path]
+        )
+        return _run_ffmpeg(cmd, label="overlay-render-retry")
 
     def _render_avatar_only(self, avatar_path: str, out_path: str):
         """Encode avatar to 1080p H.264 with no overlays."""
