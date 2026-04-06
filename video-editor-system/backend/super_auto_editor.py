@@ -79,16 +79,17 @@ class SuperAutoEditor:
     """
 
     # Fraction of video that may be covered by B-roll (prevents over-saturation)
-    MAX_BROLL_COVERAGE = 0.45
+    MAX_BROLL_COVERAGE = 0.70  # allow up to 70 % so correction pass can reach 50 %
 
     # ── Global coverage targets ────────────────────────────────────────────────
-    MIN_COVERAGE     = 0.40   # at least 40 % of video must have media
-    MAX_COVERAGE     = 0.50   # never exceed 50 %
-    IMAGE_MAX_DUR    = 3.0    # hard cap: images never longer than 3 s
+    MIN_COVERAGE     = 0.50   # MUST reach at least 50 % coverage
+    MAX_COVERAGE     = 0.65   # cap at 65 % (room for correction pass)
+    IMAGE_EXACT_DUR  = 3.0    # images are ALWAYS exactly 3 s (no more, no less)
+    IMAGE_MAX_DUR    = 3.0    # alias kept for compatibility
     VIDEO_MIN_DUR    = 5.0    # videos at least 5 s
     VIDEO_MAX_DUR    = 10.0   # videos at most 10 s
     MIN_GAP          = 4.0    # minimum silence between inserts
-    MAX_GAP          = 25.0   # max silence before we MUST insert if budget allows
+    MAX_GAP          = 16.0   # max allowed gap — if exceeded, correction pass fills it
     SEARCH_TIMEOUT   = 2.5    # per-provider timeout in parallel search
     GOOD_SCORE_THRESH = 65.0  # early stop if we have 3+ candidates above this
 
@@ -470,7 +471,7 @@ Return ONLY valid JSON (no markdown, no explanation):
 
                 raw_dur = float(insert.get("duration", 7 if wanted_type == "video" else 3))
                 if wanted_type == "image":
-                    clip_dur = min(raw_dur, self.IMAGE_MAX_DUR)
+                    clip_dur = self.IMAGE_EXACT_DUR   # images: always exactly 3 s
                 else:
                     clip_dur = max(min(raw_dur, self.VIDEO_MAX_DUR), self.VIDEO_MIN_DUR)
 
@@ -507,8 +508,15 @@ Return ONLY valid JSON (no markdown, no explanation):
             scene["selected_media"] = selected
 
         coverage = broll_seconds / max(duration, 1) * 100
-        self._progress(58, f"Media brain done — {inserts_placed} inserts, "
-                           f"{coverage:.0f}% coverage")
+        self._progress(55, f"Pass 1 done — {inserts_placed} inserts, {coverage:.0f}% coverage")
+
+        # ── Second correction pass ────────────────────────────────────────────
+        self._progress(56, "Running correction pass (opening hook / gap fill / coverage)…")
+        plan = self._correction_pass(plan, media_dir, used_urls, duration)
+
+        final_cov = self._compute_coverage(plan) / max(duration, 1) * 100
+        self._progress(58, f"Media brain done — coverage {final_cov:.0f}%  "
+                           f"(target ≥{self.MIN_COVERAGE*100:.0f}%)")
         return plan
 
     def _available_api_labels(self) -> str:
@@ -619,61 +627,306 @@ Return ONLY valid JSON (no markdown, no explanation):
 
     def _plan_density(self, duration: float, n_scenes: int) -> Dict:
         """
-        Compute target insert count and per-minute budget to hit 40-50 % coverage.
+        Compute target insert count to reach ≥50 % coverage.
+        Mix of 3 s images and 7 s videos → average ~5.5 s per insert.
         """
         minutes = duration / 60.0
-        # Rough target: each insert ~7s average → inserts needed for 45 % coverage
-        avg_insert_dur = 6.5
-        target_inserts = int((duration * 0.45) / avg_insert_dur)
+        avg_insert_dur = 5.5   # realistic mix average
+        target_inserts = int((duration * self.MIN_COVERAGE) / avg_insert_dur)
         max_inserts    = int((duration * self.MAX_COVERAGE) / avg_insert_dur)
 
-        # Sanity caps
+        # Sanity caps — prevent absurdly dense timelines on long videos
         if minutes <= 1:
-            target_inserts = min(target_inserts, 5)
+            target_inserts = min(target_inserts, 8)
+            max_inserts    = min(max_inserts, 10)
         elif minutes <= 5:
-            target_inserts = min(target_inserts, 18)
+            target_inserts = min(target_inserts, 28)
+            max_inserts    = min(max_inserts, 36)
         elif minutes <= 10:
-            target_inserts = min(target_inserts, 30)
+            target_inserts = min(target_inserts, 55)
+            max_inserts    = min(max_inserts, 70)
         else:
-            target_inserts = min(target_inserts, int(minutes * 2.5))
+            target_inserts = min(target_inserts, int(minutes * 4.5))
+            max_inserts    = min(max_inserts,    int(minutes * 6.0))
 
         return {
-            "target_inserts" : max(2, target_inserts),
-            "max_inserts"    : max(2, max_inserts),
+            "target_inserts" : max(4, target_inserts),
+            "max_inserts"    : max(4, max_inserts),
             "min_gap"        : self.MIN_GAP,
             "max_gap"        : self.MAX_GAP,
         }
 
+    # Common words to ignore when extracting entities
+    _ENTITY_STOPWORDS = {
+        "the","a","an","and","or","but","in","on","at","to","for","of","with",
+        "by","from","up","as","into","through","during","before","after","above",
+        "below","between","each","few","more","most","other","some","such","no",
+        "nor","not","only","own","same","so","than","too","very","just","this",
+        "that","these","those","is","are","was","were","be","been","has","have",
+        "had","do","does","did","will","would","could","should","may","might",
+        "shall","can","their","they","them","he","she","we","you","i","it","its",
+        "his","her","our","who","which","what","when","where","how","why","both",
+        "video","story","time","year","day","world","people","company","brand",
+        "product","market","industry","business","service","system","model",
+    }
+
+    def _extract_entities(self, text: str) -> List[str]:
+        """
+        Extract proper nouns and brand names from text.
+        Returns up to 4 unique entity strings (most likely to be searchable).
+        """
+        words   = re.findall(r"\b[A-Z][a-zA-Z]{1,30}\b", text)
+        seen: set = set()
+        entities: List[str] = []
+        for w in words:
+            lw = w.lower()
+            if lw in self._ENTITY_STOPWORDS:
+                continue
+            if w not in seen:
+                seen.add(w)
+                entities.append(w)
+        return entities[:4]
+
     def _build_query_waves(self, scene: Dict) -> List[List[str]]:
         """
         Return 3 waves of queries:
-          Wave 0 — exact/factual (primary)
+          Wave 0 — entity-specific + exact/factual (highest bonus)
           Wave 1 — cinematic/documentary variants
-          Wave 2 — conceptual fallback
+          Wave 2 — conceptual broad fallback
         """
-        base   = scene.get("search_queries", [])
-        title  = scene.get("title", "")
-        summ   = scene.get("summary", "")
-        topic  = title or summ[:60]
+        base    = scene.get("search_queries", [])
+        title   = scene.get("title", "")
+        summ    = scene.get("summary", "")
+        excerpt = scene.get("script_excerpt", "")
+        topic   = title or summ[:60]
 
-        # Wave 0: Gemini queries as-is (already specific)
-        wave0 = base[:3] if base else [topic]
+        # Entity extraction — named brands/people/places get their own queries
+        entities = self._extract_entities(title + " " + summ + " " + excerpt[:200])
 
-        # Wave 1: cinematic/documentary rewrites
-        wave1 = []
-        for q in wave0[:2]:
+        # Wave 0: entity-specific queries first, then Gemini's exact queries
+        wave0: List[str] = []
+        for ent in entities[:2]:
+            wave0.append(ent)                      # exact entity name (triggers brand search)
+            wave0.append(f"{ent} footage")         # entity + footage
+        wave0 += (base[:3] if base else [topic])   # Gemini queries
+        wave0 = list(dict.fromkeys(wave0))[:5]     # deduplicate, max 5
+
+        # Wave 1: cinematic/documentary rewrites of top queries
+        wave1: List[str] = []
+        for q in (base[:2] if base else [topic]):
             wave1.append(f"cinematic {q}")
             wave1.append(f"documentary footage {q}")
 
-        # Wave 2: broader fallback (remove rare words, keep nouns)
-        words   = [w for w in topic.split() if len(w) > 4][:4]
-        wave2q  = " ".join(words) if words else topic
-        wave2 = [
-            f"stock footage {wave2q}",
-            f"stock photo {wave2q}",
-            wave2q,
-        ]
+        # Wave 2: broad fallback using key nouns only
+        words  = [w for w in topic.split() if len(w) > 4][:4]
+        broad  = " ".join(words) if words else topic
+        wave2  = [f"stock footage {broad}", f"stock photo {broad}", broad]
+
         return [wave0, wave1, wave2]
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # CORRECTION PASS — opening hook, gap fill, coverage enforcement
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _build_timeline_from_plan(self, plan: Dict) -> List[Tuple[float, float]]:
+        """Return sorted list of (abs_start, abs_end) for every downloaded media."""
+        items = []
+        for scene in plan.get("scenes", []):
+            s = float(scene.get("start_time", 0))
+            for media in scene.get("selected_media", []):
+                if not media.get("local_path"):
+                    continue
+                offset = float(media.get("insertion_offset", 0))
+                dur    = float(media.get("clip_duration", 3))
+                a      = s + offset
+                items.append((a, a + dur))
+        items.sort()
+        return items
+
+    def _compute_coverage(self, plan: Dict) -> float:
+        """Total seconds of media in the plan (sum of all clip_duration with local_path)."""
+        total = 0.0
+        for scene in plan.get("scenes", []):
+            for media in scene.get("selected_media", []):
+                if media.get("local_path"):
+                    total += float(media.get("clip_duration", 3))
+        return total
+
+    def _inject_media(
+        self,
+        scene: Dict,
+        media_dir: Path,
+        used_urls: set,
+        offset: float,
+        clip_dur: float,
+        label: str,
+        prefer_type: str = "image",
+    ) -> bool:
+        """
+        Search + download one media item and append it to scene['selected_media'].
+        Returns True if successful.
+        """
+        waves = self._build_query_waves(scene)
+        candidates = self._parallel_search(waves, prefer_type)
+        if not candidates and prefer_type == "video":
+            candidates = self._parallel_search(waves, "image")
+            prefer_type = "image"
+        if not candidates:
+            return False
+
+        candidates = [c for c in candidates if c.get("url") not in used_urls]
+        if not candidates:
+            return False
+
+        candidates.sort(key=lambda x: x.get("score", 0), reverse=True)
+        dl = self._download_best(candidates[:6], media_dir, label)
+        if not dl:
+            return False
+
+        actual_type = dl.get("type", prefer_type)
+        dur = self.IMAGE_EXACT_DUR if actual_type == "image" else clip_dur
+        dl["insertion_offset"] = offset
+        dl["clip_duration"]    = dur
+        dl["placement"]        = "corrected"
+        scene.setdefault("selected_media", []).append(dl)
+        used_urls.add(dl["url"])
+        return True
+
+    def _correction_pass(
+        self,
+        plan: Dict,
+        media_dir: Path,
+        used_urls: set,
+        duration: float,
+    ) -> Dict:
+        """
+        Second pass — enforces three rules:
+          1. Opening hook: media MUST appear in the first 3 seconds
+          2. No gap longer than MAX_GAP (16 s) without media
+          3. Total coverage must reach MIN_COVERAGE (50 %)
+        Mutates plan in-place; returns updated plan.
+        """
+        scenes = plan.get("scenes", [])
+        if not scenes:
+            return plan
+
+        def _rebuild():
+            return self._build_timeline_from_plan(plan)
+
+        # ── 1. Opening hook (first 3 seconds must have media) ─────────────────
+        tl = _rebuild()
+        has_opening = tl and tl[0][0] <= 3.0
+        if not has_opening:
+            first = scenes[0]
+            brain = first.get("_brain", {})
+            if brain.get("decision") != "avatar_only":
+                prefer = brain.get("media_type", "video")
+                s_dur  = float(first.get("duration_seconds", 30))
+                dur    = self.IMAGE_EXACT_DUR if prefer == "image" else min(7.0, s_dur * 0.35)
+                ok = self._inject_media(first, media_dir, used_urls,
+                                        offset=0.0, clip_dur=dur,
+                                        label="opening", prefer_type=prefer)
+                if ok:
+                    self._progress(56, "Opening hook injected")
+                    tl = _rebuild()
+
+        # ── 2. Gap filling (gaps > MAX_GAP seconds) ───────────────────────────
+        max_iters = 30   # safety limit on correction iterations
+        iters = 0
+        while iters < max_iters:
+            tl = _rebuild()
+            prev_end    = 0.0
+            gap_fixed   = False
+            for seg_start, seg_end in tl:
+                gap = seg_start - prev_end
+                if gap > self.MAX_GAP:
+                    mid = (prev_end + seg_start) / 2
+                    # Find best scene covering the midpoint
+                    target = None
+                    for sc in scenes:
+                        ss = float(sc.get("start_time", 0))
+                        se = float(sc.get("end_time", ss + 30))
+                        if ss <= mid <= se:
+                            target = sc
+                            break
+                    if target and target.get("_brain", {}).get("decision") != "avatar_only":
+                        sc_start = float(target.get("start_time", 0))
+                        offset   = max(0.0, mid - sc_start - 1.5)
+                        prefer   = target.get("_brain", {}).get("media_type", "image")
+                        dur      = self.IMAGE_EXACT_DUR if prefer == "image" else 7.0
+                        ok = self._inject_media(target, media_dir, used_urls,
+                                                offset=offset, clip_dur=dur,
+                                                label=f"gap{int(mid)}",
+                                                prefer_type=prefer)
+                        if ok:
+                            gap_fixed = True
+                            break
+                prev_end = max(prev_end, seg_end)
+
+            # Also check final trailing gap
+            if not gap_fixed:
+                if duration - prev_end > self.MAX_GAP:
+                    # Find last scene
+                    for sc in reversed(scenes):
+                        if sc.get("_brain", {}).get("decision") != "avatar_only":
+                            sc_start = float(sc.get("start_time", 0))
+                            sc_dur   = float(sc.get("duration_seconds", 30))
+                            offset   = sc_dur * 0.6
+                            prefer   = sc.get("_brain", {}).get("media_type", "image")
+                            dur      = self.IMAGE_EXACT_DUR if prefer == "image" else 7.0
+                            ok = self._inject_media(sc, media_dir, used_urls,
+                                                    offset=offset, clip_dur=dur,
+                                                    label=f"tail{int(prev_end)}",
+                                                    prefer_type=prefer)
+                            if ok:
+                                gap_fixed = True
+                            break
+
+            if not gap_fixed:
+                break
+            iters += 1
+
+        # ── 3. Coverage enforcement (must reach MIN_COVERAGE = 50 %) ──────────
+        iters = 0
+        while iters < max_iters:
+            current = self._compute_coverage(plan)
+            if current / max(duration, 1) >= self.MIN_COVERAGE:
+                break
+
+            # Sort scenes by media_priority descending — add inserts to richest first
+            sorted_scenes = sorted(
+                [s for s in scenes
+                 if s.get("_brain", {}).get("decision") != "avatar_only"],
+                key=lambda s: s.get("_brain", {}).get("media_priority", 0),
+                reverse=True,
+            )
+            placed = False
+            for sc in sorted_scenes:
+                sc_dur    = float(sc.get("duration_seconds", 30))
+                sc_start  = float(sc.get("start_time", 0))
+                n_have    = len([m for m in sc.get("selected_media", []) if m.get("local_path")])
+                # space them out: every 10 s in the scene allow one extra insert
+                max_here  = max(1, int(sc_dur / 10))
+                if n_have >= max_here:
+                    continue
+                prefer = sc.get("_brain", {}).get("media_type", "image")
+                dur    = self.IMAGE_EXACT_DUR if prefer == "image" else 7.0
+                # stagger offset based on how many we already have
+                offset = min((n_have + 1) * (sc_dur / (max_here + 1)), sc_dur - dur - 1)
+                offset = max(0.0, offset)
+                ok = self._inject_media(sc, media_dir, used_urls,
+                                        offset=offset, clip_dur=dur,
+                                        label=f"cov{sc.get('scene_id','x')}_{n_have}",
+                                        prefer_type=prefer)
+                if ok:
+                    placed = True
+                    break
+
+            if not placed:
+                break
+            iters += 1
+
+        return plan
 
     def _find_best_media(
         self,
@@ -1541,15 +1794,17 @@ Return ONLY valid JSON (no markdown, no explanation):
             return False
 
         if actual_type == "image":
-            # All still-image formats (JPEG, PNG, WEBP, GIF, BMP, …)
-            # Use -vcodec to auto-detect and force yuv420p output
+            # Still image → clip: low framerate + tune stillimage = ultra fast encode
             ok = _run_ffmpeg([
                 "-loop", "1",
-                "-framerate", "25",
+                "-framerate", "2",          # 2 fps is enough for a static image
                 "-i", src,
                 "-vf", scale_filter,
                 "-t", str(round(duration, 3)),
-                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
+                "-c:v", "libx264", "-preset", "ultrafast", "-threads", "0",
+                "-crf", "35",               # higher CRF = faster + smaller for stills
+                "-tune", "stillimage",      # FFmpeg stillimage tune = faster + sharper
+                "-g", "600",                # long GOP, no need for keyframes in stills
                 "-pix_fmt", "yuv420p", "-an",
                 "-movflags", "+faststart",
                 dst,
@@ -1569,7 +1824,7 @@ Return ONLY valid JSON (no markdown, no explanation):
                 "-i", src,
                 "-t", str(round(trim, 3)),
                 "-vf", scale_filter,
-                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
+                "-c:v", "libx264", "-preset", "ultrafast", "-threads", "0", "-crf", "26",
                 "-pix_fmt", "yuv420p", "-an",
                 "-movflags", "+faststart",
                 dst,
@@ -1581,7 +1836,7 @@ Return ONLY valid JSON (no markdown, no explanation):
                     "-i", src,
                     "-t", str(round(trim, 3)),
                     "-vf", scale_filter,
-                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-threads", "0", "-crf", "26",
                     "-pix_fmt", "yuv420p", "-vsync", "vfr", "-an",
                     "-movflags", "+faststart",
                     dst,
@@ -1651,7 +1906,7 @@ Return ONLY valid JSON (no markdown, no explanation):
             inputs
             + ["-filter_complex", filter_complex]
             + ["-map", f"[{prev}]", "-map", "0:a?"]
-            + ["-c:v", "libx264", "-preset", "ultrafast", "-threads", "0", "-crf", "24"]
+            + ["-c:v", "libx264", "-preset", "ultrafast", "-threads", "0", "-crf", "28"]
             + ["-c:a", "aac", "-b:a", "192k"]
             + ["-pix_fmt", "yuv420p", "-movflags", "+faststart"]
             + [out_path]
@@ -1671,7 +1926,7 @@ Return ONLY valid JSON (no markdown, no explanation):
             "-i", avatar_path,
             "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,"
                     "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1",
-            "-c:v", "libx264", "-preset", "ultrafast", "-threads", "0", "-crf", "24",
+            "-c:v", "libx264", "-preset", "ultrafast", "-threads", "0", "-crf", "28",
             "-c:a", "aac", "-b:a", "192k",
             "-pix_fmt", "yuv420p", "-movflags", "+faststart",
             out_path,
