@@ -947,12 +947,18 @@ WRITE IN {language.upper()} — CONTINUE NOW:"""
                 text = text[:idx]
                 break
 
-        # Strip model meta-commentary lines (often appended after the real ending)
+        # Strip model meta-commentary lines appended after the real ending.
+        # IMPORTANT: patterns must be SPECIFIC — broad matches like
+        # "This video.*" would delete real script sentences.
         text = re.sub(
-            r'\n+(Note\s*:.*|This (script|video|content)\s.*|'
-            r'I (hope|trust)\s.*|Here\'?s?\s.*script.*|'
-            r'The\s+above\s.*|This\s+completes.*|'
-            r'Word\s+count\s*:.*|Character\s+count\s*:.*)$',
+            r'\n+(Note\s*:[ \t].*'                           # "Note: ..."
+            r'|This (script|video script)\s+(ends|is complete|follows|was written).*'
+            r'|I (hope|trust) (this|you|that)\s.*'           # "I hope this helps..."
+            r'|Here\'?s?\s+(the|your|a)\s.*script.*'         # "Here's the script..."
+            r'|The\s+above\s+(script|text|content).*'        # "The above script..."
+            r'|This\s+(completes|concludes)\s+the.*'         # "This completes the script"
+            r'|Word\s+count\s*:.*'                           # "Word count: 1234"
+            r'|Character\s+count\s*:.*)$',                   # "Character count: 5678"
             '', text, flags=re.IGNORECASE | re.MULTILINE
         )
         # Remove trailing separator lines (----, ====, etc.)
