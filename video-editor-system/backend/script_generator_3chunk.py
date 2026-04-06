@@ -173,13 +173,10 @@ class ScriptGenerator3Chunk:
             sections_done.extend(s for s in this_chunk_sections if s not in sections_done)
 
             if chunk.index < total_chunks:
-                sents = [s.strip() for s in re.split(r'[.!?]', chunk_text) if len(s.strip()) > 15]
-                previous_context = (
-                    ". ".join(sents[-3:]) + "."
-                    if len(sents) >= 3
-                    else chunk_text[-300:]
-                )
-                time.sleep(4)
+                # Use last 500 chars as continuation context — gives the next chunk
+                # enough sentence fragments to continue naturally without restarting.
+                previous_context = chunk_text[-500:].strip()
+                time.sleep(1)   # was 4s — reduced for speed
 
         # ── Post-processing ───────────────────────────────────────────────────
         if verbose:
@@ -505,34 +502,47 @@ OUTPUT FORMAT — strict:
         else:
             formula_block = ""
 
-        # ── Step-by-step outline for this chunk ───────────────────────────────
-        # Produced by PHASE 1: specific recipe for this title + chunk's sections.
+        # ── Current section label ──────────────────────────────────────────────
+        current_section_label = " | ".join(sections_now) if sections_now else f"part {chunk.index}"
+
+        # ── Step-by-step outline for this chunk (MUST come first in prompt) ───
+        # CRITICAL: The outline is the most specific instruction for this chunk.
+        # It must be at the TOP of the prompt so the model gives it full attention.
+        # The "lost in the middle" problem means anything buried after a long formula
+        # gets ignored. Outline-first solves this.
+        word_target = int(chunk.target_chars / 5.2)   # ~5.2 chars per word average
         if outline:
             task_block = (
-                f"SECTIONS FOR THIS CHUNK: {sections_label}\n\n"
-                f"STEP-BY-STEP WRITING RECIPE FOR THIS CHUNK (from your Writing Guidelines):\n"
-                f"{'─' * 56}\n"
+                f"════════════════ CHUNK {chunk.index}/{total_chunks} — YOUR WRITING TASK ════════════════\n"
+                f"SECTIONS: {sections_label}\n"
+                f"VIDEO TITLE: \"{title}\"\n"
+                f"ANCHOR / SUBJECT: {anchor}\n"
+                f"LANGUAGE: {language.upper()} — every single word in {language}\n\n"
+                f"STEP-BY-STEP WRITING RECIPE — execute EVERY step in order:\n"
+                f"{'─' * 60}\n"
                 f"{outline}\n"
-                f"{'─' * 56}\n"
-                f"Execute EVERY step in sequence."
+                f"{'─' * 60}\n"
+                f"Every sentence must execute a step from this recipe.\n"
+                f"TITLE IS A CONTRACT — deliver exactly what the title promises.\n\n"
             )
         else:
             task_block = (
-                f"SECTIONS TO WRITE: {sections_label}\n"
-                f"Apply your Writing Guidelines above exactly — follow the structure, tone, and rules."
+                f"════════════════ CHUNK {chunk.index}/{total_chunks} — YOUR WRITING TASK ════════════════\n"
+                f"SECTIONS: {sections_label}\n"
+                f"VIDEO TITLE: \"{title}\"\n"
+                f"ANCHOR / SUBJECT: {anchor}\n"
+                f"LANGUAGE: {language.upper()} — every single word in {language}\n\n"
+                f"Apply your Writing Guidelines below exactly — follow the structure, tone, and rules.\n"
+                f"TITLE IS A CONTRACT — deliver exactly what the title promises.\n\n"
             )
 
         # ── Continuation context ───────────────────────────────────────────────
-        current_section_label = " | ".join(sections_now) if sections_now else f"part {chunk.index}"
         if previous_context:
             continuation = (
-                f"⚠️  MID-SCRIPT — you are writing [{current_section_label}].\n"
-                f"THE VIDEO HAS ALREADY STARTED. Do NOT write any of these — they are FORBIDDEN:\n"
-                f"  • Greetings: 'Bonjour', 'Hello', 'Welcome', 'Salut', 'Hi everyone'\n"
-                f"  • New openers: 'Today', 'Dans cette vidéo', 'In this video', 'Aujourd'hui'\n"
-                f"  • New hooks: 'Imagine', 'Picture this', 'What if', 'Did you know'\n"
-                f"  • Any CTA: 'Subscribe', 'Abonnez-vous', 'Like', 'Share' — CTA is FINAL chunk only.\n"
-                f"CONTINUE THE SENTENCE directly after the last written line:\n"
+                f"⚠️  MID-SCRIPT — writing [{current_section_label}]. Script already in progress.\n"
+                f"FORBIDDEN OPENERS: 'Bonjour' / 'Hello' / 'Today' / 'Dans cette vidéo' / "
+                f"'Imagine' / 'Welcome' / 'Subscribe' — any of these = restart = forbidden.\n"
+                f"CONTINUE directly after:\n"
                 f'"{previous_context}"\n\n'
             )
         else:
@@ -553,17 +563,16 @@ OUTPUT FORMAT — strict:
         else:
             promo_reminder = f"PRODUCT: {product}\n\n" if promo_count > 0 else ""
 
-        # ── Section boundary lock — what is already done and MUST NOT be reopened ─
+        # ── Section boundary lock (last 8 only — prevents prompt bloat) ───────
         if sections_already_done:
+            recent_done = sections_already_done[-8:]
+            older_count = len(sections_already_done) - len(recent_done)
+            summary_line = f"   (+ {older_count} earlier sections already written)\n" if older_count else ""
             boundary_block = (
-                f"⛔ SECTIONS ALREADY WRITTEN — DO NOT REVISIT, DO NOT REOPEN, DO NOT RE-EXPLAIN:\n"
-                + "".join(f"   ✓ {s}\n" for s in sections_already_done)
-                + f"\n"
-                f"The script has ALREADY covered all of the above. Going backward in the formula\n"
-                f"is STRICTLY FORBIDDEN. Every sentence you write must move FORWARD.\n\n"
-                f"FORMULA DIRECTION: hook → mechanism → proof → protocol → ending\n"
-                f"You are currently past: {', '.join(sections_already_done)}\n"
-                f"Write ONLY what comes NEXT in that progression.\n\n"
+                f"⛔ DO NOT REVISIT — already written:\n"
+                + summary_line
+                + "".join(f"   ✓ {s}\n" for s in recent_done)
+                + f"Move FORWARD only. Write what comes NEXT in the formula.\n\n"
             )
         else:
             boundary_block = ""
@@ -571,46 +580,36 @@ OUTPUT FORMAT — strict:
         # ── Final chunk stop ───────────────────────────────────────────────────
         if is_final:
             stop_instruction = (
-                f"\n⛔ HARD STOP RULE:\n"
-                f"After you write the final CTA ('{cta_action}'), you MUST immediately write:\n"
+                f"\n⛔ HARD STOP: After writing the final CTA ('{cta_action}') write:\n"
                 f"{STOP_SIGNAL}\n"
-                f"Then output NOTHING AT ALL. Not one more word. Not a summary. Not a new section.\n"
-                f"The script is COMPLETE once the CTA is written. STOP.\n"
+                f"Then STOP. Nothing after. Not one word.\n"
             )
             role_note = (
-                f"FINAL CHUNK — write the closing and CTA exactly as the Writing Guidelines prescribe.\n"
-                f"Once the CTA lands, the payoff is complete. STOP immediately. Do not add more.\n"
-                f"Protect the payoff — continuing after it weakens it."
+                f"FINAL CHUNK — write closing + CTA per the Writing Guidelines.\n"
+                f"After CTA: STOP immediately. The payoff is complete."
             )
         else:
             stop_instruction = ""
             role_note = (
-                f"Chunk {chunk.index} of {total_chunks} — MID-SCRIPT BODY [{current_section_label}].\n"
-                f"⛔ FORBIDDEN — any intro/hook/greeting (the video ALREADY STARTED):\n"
-                f"   'Bonjour' / 'Hello' / 'Welcome' / 'Today' / 'Dans cette vidéo' / 'Aujourd'hui'\n"
-                f"   'Imagine' / 'Picture this' / 'In this video' — these restart the script.\n"
-                f"⛔ FORBIDDEN — any ending, CTA, conclusion:\n"
-                f"   'Subscribe' / 'Abonnez-vous' / 'Like' / 'Share' / 'See you next time'\n"
-                f"   These belong ONLY in the final chunk ({total_chunks}).\n"
-                f"⛔ FORBIDDEN — reopening any section already written (listed above).\n"
-                f"⛔ FORBIDDEN — repeating the same idea in different words (padding).\n"
-                f"Write the body content for [{current_section_label}] and stop. "
-                f"The next chunk continues the script."
+                f"MID-SCRIPT chunk {chunk.index}/{total_chunks} [{current_section_label}].\n"
+                f"⛔ NO intro / hook / greeting / CTA — forbidden (video already started).\n"
+                f"Write {word_target} words of body content then stop (next chunk continues)."
             )
 
+        # ── Prompt assembly (OUTLINE-FIRST architecture) ──────────────────────
+        # Order: task/outline → continuation → boundary → formula → role → length
+        # Outline at position-0 = highest model attention (solves "lost in the middle").
+        # Formula after outline = full reference available without burying the recipe.
         prompt = (
-            f"{formula_block}"
-            f"═══ WRITING TASK: CHUNK {chunk.index}/{total_chunks} ═══\n\n"
-            f"VIDEO TITLE: \"{title}\"\n"
-            f"TITLE IS A CONTRACT — every mechanism you describe must deliver exactly what the title promises.\n"
-            f"ANCHOR / SUBJECT: {anchor}\n"
-            f"LANGUAGE: {language.upper()} — every single word in {language}\n\n"
-            f"{boundary_block}"
-            f"{task_block}\n\n"
+            f"{task_block}"
             f"{continuation}"
+            f"{boundary_block}"
             f"{promo_reminder}"
+            f"{formula_block}"
             f"ROLE: {role_note}\n"
-            f"LENGTH: Minimum {chunk.target_chars:,} characters (max {int(chunk.target_chars * 1.08):,}).\n"
+            f"LENGTH: Write at least {chunk.target_chars:,} characters "
+            f"(~{word_target} words, max {int(chunk.target_chars * 1.20):,} chars).\n"
+            f"Fill every word with formula content. Do NOT rush. Do NOT stop early.\n"
             f"{stop_instruction}\n"
             f"WRITE NOW:"
         )
