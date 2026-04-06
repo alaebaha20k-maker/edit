@@ -125,8 +125,11 @@ class ScriptGenerator3Chunk:
         formula_chars = len(formula)
         for chunk in chunks:
             if verbose:
+                laws_preview = plan.get("mandatory_laws", "")
                 print(f"✍️  PHASE {chunk.index + 1} — WRITE Chunk {chunk.index}/{total_chunks}: {chunk.role}...")
-                print(f"   📋 Writing Guidelines injected into prompt: {formula_chars:,} chars")
+                print(f"   📋 Writing Guidelines: {formula_chars:,} chars")
+                if laws_preview:
+                    print(f"   ⚖️  Mandatory laws: {len([l for l in laws_preview.split(chr(10)) if l.strip()])} niche laws injected at position-0")
                 if sections_done:
                     print(f"   ✅ Sections done (forbidden to reopen): {', '.join(sections_done)}")
 
@@ -311,10 +314,25 @@ OUTPUT the following XML structure EXACTLY. Do not add markdown. Do not wrap in 
 <promo_count>integer — how many [PROMO] ad blocks the guidelines require. 0 if none.</promo_count>
 <cta>copy the exact CTA text from the Writing Guidelines</cta>
 
+<mandatory_laws>
+Extract the 25 MOST CRITICAL laws from the Writing Guidelines that the script writer MUST follow in EVERY sentence.
+Format each law as a short, direct command. Include:
+  - MANDATORY PHRASES: exact phrases from the formula that must appear verbatim (copy them)
+  - FORBIDDEN WORDS/PATTERNS: exact words or patterns the formula bans
+  - TONE LAWS: specific tone/voice/register requirements (e.g. "always speak directly to viewer", "never use passive voice")
+  - STRUCTURE LAWS: required paragraph structure, transitions, rhythm rules
+  - OPENING LAW: exactly how the video must open (copy verbatim if formula specifies)
+  - CLOSING LAW: exactly how the CTA/close must sound (copy verbatim if formula specifies)
+  - Any unique technique, hook formula, or framework this niche uses
+Be SPECIFIC and CONCRETE — copy verbatim phrases from the formula, not paraphrases.
+Do NOT list generic YouTube advice. Only rules explicitly stated in the Writing Guidelines.
+</mandatory_laws>
+
 {outline_format}
 RULES:
 - Each chunk outline must be a CONCRETE recipe — not vague rules, but specific instructions for THIS title
 - Mandatory phrases must be copied VERBATIM from the Writing Guidelines
+- mandatory_laws must contain 15-25 specific, actionable laws — not vague descriptions
 - promo_count must be 0 if the Writing Guidelines has no promotional blocks
 - ALL chunk tags (chunk_1 through chunk_{total_chunks}) must be present"""
 
@@ -373,7 +391,8 @@ RULES:
                 promo_count = int(digits) if digits else 0
             except ValueError:
                 promo_count = 0
-            cta_action = _xml("cta", "subscribe and hit the bell") or "subscribe and hit the bell"
+            cta_action      = _xml("cta", "subscribe and hit the bell") or "subscribe and hit the bell"
+            mandatory_laws  = _xml("mandatory_laws", "").strip()
 
             return {
                 "sections"             : sections,
@@ -383,6 +402,7 @@ RULES:
                 "anchor"               : anchor,
                 "promo_count"          : promo_count,
                 "cta_action"           : cta_action,
+                "mandatory_laws"       : mandatory_laws,
                 "closing_note"         : "close with subscribe CTA",
             }
 
@@ -405,14 +425,18 @@ RULES:
 
             if verbose:
                 outline_map = plan.get("chunk_section_content", {})
+                laws        = plan.get("mandatory_laws", "")
                 if not outline_map:
                     print("   ⚠️  No outline extracted — full formula injected into every chunk prompt (fallback)")
                 else:
                     for ci, cv in outline_map.items():
                         secs = ", ".join(plan["chunk_sections"].get(ci, []))
                         print(f"   ✅ Chunk {ci} outline: {len(cv):,} chars  [{secs}]")
-                print(f"   ✅ Anchor : {plan['anchor']}")
-                print(f"   ✅ Promos : {plan['promo_count']}")
+                print(f"   ✅ Anchor         : {plan['anchor']}")
+                print(f"   ✅ Promos         : {plan['promo_count']}")
+                if laws:
+                    law_count = len([l for l in laws.split('\n') if l.strip()])
+                    print(f"   ✅ Mandatory laws : {law_count} laws extracted ({len(laws):,} chars)")
 
             return plan
 
@@ -428,6 +452,7 @@ RULES:
                 "anchor"               : title,
                 "promo_count"          : 0,
                 "cta_action"           : "subscribe and hit the bell",
+                "mandatory_laws"       : "",
                 "closing_note"         : "close with subscribe CTA",
             }
 
@@ -477,26 +502,44 @@ OUTPUT FORMAT — strict:
         sections_already_done: List[str] = None,
     ) -> str:
 
-        anchor       = plan.get("anchor", title)
-        full_formula = plan.get("_formula_text", "")
-        promo_count  = plan.get("promo_count", 0)
-        cta_action   = plan.get("cta_action", "subscribe and hit the bell")
-        sections_now = plan.get("chunk_sections", {}).get(str(chunk.index), [])
-        outline      = plan.get("chunk_section_content", {}).get(str(chunk.index), "")
-        sections_label = " | ".join(sections_now) if sections_now else f"part {chunk.index} of {total_chunks}"
+        anchor          = plan.get("anchor", title)
+        full_formula    = plan.get("_formula_text", "")
+        mandatory_laws  = plan.get("mandatory_laws", "")
+        promo_count     = plan.get("promo_count", 0)
+        cta_action      = plan.get("cta_action", "subscribe and hit the bell")
+        sections_now    = plan.get("chunk_sections", {}).get(str(chunk.index), [])
+        outline         = plan.get("chunk_section_content", {}).get(str(chunk.index), "")
+        sections_label  = " | ".join(sections_now) if sections_now else f"part {chunk.index} of {total_chunks}"
 
-        # ── Formula block — ALWAYS at the top of the prompt ───────────────────
-        # Critical: LLMs suffer from "lost in the middle" for long contexts.
-        # The formula MUST be position-0 in the user message so the model reads
-        # it with full attention. System instruction is kept short (format only).
+        # ── MANDATORY LAWS BLOCK — position-0 (highest attention) ─────────────
+        # These are the niche-specific laws extracted by PHASE 1 from the formula.
+        # They must come FIRST so the model has them in working memory while writing.
+        # Position-0 = the model CANNOT forget these laws, even in a 60K prompt.
+        if mandatory_laws:
+            laws_block = (
+                f"╔{'═' * 62}╗\n"
+                f"║  ⚖️  NICHE LAWS — MANDATORY IN EVERY SENTENCE  ⚖️              ║\n"
+                f"╚{'═' * 62}╝\n"
+                f"These are the ABSOLUTE LAWS of this channel's formula.\n"
+                f"EVERY sentence you write MUST follow these laws. No exceptions.\n"
+                f"Violating any law = wrong output. Read each law before writing.\n"
+                f"{'─' * 64}\n"
+                f"{mandatory_laws}\n"
+                f"{'─' * 64}\n"
+                f"⚠️  CHECK: Before writing each paragraph — does it follow ALL laws above?\n\n"
+            )
+        else:
+            laws_block = ""
+
+        # ── Formula block — full Writing Guidelines (reference material) ──────
         if full_formula:
             formula_block = (
-                f"════════════════ YOUR WRITING GUIDELINES ════════════════\n"
-                f"READ THIS COMPLETELY BEFORE WRITING. EXECUTE EVERY RULE.\n"
+                f"════════════════ YOUR WRITING GUIDELINES (FULL) ════════════════\n"
+                f"READ: execute every technique, structure, and rule in this formula.\n"
                 f"{'─' * 56}\n"
                 f"{full_formula}\n"
                 f"{'─' * 56}\n"
-                f"END OF WRITING GUIDELINES — every sentence must execute a rule from above.\n"
+                f"END OF WRITING GUIDELINES\n"
                 f"{'═' * 56}\n\n"
             )
         else:
@@ -596,11 +639,18 @@ OUTPUT FORMAT — strict:
                 f"Write {word_target} words of body content then stop (next chunk continues)."
             )
 
-        # ── Prompt assembly (OUTLINE-FIRST architecture) ──────────────────────
-        # Order: task/outline → continuation → boundary → formula → role → length
-        # Outline at position-0 = highest model attention (solves "lost in the middle").
-        # Formula after outline = full reference available without burying the recipe.
+        # ── Prompt assembly (LAWS-FIRST → OUTLINE-FIRST architecture) ───────────
+        # Order: laws → task/outline → continuation → boundary → promo → formula → role → length
+        #
+        # laws_block   @ position-0  → niche laws in working memory during entire write
+        # task_block   @ position-1  → specific recipe for this chunk (outline)
+        # formula_block @ middle     → full reference without burying the laws/recipe
+        #
+        # This solves TWO "lost in the middle" problems:
+        #   1. Laws extracted compactly → always in attention (not buried in 33K formula)
+        #   2. Outline at top → model follows recipe, not generic YouTube instinct
         prompt = (
+            f"{laws_block}"
             f"{task_block}"
             f"{continuation}"
             f"{boundary_block}"
@@ -610,6 +660,7 @@ OUTPUT FORMAT — strict:
             f"LENGTH: Write at least {chunk.target_chars:,} characters "
             f"(~{word_target} words, max {int(chunk.target_chars * 1.20):,} chars).\n"
             f"Fill every word with formula content. Do NOT rush. Do NOT stop early.\n"
+            f"REMINDER: Re-read the NICHE LAWS at the top. Every sentence must pass them.\n"
             f"{stop_instruction}\n"
             f"WRITE NOW:"
         )
