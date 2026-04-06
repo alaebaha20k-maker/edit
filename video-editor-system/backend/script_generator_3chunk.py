@@ -76,6 +76,7 @@ class ScriptGenerator3Chunk:
         formula  = niche["writing_guidelines"]
         language = niche["language"]
         product  = niche.get("product", "our platform")
+        niche_name = niche.get("name", "")
 
         if verbose:
             print(f"\n{'='*70}")
@@ -114,7 +115,7 @@ class ScriptGenerator3Chunk:
             print()
 
         # ── System instruction: short format rules only (formula goes in user msg)
-        system_instruction = self._build_system_instruction(language)
+        system_instruction = self._build_system_instruction(language, niche_name)
 
         # ── PHASE 2–N — WRITE each chunk ──────────────────────────────────────
         generated_chunks = []
@@ -136,6 +137,7 @@ class ScriptGenerator3Chunk:
                 title=title,
                 language=language,
                 product=product,
+                niche_name=niche_name,
                 chunk=chunk,
                 total_chunks=total_chunks,
                 plan=plan,
@@ -193,13 +195,17 @@ class ScriptGenerator3Chunk:
 
         # ── Length enforcement ────────────────────────────────────────────────
         # Overshoot tolerance: 1 % of target (min 300, max 2000 chars).
-        # This prevents trimming a 100K script that comes out at 100,500 chars.
         MAX_OVERSHOOT = max(300, min(int(length * 0.01), 2000))
-        char_count    = len(full_script)
+        # Undershoot tolerance: only extend if genuinely far short.
+        # Being within 7% (min 1 000 chars) of target is acceptable — no extension.
+        # e.g. 9 491 / 10 000 (5.1% short) → skip extension.
+        MIN_SHORTAGE_TO_EXTEND = max(1000, int(length * 0.07))
+        char_count = len(full_script)
         if verbose:
-            print(f"\n📏 Length: {char_count:,} / {length:,} target  (tolerance: +{MAX_OVERSHOOT:,})")
+            print(f"\n📏 Length: {char_count:,} / {length:,} target"
+                  f"  (extend if short > {MIN_SHORTAGE_TO_EXTEND:,} | trim if over +{MAX_OVERSHOOT:,})")
 
-        if char_count < length:
+        if char_count < length - MIN_SHORTAGE_TO_EXTEND:
             shortage_pct = round((length - char_count) / length * 100, 1)
             if verbose:
                 print(f"   ⚠️  Short by {length - char_count:,} chars ({shortage_pct}%) — extending...")
@@ -438,7 +444,7 @@ RULES:
     # SYSTEM INSTRUCTION — short & focused (formula goes in user message)
     # =========================================================================
 
-    def _build_system_instruction(self, language: str) -> str:
+    def _build_system_instruction(self, language: str, niche_name: str = "") -> str:
         """
         Keep the system instruction SHORT.
 
@@ -447,11 +453,15 @@ RULES:
         background noise — the model defaults to its built-in writing style.
 
         The formula MUST be at the TOP of the user message where the model
-        pays full attention to it. The system instruction only sets format rules.
+        pays full attention to it. The system instruction only sets identity + format.
         """
-        return f"""You are a professional video script writer.
-Your job is to execute the Writing Guidelines given to you EXACTLY — sentence by sentence.
-You do not improvise style, structure, or content. You execute the formula.
+        brand_line = (
+            f"You ARE the voice of [{niche_name}]. "
+            f"Every sentence must sound like that channel's best video — not generic YouTube.\n"
+        ) if niche_name else ""
+        return f"""You are an elite video script writer executing a specific channel formula.
+{brand_line}Your ONLY job: execute the Writing Guidelines in the user message sentence by sentence.
+You do NOT improvise style, structure, or content. You ARE the formula. You execute it.
 
 OUTPUT FORMAT — strict:
 1. Write 100% in {language} — every word, no exceptions.
@@ -478,6 +488,7 @@ OUTPUT FORMAT — strict:
         promo_count_so_far: int,
         is_final: bool,
         sections_already_done: List[str] = None,
+        niche_name: str = "",
     ) -> str:
 
         anchor       = plan.get("anchor", title)
@@ -492,14 +503,21 @@ OUTPUT FORMAT — strict:
         # Critical: LLMs suffer from "lost in the middle" for long contexts.
         # The formula MUST be position-0 in the user message so the model reads
         # it with full attention. System instruction is kept short (format only).
+        brand_identity = (
+            f"CHANNEL / BRAND: {niche_name}\n"
+            f"You ARE this channel. Write like its best-performing video — "
+            f"distinctive, creative, never generic.\n\n"
+        ) if niche_name else ""
+
         if full_formula:
             formula_block = (
                 f"════════════════ YOUR WRITING GUIDELINES ════════════════\n"
-                f"READ THIS COMPLETELY BEFORE WRITING. EXECUTE EVERY RULE.\n"
+                f"{brand_identity}"
+                f"READ EVERY RULE BELOW. EXECUTE EACH ONE. DO NOT IMPROVISE.\n"
                 f"{'─' * 56}\n"
                 f"{full_formula}\n"
                 f"{'─' * 56}\n"
-                f"END OF WRITING GUIDELINES — every sentence must execute a rule from above.\n"
+                f"END OF WRITING GUIDELINES — every sentence executes a rule from above.\n"
                 f"{'═' * 56}\n\n"
             )
         else:
@@ -876,10 +894,34 @@ WRITE IN {language.upper()} — CONTINUE NOW:"""
         return text
 
     def _clean_script(self, text: str) -> str:
-        # Strip everything at/after the hard stop signal FIRST
-        idx = text.find(STOP_SIGNAL)
-        if idx != -1:
-            text = text[:idx]
+        # Strip at the hard stop signal and common variants FIRST
+        for stop_variant in [
+            STOP_SIGNAL,
+            "=== END OF SCRIPT",
+            "--- END OF SCRIPT",
+            "END OF SCRIPT",
+            "FIN DU SCRIPT",
+            "FIN DE SCRIPT",
+            "--- THE END ---",
+            "=== THE END ===",
+            "Script ends here",
+            "This script ends",
+        ]:
+            idx = text.upper().find(stop_variant.upper())
+            if idx != -1:
+                text = text[:idx]
+                break
+
+        # Strip model meta-commentary lines (often appended after the real ending)
+        text = re.sub(
+            r'\n+(Note\s*:.*|This (script|video|content)\s.*|'
+            r'I (hope|trust)\s.*|Here\'?s?\s.*script.*|'
+            r'The\s+above\s.*|This\s+completes.*|'
+            r'Word\s+count\s*:.*|Character\s+count\s*:.*)$',
+            '', text, flags=re.IGNORECASE | re.MULTILINE
+        )
+        # Remove trailing separator lines (----, ====, etc.)
+        text = re.sub(r'\n+[-=]{3,}\s*$', '', text)
 
         # Markdown
         text = re.sub(r"\*\*\*(.+?)\*\*\*", r"\1", text)
