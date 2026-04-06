@@ -934,6 +934,86 @@
                     <button id="downloadBtn" class="btn-success btn-large">📥 Download Video</button>
                 </div>
             </section>
+
+            <!-- ══════════════════════════════════════════════════ -->
+            <!-- SUPER AUTO EDITOR                                   -->
+            <!-- ══════════════════════════════════════════════════ -->
+            <section id="superAutoEditorSection" style="margin-top: 36px; padding: 24px; background: linear-gradient(135deg, rgba(139,92,246,0.08), rgba(59,130,246,0.06)); border: 1px solid rgba(139,92,246,0.35); border-radius: 14px;">
+
+                <h3 style="color: #a78bfa; margin-bottom: 4px; font-size: 18px; display: flex; align-items: center; gap: 8px;">
+                    🤖 Super Auto Editor
+                    <span style="font-size: 11px; background: linear-gradient(135deg,#7c3aed,#3b82f6); color: #fff; padding: 2px 8px; border-radius: 20px; font-weight: 600; letter-spacing: 0.5px;">AI</span>
+                </h3>
+                <p style="color: #9ca3af; font-size: 13px; margin-bottom: 20px; line-height: 1.5;">
+                    Drop your <strong style="color:#c4b5fd">avatar video</strong> + <strong style="color:#c4b5fd">script</strong> → AI analyzes scenes, searches stock media, downloads, edits and exports a fully assembled <strong style="color:#c4b5fd">1080p video</strong> automatically.
+                </p>
+
+                <!-- Inputs row -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 18px;">
+
+                    <!-- Avatar video upload -->
+                    <div>
+                        <label style="display: block; color: #e5e7eb; font-size: 13px; font-weight: 600; margin-bottom: 8px;">🎬 Avatar Video</label>
+                        <div id="saeAvatarDropZone"
+                             onclick="document.getElementById('saeAvatarInput').click()"
+                             ondragover="event.preventDefault(); this.style.borderColor='#a78bfa';"
+                             ondragleave="this.style.borderColor='rgba(139,92,246,0.4)';"
+                             ondrop="saeDrop(event, 'avatar')"
+                             style="border: 2px dashed rgba(139,92,246,0.4); border-radius: 10px; padding: 22px 12px; text-align: center; cursor: pointer; background: rgba(0,0,0,0.2); transition: border-color 0.2s;">
+                            <div style="font-size: 28px; margin-bottom: 6px;">📹</div>
+                            <div id="saeAvatarLabel" style="color: #9ca3af; font-size: 12px;">Drop or click to upload MP4 / MOV</div>
+                        </div>
+                        <input type="file" id="saeAvatarInput" accept="video/*" style="display:none" onchange="saePickAvatar(event)">
+                    </div>
+
+                    <!-- Script textarea -->
+                    <div>
+                        <label style="display: block; color: #e5e7eb; font-size: 13px; font-weight: 600; margin-bottom: 8px;">📝 Script</label>
+                        <textarea id="saeScript"
+                            placeholder="Paste your full script here…"
+                            style="width:100%; height:130px; background: rgba(0,0,0,0.3); border: 1px solid rgba(139,92,246,0.3); border-radius: 10px; color: #e5e7eb; padding: 10px; font-size: 13px; resize: vertical; box-sizing: border-box; line-height: 1.5;"></textarea>
+                    </div>
+                </div>
+
+                <!-- Title row -->
+                <div style="margin-bottom: 18px;">
+                    <label style="display: block; color: #e5e7eb; font-size: 13px; font-weight: 600; margin-bottom: 6px;">🏷️ Video Title <span style="font-weight:400; color:#6b7280;">(optional)</span></label>
+                    <input type="text" id="saeTitle" placeholder="e.g. How Bitcoin Works"
+                        style="width:100%; background: rgba(0,0,0,0.3); border: 1px solid rgba(139,92,246,0.3); border-radius: 8px; color: #e5e7eb; padding: 10px 12px; font-size: 13px; box-sizing: border-box;">
+                </div>
+
+                <!-- Generate button -->
+                <button id="saeGenerateBtn" onclick="saeStartJob()"
+                    style="width:100%; padding: 14px; background: linear-gradient(135deg,#7c3aed,#3b82f6); color:#fff; border:none; border-radius:10px; cursor:pointer; font-weight:700; font-size:15px; letter-spacing:0.3px; transition: opacity 0.2s;"
+                    onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+                    🚀 GENERATE SUPER AUTO VIDEO
+                </button>
+
+                <!-- Progress -->
+                <div id="saeProgress" style="display:none; margin-top: 18px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                        <span style="color:#a78bfa; font-size:13px; font-weight:600;">Processing…</span>
+                        <span id="saePct" style="color:#c4b5fd; font-size:13px; font-weight:700;">0%</span>
+                    </div>
+                    <div style="background: rgba(0,0,0,0.3); border-radius: 8px; height: 10px; overflow: hidden; margin-bottom: 10px;">
+                        <div id="saeBar" style="width:0%; height:100%; background: linear-gradient(90deg,#7c3aed,#3b82f6); border-radius:8px; transition: width 0.4s ease;"></div>
+                    </div>
+                    <div id="saeMsg" style="color:#9ca3af; font-size:12px; padding:8px 12px; background:rgba(0,0,0,0.25); border-radius:6px; font-family:monospace;">Starting…</div>
+                </div>
+
+                <!-- Result -->
+                <div id="saeResult" style="display:none; margin-top: 18px; padding: 16px; background: rgba(16,185,129,0.08); border: 1px solid #065f46; border-radius: 10px;">
+                    <h4 style="color:#10b981; margin-bottom: 10px;">✅ Super Auto Video Ready!</h4>
+                    <div id="saeInfo" style="color:#d1fae5; font-size:13px; margin-bottom:12px;"></div>
+                    <button id="saeDownloadBtn" onclick="saeDownload()"
+                        style="padding: 11px 24px; background: linear-gradient(135deg,#10b981,#065f46); color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:700; font-size:13px;">
+                        📥 Download Video
+                    </button>
+                </div>
+
+                <!-- Error -->
+                <div id="saeError" style="display:none; margin-top: 14px; padding: 12px 16px; background: rgba(239,68,68,0.1); border: 1px solid #dc2626; border-radius: 8px; color: #fca5a5; font-size: 13px;"></div>
+            </section>
         </div>
 
         <!-- ============================================ -->

@@ -1,1 +1,7 @@
 video-editor-system/frontend_backup/
+video-editor-system/data/
+video-editor-system/output/
+video-editor-system/temp/
+video-editor-system/uploads/
+__pycache__/
+*.pyc

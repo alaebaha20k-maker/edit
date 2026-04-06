@@ -14,8 +14,16 @@ class Config:
     # Paths (define first so we can use them)
     BASE_DIR = Path(__file__).parent.parent.resolve()
     BACKEND_DIR = BASE_DIR / 'backend'
-    # DATA_DIR lives OUTSIDE the git repo so it survives git pull / fresh clone
-    DATA_DIR = Path.home() / '.video-editor-data'
+    # DATA_DIR: prefer a persistent home-dir location so it survives git pulls.
+    # Fall back to a `data/` folder inside the project if the home-dir location
+    # is not writable (e.g. ephemeral container environments).
+    _home_data = Path.home() / '.video-editor-data'
+    _proj_data = Path(__file__).parent.parent.resolve() / 'data'
+    try:
+        _home_data.mkdir(parents=True, exist_ok=True)
+        DATA_DIR = _home_data
+    except OSError:
+        DATA_DIR = _proj_data
     UPLOADS_DIR = BASE_DIR / 'uploads'
     OUTPUT_DIR = BASE_DIR / 'output'
     TEMP_DIR = BASE_DIR / 'temp'

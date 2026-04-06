@@ -6192,6 +6192,181 @@ OUTPUT ONLY THE {chunk_size} PROMPTS."""
         return jsonify({'error': str(e)}), 500
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# SUPER AUTO EDITOR
+# ─────────────────────────────────────────────────────────────────────────────
+
+super_editor_jobs: dict = {}   # job_id → {status, progress, message, result, error}
+
+
+@app.route('/api/super-auto-editor/start', methods=['POST'])
+def super_auto_editor_start():
+    """
+    Start a Super Auto Editor job.
+
+    Accepts multipart/form-data:
+        avatar_file  – uploaded avatar video (MP4/MOV/…)
+        script       – full script text
+        title        – optional video title
+    OR JSON:
+        avatar_path  – server-side path to avatar video
+        script       – full script text
+        title        – optional
+
+    Returns: { job_id, status, message }
+    """
+    from super_auto_editor import SuperAutoEditor
+    from settings_manager import SettingsManager
+
+    try:
+        # ── resolve avatar path ──────────────────────────────────────────────
+        avatar_path = None
+        title = 'super_auto_output'
+
+        if request.content_type and 'multipart/form-data' in request.content_type:
+            script = request.form.get('script', '').strip()
+            title  = request.form.get('title', title)
+            f      = request.files.get('avatar_file')
+            if f:
+                fname       = secure_filename(f.filename)
+                avatar_path = os.path.join(UPLOAD_FOLDER, f'sae_{uuid.uuid4().hex}_{fname}')
+                f.save(avatar_path)
+        else:
+            data        = request.get_json() or {}
+            script      = data.get('script', '').strip()
+            title       = data.get('title', title)
+            avatar_path = data.get('avatar_path', '').strip()
+
+        if not script:
+            return jsonify({'success': False, 'error': 'script is required'}), 400
+        if not avatar_path:
+            return jsonify({'success': False, 'error': 'avatar_file or avatar_path is required'}), 400
+        if not os.path.exists(avatar_path):
+            return jsonify({'success': False, 'error': f'Avatar file not found: {avatar_path}'}), 404
+
+        # ── load API keys ────────────────────────────────────────────────────
+        saved     = SettingsManager.load_settings()
+        api_keys  = saved.get('api_keys', {})
+        gemini_keys = api_keys.get('gemini', [])
+        if isinstance(gemini_keys, str):
+            gemini_keys = [k.strip() for k in gemini_keys.split(',') if k.strip()]
+
+        pexels_key        = api_keys.get('pexels',        '')
+        pixabay_key       = api_keys.get('pixabay',       '')
+        unsplash_key      = api_keys.get('unsplash',      '')
+        brave_search_key  = api_keys.get('brave_search',  '')
+        serper_key        = api_keys.get('serper',        '')
+        google_search_key = api_keys.get('google_search', '')
+        videvo_key        = api_keys.get('videvo',        '')
+        coverr_key        = api_keys.get('coverr',        '')
+
+        # ── create job ───────────────────────────────────────────────────────
+        job_id = str(uuid.uuid4())
+        super_editor_jobs[job_id] = {
+            'status':   'queued',
+            'progress': 0,
+            'message':  'Job queued…',
+            'result':   None,
+            'error':    None,
+        }
+
+        def _run():
+            try:
+                super_editor_jobs[job_id]['status']  = 'processing'
+                super_editor_jobs[job_id]['message'] = 'Starting Super Auto Editor…'
+
+                def _progress(pct, msg):
+                    super_editor_jobs[job_id]['progress'] = pct
+                    super_editor_jobs[job_id]['message']  = msg
+
+                editor = SuperAutoEditor(
+                    gemini_keys       = gemini_keys,
+                    pexels_key        = pexels_key,
+                    pixabay_key       = pixabay_key,
+                    unsplash_key      = unsplash_key,
+                    brave_search_key  = brave_search_key,
+                    serper_key        = serper_key,
+                    google_search_key = google_search_key,
+                    videvo_key        = videvo_key,
+                    coverr_key        = coverr_key,
+                    progress_cb       = _progress,
+                )
+                result = editor.run(
+                    avatar_path = avatar_path,
+                    script      = script,
+                    title       = title,
+                )
+                super_editor_jobs[job_id].update({
+                    'status':   'done',
+                    'progress': 100,
+                    'message':  '✅ Video assembled successfully!',
+                    'result':   result,
+                })
+            except Exception as exc:
+                import traceback
+                traceback.print_exc()
+                super_editor_jobs[job_id].update({
+                    'status':  'error',
+                    'message': str(exc),
+                    'error':   str(exc),
+                })
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+
+        return jsonify({
+            'success': True,
+            'job_id':  job_id,
+            'status':  'queued',
+            'message': 'Super Auto Editor job started',
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/super-auto-editor/status/<job_id>', methods=['GET'])
+def super_auto_editor_status(job_id):
+    """Poll status of a Super Auto Editor job."""
+    job = super_editor_jobs.get(job_id)
+    if not job:
+        return jsonify({'success': False, 'error': 'Job not found'}), 404
+
+    resp = dict(job)
+    resp['success'] = True
+    resp['job_id']  = job_id
+
+    # If done, add download URL
+    if job['status'] == 'done' and job.get('result'):
+        out_path = job['result'].get('output_path', '')
+        if out_path and os.path.exists(out_path):
+            resp['download_url'] = f'/api/super-auto-editor/download/{job_id}'
+
+    return jsonify(resp)
+
+
+@app.route('/api/super-auto-editor/download/<job_id>', methods=['GET'])
+def super_auto_editor_download(job_id):
+    """Download the finished Super Auto Editor video."""
+    job = super_editor_jobs.get(job_id)
+    if not job or job['status'] != 'done':
+        return jsonify({'error': 'Not ready'}), 404
+
+    result   = job.get('result', {})
+    out_path = result.get('output_path', '')
+    if not out_path or not os.path.exists(out_path):
+        return jsonify({'error': 'File not found'}), 404
+
+    return send_file(
+        out_path,
+        as_attachment=True,
+        download_name=os.path.basename(out_path),
+        mimetype='video/mp4',
+    )
+
+
 if __name__ == '__main__':
     print("="*60)
     print("🎬 VIDEO EDITOR API SERVER")
