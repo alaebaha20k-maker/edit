@@ -1,22 +1,27 @@
 #!/usr/bin/env python3
 """
-Script Generator — Formula-First Architecture
+Script Generator — Formula-DNA Architecture
 
-The user's niche Writing Guidelines IS the complete law.
+The user's niche Writing Guidelines IS the complete law — any size, any length.
 Every sentence must execute a specific rule from that formula.
 
 Workflow:
-  PHASE 1 — PLAN (gemini-2.5-flash, 1 call):
-    Read the full Writing Guidelines.
-    Extract every section in order WITH its actual rules/content from the formula.
-    Assign sections+content to chunks. Lock anchor, promo count, CTA.
-    *** KEY: section CONTENT (not just names) is stored in the plan ***
+  PHASE 1 — PLAN (Gemini, 1 call):
+    Read the FULL Writing Guidelines (any size — 1K to 300K+ chars).
+    Extract formula_dna: ALL laws organized into 10 categories
+      (opening, tone, structure, mandatory phrases, forbidden words,
+       storytelling, engagement, promo/CTA, language, niche-specific).
+    Build per-chunk step-by-step recipe, specific to this title.
+    Lock anchor, promo count, CTA.
 
-  PHASE 2–N — WRITE (gemini-2.5-pro, 1 call per chunk):
-    System instruction = full Writing Guidelines (model identity = formula)
-    Chunk prompt = specific section RULES extracted from formula (injected directly)
-    The model has the formula both as identity AND as explicit rules per section.
-    This guarantees compliance even for 40K-70K char formulas.
+  PHASE 2–N — WRITE (Gemini Pro, 1 call per chunk):
+    When DNA extraction succeeded:
+      → laws_block (formula_dna) at position-0 = all niche laws in working memory
+      → step-by-step outline at position-1
+      → raw formula NOT re-injected (DNA covers everything, avoids prompt bloat)
+    When DNA extraction failed (fallback):
+      → full raw formula injected as primary source
+    This handles formulas of ANY size correctly.
 
   PHASE FINAL — POST: Merge → strip stop → clean → dedup → length enforce.
 """
@@ -76,7 +81,6 @@ class ScriptGenerator3Chunk:
         formula  = niche["writing_guidelines"]
         language = niche["language"]
         product  = niche.get("product", "our platform")
-        niche_name = niche.get("name", "")
 
         if verbose:
             print(f"\n{'='*70}")
@@ -115,7 +119,7 @@ class ScriptGenerator3Chunk:
             print()
 
         # ── System instruction: short format rules only (formula goes in user msg)
-        system_instruction = self._build_system_instruction(language, niche_name)
+        system_instruction = self._build_system_instruction(language)
 
         # ── PHASE 2–N — WRITE each chunk ──────────────────────────────────────
         generated_chunks = []
@@ -126,10 +130,18 @@ class ScriptGenerator3Chunk:
         formula_chars = len(formula)
         for chunk in chunks:
             if verbose:
+                dna_preview = plan.get("formula_dna", "")
+                dna_ok      = len(dna_preview) >= 1500
                 print(f"✍️  PHASE {chunk.index + 1} — WRITE Chunk {chunk.index}/{total_chunks}: {chunk.role}...")
-                print(f"   📋 Writing Guidelines injected into prompt: {formula_chars:,} chars")
+                print(f"   📋 Niche formula : {formula_chars:,} chars total")
+                if dna_ok:
+                    dna_lines = len([l for l in dna_preview.split('\n') if l.strip()])
+                    print(f"   ⚖️  Formula DNA  : {dna_lines} law-lines ({len(dna_preview):,} chars) "
+                          f"@ position-0 — raw formula NOT re-injected")
+                else:
+                    print(f"   ⚠️  DNA failed   : raw formula ({formula_chars:,} chars) injected as fallback")
                 if sections_done:
-                    print(f"   ✅ Sections done (forbidden to reopen): {', '.join(sections_done)}")
+                    print(f"   ✅ Sections done : {', '.join(sections_done)}")
 
             is_final = (chunk.index == total_chunks)
 
@@ -137,7 +149,6 @@ class ScriptGenerator3Chunk:
                 title=title,
                 language=language,
                 product=product,
-                niche_name=niche_name,
                 chunk=chunk,
                 total_chunks=total_chunks,
                 plan=plan,
@@ -175,13 +186,10 @@ class ScriptGenerator3Chunk:
             sections_done.extend(s for s in this_chunk_sections if s not in sections_done)
 
             if chunk.index < total_chunks:
-                sents = [s.strip() for s in re.split(r'[.!?]', chunk_text) if len(s.strip()) > 15]
-                previous_context = (
-                    ". ".join(sents[-3:]) + "."
-                    if len(sents) >= 3
-                    else chunk_text[-300:]
-                )
-                time.sleep(4)
+                # Use last 500 chars as continuation context — gives the next chunk
+                # enough sentence fragments to continue naturally without restarting.
+                previous_context = chunk_text[-500:].strip()
+                time.sleep(1)   # was 4s — reduced for speed
 
         # ── Post-processing ───────────────────────────────────────────────────
         if verbose:
@@ -195,17 +203,13 @@ class ScriptGenerator3Chunk:
 
         # ── Length enforcement ────────────────────────────────────────────────
         # Overshoot tolerance: 1 % of target (min 300, max 2000 chars).
+        # This prevents trimming a 100K script that comes out at 100,500 chars.
         MAX_OVERSHOOT = max(300, min(int(length * 0.01), 2000))
-        # Undershoot tolerance: only extend if genuinely far short.
-        # Being within 7% (min 1 000 chars) of target is acceptable — no extension.
-        # e.g. 9 491 / 10 000 (5.1% short) → skip extension.
-        MIN_SHORTAGE_TO_EXTEND = max(1000, int(length * 0.07))
-        char_count = len(full_script)
+        char_count    = len(full_script)
         if verbose:
-            print(f"\n📏 Length: {char_count:,} / {length:,} target"
-                  f"  (extend if short > {MIN_SHORTAGE_TO_EXTEND:,} | trim if over +{MAX_OVERSHOOT:,})")
+            print(f"\n📏 Length: {char_count:,} / {length:,} target  (tolerance: +{MAX_OVERSHOOT:,})")
 
-        if char_count < length - MIN_SHORTAGE_TO_EXTEND:
+        if char_count < length:
             shortage_pct = round((length - char_count) / length * 100, 1)
             if verbose:
                 print(f"   ⚠️  Short by {length - char_count:,} chars ({shortage_pct}%) — extending...")
@@ -290,7 +294,7 @@ class ScriptGenerator3Chunk:
         for i in range(1, total_chunks + 1):
             role = chunk_roles.get(i, "BODY / DEVELOPMENT")
             outline_format += (
-                f"<chunk_{i}_sections>which formula sections go in chunk {i}</chunk_{i}_sections>\n"
+                f"<chunk_{i}_sections>which formula sections go in chunk {i} (pipe-separated)</chunk_{i}_sections>\n"
                 f"<chunk_{i}_outline>\n"
                 f"Write a STEP-BY-STEP writing recipe for Chunk {i} ({role}).\n"
                 f"MUST be 100% specific to the title \"{title}\" AND 100% derived from the Writing Guidelines.\n"
@@ -303,7 +307,9 @@ class ScriptGenerator3Chunk:
                 f"</chunk_{i}_outline>\n\n"
             )
 
-        prompt = f"""You are an elite YouTube script production planner. Read the Writing Guidelines below and create a PRESCRIPTIVE SCRIPT OUTLINE for each chunk.
+        prompt = f"""You are an elite YouTube script production analyst. Your job is TWO things:
+1. Do a COMPLETE, EXHAUSTIVE analysis of the Writing Guidelines below.
+2. Create a PRESCRIPTIVE SCRIPT OUTLINE for each writing chunk.
 
 VIDEO TITLE: "{title}"
 LANGUAGE: {language}
@@ -313,19 +319,82 @@ CHUNKS: {total_chunks}  (chunk 1 = hook/opening, chunk {total_chunks} = closing/
 {formula}
 </writing_guidelines>
 
-OUTPUT the following XML structure EXACTLY. Do not add markdown. Do not wrap in code blocks.
+════════════════════════════════════════════════════════════
+OUTPUT the following XML structure EXACTLY.
+Do NOT add markdown. Do NOT wrap in code blocks.
+════════════════════════════════════════════════════════════
 
 <sections>all section names from the Writing Guidelines, pipe-separated</sections>
 <anchor>main subject, person, or story at the heart of this video title</anchor>
 <promo_count>integer — how many [PROMO] ad blocks the guidelines require. 0 if none.</promo_count>
-<cta>copy the exact CTA text from the Writing Guidelines</cta>
+<cta>copy the exact CTA text from the Writing Guidelines verbatim</cta>
+
+<formula_dna>
+CRITICAL: This is the COMPLETE FORMULA DNA — a full extraction of EVERY law in the Writing Guidelines.
+The script writer will use this as their primary reference. Be EXHAUSTIVE. Miss nothing.
+The Writing Guidelines may be 70,000 characters — extract ALL of it into organized laws below.
+
+## 1. OPENING LAWS
+[How must every video open? Copy exact opening phrases/hooks verbatim from the formula.
+What is the exact opening technique? Word-for-word if specified.]
+
+## 2. TONE & VOICE LAWS
+[Exact tone requirements. How should the writer speak to the viewer?
+Active/passive? First/second person? Energy level? Register?
+Copy exact tone descriptors from the formula verbatim.]
+
+## 3. STRUCTURE LAWS
+[Paragraph structure rules. Sentence length requirements.
+How long is each section? What transitions are required?
+Exact structural patterns — copy them.]
+
+## 4. MANDATORY PHRASES & HOOKS
+[List EVERY phrase/sentence that MUST appear verbatim in the script.
+Copy each one exactly from the Writing Guidelines.
+Include required hooks, transitions, engagement triggers.]
+
+## 5. FORBIDDEN WORDS & PATTERNS
+[List every word, phrase, pattern, or technique that is explicitly banned.
+Copy exact forbidden terms from the formula.]
+
+## 6. STORYTELLING & CONTENT LAWS
+[What content rules does this formula require?
+Story structure? Examples? Social proof? Data points?
+Specific content requirements for body sections.]
+
+## 7. ENGAGEMENT & RETENTION LAWS
+[What techniques must be used to retain viewer?
+Pattern interrupts? Questions? Cliffhangers? Open loops?
+Copy exact engagement techniques from the formula.]
+
+## 8. PROMO & CTA LAWS
+[How must promotions be written? Exact promo format.
+How must the CTA be delivered? Copy verbatim format.]
+
+## 9. LANGUAGE & STYLE LAWS
+[Word choice rules. Vocabulary requirements.
+Formality level. Any language-specific rules for {language}.]
+
+## 10. NICHE-SPECIFIC LAWS
+[Any unique rules, techniques, or requirements specific to THIS niche/channel formula.
+What makes this formula different from generic YouTube scripts?
+Copy ALL unique elements verbatim.]
+
+IMPORTANT: Every section above must be filled in detail.
+If the Writing Guidelines specifies something — it goes here.
+If it is not in the Writing Guidelines — write "Not specified."
+</formula_dna>
 
 {outline_format}
-RULES:
-- Each chunk outline must be a CONCRETE recipe — not vague rules, but specific instructions for THIS title
-- Mandatory phrases must be copied VERBATIM from the Writing Guidelines
+════════════════════════════════════════════════════════════
+ANALYSIS RULES:
+- formula_dna must be EXHAUSTIVE — extract EVERY rule, no shortcuts
+- Copy mandatory phrases and forbidden words VERBATIM from the Writing Guidelines
+- Each chunk outline must be CONCRETE — specific to this title, not generic
+- mandatory phrases in outlines must be copied VERBATIM from the Writing Guidelines
 - promo_count must be 0 if the Writing Guidelines has no promotional blocks
-- ALL chunk tags (chunk_1 through chunk_{total_chunks}) must be present"""
+- ALL chunk tags (chunk_1 through chunk_{total_chunks}) must be present
+════════════════════════════════════════════════════════════"""
 
         def _parse_plan_response(text: str) -> dict:
             """Parse the XML-format prescriptive outline response."""
@@ -382,7 +451,14 @@ RULES:
                 promo_count = int(digits) if digits else 0
             except ValueError:
                 promo_count = 0
-            cta_action = _xml("cta", "subscribe and hit the bell") or "subscribe and hit the bell"
+            cta_action   = _xml("cta", "subscribe and hit the bell") or "subscribe and hit the bell"
+            # formula_dna: complete, exhaustive extraction of ALL niche laws from the formula.
+            # This replaces injecting the raw 70K formula into every chunk — the model
+            # extracted every law once in PHASE 1; now each chunk gets organized laws.
+            formula_dna  = _xml("formula_dna", "").strip()
+            # Fallback: also accept old mandatory_laws tag if present
+            if not formula_dna:
+                formula_dna = _xml("mandatory_laws", "").strip()
 
             return {
                 "sections"             : sections,
@@ -392,6 +468,7 @@ RULES:
                 "anchor"               : anchor,
                 "promo_count"          : promo_count,
                 "cta_action"           : cta_action,
+                "formula_dna"          : formula_dna,
                 "closing_note"         : "close with subscribe CTA",
             }
 
@@ -401,9 +478,11 @@ RULES:
                 print(f"      Formula: {len(formula):,} chars | Title: \"{title}\"")
 
             model    = genai.GenerativeModel(Config.GEMINI_PLAN_MODEL)
+            # 65536 tokens: enough for exhaustive formula_dna extraction from 70K formula
+            # + per-chunk outlines. This is the most important call — must not be truncated.
             response = model.generate_content(
                 prompt,
-                generation_config={"temperature": 0.1, "max_output_tokens": 32768},
+                generation_config={"temperature": 0.1, "max_output_tokens": 65536},
             )
             text = response.text.strip()
 
@@ -414,14 +493,21 @@ RULES:
 
             if verbose:
                 outline_map = plan.get("chunk_section_content", {})
+                dna         = plan.get("formula_dna", "")
+                if dna:
+                    dna_lines = len([l for l in dna.split('\n') if l.strip()])
+                    print(f"   ✅ Formula DNA    : {dna_lines} law-lines extracted ({len(dna):,} chars) — "
+                          f"covers opening/tone/structure/phrases/forbidden/engagement/CTA")
+                else:
+                    print(f"   ⚠️  Formula DNA extraction failed — raw formula will be injected per chunk")
                 if not outline_map:
                     print("   ⚠️  No outline extracted — full formula injected into every chunk prompt (fallback)")
                 else:
                     for ci, cv in outline_map.items():
                         secs = ", ".join(plan["chunk_sections"].get(ci, []))
-                        print(f"   ✅ Chunk {ci} outline: {len(cv):,} chars  [{secs}]")
-                print(f"   ✅ Anchor : {plan['anchor']}")
-                print(f"   ✅ Promos : {plan['promo_count']}")
+                        print(f"   ✅ Chunk {ci} outline : {len(cv):,} chars  [{secs}]")
+                print(f"   ✅ Anchor         : {plan['anchor']}")
+                print(f"   ✅ Promos         : {plan['promo_count']}")
 
             return plan
 
@@ -437,6 +523,7 @@ RULES:
                 "anchor"               : title,
                 "promo_count"          : 0,
                 "cta_action"           : "subscribe and hit the bell",
+                "formula_dna"          : "",
                 "closing_note"         : "close with subscribe CTA",
             }
 
@@ -444,7 +531,7 @@ RULES:
     # SYSTEM INSTRUCTION — short & focused (formula goes in user message)
     # =========================================================================
 
-    def _build_system_instruction(self, language: str, niche_name: str = "") -> str:
+    def _build_system_instruction(self, language: str) -> str:
         """
         Keep the system instruction SHORT.
 
@@ -453,15 +540,11 @@ RULES:
         background noise — the model defaults to its built-in writing style.
 
         The formula MUST be at the TOP of the user message where the model
-        pays full attention to it. The system instruction only sets identity + format.
+        pays full attention to it. The system instruction only sets format rules.
         """
-        brand_line = (
-            f"You ARE the voice of [{niche_name}]. "
-            f"Every sentence must sound like that channel's best video — not generic YouTube.\n"
-        ) if niche_name else ""
-        return f"""You are an elite video script writer executing a specific channel formula.
-{brand_line}Your ONLY job: execute the Writing Guidelines in the user message sentence by sentence.
-You do NOT improvise style, structure, or content. You ARE the formula. You execute it.
+        return f"""You are a professional video script writer.
+Your job is to execute the Writing Guidelines given to you EXACTLY — sentence by sentence.
+You do not improvise style, structure, or content. You execute the formula.
 
 OUTPUT FORMAT — strict:
 1. Write 100% in {language} — every word, no exceptions.
@@ -488,64 +571,112 @@ OUTPUT FORMAT — strict:
         promo_count_so_far: int,
         is_final: bool,
         sections_already_done: List[str] = None,
-        niche_name: str = "",
     ) -> str:
 
         anchor       = plan.get("anchor", title)
         full_formula = plan.get("_formula_text", "")
+        formula_dna  = plan.get("formula_dna", "")
         promo_count  = plan.get("promo_count", 0)
         cta_action   = plan.get("cta_action", "subscribe and hit the bell")
         sections_now = plan.get("chunk_sections", {}).get(str(chunk.index), [])
         outline      = plan.get("chunk_section_content", {}).get(str(chunk.index), "")
         sections_label = " | ".join(sections_now) if sections_now else f"part {chunk.index} of {total_chunks}"
 
-        # ── Formula block — ALWAYS at the top of the prompt ───────────────────
-        # Critical: LLMs suffer from "lost in the middle" for long contexts.
-        # The formula MUST be position-0 in the user message so the model reads
-        # it with full attention. System instruction is kept short (format only).
-        # NOTE: Brand identity lives ONLY in system_instruction — never here,
-        # so it cannot leak into the script output.
-        if full_formula:
+        # ── FORMULA BLOCK — adaptive based on what PHASE 1 extracted ────────────
+        #
+        # CASE A — formula_dna extraction succeeded (>= 1500 chars):
+        #   laws_block  = formula_dna at position-0 (organized, complete, in attention)
+        #   formula_block = EMPTY — DNA has everything, re-injecting raw formula would:
+        #                   (a) bloat prompts to 200K+ chars for large formulas
+        #                   (b) create "lost in the middle" again despite the DNA fix
+        #                   (c) waste tokens on every chunk call
+        #
+        # CASE B — formula_dna is empty or too short (PHASE 1 failed):
+        #   laws_block  = empty
+        #   formula_block = FULL raw formula — model must read it directly
+        #
+        # This means formulas of ANY size (10K or 300K) are handled correctly:
+        # large formulas → DNA extraction → compact prompt per chunk
+        # tiny formulas → DNA also fine, or fallback to raw
+        DNA_MIN_CHARS = 1500   # minimum chars to trust the DNA extraction
+
+        dna_good = len(formula_dna) >= DNA_MIN_CHARS
+
+        if dna_good:
+            laws_block = (
+                f"╔{'═' * 66}╗\n"
+                f"║     COMPLETE NICHE FORMULA — ALL LAWS EXTRACTED FROM GUIDELINES     ║\n"
+                f"╚{'═' * 66}╝\n"
+                f"CRITICAL: This is the FULL DNA of your niche formula.\n"
+                f"Every law below was extracted from the Writing Guidelines by the planner.\n"
+                f"EVERY law is mandatory. Read ALL 10 sections before writing a single word.\n"
+                f"{'─' * 68}\n"
+                f"{formula_dna}\n"
+                f"{'─' * 68}\n"
+                f"COMPLIANCE: Before each paragraph check —\n"
+                f"  ✓ Opening laws followed?  ✓ Tone correct?  ✓ Mandatory phrases used?\n"
+                f"  ✓ Forbidden words avoided?  ✓ Structure correct?  ✓ Niche laws applied?\n\n"
+            )
+            formula_block = ""   # DNA covers everything — raw formula NOT re-injected
+
+        elif full_formula:
+            # DNA extraction failed — inject the raw formula as the primary reference
+            laws_block = ""
             formula_block = (
-                f"════════════════ YOUR WRITING GUIDELINES ════════════════\n"
-                f"READ EVERY RULE BELOW. EXECUTE EACH ONE. DO NOT IMPROVISE.\n"
-                f"{'─' * 56}\n"
+                f"════════════════ YOUR WRITING GUIDELINES — READ EVERY RULE ════════════════\n"
+                f"This is your niche formula. EVERY rule, law, phrase, and technique below\n"
+                f"must be applied. The formula is {len(full_formula):,} characters — read it ALL.\n"
+                f"{'─' * 68}\n"
                 f"{full_formula}\n"
-                f"{'─' * 56}\n"
-                f"END OF WRITING GUIDELINES — every sentence executes a rule from above.\n"
-                f"{'═' * 56}\n\n"
+                f"{'─' * 68}\n"
+                f"END OF WRITING GUIDELINES — every sentence must execute a rule from above.\n"
+                f"{'═' * 68}\n\n"
             )
         else:
+            laws_block    = ""
             formula_block = ""
 
-        # ── Step-by-step outline for this chunk ───────────────────────────────
-        # Produced by PHASE 1: specific recipe for this title + chunk's sections.
+        # ── Current section label ──────────────────────────────────────────────
+        current_section_label = " | ".join(sections_now) if sections_now else f"part {chunk.index}"
+
+        # ── Step-by-step outline for this chunk (MUST come first in prompt) ───
+        # CRITICAL: The outline is the most specific instruction for this chunk.
+        # It must be at the TOP of the prompt so the model gives it full attention.
+        # The "lost in the middle" problem means anything buried after a long formula
+        # gets ignored. Outline-first solves this.
+        word_target = int(chunk.target_chars / 5.2)   # ~5.2 chars per word average
         if outline:
             task_block = (
-                f"SECTIONS FOR THIS CHUNK: {sections_label}\n\n"
-                f"STEP-BY-STEP WRITING RECIPE FOR THIS CHUNK (from your Writing Guidelines):\n"
-                f"{'─' * 56}\n"
+                f"════════════════ CHUNK {chunk.index}/{total_chunks} — YOUR WRITING TASK ════════════════\n"
+                f"SECTIONS: {sections_label}\n"
+                f"VIDEO TITLE: \"{title}\"\n"
+                f"ANCHOR / SUBJECT: {anchor}\n"
+                f"LANGUAGE: {language.upper()} — every single word in {language}\n\n"
+                f"STEP-BY-STEP WRITING RECIPE — execute EVERY step in order:\n"
+                f"{'─' * 60}\n"
                 f"{outline}\n"
-                f"{'─' * 56}\n"
-                f"Execute EVERY step in sequence."
+                f"{'─' * 60}\n"
+                f"Every sentence must execute a step from this recipe.\n"
+                f"TITLE IS A CONTRACT — deliver exactly what the title promises.\n\n"
             )
         else:
             task_block = (
-                f"SECTIONS TO WRITE: {sections_label}\n"
-                f"Apply your Writing Guidelines above exactly — follow the structure, tone, and rules."
+                f"════════════════ CHUNK {chunk.index}/{total_chunks} — YOUR WRITING TASK ════════════════\n"
+                f"SECTIONS: {sections_label}\n"
+                f"VIDEO TITLE: \"{title}\"\n"
+                f"ANCHOR / SUBJECT: {anchor}\n"
+                f"LANGUAGE: {language.upper()} — every single word in {language}\n\n"
+                f"Apply your Writing Guidelines below exactly — follow the structure, tone, and rules.\n"
+                f"TITLE IS A CONTRACT — deliver exactly what the title promises.\n\n"
             )
 
         # ── Continuation context ───────────────────────────────────────────────
-        current_section_label = " | ".join(sections_now) if sections_now else f"part {chunk.index}"
         if previous_context:
             continuation = (
-                f"⚠️  MID-SCRIPT — you are writing [{current_section_label}].\n"
-                f"THE VIDEO HAS ALREADY STARTED. Do NOT write any of these — they are FORBIDDEN:\n"
-                f"  • Greetings: 'Bonjour', 'Hello', 'Welcome', 'Salut', 'Hi everyone'\n"
-                f"  • New openers: 'Today', 'Dans cette vidéo', 'In this video', 'Aujourd'hui'\n"
-                f"  • New hooks: 'Imagine', 'Picture this', 'What if', 'Did you know'\n"
-                f"  • Any CTA: 'Subscribe', 'Abonnez-vous', 'Like', 'Share' — CTA is FINAL chunk only.\n"
-                f"CONTINUE THE SENTENCE directly after the last written line:\n"
+                f"⚠️  MID-SCRIPT — writing [{current_section_label}]. Script already in progress.\n"
+                f"FORBIDDEN OPENERS: 'Bonjour' / 'Hello' / 'Today' / 'Dans cette vidéo' / "
+                f"'Imagine' / 'Welcome' / 'Subscribe' — any of these = restart = forbidden.\n"
+                f"CONTINUE directly after:\n"
                 f'"{previous_context}"\n\n'
             )
         else:
@@ -566,17 +697,16 @@ OUTPUT FORMAT — strict:
         else:
             promo_reminder = f"PRODUCT: {product}\n\n" if promo_count > 0 else ""
 
-        # ── Section boundary lock — what is already done and MUST NOT be reopened ─
+        # ── Section boundary lock (last 8 only — prevents prompt bloat) ───────
         if sections_already_done:
+            recent_done = sections_already_done[-8:]
+            older_count = len(sections_already_done) - len(recent_done)
+            summary_line = f"   (+ {older_count} earlier sections already written)\n" if older_count else ""
             boundary_block = (
-                f"⛔ SECTIONS ALREADY WRITTEN — DO NOT REVISIT, DO NOT REOPEN, DO NOT RE-EXPLAIN:\n"
-                + "".join(f"   ✓ {s}\n" for s in sections_already_done)
-                + f"\n"
-                f"The script has ALREADY covered all of the above. Going backward in the formula\n"
-                f"is STRICTLY FORBIDDEN. Every sentence you write must move FORWARD.\n\n"
-                f"FORMULA DIRECTION: hook → mechanism → proof → protocol → ending\n"
-                f"You are currently past: {', '.join(sections_already_done)}\n"
-                f"Write ONLY what comes NEXT in that progression.\n\n"
+                f"⛔ DO NOT REVISIT — already written:\n"
+                + summary_line
+                + "".join(f"   ✓ {s}\n" for s in recent_done)
+                + f"Move FORWARD only. Write what comes NEXT in the formula.\n\n"
             )
         else:
             boundary_block = ""
@@ -584,46 +714,44 @@ OUTPUT FORMAT — strict:
         # ── Final chunk stop ───────────────────────────────────────────────────
         if is_final:
             stop_instruction = (
-                f"\n⛔ HARD STOP RULE:\n"
-                f"After you write the final CTA ('{cta_action}'), you MUST immediately write:\n"
+                f"\n⛔ HARD STOP: After writing the final CTA ('{cta_action}') write:\n"
                 f"{STOP_SIGNAL}\n"
-                f"Then output NOTHING AT ALL. Not one more word. Not a summary. Not a new section.\n"
-                f"The script is COMPLETE once the CTA is written. STOP.\n"
+                f"Then STOP. Nothing after. Not one word.\n"
             )
             role_note = (
-                f"FINAL CHUNK — write the closing and CTA exactly as the Writing Guidelines prescribe.\n"
-                f"Once the CTA lands, the payoff is complete. STOP immediately. Do not add more.\n"
-                f"Protect the payoff — continuing after it weakens it."
+                f"FINAL CHUNK — write closing + CTA per the Writing Guidelines.\n"
+                f"After CTA: STOP immediately. The payoff is complete."
             )
         else:
             stop_instruction = ""
             role_note = (
-                f"Chunk {chunk.index} of {total_chunks} — MID-SCRIPT BODY [{current_section_label}].\n"
-                f"⛔ FORBIDDEN — any intro/hook/greeting (the video ALREADY STARTED):\n"
-                f"   'Bonjour' / 'Hello' / 'Welcome' / 'Today' / 'Dans cette vidéo' / 'Aujourd'hui'\n"
-                f"   'Imagine' / 'Picture this' / 'In this video' — these restart the script.\n"
-                f"⛔ FORBIDDEN — any ending, CTA, conclusion:\n"
-                f"   'Subscribe' / 'Abonnez-vous' / 'Like' / 'Share' / 'See you next time'\n"
-                f"   These belong ONLY in the final chunk ({total_chunks}).\n"
-                f"⛔ FORBIDDEN — reopening any section already written (listed above).\n"
-                f"⛔ FORBIDDEN — repeating the same idea in different words (padding).\n"
-                f"Write the body content for [{current_section_label}] and stop. "
-                f"The next chunk continues the script."
+                f"MID-SCRIPT chunk {chunk.index}/{total_chunks} [{current_section_label}].\n"
+                f"⛔ NO intro / hook / greeting / CTA — forbidden (video already started).\n"
+                f"Write {word_target} words of body content then stop (next chunk continues)."
             )
 
+        # ── Prompt assembly (LAWS-FIRST → OUTLINE-FIRST architecture) ───────────
+        # Order: laws → task/outline → continuation → boundary → promo → formula → role → length
+        #
+        # laws_block   @ position-0  → niche laws in working memory during entire write
+        # task_block   @ position-1  → specific recipe for this chunk (outline)
+        # formula_block @ middle     → full reference without burying the laws/recipe
+        #
+        # This solves TWO "lost in the middle" problems:
+        #   1. Laws extracted compactly → always in attention (not buried in 33K formula)
+        #   2. Outline at top → model follows recipe, not generic YouTube instinct
         prompt = (
-            f"{formula_block}"
-            f"═══ WRITING TASK: CHUNK {chunk.index}/{total_chunks} ═══\n\n"
-            f"VIDEO TITLE: \"{title}\"\n"
-            f"TITLE IS A CONTRACT — every mechanism you describe must deliver exactly what the title promises.\n"
-            f"ANCHOR / SUBJECT: {anchor}\n"
-            f"LANGUAGE: {language.upper()} — every single word in {language}\n\n"
-            f"{boundary_block}"
-            f"{task_block}\n\n"
+            f"{laws_block}"
+            f"{task_block}"
             f"{continuation}"
+            f"{boundary_block}"
             f"{promo_reminder}"
+            f"{formula_block}"
             f"ROLE: {role_note}\n"
-            f"LENGTH: Minimum {chunk.target_chars:,} characters (max {int(chunk.target_chars * 1.08):,}).\n"
+            f"LENGTH: Write at least {chunk.target_chars:,} characters "
+            f"(~{word_target} words, max {int(chunk.target_chars * 1.20):,} chars).\n"
+            f"Fill every word with formula content. Do NOT rush. Do NOT stop early.\n"
+            f"FINAL CHECK before writing: mandatory phrases used? forbidden words avoided? tone correct?\n"
             f"{stop_instruction}\n"
             f"WRITE NOW:"
         )
@@ -889,34 +1017,10 @@ WRITE IN {language.upper()} — CONTINUE NOW:"""
         return text
 
     def _clean_script(self, text: str) -> str:
-        # Strip at the hard stop signal and common variants FIRST
-        for stop_variant in [
-            STOP_SIGNAL,
-            "=== END OF SCRIPT",
-            "--- END OF SCRIPT",
-            "END OF SCRIPT",
-            "FIN DU SCRIPT",
-            "FIN DE SCRIPT",
-            "--- THE END ---",
-            "=== THE END ===",
-            "Script ends here",
-            "This script ends",
-        ]:
-            idx = text.upper().find(stop_variant.upper())
-            if idx != -1:
-                text = text[:idx]
-                break
-
-        # Strip model meta-commentary lines (often appended after the real ending)
-        text = re.sub(
-            r'\n+(Note\s*:.*|This (script|video|content)\s.*|'
-            r'I (hope|trust)\s.*|Here\'?s?\s.*script.*|'
-            r'The\s+above\s.*|This\s+completes.*|'
-            r'Word\s+count\s*:.*|Character\s+count\s*:.*)$',
-            '', text, flags=re.IGNORECASE | re.MULTILINE
-        )
-        # Remove trailing separator lines (----, ====, etc.)
-        text = re.sub(r'\n+[-=]{3,}\s*$', '', text)
+        # Strip everything at/after the hard stop signal FIRST
+        idx = text.find(STOP_SIGNAL)
+        if idx != -1:
+            text = text[:idx]
 
         # Markdown
         text = re.sub(r"\*\*\*(.+?)\*\*\*", r"\1", text)
@@ -928,10 +1032,8 @@ WRITE IN {language.upper()} — CONTINUE NOW:"""
         text = re.sub(r"#{1,6}\s+",          "",    text)
         text = re.sub(r"\*",                 "",    text)
 
-        # Labels / cues (including any prompt-structure labels that leaked into output)
+        # Labels / cues
         text = re.sub(r"(?i)(VISUAL|VIDEO|NARRATOR|SPEAKER|SHOW|CUT TO)\s*:", "", text)
-        text = re.sub(r"(?i)^(CHANNEL\s*/\s*BRAND|BRAND|NICHE|CHANNEL)\s*:.*$", "", text, flags=re.MULTILINE)
-        text = re.sub(r"(?i)^(WRITING GUIDELINES|YOUR WRITING GUIDELINES|END OF WRITING GUIDELINES).*$", "", text, flags=re.MULTILINE)
 
         # Timestamps
         text = re.sub(r"\(\s*\d+:\d+\s*-\s*\d+:\d+\s*\)", "", text)
