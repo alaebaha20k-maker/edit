@@ -125,11 +125,14 @@ class ScriptGenerator3Chunk:
         formula_chars = len(formula)
         for chunk in chunks:
             if verbose:
-                laws_preview = plan.get("mandatory_laws", "")
+                dna_preview = plan.get("formula_dna", "")
                 print(f"✍️  PHASE {chunk.index + 1} — WRITE Chunk {chunk.index}/{total_chunks}: {chunk.role}...")
-                print(f"   📋 Writing Guidelines: {formula_chars:,} chars")
-                if laws_preview:
-                    print(f"   ⚖️  Mandatory laws: {len([l for l in laws_preview.split(chr(10)) if l.strip()])} niche laws injected at position-0")
+                print(f"   📋 Raw formula: {formula_chars:,} chars")
+                if dna_preview:
+                    dna_lines = len([l for l in dna_preview.split('\n') if l.strip()])
+                    print(f"   ⚖️  Formula DNA: {dna_lines} law-lines ({len(dna_preview):,} chars) at position-0")
+                else:
+                    print(f"   ⚠️  No formula DNA — raw formula injected directly")
                 if sections_done:
                     print(f"   ✅ Sections done (forbidden to reopen): {', '.join(sections_done)}")
 
@@ -284,7 +287,7 @@ class ScriptGenerator3Chunk:
         for i in range(1, total_chunks + 1):
             role = chunk_roles.get(i, "BODY / DEVELOPMENT")
             outline_format += (
-                f"<chunk_{i}_sections>which formula sections go in chunk {i}</chunk_{i}_sections>\n"
+                f"<chunk_{i}_sections>which formula sections go in chunk {i} (pipe-separated)</chunk_{i}_sections>\n"
                 f"<chunk_{i}_outline>\n"
                 f"Write a STEP-BY-STEP writing recipe for Chunk {i} ({role}).\n"
                 f"MUST be 100% specific to the title \"{title}\" AND 100% derived from the Writing Guidelines.\n"
@@ -297,7 +300,9 @@ class ScriptGenerator3Chunk:
                 f"</chunk_{i}_outline>\n\n"
             )
 
-        prompt = f"""You are an elite YouTube script production planner. Read the Writing Guidelines below and create a PRESCRIPTIVE SCRIPT OUTLINE for each chunk.
+        prompt = f"""You are an elite YouTube script production analyst. Your job is TWO things:
+1. Do a COMPLETE, EXHAUSTIVE analysis of the Writing Guidelines below.
+2. Create a PRESCRIPTIVE SCRIPT OUTLINE for each writing chunk.
 
 VIDEO TITLE: "{title}"
 LANGUAGE: {language}
@@ -307,34 +312,82 @@ CHUNKS: {total_chunks}  (chunk 1 = hook/opening, chunk {total_chunks} = closing/
 {formula}
 </writing_guidelines>
 
-OUTPUT the following XML structure EXACTLY. Do not add markdown. Do not wrap in code blocks.
+════════════════════════════════════════════════════════════
+OUTPUT the following XML structure EXACTLY.
+Do NOT add markdown. Do NOT wrap in code blocks.
+════════════════════════════════════════════════════════════
 
 <sections>all section names from the Writing Guidelines, pipe-separated</sections>
 <anchor>main subject, person, or story at the heart of this video title</anchor>
 <promo_count>integer — how many [PROMO] ad blocks the guidelines require. 0 if none.</promo_count>
-<cta>copy the exact CTA text from the Writing Guidelines</cta>
+<cta>copy the exact CTA text from the Writing Guidelines verbatim</cta>
 
-<mandatory_laws>
-Extract the 25 MOST CRITICAL laws from the Writing Guidelines that the script writer MUST follow in EVERY sentence.
-Format each law as a short, direct command. Include:
-  - MANDATORY PHRASES: exact phrases from the formula that must appear verbatim (copy them)
-  - FORBIDDEN WORDS/PATTERNS: exact words or patterns the formula bans
-  - TONE LAWS: specific tone/voice/register requirements (e.g. "always speak directly to viewer", "never use passive voice")
-  - STRUCTURE LAWS: required paragraph structure, transitions, rhythm rules
-  - OPENING LAW: exactly how the video must open (copy verbatim if formula specifies)
-  - CLOSING LAW: exactly how the CTA/close must sound (copy verbatim if formula specifies)
-  - Any unique technique, hook formula, or framework this niche uses
-Be SPECIFIC and CONCRETE — copy verbatim phrases from the formula, not paraphrases.
-Do NOT list generic YouTube advice. Only rules explicitly stated in the Writing Guidelines.
-</mandatory_laws>
+<formula_dna>
+CRITICAL: This is the COMPLETE FORMULA DNA — a full extraction of EVERY law in the Writing Guidelines.
+The script writer will use this as their primary reference. Be EXHAUSTIVE. Miss nothing.
+The Writing Guidelines may be 70,000 characters — extract ALL of it into organized laws below.
+
+## 1. OPENING LAWS
+[How must every video open? Copy exact opening phrases/hooks verbatim from the formula.
+What is the exact opening technique? Word-for-word if specified.]
+
+## 2. TONE & VOICE LAWS
+[Exact tone requirements. How should the writer speak to the viewer?
+Active/passive? First/second person? Energy level? Register?
+Copy exact tone descriptors from the formula verbatim.]
+
+## 3. STRUCTURE LAWS
+[Paragraph structure rules. Sentence length requirements.
+How long is each section? What transitions are required?
+Exact structural patterns — copy them.]
+
+## 4. MANDATORY PHRASES & HOOKS
+[List EVERY phrase/sentence that MUST appear verbatim in the script.
+Copy each one exactly from the Writing Guidelines.
+Include required hooks, transitions, engagement triggers.]
+
+## 5. FORBIDDEN WORDS & PATTERNS
+[List every word, phrase, pattern, or technique that is explicitly banned.
+Copy exact forbidden terms from the formula.]
+
+## 6. STORYTELLING & CONTENT LAWS
+[What content rules does this formula require?
+Story structure? Examples? Social proof? Data points?
+Specific content requirements for body sections.]
+
+## 7. ENGAGEMENT & RETENTION LAWS
+[What techniques must be used to retain viewer?
+Pattern interrupts? Questions? Cliffhangers? Open loops?
+Copy exact engagement techniques from the formula.]
+
+## 8. PROMO & CTA LAWS
+[How must promotions be written? Exact promo format.
+How must the CTA be delivered? Copy verbatim format.]
+
+## 9. LANGUAGE & STYLE LAWS
+[Word choice rules. Vocabulary requirements.
+Formality level. Any language-specific rules for {language}.]
+
+## 10. NICHE-SPECIFIC LAWS
+[Any unique rules, techniques, or requirements specific to THIS niche/channel formula.
+What makes this formula different from generic YouTube scripts?
+Copy ALL unique elements verbatim.]
+
+IMPORTANT: Every section above must be filled in detail.
+If the Writing Guidelines specifies something — it goes here.
+If it is not in the Writing Guidelines — write "Not specified."
+</formula_dna>
 
 {outline_format}
-RULES:
-- Each chunk outline must be a CONCRETE recipe — not vague rules, but specific instructions for THIS title
-- Mandatory phrases must be copied VERBATIM from the Writing Guidelines
-- mandatory_laws must contain 15-25 specific, actionable laws — not vague descriptions
+════════════════════════════════════════════════════════════
+ANALYSIS RULES:
+- formula_dna must be EXHAUSTIVE — extract EVERY rule, no shortcuts
+- Copy mandatory phrases and forbidden words VERBATIM from the Writing Guidelines
+- Each chunk outline must be CONCRETE — specific to this title, not generic
+- mandatory phrases in outlines must be copied VERBATIM from the Writing Guidelines
 - promo_count must be 0 if the Writing Guidelines has no promotional blocks
-- ALL chunk tags (chunk_1 through chunk_{total_chunks}) must be present"""
+- ALL chunk tags (chunk_1 through chunk_{total_chunks}) must be present
+════════════════════════════════════════════════════════════"""
 
         def _parse_plan_response(text: str) -> dict:
             """Parse the XML-format prescriptive outline response."""
@@ -391,8 +444,14 @@ RULES:
                 promo_count = int(digits) if digits else 0
             except ValueError:
                 promo_count = 0
-            cta_action      = _xml("cta", "subscribe and hit the bell") or "subscribe and hit the bell"
-            mandatory_laws  = _xml("mandatory_laws", "").strip()
+            cta_action   = _xml("cta", "subscribe and hit the bell") or "subscribe and hit the bell"
+            # formula_dna: complete, exhaustive extraction of ALL niche laws from the formula.
+            # This replaces injecting the raw 70K formula into every chunk — the model
+            # extracted every law once in PHASE 1; now each chunk gets organized laws.
+            formula_dna  = _xml("formula_dna", "").strip()
+            # Fallback: also accept old mandatory_laws tag if present
+            if not formula_dna:
+                formula_dna = _xml("mandatory_laws", "").strip()
 
             return {
                 "sections"             : sections,
@@ -402,7 +461,7 @@ RULES:
                 "anchor"               : anchor,
                 "promo_count"          : promo_count,
                 "cta_action"           : cta_action,
-                "mandatory_laws"       : mandatory_laws,
+                "formula_dna"          : formula_dna,
                 "closing_note"         : "close with subscribe CTA",
             }
 
@@ -412,9 +471,11 @@ RULES:
                 print(f"      Formula: {len(formula):,} chars | Title: \"{title}\"")
 
             model    = genai.GenerativeModel(Config.GEMINI_PLAN_MODEL)
+            # 65536 tokens: enough for exhaustive formula_dna extraction from 70K formula
+            # + per-chunk outlines. This is the most important call — must not be truncated.
             response = model.generate_content(
                 prompt,
-                generation_config={"temperature": 0.1, "max_output_tokens": 32768},
+                generation_config={"temperature": 0.1, "max_output_tokens": 65536},
             )
             text = response.text.strip()
 
@@ -425,18 +486,21 @@ RULES:
 
             if verbose:
                 outline_map = plan.get("chunk_section_content", {})
-                laws        = plan.get("mandatory_laws", "")
+                dna         = plan.get("formula_dna", "")
+                if dna:
+                    dna_lines = len([l for l in dna.split('\n') if l.strip()])
+                    print(f"   ✅ Formula DNA    : {dna_lines} law-lines extracted ({len(dna):,} chars) — "
+                          f"covers opening/tone/structure/phrases/forbidden/engagement/CTA")
+                else:
+                    print(f"   ⚠️  Formula DNA extraction failed — raw formula will be injected per chunk")
                 if not outline_map:
                     print("   ⚠️  No outline extracted — full formula injected into every chunk prompt (fallback)")
                 else:
                     for ci, cv in outline_map.items():
                         secs = ", ".join(plan["chunk_sections"].get(ci, []))
-                        print(f"   ✅ Chunk {ci} outline: {len(cv):,} chars  [{secs}]")
+                        print(f"   ✅ Chunk {ci} outline : {len(cv):,} chars  [{secs}]")
                 print(f"   ✅ Anchor         : {plan['anchor']}")
                 print(f"   ✅ Promos         : {plan['promo_count']}")
-                if laws:
-                    law_count = len([l for l in laws.split('\n') if l.strip()])
-                    print(f"   ✅ Mandatory laws : {law_count} laws extracted ({len(laws):,} chars)")
 
             return plan
 
@@ -452,7 +516,7 @@ RULES:
                 "anchor"               : title,
                 "promo_count"          : 0,
                 "cta_action"           : "subscribe and hit the bell",
-                "mandatory_laws"       : "",
+                "formula_dna"          : "",
                 "closing_note"         : "close with subscribe CTA",
             }
 
@@ -502,46 +566,65 @@ OUTPUT FORMAT — strict:
         sections_already_done: List[str] = None,
     ) -> str:
 
-        anchor          = plan.get("anchor", title)
-        full_formula    = plan.get("_formula_text", "")
-        mandatory_laws  = plan.get("mandatory_laws", "")
-        promo_count     = plan.get("promo_count", 0)
-        cta_action      = plan.get("cta_action", "subscribe and hit the bell")
-        sections_now    = plan.get("chunk_sections", {}).get(str(chunk.index), [])
-        outline         = plan.get("chunk_section_content", {}).get(str(chunk.index), "")
-        sections_label  = " | ".join(sections_now) if sections_now else f"part {chunk.index} of {total_chunks}"
+        anchor       = plan.get("anchor", title)
+        full_formula = plan.get("_formula_text", "")
+        formula_dna  = plan.get("formula_dna", "")
+        promo_count  = plan.get("promo_count", 0)
+        cta_action   = plan.get("cta_action", "subscribe and hit the bell")
+        sections_now = plan.get("chunk_sections", {}).get(str(chunk.index), [])
+        outline      = plan.get("chunk_section_content", {}).get(str(chunk.index), "")
+        sections_label = " | ".join(sections_now) if sections_now else f"part {chunk.index} of {total_chunks}"
 
-        # ── MANDATORY LAWS BLOCK — position-0 (highest attention) ─────────────
-        # These are the niche-specific laws extracted by PHASE 1 from the formula.
-        # They must come FIRST so the model has them in working memory while writing.
-        # Position-0 = the model CANNOT forget these laws, even in a 60K prompt.
-        if mandatory_laws:
+        # ── FORMULA DNA BLOCK — position-0 (highest attention) ────────────────
+        # formula_dna is the COMPLETE extraction of ALL laws from the niche formula,
+        # organized by type (opening, tone, structure, mandatory phrases, forbidden words…).
+        # Extracted once by PHASE 1 — injected into every chunk at position-0.
+        #
+        # WHY: A raw 70K formula injected as-is = "lost in the middle" = model ignores
+        # most of it. The formula_dna is compact, organized, and always in working memory.
+        # The model gets 100% of the formula's content in a format it can follow.
+        if formula_dna:
             laws_block = (
-                f"╔{'═' * 62}╗\n"
-                f"║  ⚖️  NICHE LAWS — MANDATORY IN EVERY SENTENCE  ⚖️              ║\n"
-                f"╚{'═' * 62}╝\n"
-                f"These are the ABSOLUTE LAWS of this channel's formula.\n"
-                f"EVERY sentence you write MUST follow these laws. No exceptions.\n"
-                f"Violating any law = wrong output. Read each law before writing.\n"
-                f"{'─' * 64}\n"
-                f"{mandatory_laws}\n"
-                f"{'─' * 64}\n"
-                f"⚠️  CHECK: Before writing each paragraph — does it follow ALL laws above?\n\n"
+                f"╔{'═' * 66}╗\n"
+                f"║  ⚖️  COMPLETE NICHE FORMULA — ALL LAWS EXTRACTED FROM GUIDELINES  ║\n"
+                f"╚{'═' * 66}╝\n"
+                f"This is the COMPLETE DNA of your niche formula, extracted from the full\n"
+                f"Writing Guidelines. EVERY law here is mandatory. No exceptions.\n"
+                f"Read ALL sections before writing a single word.\n"
+                f"{'─' * 68}\n"
+                f"{formula_dna}\n"
+                f"{'─' * 68}\n"
+                f"⚠️  COMPLIANCE CHECK: Before writing each paragraph, verify it satisfies\n"
+                f"    the Opening Laws, Tone Laws, Structure Laws, Mandatory Phrases,\n"
+                f"    Forbidden Words, and all Niche-Specific Laws above.\n\n"
             )
         else:
             laws_block = ""
 
-        # ── Formula block — full Writing Guidelines (reference material) ──────
+        # ── Formula block — raw Writing Guidelines (reference / fallback) ──────
+        # If formula_dna extraction succeeded: formula_block is a shorter reference.
+        # If formula_dna is empty (extraction failed): formula_block is the full text.
         if full_formula:
-            formula_block = (
-                f"════════════════ YOUR WRITING GUIDELINES (FULL) ════════════════\n"
-                f"READ: execute every technique, structure, and rule in this formula.\n"
-                f"{'─' * 56}\n"
-                f"{full_formula}\n"
-                f"{'─' * 56}\n"
-                f"END OF WRITING GUIDELINES\n"
-                f"{'═' * 56}\n\n"
-            )
+            if formula_dna:
+                # DNA extracted — full formula is reference material, clearly labeled
+                formula_block = (
+                    f"════════ FULL WRITING GUIDELINES (reference — all laws already extracted above) ════════\n"
+                    f"{'─' * 68}\n"
+                    f"{full_formula}\n"
+                    f"{'─' * 68}\n"
+                    f"END OF WRITING GUIDELINES\n"
+                    f"{'═' * 68}\n\n"
+                )
+            else:
+                # No DNA — inject full formula as primary source
+                formula_block = (
+                    f"════════════════ YOUR WRITING GUIDELINES — READ EVERY RULE ════════════════\n"
+                    f"{'─' * 68}\n"
+                    f"{full_formula}\n"
+                    f"{'─' * 68}\n"
+                    f"END OF WRITING GUIDELINES — every sentence executes a rule from above.\n"
+                    f"{'═' * 68}\n\n"
+                )
         else:
             formula_block = ""
 
@@ -660,7 +743,7 @@ OUTPUT FORMAT — strict:
             f"LENGTH: Write at least {chunk.target_chars:,} characters "
             f"(~{word_target} words, max {int(chunk.target_chars * 1.20):,} chars).\n"
             f"Fill every word with formula content. Do NOT rush. Do NOT stop early.\n"
-            f"REMINDER: Re-read the NICHE LAWS at the top. Every sentence must pass them.\n"
+            f"FINAL CHECK before writing: mandatory phrases used? forbidden words avoided? tone correct?\n"
             f"{stop_instruction}\n"
             f"WRITE NOW:"
         )
