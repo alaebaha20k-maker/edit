@@ -19,6 +19,7 @@ from datetime import datetime
 from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
+from werkzeug.exceptions import HTTPException
 from pathlib import Path
 
 # Add backend directory to path
@@ -171,6 +172,22 @@ def _gem_call_sdk(keys: list[str], model_name: str,
 # Initialize Flask app
 app = Flask(__name__, static_folder='../frontend', static_url_path='')
 CORS(app)  # Enable CORS for frontend
+
+
+@app.errorhandler(Exception)
+def handle_unexpected_error(err):
+    """Ensure API endpoints always return JSON even on unexpected exceptions."""
+    if request.path.startswith('/api/'):
+        if isinstance(err, HTTPException):
+            return jsonify({
+                'success': False,
+                'error': err.description or str(err)
+            }), err.code or 500
+        return jsonify({
+            'success': False,
+            'error': str(err)
+        }), 500
+    raise err
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
@@ -6215,7 +6232,18 @@ def super_auto_editor_start():
 
     Returns: { job_id, status, message }
     """
-    from super_auto_editor import SuperAutoEditor
+    try:
+        from super_auto_editor import SuperAutoEditor
+    except SyntaxError as e:
+        return jsonify({
+            'success': False,
+            'error': (
+                "super_auto_editor.py has unresolved merge markers or invalid syntax. "
+                "Remove lines like <<<<<<<, =======, >>>>>>> and retry."
+            ),
+            'details': str(e)
+        }), 500
+
     from settings_manager import SettingsManager
 
     try:
@@ -6260,6 +6288,8 @@ def super_auto_editor_start():
         videvo_key        = api_keys.get('videvo',        '')
         coverr_key        = api_keys.get('coverr',        '')
 
+        sae_cfg = saved.get('super_auto_editor', {}) if isinstance(saved, dict) else {}
+
         # ── create job ───────────────────────────────────────────────────────
         job_id = str(uuid.uuid4())
         super_editor_jobs[job_id] = {
@@ -6289,6 +6319,13 @@ def super_auto_editor_start():
                     google_search_key = google_search_key,
                     videvo_key        = videvo_key,
                     coverr_key        = coverr_key,
+                    export_mode       = sae_cfg.get('export_mode', 'turbo'),
+                    render_crf        = sae_cfg.get('render_crf'),
+                    max_fc_clips      = sae_cfg.get('max_fc_clips'),
+                    max_broll_coverage= sae_cfg.get('max_broll_coverage'),
+                    search_workers    = sae_cfg.get('search_workers'),
+                    download_workers  = sae_cfg.get('download_workers'),
+                    encode_workers    = sae_cfg.get('encode_workers'),
                     progress_cb       = _progress,
                 )
                 result = editor.run(

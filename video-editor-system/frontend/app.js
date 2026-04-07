@@ -6554,8 +6554,14 @@ async function saeStartJob() {
 
     try {
         const res  = await fetch('/api/super-auto-editor/start', { method: 'POST', body: fd });
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error || 'Unknown error');
+        const raw  = await res.text();
+        let data;
+        try {
+            data = raw ? JSON.parse(raw) : {};
+        } catch {
+            throw new Error(raw ? raw.slice(0, 180) : `HTTP ${res.status}`);
+        }
+        if (!res.ok || !data.success) throw new Error(data.error || `HTTP ${res.status}`);
         _saeJobId = data.job_id;
         _saePollStatus();
     } catch (err) {
@@ -6575,7 +6581,14 @@ async function _saeFetchStatus() {
     if (!_saeJobId) return;
     try {
         const res  = await fetch(`/api/super-auto-editor/status/${_saeJobId}`);
-        const data = await res.json();
+        const raw  = await res.text();
+        let data;
+        try {
+            data = raw ? JSON.parse(raw) : {};
+        } catch {
+            throw new Error(raw ? raw.slice(0, 180) : `HTTP ${res.status}`);
+        }
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
 
         // Update progress bar
         const pct = data.progress || 0;
