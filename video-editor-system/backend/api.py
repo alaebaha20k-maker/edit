@@ -6260,6 +6260,8 @@ def super_auto_editor_start():
         videvo_key        = api_keys.get('videvo',        '')
         coverr_key        = api_keys.get('coverr',        '')
 
+        sae_cfg = saved.get('super_auto_editor', {}) if isinstance(saved, dict) else {}
+
         # ── create job ───────────────────────────────────────────────────────
         job_id = str(uuid.uuid4())
         super_editor_jobs[job_id] = {
@@ -6289,6 +6291,13 @@ def super_auto_editor_start():
                     google_search_key = google_search_key,
                     videvo_key        = videvo_key,
                     coverr_key        = coverr_key,
+                    export_mode       = sae_cfg.get('export_mode', 'turbo'),
+                    render_crf        = sae_cfg.get('render_crf'),
+                    max_fc_clips      = sae_cfg.get('max_fc_clips'),
+                    max_broll_coverage= sae_cfg.get('max_broll_coverage'),
+                    search_workers    = sae_cfg.get('search_workers'),
+                    download_workers  = sae_cfg.get('download_workers'),
+                    encode_workers    = sae_cfg.get('encode_workers'),
                     progress_cb       = _progress,
                 )
                 result = editor.run(
