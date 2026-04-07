@@ -25,6 +25,7 @@ from typing import Dict, List, Optional, Tuple
 
 import requests
 import google.generativeai as genai
+from requests.adapters import HTTPAdapter
 
 from config import Config
 
@@ -233,6 +234,22 @@ class SuperAutoEditor:
 
         self._progress_cb  = progress_cb
         self._url_cache: Dict[str, str] = {}   # url → local_path (session cache)
+        self._session = requests.Session()
+        self._session.mount("https://", HTTPAdapter(pool_connections=32, pool_maxsize=64))
+        self._session.mount("http://", HTTPAdapter(pool_connections=32, pool_maxsize=64))
+
+        if mode == "quality":
+            self._min_coverage = 0.50
+            self._max_gap = 16.0
+            self._slot_cap = 80
+        elif mode == "balanced":
+            self._min_coverage = 0.42
+            self._max_gap = 20.0
+            self._slot_cap = 48
+        else:  # turbo
+            self._min_coverage = 0.35
+            self._max_gap = 24.0
+            self._slot_cap = 32
 
     # ─────────────────────────────────────────────────────────────────────────
     # PROGRESS REPORTER
@@ -565,7 +582,7 @@ Return ONLY valid JSON (no markdown, no explanation):
         self._progress(32, "Layer 3: Global Timeline Planner — building coverage slots…")
         timeline_slots = self._global_timeline_planner(scenes, duration)
         print(f"   [L3] {len(timeline_slots)} slots planned "
-              f"(target ≥{self.MIN_COVERAGE*100:.0f}% coverage)")
+              f"(target ≥{self._min_coverage*100:.0f}% coverage)")
 
         inserts_placed = 0
         broll_seconds  = 0.0
@@ -599,16 +616,17 @@ Return ONLY valid JSON (no markdown, no explanation):
         n_workers = min(len(timeline_slots), max(1, self._search_workers))
         search_results: List[tuple] = []
         with ThreadPoolExecutor(max_workers=n_workers) as exe:
-            for res in exe.map(_search_slot, enumerate(timeline_slots),
-                               timeout=self.SEARCH_TIMEOUT * 12):
-                search_results.append(res)
+            try:
+                for res in exe.map(_search_slot, enumerate(timeline_slots),
+                                   timeout=self.SEARCH_TIMEOUT * 12):
+                    search_results.append(res)
+            except Exception as e:
+                print(f"   ⚠️ Parallel search partial timeout/error: {e}")
 
         self._progress(46, f"[L3] Search done — downloading in parallel…")
 
         # ── PARALLEL DOWNLOAD: download best candidate for each slot ─────────
         # Downloads top candidates in parallel (up to 8 simultaneous downloads).
-        download_lock = threading.Lock()
-
         def _download_slot(args):
             slot_i, slot, wt, candidates = args
             if not candidates:
@@ -620,9 +638,12 @@ Return ONLY valid JSON (no markdown, no explanation):
         n_dl_workers = min(len(search_results), max(1, self._download_workers))
         download_results = []
         with ThreadPoolExecutor(max_workers=n_dl_workers) as exe:
-            for res in exe.map(_download_slot, search_results,
-                               timeout=60):
-                download_results.append(res)
+            try:
+                for res in exe.map(_download_slot, search_results,
+                                   timeout=60):
+                    download_results.append(res)
+            except Exception as e:
+                print(f"   ⚠️ Parallel download partial timeout/error: {e}")
 
         # ── Assemble timeline from download results (sequential, instant) ─────
         # Sort by slot start time so timing guards work correctly
@@ -683,7 +704,7 @@ Return ONLY valid JSON (no markdown, no explanation):
 
         final_cov = self._compute_coverage(plan) / max(duration, 1) * 100
         self._progress(58, f"Intelligence engine done — coverage {final_cov:.0f}%  "
-                           f"(target ≥{self.MIN_COVERAGE*100:.0f}%)")
+                           f"(target ≥{self._min_coverage*100:.0f}%)")
         return plan
 
     def _available_api_labels(self) -> str:
@@ -956,17 +977,18 @@ Return ONLY valid JSON (no markdown, no explanation):
         slots: List[Dict] = []
         # average slot duration: mix of 3s images and 7.5s videos ≈ 5.5s
         avg_slot_dur = 5.5
-        target_secs  = duration * self.MIN_COVERAGE
+        target_secs  = duration * self._min_coverage
         target_slots = max(4, int(target_secs / avg_slot_dur))
+        target_slots = min(target_slots, self._slot_cap)
 
         # ── Step 1: Mark mandatory enforcement points ─────────────────────────
         # Opening (must have media in first 3 seconds)
         # Then every MAX_GAP seconds after last media end
         enforcement_times: List[float] = [0.0]  # opening
-        t = self.MAX_GAP
+        t = self._max_gap
         while t < duration - 3.0:
             enforcement_times.append(t)
-            t += self.MAX_GAP
+            t += self._max_gap
 
         # ── Step 2: Build priority map {scene_id → priority_score} ───────────
         # Higher priority = gets slots first
@@ -1338,7 +1360,7 @@ Return ONLY valid JSON (no markdown, no explanation):
             check_points = [(s, e) for s, e in tl] + [(duration, duration)]
             for seg_start, seg_end in check_points:
                 gap = seg_start - prev_end
-                if gap > self.MAX_GAP:
+                if gap > self._max_gap:
                     mid = (prev_end + seg_start) / 2
                     # Find best eligible scene covering midpoint
                     target_sc = None
@@ -1392,7 +1414,7 @@ Return ONLY valid JSON (no markdown, no explanation):
         consecutive_fails = 0
         for it in range(max_iters):
             current_cov = self._compute_coverage(plan) / max(duration, 1)
-            if current_cov >= self.MIN_COVERAGE:
+            if current_cov >= self._min_coverage:
                 break
             if consecutive_fails >= 5:
                 print(f"   [L4] ✗ Coverage stuck at {current_cov*100:.0f}% "
@@ -1446,15 +1468,15 @@ Return ONLY valid JSON (no markdown, no explanation):
         all_gaps  = []
         prev = 0.0
         for s, e in tl_final:
-            if s - prev > self.MAX_GAP:
+            if s - prev > self._max_gap:
                 all_gaps.append(s - prev)
             prev = max(prev, e)
-        if duration - prev > self.MAX_GAP:
+        if duration - prev > self._max_gap:
             all_gaps.append(duration - prev)
 
         print(f"   [L4] Repair complete:  coverage={final_cov:.0f}%  "
               f"clips_in_timeline={len(tl_final)}  "
-              f"remaining_gaps>{self.MAX_GAP:.0f}s={len(all_gaps)}")
+              f"remaining_gaps>{self._max_gap:.0f}s={len(all_gaps)}")
         print(f"   [L4] Fixed: opening={violations_fixed['opening']}  "
               f"gaps={violations_fixed['gap']}  "
               f"coverage_inserts={violations_fixed['coverage']}")
@@ -1876,11 +1898,13 @@ Return ONLY valid JSON (no markdown, no explanation):
             return []
         results = []
         try:
-            r = requests.get(
+            r = self._http_request(
+                "GET",
                 "https://api.coverr.co/videos",
                 params={"query": query, "per_page": 8},
                 headers={"Authorization": f"Bearer {key}"},
                 timeout=2,
+                retries=2,
             )
             if r.ok:
                 for v in r.json().get("hits", []):
@@ -1910,12 +1934,14 @@ Return ONLY valid JSON (no markdown, no explanation):
             return []
         results = []
         try:
-            r = requests.get(
+            r = self._http_request(
+                "GET",
                 "https://www.videvo.net/api/v1/search",
                 params={"keyword": query, "type": "footage",
                         "page": 1, "per_page": 8},
                 headers={"Authorization": f"Bearer {key}"},
                 timeout=2,
+                retries=2,
             )
             if r.ok:
                 for v in r.json().get("results", []):
@@ -1943,7 +1969,8 @@ Return ONLY valid JSON (no markdown, no explanation):
             return []
         results = []
         try:
-            r = requests.get(
+            r = self._http_request(
+                "GET",
                 "https://www.googleapis.com/customsearch/v1",
                 params={
                     "key"       : key,
@@ -1955,6 +1982,7 @@ Return ONLY valid JSON (no markdown, no explanation):
                     "num"       : 8,
                 },
                 timeout=2,
+                retries=1,
             )
             if r.ok:
                 for item in r.json().get("items", []):
@@ -2039,7 +2067,8 @@ Return ONLY valid JSON (no markdown, no explanation):
             return []
         results = []
         try:
-            r = requests.get(
+            r = self._http_request(
+                "GET",
                 "https://api.search.brave.com/res/v1/images/search",
                 headers={
                     "Accept"              : "application/json",
@@ -2049,6 +2078,7 @@ Return ONLY valid JSON (no markdown, no explanation):
                 params={"q": query, "count": 10, "safesearch": "off",
                         "search_lang": "en", "spellcheck": 1},
                 timeout=2,
+                retries=2,
             )
             if r.ok:
                 for item in r.json().get("results", []):
@@ -2080,11 +2110,13 @@ Return ONLY valid JSON (no markdown, no explanation):
             return []
         results = []
         try:
-            r = requests.post(
+            r = self._http_request(
+                "POST",
                 "https://google.serper.dev/images",
                 headers={"X-API-KEY": key, "Content-Type": "application/json"},
                 json={"q": query, "num": 10},
                 timeout=2,
+                retries=2,
             )
             if r.ok:
                 for item in r.json().get("images", []):
@@ -2119,8 +2151,14 @@ Return ONLY valid JSON (no markdown, no explanation):
                 url = "https://api.pexels.com/videos/search"
                 params = {"query": query, "per_page": 8,
                           "orientation": "landscape", "size": "large"}
-                r = requests.get(url, headers={"Authorization": key},
-                                 params=params, timeout=2)
+                r = self._http_request(
+                    "GET",
+                    url,
+                    headers={"Authorization": key},
+                    params=params,
+                    timeout=2,
+                    retries=2,
+                )
                 if r.ok:
                     for v in r.json().get("videos", []):
                         files = sorted(
@@ -2144,8 +2182,14 @@ Return ONLY valid JSON (no markdown, no explanation):
                 url = "https://api.pexels.com/v1/search"
                 params = {"query": query, "per_page": 8,
                           "orientation": "landscape", "size": "large"}
-                r = requests.get(url, headers={"Authorization": key},
-                                 params=params, timeout=2)
+                r = self._http_request(
+                    "GET",
+                    url,
+                    headers={"Authorization": key},
+                    params=params,
+                    timeout=2,
+                    retries=2,
+                )
                 if r.ok:
                     for p in r.json().get("photos", []):
                         src     = p.get("src", {})
@@ -2182,7 +2226,13 @@ Return ONLY valid JSON (no markdown, no explanation):
                 params = {"key": key, "q": query, "per_page": 8,
                           "image_type": "photo", "orientation": "horizontal",
                           "min_width": 1280}
-            r = requests.get(url, params=params, timeout=2)
+            r = self._http_request(
+                "GET",
+                url,
+                params=params,
+                timeout=2,
+                retries=2,
+            )
             if r.ok:
                 for item in r.json().get("hits", []):
                     if media_type == "video":
@@ -2216,11 +2266,13 @@ Return ONLY valid JSON (no markdown, no explanation):
             return []
         results = []
         try:
-            r = requests.get(
+            r = self._http_request(
+                "GET",
                 "https://api.unsplash.com/search/photos",
                 headers={"Authorization": f"Client-ID {key}"},
                 params={"query": query, "per_page": 8, "orientation": "landscape"},
                 timeout=2,
+                retries=2,
             )
             if r.ok:
                 for p in r.json().get("results", []):
@@ -2289,6 +2341,19 @@ Return ONLY valid JSON (no markdown, no explanation):
         "video/x-msvideo", "video/x-matroska", "application/octet-stream",
     }
 
+    def _http_request(self, method: str, url: str, retries: int = 2, backoff: float = 0.35, **kwargs):
+        """HTTP helper with lightweight retry for transient TLS/network errors."""
+        last_err = None
+        for attempt in range(retries + 1):
+            try:
+                return self._session.request(method, url, **kwargs)
+            except requests.RequestException as e:
+                last_err = e
+                if attempt >= retries:
+                    raise
+                time.sleep(backoff * (attempt + 1))
+        raise last_err
+
     def _download(self, url: str, dest: Path, timeout: int = 30,
                   retries: int = 2) -> bool:
         """
@@ -2316,8 +2381,15 @@ Return ONLY valid JSON (no markdown, no explanation):
                     "Accept-Encoding": "gzip, deflate, br",
                     "Connection"     : "keep-alive",
                 }
-                r = requests.get(url, stream=True, timeout=timeout,
-                                 headers=headers, allow_redirects=True)
+                r = self._http_request(
+                    "GET",
+                    url,
+                    stream=True,
+                    timeout=timeout,
+                    headers=headers,
+                    allow_redirects=True,
+                    retries=2,
+                )
 
                 # Hard reject non-media content-type
                 ct = r.headers.get("Content-Type", "").lower().split(";")[0].strip()
@@ -2774,4 +2846,7 @@ Return ONLY valid JSON (no markdown, no explanation):
             "-pix_fmt", "yuv420p", "-movflags", "+faststart",
             out_path,
         ], label="avatar-only")
+<<<<<<< codex/analyze-full-setyme-diopkq
+=======
 
+>>>>>>> claude/check-file-version-fpb6O
