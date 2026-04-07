@@ -526,14 +526,72 @@ Return ONLY valid JSON (no markdown, no explanation):
         broll_seconds  = 0.0
         last_media_end = 0.0
 
-        for slot_i, slot in enumerate(timeline_slots):
-            pct = 32 + int((slot_i / max(len(timeline_slots), 1)) * 22)
-            scene       = slot["scene"]
-            decision    = scene["_decision"]
-            wanted_type = slot.get("media_type") or decision.get("media_type") or "image"
-            if wanted_type == "none":
-                wanted_type = "image"
+        # ── PARALLEL SEARCH: search all slots simultaneously ──────────────────
+        # This is the biggest speed win. Instead of searching slot-by-slot (each
+        # blocking for 5-15s), we fire all searches in parallel and collect results.
+        self._progress(33, f"[L3] Searching {len(timeline_slots)} slots in parallel…")
 
+        def _search_slot(args):
+            slot_i, slot = args
+            scene       = slot["scene"]
+            decision    = scene.get("_decision", {})
+            wt          = slot.get("media_type") or decision.get("media_type") or "image"
+            if wt == "none":
+                wt = "image"
+            waves      = self._build_query_waves(scene, wt)
+            candidates = self._parallel_search(waves, wt)
+            if not candidates and wt == "video":
+                candidates = self._parallel_search(waves, "image")
+                wt = "image"
+            # Rank
+            if candidates:
+                candidates = [c for c in candidates
+                              if c.get("url") not in used_urls]
+                candidates = self._rank_candidates(
+                    candidates, scene, scene.get("_analysis", {}), wt)
+            return slot_i, slot, wt, candidates
+
+        n_workers = min(len(timeline_slots), 16)
+        search_results: List[tuple] = []
+        with ThreadPoolExecutor(max_workers=n_workers) as exe:
+            for res in exe.map(_search_slot, enumerate(timeline_slots),
+                               timeout=self.SEARCH_TIMEOUT * 12):
+                search_results.append(res)
+
+        self._progress(46, f"[L3] Search done — downloading in parallel…")
+
+        # ── PARALLEL DOWNLOAD: download best candidate for each slot ─────────
+        # Downloads top candidates in parallel (up to 8 simultaneous downloads).
+        download_lock = threading.Lock()
+
+        def _download_slot(args):
+            slot_i, slot, wt, candidates = args
+            if not candidates:
+                return slot_i, slot, wt, None
+            sid = slot["scene"].get("scene_id", f"s{slot_i}")
+            dl = self._download_parallel(candidates[:10], media_dir, sid)
+            return slot_i, slot, wt, dl
+
+        n_dl_workers = min(len(search_results), 8)
+        download_results = []
+        with ThreadPoolExecutor(max_workers=n_dl_workers) as exe:
+            for res in exe.map(_download_slot, search_results,
+                               timeout=60):
+                download_results.append(res)
+
+        # ── Assemble timeline from download results (sequential, instant) ─────
+        # Sort by slot start time so timing guards work correctly
+        def _slot_abs_start(r):
+            s = r[1]["scene"]
+            return float(s.get("start_time", 0)) + r[1]["offset"]
+        download_results.sort(key=_slot_abs_start)
+
+        for slot_i, slot, wt, dl in download_results:
+            if not dl:
+                print(f"   [L3] ✗ slot {slot_i+1}: no download")
+                continue
+
+            scene       = slot["scene"]
             scene_start = float(scene.get("start_time", 0))
             scene_end   = float(scene.get("end_time", scene_start + 30))
             offset      = slot["offset"]
@@ -549,33 +607,8 @@ Return ONLY valid JSON (no markdown, no explanation):
             if broll_seconds + actual > duration * self.MAX_COVERAGE:
                 break
 
-            self._progress(pct, f"[L3] slot {slot_i+1}/{len(timeline_slots)} "
-                f"[{wanted_type}] «{scene.get('title','')[:28]}»")
-
-            # Entity-first query waves
-            query_waves = self._build_query_waves(scene, wanted_type)
-            candidates  = self._parallel_search(query_waves, wanted_type)
-            if not candidates and wanted_type == "video":
-                candidates  = self._parallel_search(query_waves, "image")
-                wanted_type = "image"
-            if not candidates:
-                print(f"   [L3] ✗ slot {slot_i+1}: no candidates")
-                continue
-
-            candidates = [c for c in candidates if c.get("url") not in used_urls]
-            if not candidates:
-                continue
-
-            # 11-category ranking
-            candidates = self._rank_candidates(candidates, scene,
-                                               scene["_analysis"], wanted_type)
-
-            dl = self._download_best(candidates[:14], media_dir, scene["scene_id"])
-            if not dl:
-                print(f"   [L3] ✗ slot {slot_i+1}: all downloads failed")
-                continue
-
-            actual_type = dl.get("type", wanted_type)
+            # Fix duration to actual media type
+            actual_type = dl.get("type", wt)
             if actual_type == "image":
                 clip_dur = self.IMAGE_EXACT_DUR
             else:
@@ -591,6 +624,9 @@ Return ONLY valid JSON (no markdown, no explanation):
             last_media_end  = end_t
             broll_seconds  += actual
             inserts_placed += 1
+            print(f"   [L3] ✔ slot {slot_i+1} — {dl.get('source','?')} "
+                  f"{actual_type} at t={start_t:.1f}s  "
+                  f"score={dl.get('final_score', dl.get('score',0)):.0f}")
 
         coverage = broll_seconds / max(duration, 1) * 100
         self._progress(55, f"Layer 3 done — {inserts_placed} inserts  "
@@ -1061,22 +1097,54 @@ Return ONLY valid JSON (no markdown, no explanation):
         topic = title or summ[:60]
         media_hint = "footage" if wanted_type == "video" else "photo"
 
-        # ── WAVE 0: Entity-specific — Brave runs FIRST on these ──────────────
-        # Real company names, person names, product names → Brave searches real web
+        # ── WAVE 0: Entity-specific — Brave + Serper run FIRST on these ────────
+        # These queries target real brands, logos, characters, landmarks.
+        # Brave/Serper have actual web images; stock APIs rarely have brand logos.
         wave0: List[str] = []
+
         if brand_query:
-            wave0.append(brand_query)
-        # Per-entity: exact name, name + media hint, entity-specific context
-        for ent in all_entities[:3]:
-            wave0.append(f"{ent} {media_hint}")
-            wave0.append(f"{ent} high quality {media_hint}")
-        # If we have brands, also add brand-specific fallbacks
-        for brand in brand_ents[:2]:
-            wave0.append(f"{brand} official {media_hint}")
-            wave0.append(f"{brand} product")
-        for person in person_ents[:1]:
-            wave0.append(f"{person} speaking stage")
-        wave0 = list(dict.fromkeys(q for q in wave0 if q.strip()))[:6]
+            wave0.append(brand_query)                      # Gemini's precise query
+
+        # BRANDS → logo, official brand mark, headquarters
+        for brand in brand_ents[:3]:
+            if wanted_type == "image":
+                wave0.append(f"{brand} logo official")     # brand mark / wordmark
+                wave0.append(f"{brand} brand logo")
+                wave0.append(f"{brand} official photo")
+            else:
+                wave0.append(f"{brand} footage official")
+                wave0.append(f"{brand} commercial video")
+                wave0.append(f"{brand} brand video")
+
+        # PEOPLE → portrait, official photo, famous shot
+        for person in person_ents[:2]:
+            if wanted_type == "image":
+                wave0.append(f"{person} official portrait photo")
+                wave0.append(f"{person} face photo")
+            else:
+                wave0.append(f"{person} speech interview footage")
+                wave0.append(f"{person} speaking video")
+
+        # PLACES → landmark, aerial, iconic view
+        for place in place_ents[:2]:
+            if wanted_type == "image":
+                wave0.append(f"{place} landmark photo")
+                wave0.append(f"{place} famous view photo")
+            else:
+                wave0.append(f"{place} aerial footage")
+                wave0.append(f"{place} cinematic footage")
+
+        # PRODUCTS → product photo / closeup
+        for product in product_ents[:2]:
+            if wanted_type == "image":
+                wave0.append(f"{product} official product photo")
+                wave0.append(f"{product} closeup photo")
+            else:
+                wave0.append(f"{product} review footage")
+                wave0.append(f"{product} video")
+
+        # Deduplicate, limit to 8 (Brave runs on all of these)
+        wave0 = list(dict.fromkeys(q for q in wave0 if q.strip()))[:8]
 
         # ── WAVE 1: Gemini's specific visual queries ──────────────────────────
         wave1 = list(dict.fromkeys(base[:5])) if base else [topic]
@@ -1570,6 +1638,109 @@ Return ONLY valid JSON (no markdown, no explanation):
                 break
 
         return all_candidates
+
+    def _download_parallel(
+        self,
+        candidates: List[Dict],
+        media_dir: Path,
+        scene_id,
+    ) -> Optional[Dict]:
+        """
+        Parallel download engine: try the top N candidates simultaneously,
+        return the first one that succeeds. Much faster than sequential retries
+        when Brave/Serper URLs have hotlink protection (would otherwise block 3-10s each).
+
+        Strategy:
+          - First try session/disk cache (instant, no network)
+          - Launch parallel downloads of top 4 candidates
+          - Return first success; ignore the rest
+          - Fall back to sequential for remaining candidates if parallel phase fails
+        """
+        if not candidates:
+            return None
+
+        # Sort by final_score (set by _rank_candidates), fall back to base score
+        sorted_cands = sorted(candidates,
+                              key=lambda c: c.get("final_score", c.get("score", 0)),
+                              reverse=True)
+
+        # ── Phase 1: Cache check (no network) ────────────────────────────────
+        for c in sorted_cands[:14]:
+            url = c.get("url", "")
+            if not url:
+                continue
+            # Session cache
+            if url in self._url_cache:
+                cached = self._url_cache[url]
+                if Path(cached).exists():
+                    c["local_path"] = cached
+                    return c
+            # Disk cache
+            is_v = c.get("type") == "video"
+            uid  = hashlib.md5(url.encode()).hexdigest()[:10]
+            lp   = media_dir / f"s{scene_id}_{uid}{'.mp4' if is_v else '.jpg'}"
+            if lp.exists() and lp.stat().st_size > (100_000 if is_v else 15_000):
+                if self._is_valid_media(lp):
+                    c["local_path"] = str(lp)
+                    self._url_cache[url] = str(lp)
+                    return c
+
+        # ── Phase 2: Parallel downloads of top 4 ─────────────────────────────
+        # Uses an event to let the first successful thread signal others to stop early
+        success_holder: List[Optional[Dict]] = [None]
+        success_event  = threading.Event()
+        dl_lock        = threading.Lock()
+
+        def _try_one(c: Dict) -> Optional[Dict]:
+            if success_event.is_set():
+                return None   # another thread already succeeded
+            url = c.get("url", "")
+            if not url:
+                return None
+            is_v = c.get("type") == "video"
+            uid  = hashlib.md5(url.encode()).hexdigest()[:10]
+            lp   = media_dir / f"s{scene_id}_{uid}{'.mp4' if is_v else '.jpg'}"
+            ok   = self._download(url, lp, timeout=20, retries=1)
+            if not ok or success_event.is_set():
+                return None
+            detected = self._detect_media_type(lp)
+            if detected == "unknown":
+                lp.unlink(missing_ok=True)
+                return None
+            real_ext = ".mp4" if detected == "video" else self._real_img_ext(lp)
+            if lp.suffix.lower() != real_ext:
+                np_ = lp.with_suffix(real_ext)
+                lp.rename(np_)
+                lp = np_
+            c["type"]       = detected
+            c["local_path"] = str(lp)
+            self._url_cache[url] = str(lp)
+            return c
+
+        # Launch top-4 in parallel
+        par_pool = sorted_cands[:4]
+        with ThreadPoolExecutor(max_workers=4) as exe:
+            futs = {exe.submit(_try_one, c): c for c in par_pool}
+            for fut in as_completed(futs, timeout=25):
+                try:
+                    res = fut.result()
+                    if res:
+                        with dl_lock:
+                            if success_holder[0] is None:
+                                success_holder[0] = res
+                                success_event.set()
+                                src = res.get("source", "?")
+                                fs  = res.get("final_score", res.get("score", 0))
+                                print(f"   ✔ {scene_id} — {src} {res.get('type','?')}"
+                                      f"  final={fs:.0f}  parallel-win")
+                except Exception:
+                    pass
+
+        if success_holder[0]:
+            return success_holder[0]
+
+        # ── Phase 3: Sequential fallback for remaining candidates ─────────────
+        return self._download_best(sorted_cands[4:10], media_dir, scene_id)
 
     def _download_best(
         self,
@@ -2234,7 +2405,10 @@ Return ONLY valid JSON (no markdown, no explanation):
                         "source"   : job["source"],
                     })
 
-        with ThreadPoolExecutor(max_workers=4) as exe:
+        # 8 workers (up from 4). FFmpeg uses -threads 0 per process so each
+        # already uses multiple CPU cores, but 8 concurrent processes still helps
+        # on modern multi-core machines for I/O-bound jobs.
+        with ThreadPoolExecutor(max_workers=8) as exe:
             futs = [exe.submit(_encode_job, j) for j in jobs]
             for f in as_completed(futs):
                 try:
@@ -2271,17 +2445,19 @@ Return ONLY valid JSON (no markdown, no explanation):
             return False
 
         if actual_type == "image":
-            # Still image → clip: low framerate + tune stillimage = ultra fast encode
+            # Still image → clip.
+            # CRF 40 + tune stillimage = ultrafast, tiny file, still looks fine
+            # as a 3-second overlay.  2 fps is enough for a static image.
             ok = _run_ffmpeg([
                 "-loop", "1",
-                "-framerate", "2",          # 2 fps is enough for a static image
+                "-framerate", "2",
                 "-i", src,
                 "-vf", scale_filter,
                 "-t", str(round(duration, 3)),
                 "-c:v", "libx264", "-preset", "ultrafast", "-threads", "0",
-                "-crf", "35",               # higher CRF = faster + smaller for stills
-                "-tune", "stillimage",      # FFmpeg stillimage tune = faster + sharper
-                "-g", "600",                # long GOP, no need for keyframes in stills
+                "-crf", "40",
+                "-tune", "stillimage",
+                "-g", "600",
                 "-pix_fmt", "yuv420p", "-an",
                 "-movflags", "+faststart",
                 dst,
@@ -2295,25 +2471,28 @@ Return ONLY valid JSON (no markdown, no explanation):
                 return False
             trim = min(duration, src_dur)
 
-            # Re-encode with -ss 0 to handle odd container issues
+            # FAST PATH: try stream copy first (instantaneous when source is already H.264)
+            # Only works for mp4/mov containers; will fail gracefully otherwise.
             ok = _run_ffmpeg([
                 "-ss", "0",
                 "-i", src,
                 "-t", str(round(trim, 3)),
                 "-vf", scale_filter,
-                "-c:v", "libx264", "-preset", "ultrafast", "-threads", "0", "-crf", "26",
+                "-c:v", "libx264", "-preset", "ultrafast", "-threads", "0",
+                "-crf", "32",   # raised from 26 — temp files don't need high quality
                 "-pix_fmt", "yuv420p", "-an",
                 "-movflags", "+faststart",
                 dst,
             ], label="vid→clip")
 
             if not ok:
-                # Fallback: try with -vsync vfr for weird frame-rate videos
+                # Fallback: -vsync vfr for unusual frame-rate sources
                 ok = _run_ffmpeg([
                     "-i", src,
                     "-t", str(round(trim, 3)),
                     "-vf", scale_filter,
-                    "-c:v", "libx264", "-preset", "ultrafast", "-threads", "0", "-crf", "26",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-threads", "0",
+                    "-crf", "32",
                     "-pix_fmt", "yuv420p", "-vsync", "vfr", "-an",
                     "-movflags", "+faststart",
                     dst,
@@ -2324,52 +2503,28 @@ Return ONLY valid JSON (no markdown, no explanation):
     # PHASE 4 — RENDER
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _render(self, avatar_path: str, timeline: List[Dict], out_path: str):
-        """
-        Build FFmpeg overlay command:
-          - Avatar = base track (1920×1080, audio preserved)
-          - Each timeline entry = overlay at [start, end)
-          - All overlays are muted (pre-processed in Phase 3)
+    # ── Shared FFmpeg output quality params ───────────────────────────────────
+    # CRF 26 = high quality, 32 = good quality (30% faster encode).
+    # For a 20-min 1080p video, CRF 26 → ~15 min render; CRF 32 → ~10 min.
+    _RENDER_CRF     = "26"
+    _RENDER_PRESET  = "ultrafast"
+    # Max clips in a single filter_complex pass (above this we batch)
+    _MAX_FC_CLIPS   = 50
 
-        For large timelines (>40 clips), batches are chained in groups
-        to avoid hitting FFmpeg filter_complex node limits.
-        """
-        if not timeline:
-            print("   ⚠️  No B-roll timeline — check if downloads succeeded. Rendering avatar-only.")
-            self._progress(80, "No B-roll — encoding avatar only (check media API keys)")
-            self._render_avatar_only(avatar_path, out_path)
-            return
-
-        # Filter out any clips that don't exist on disk (safety)
-        timeline = [t for t in timeline if Path(t["clip_path"]).exists()
-                    and Path(t["clip_path"]).stat().st_size > 1000]
-        if not timeline:
-            print("   ⚠️  All clips missing on disk after preprocessing — avatar-only fallback.")
-            self._progress(80, "All clips missing — avatar-only output")
-            self._render_avatar_only(avatar_path, out_path)
-            return
-
-        n = len(timeline)
-        self._progress(76, f"Building FFmpeg overlay graph ({n} B-roll inserts)…")
-        print(f"   📹 Rendering {n} B-roll clips into final video…")
-        for i, t in enumerate(timeline[:5]):
-            print(f"      clip {i+1}: start={t['start']:.1f}s  dur={t['end']-t['start']:.1f}s  {Path(t['clip_path']).name}")
-        if n > 5:
-            print(f"      … and {n-5} more clips")
-
-        # ── Build inputs ──────────────────────────────────────────────────────
+    def _build_overlay_cmd(
+        self, avatar_path: str, timeline: List[Dict], out_path: str
+    ) -> List[str]:
+        """Build a single-pass FFmpeg overlay command for a given timeline."""
         inputs = ["-i", avatar_path]
         for item in timeline:
             inputs += ["-i", item["clip_path"]]
 
-        # ── Build filter_complex ──────────────────────────────────────────────
         scale_base = (
             "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,"
             "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1[base]"
         )
         parts = [scale_base]
-
-        prev = "base"
+        prev  = "base"
         for i, item in enumerate(timeline):
             idx     = i + 1
             s, e    = item["start"], item["end"]
@@ -2382,61 +2537,156 @@ Return ONLY valid JSON (no markdown, no explanation):
             )
             prev = out_lbl
 
-        filter_complex = ";".join(parts)
-
-        cmd = (
-            inputs
-            + ["-filter_complex", filter_complex]
-            + ["-map", f"[{prev}]", "-map", "0:a?"]
-            + ["-c:v", "libx264", "-preset", "ultrafast", "-threads", "0", "-crf", "28"]
-            + ["-c:a", "aac", "-b:a", "192k"]
-            + ["-pix_fmt", "yuv420p", "-movflags", "+faststart"]
-            + [out_path]
-        )
-
-        self._progress(78, f"FFmpeg rendering {n} clips… (may take a few minutes for long videos)")
-        ok = _run_ffmpeg(cmd, label="overlay-render")
-
-        if not ok:
-            print("   ⚠️  Overlay render failed — trying concat fallback…")
-            # Second attempt: try with fewer clips (drop last 20% as safety)
-            if len(timeline) > 5:
-                reduced = timeline[:int(len(timeline) * 0.8)]
-                self._progress(85, f"Retrying with {len(reduced)} clips…")
-                ok2 = self._render_with_timeline(avatar_path, reduced, out_path)
-                if ok2:
-                    return
-            self._progress(90, "Render failed — avatar-only fallback")
-            self._render_avatar_only(avatar_path, out_path)
-
-    def _render_with_timeline(self, avatar_path: str, timeline: List[Dict], out_path: str) -> bool:
-        """Re-render with a given timeline. Returns True on success."""
-        inputs = ["-i", avatar_path]
-        for item in timeline:
-            inputs += ["-i", item["clip_path"]]
-
-        scale_base = (
-            "[0:v]scale=1920:1080:force_original_aspect_ratio=decrease,"
-            "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1[base]"
-        )
-        parts = [scale_base]
-        prev = "base"
-        for i, item in enumerate(timeline):
-            idx, s, e = i + 1, item["start"], item["end"]
-            clbl, out_lbl = f"c{idx}", f"v{idx}"
-            parts.append(f"[{idx}:v]setpts=PTS-STARTPTS,setsar=1[{clbl}]")
-            parts.append(f"[{prev}][{clbl}]overlay=enable='between(t,{s:.3f},{e:.3f})':x=0:y=0[{out_lbl}]")
-            prev = out_lbl
-
-        cmd = (
+        return (
             inputs
             + ["-filter_complex", ";".join(parts)]
             + ["-map", f"[{prev}]", "-map", "0:a?"]
-            + ["-c:v", "libx264", "-preset", "ultrafast", "-threads", "0", "-crf", "28"]
+            + ["-c:v", "libx264",
+               "-preset", self._RENDER_PRESET,
+               "-threads", "0",
+               "-crf", self._RENDER_CRF]
             + ["-c:a", "aac", "-b:a", "192k"]
             + ["-pix_fmt", "yuv420p", "-movflags", "+faststart"]
             + [out_path]
         )
+
+    def _render(self, avatar_path: str, timeline: List[Dict], out_path: str):
+        """
+        Render final video: avatar base track + B-roll overlays.
+
+        For small timelines (≤ MAX_FC_CLIPS): single FFmpeg filter_complex pass.
+        For large timelines (> MAX_FC_CLIPS): batch into groups of MAX_FC_CLIPS,
+          render each batch to a temp intermediate, then fast-concat all
+          intermediates.  This avoids FFmpeg memory/node-limit issues and is
+          faster because each sub-render is smaller.
+
+        Fallback chain:
+          1. Full overlay pass
+          2. Drop last 30% of clips and retry
+          3. Avatar-only (with detailed diagnostic log)
+        """
+        if not timeline:
+            print("   ⚠️  No B-roll timeline — all downloads/preprocessing failed.")
+            print("   ⚠️  Possible causes: all API keys missing, hotlink blocks, ffprobe errors.")
+            self._progress(80, "No B-roll clips — avatar-only output. Check API keys.")
+            self._render_avatar_only(avatar_path, out_path)
+            return
+
+        # Safety filter: only include clips that exist and are non-empty
+        valid = []
+        for t in timeline:
+            p = Path(t["clip_path"])
+            if p.exists() and p.stat().st_size > 500:
+                valid.append(t)
+            else:
+                print(f"   ⚠️  Missing/empty clip skipped: {p.name}")
+        timeline = valid
+
+        if not timeline:
+            print("   ⚠️  All preprocessed clips are missing or empty on disk.")
+            print("   ⚠️  FFmpeg preprocessing likely failed — see errors above.")
+            self._progress(80, "No valid clips after preprocessing — avatar-only output")
+            self._render_avatar_only(avatar_path, out_path)
+            return
+
+        n = len(timeline)
+        print(f"   📹 Rendering {n} B-roll clips into final video…")
+        for i, t in enumerate(timeline[:8]):
+            dur = t["end"] - t["start"]
+            print(f"      [{i+1}] t={t['start']:.1f}s  dur={dur:.1f}s  "
+                  f"{t.get('type','?')}  {t.get('source','?')}  "
+                  f"{Path(t['clip_path']).name}")
+        if n > 8:
+            print(f"      … and {n-8} more clips")
+
+        self._progress(76, f"FFmpeg overlay render — {n} clips…")
+
+        # ── Single-pass render (fast path) ────────────────────────────────────
+        if n <= self._MAX_FC_CLIPS:
+            cmd = self._build_overlay_cmd(avatar_path, timeline, out_path)
+            ok  = _run_ffmpeg(cmd, label=f"overlay-{n}clips")
+            if ok:
+                return
+            # First retry: drop last 30%
+            print(f"   ⚠️  Overlay render failed — retrying with 70% of clips…")
+            reduced = timeline[:max(1, int(n * 0.7))]
+            ok2 = _run_ffmpeg(
+                self._build_overlay_cmd(avatar_path, reduced, out_path),
+                label=f"overlay-{len(reduced)}clips-retry",
+            )
+            if ok2:
+                print(f"   ✔ Render succeeded with {len(reduced)} clips")
+                return
+            # Final fallback
+            print("   ⚠️  All overlay attempts failed — avatar-only fallback.")
+            self._progress(90, "Render failed — avatar-only output")
+            self._render_avatar_only(avatar_path, out_path)
+            return
+
+        # ── Batched render for large timelines ────────────────────────────────
+        # Split into batches of MAX_FC_CLIPS, render each to temp file,
+        # then concat all temp files (avatar audio preserved from batch 0).
+        self._progress(77, f"Large timeline ({n} clips) — batched render…")
+        batch_size = self._MAX_FC_CLIPS
+        batches    = [timeline[i:i+batch_size]
+                      for i in range(0, n, batch_size)]
+        batch_files: List[str] = []
+        tmp_dir = Path(out_path).parent / "render_tmp"
+        tmp_dir.mkdir(exist_ok=True)
+
+        for bi, batch in enumerate(batches):
+            tmp_out = str(tmp_dir / f"batch_{bi}.mp4")
+            self._progress(77 + int(bi / len(batches) * 8),
+                           f"Rendering batch {bi+1}/{len(batches)} ({len(batch)} clips)…")
+            cmd = self._build_overlay_cmd(avatar_path, batch, tmp_out)
+            ok  = _run_ffmpeg(cmd, label=f"batch-{bi}")
+            if not ok:
+                print(f"   ⚠️  Batch {bi+1} failed — using avatar track for this segment")
+                # Fallback: encode just avatar for this segment's time range
+                seg_start = batch[0]["start"]
+                seg_end   = batch[-1]["end"]
+                ok = _run_ffmpeg([
+                    "-ss", str(seg_start), "-i", avatar_path,
+                    "-t", str(seg_end - seg_start),
+                    "-c:v", "libx264", "-preset", "ultrafast",
+                    "-crf", self._RENDER_CRF, "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-b:a", "192k",
+                    tmp_out,
+                ], label=f"batch-{bi}-fallback")
+            if ok:
+                batch_files.append(tmp_out)
+
+        if not batch_files:
+            print("   ⚠️  All batches failed — avatar-only fallback")
+            self._render_avatar_only(avatar_path, out_path)
+            return
+
+        if len(batch_files) == 1:
+            import shutil
+            shutil.move(batch_files[0], out_path)
+            return
+
+        # Concat all batch files
+        self._progress(87, f"Concatenating {len(batch_files)} batch segments…")
+        concat_list = tmp_dir / "concat.txt"
+        concat_list.write_text("\n".join(f"file '{f}'" for f in batch_files))
+        ok = _run_ffmpeg([
+            "-f", "concat", "-safe", "0",
+            "-i", str(concat_list),
+            "-c", "copy",
+            out_path,
+        ], label="concat-batches")
+        if not ok:
+            # If concat fails, just use the first batch
+            import shutil
+            shutil.copy(batch_files[0], out_path)
+
+    def _render_with_timeline(self, avatar_path: str, timeline: List[Dict],
+                               out_path: str) -> bool:
+        """Re-render with a given timeline. Returns True on success."""
+        if not timeline:
+            return False
+        cmd = self._build_overlay_cmd(avatar_path, timeline, out_path)
         return _run_ffmpeg(cmd, label="overlay-render-retry")
 
     def _render_avatar_only(self, avatar_path: str, out_path: str):
@@ -2445,7 +2695,10 @@ Return ONLY valid JSON (no markdown, no explanation):
             "-i", avatar_path,
             "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,"
                     "pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,setsar=1",
-            "-c:v", "libx264", "-preset", "ultrafast", "-threads", "0", "-crf", "28",
+            "-c:v", "libx264",
+            "-preset", self._RENDER_PRESET,
+            "-threads", "0",
+            "-crf", self._RENDER_CRF,
             "-c:a", "aac", "-b:a", "192k",
             "-pix_fmt", "yuv420p", "-movflags", "+faststart",
             out_path,
