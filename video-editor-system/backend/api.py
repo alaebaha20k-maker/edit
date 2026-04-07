@@ -19,6 +19,7 @@ from datetime import datetime
 from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
+from werkzeug.exceptions import HTTPException
 from pathlib import Path
 
 # Add backend directory to path
@@ -171,6 +172,22 @@ def _gem_call_sdk(keys: list[str], model_name: str,
 # Initialize Flask app
 app = Flask(__name__, static_folder='../frontend', static_url_path='')
 CORS(app)  # Enable CORS for frontend
+
+
+@app.errorhandler(Exception)
+def handle_unexpected_error(err):
+    """Ensure API endpoints always return JSON even on unexpected exceptions."""
+    if request.path.startswith('/api/'):
+        if isinstance(err, HTTPException):
+            return jsonify({
+                'success': False,
+                'error': err.description or str(err)
+            }), err.code or 500
+        return jsonify({
+            'success': False,
+            'error': str(err)
+        }), 500
+    raise err
 
 # Configuration
 UPLOAD_FOLDER = 'uploads'
