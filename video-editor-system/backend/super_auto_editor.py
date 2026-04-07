@@ -24,6 +24,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import google.generativeai as genai
 from requests.adapters import HTTPAdapter
 
@@ -251,6 +253,11 @@ class SuperAutoEditor:
             self._max_gap = 24.0
             self._slot_cap = 32
 
+        # Shared HTTP session with connection pooling + auto-retry for SSL errors
+        self._session = self._make_http_session()
+        # Global semaphore: hard cap on simultaneous API calls across all threads
+        self._http_sem = threading.Semaphore(20)
+
     # ─────────────────────────────────────────────────────────────────────────
     # PROGRESS REPORTER
     # ─────────────────────────────────────────────────────────────────────────
@@ -262,6 +269,41 @@ class SuperAutoEditor:
                 self._progress_cb(pct, msg)
             except Exception:
                 pass
+
+    @staticmethod
+    def _make_http_session() -> requests.Session:
+        """
+        Shared requests.Session with:
+          - Connection pool reuse (avoids SSL handshake on every call)
+          - Auto-retry on connection errors / SSL EOF (backoff 0.5s → 1s → 2s)
+          - pool_maxsize=20 so we never open >20 sockets per host
+        """
+        session = requests.Session()
+        retry = Retry(
+            total=3,
+            backoff_factor=0.5,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET", "POST"],
+            raise_on_status=False,
+        )
+        adapter = HTTPAdapter(
+            pool_connections=10,
+            pool_maxsize=20,
+            max_retries=retry,
+        )
+        session.mount("https://", adapter)
+        session.mount("http://",  adapter)
+        return session
+
+    def _http_get(self, url: str, **kwargs) -> requests.Response:
+        """Semaphore-guarded GET — limits total concurrent API calls to 20."""
+        with self._http_sem:
+            return self._session.get(url, **kwargs)
+
+    def _http_post(self, url: str, **kwargs) -> requests.Response:
+        """Semaphore-guarded POST — limits total concurrent API calls to 20."""
+        with self._http_sem:
+            return self._session.post(url, **kwargs)
 
     # ─────────────────────────────────────────────────────────────────────────
     # PUBLIC ENTRY POINT
@@ -613,15 +655,18 @@ Return ONLY valid JSON (no markdown, no explanation):
                     candidates, scene, scene.get("_analysis", {}), wt)
             return slot_i, slot, wt, candidates
 
-        n_workers = min(len(timeline_slots), max(1, self._search_workers))
+        # Workers capped to prevent SSL connection exhaustion
+        n_workers = min(len(timeline_slots), max(1, min(self._search_workers, 6)))
         search_results: List[tuple] = []
-        with ThreadPoolExecutor(max_workers=n_workers) as exe:
-            try:
+        try:
+            with ThreadPoolExecutor(max_workers=n_workers) as exe:
                 for res in exe.map(_search_slot, enumerate(timeline_slots),
-                                   timeout=self.SEARCH_TIMEOUT * 12):
+                                   timeout=self.SEARCH_TIMEOUT * 20):
                     search_results.append(res)
-            except Exception as e:
-                print(f"   ⚠️ Parallel search partial timeout/error: {e}")
+        except TimeoutError:
+            print("   [L3] ⚠ search timeout — continuing with partial results")
+        except Exception as _e:
+            print(f"   [L3] ⚠ search error: {_e} — continuing with partial results")
 
         self._progress(46, f"[L3] Search done — downloading in parallel…")
 
@@ -637,13 +682,15 @@ Return ONLY valid JSON (no markdown, no explanation):
 
         n_dl_workers = min(len(search_results), max(1, self._download_workers))
         download_results = []
-        with ThreadPoolExecutor(max_workers=n_dl_workers) as exe:
-            try:
+        try:
+            with ThreadPoolExecutor(max_workers=n_dl_workers) as exe:
                 for res in exe.map(_download_slot, search_results,
-                                   timeout=60):
+                                   timeout=120):
                     download_results.append(res)
-            except Exception as e:
-                print(f"   ⚠️ Parallel download partial timeout/error: {e}")
+        except TimeoutError:
+            print("   [L3] ⚠ download timeout — continuing with partial results")
+        except Exception as _e:
+            print(f"   [L3] ⚠ download error: {_e} — continuing with partial results")
 
         # ── Assemble timeline from download results (sequential, instant) ─────
         # Sort by slot start time so timing guards work correctly
@@ -1678,7 +1725,9 @@ Return ONLY valid JSON (no markdown, no explanation):
                         _add(self._search_serper_images(q), bonus, entity_bonus=15.0)
 
             # ── All providers in parallel ──────────────────────────────────────
-            max_workers = min(len(queries) * len(all_providers) + 1, 24)
+            # Cap at 6 workers — combined with the outer semaphore (20 total),
+            # this prevents SSL connection exhaustion even with many slots in flight.
+            max_workers = min(len(queries) * len(all_providers) + 1, 6)
             with ThreadPoolExecutor(max_workers=max_workers) as exe:
                 futs: Dict[Future, Tuple[int, bool]] = {}
                 for q_idx, q in enumerate(queries[:4]):
@@ -1903,7 +1952,7 @@ Return ONLY valid JSON (no markdown, no explanation):
                 "https://api.coverr.co/videos",
                 params={"query": query, "per_page": 8},
                 headers={"Authorization": f"Bearer {key}"},
-                timeout=2,
+                timeout=4,
                 retries=2,
             )
             if r.ok:
@@ -1940,7 +1989,7 @@ Return ONLY valid JSON (no markdown, no explanation):
                 params={"keyword": query, "type": "footage",
                         "page": 1, "per_page": 8},
                 headers={"Authorization": f"Bearer {key}"},
-                timeout=2,
+                timeout=4,
                 retries=2,
             )
             if r.ok:
@@ -1981,8 +2030,8 @@ Return ONLY valid JSON (no markdown, no explanation):
                     "imgSize"   : "XLARGE",
                     "num"       : 8,
                 },
-                timeout=2,
-                retries=1,
+                timeout=4,
+                retries=2,
             )
             if r.ok:
                 for item in r.json().get("items", []):
@@ -2077,7 +2126,7 @@ Return ONLY valid JSON (no markdown, no explanation):
                 },
                 params={"q": query, "count": 10, "safesearch": "off",
                         "search_lang": "en", "spellcheck": 1},
-                timeout=2,
+                timeout=4,
                 retries=2,
             )
             if r.ok:
@@ -2115,7 +2164,7 @@ Return ONLY valid JSON (no markdown, no explanation):
                 "https://google.serper.dev/images",
                 headers={"X-API-KEY": key, "Content-Type": "application/json"},
                 json={"q": query, "num": 10},
-                timeout=2,
+                timeout=4,
                 retries=2,
             )
             if r.ok:
@@ -2156,7 +2205,7 @@ Return ONLY valid JSON (no markdown, no explanation):
                     url,
                     headers={"Authorization": key},
                     params=params,
-                    timeout=2,
+                    timeout=4,
                     retries=2,
                 )
                 if r.ok:
@@ -2187,7 +2236,7 @@ Return ONLY valid JSON (no markdown, no explanation):
                     url,
                     headers={"Authorization": key},
                     params=params,
-                    timeout=2,
+                    timeout=4,
                     retries=2,
                 )
                 if r.ok:
@@ -2230,7 +2279,7 @@ Return ONLY valid JSON (no markdown, no explanation):
                 "GET",
                 url,
                 params=params,
-                timeout=2,
+                timeout=4,
                 retries=2,
             )
             if r.ok:
@@ -2271,7 +2320,7 @@ Return ONLY valid JSON (no markdown, no explanation):
                 "https://api.unsplash.com/search/photos",
                 headers={"Authorization": f"Client-ID {key}"},
                 params={"query": query, "per_page": 8, "orientation": "landscape"},
-                timeout=2,
+                timeout=4,
                 retries=2,
             )
             if r.ok:
@@ -2846,7 +2895,4 @@ Return ONLY valid JSON (no markdown, no explanation):
             "-pix_fmt", "yuv420p", "-movflags", "+faststart",
             out_path,
         ], label="avatar-only")
-<<<<<<< codex/analyze-full-setyme-diopkq
-=======
 
->>>>>>> claude/check-file-version-fpb6O
