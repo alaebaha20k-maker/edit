@@ -2846,3 +2846,7 @@ Return ONLY valid JSON (no markdown, no explanation):
             "-pix_fmt", "yuv420p", "-movflags", "+faststart",
             out_path,
         ], label="avatar-only")
+<<<<<<< codex/analyze-full-setyme-diopkq
+=======
+
+>>>>>>> claude/check-file-version-fpb6O
