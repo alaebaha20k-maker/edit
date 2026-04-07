@@ -464,6 +464,15 @@ LANGUAGE: Auto-detect from title and script. Write EVERYTHING in that language."
                 'zoom_direction': 'in',  # 'in' or 'out'
                 'zoom_duration': 1.0,    # seconds
                 'zoom_amount': 1.05      # zoom factor (1.05 = 5% zoom)
+            },
+            'super_auto_editor': {
+                'export_mode': 'turbo',      # turbo | balanced | quality
+                'render_crf': 32,
+                'max_fc_clips': 40,
+                'max_broll_coverage': 0.60,
+                'search_workers': 8,
+                'download_workers': 4,
+                'encode_workers': 4
             }
         }
 
