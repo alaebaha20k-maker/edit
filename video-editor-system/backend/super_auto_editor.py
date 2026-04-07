@@ -2391,16 +2391,17 @@ Return ONLY valid JSON (no markdown, no explanation):
     }
 
     def _http_request(self, method: str, url: str, retries: int = 2, backoff: float = 0.35, **kwargs):
-        """HTTP helper with lightweight retry for transient TLS/network errors."""
+        """Semaphore-guarded HTTP with retry for transient TLS/network errors."""
         last_err = None
-        for attempt in range(retries + 1):
-            try:
-                return self._session.request(method, url, **kwargs)
-            except requests.RequestException as e:
-                last_err = e
-                if attempt >= retries:
-                    raise
-                time.sleep(backoff * (attempt + 1))
+        with self._http_sem:
+            for attempt in range(retries + 1):
+                try:
+                    return self._session.request(method, url, **kwargs)
+                except requests.RequestException as e:
+                    last_err = e
+                    if attempt >= retries:
+                        raise
+                    time.sleep(backoff * (attempt + 1))
         raise last_err
 
     def _download(self, url: str, dest: Path, timeout: int = 30,
