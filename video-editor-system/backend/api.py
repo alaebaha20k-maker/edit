@@ -6215,7 +6215,18 @@ def super_auto_editor_start():
 
     Returns: { job_id, status, message }
     """
-    from super_auto_editor import SuperAutoEditor
+    try:
+        from super_auto_editor import SuperAutoEditor
+    except SyntaxError as e:
+        return jsonify({
+            'success': False,
+            'error': (
+                "super_auto_editor.py has unresolved merge markers or invalid syntax. "
+                "Remove lines like <<<<<<<, =======, >>>>>>> and retry."
+            ),
+            'details': str(e)
+        }), 500
+
     from settings_manager import SettingsManager
 
     try:
