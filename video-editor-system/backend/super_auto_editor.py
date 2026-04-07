@@ -966,13 +966,13 @@ Return ONLY valid JSON (no markdown, no explanation):
         Layer 3: Pre-plan media slots across the ENTIRE timeline before searching.
 
         Algorithm:
-          1. Compute how many slots needed to hit target coverage
-          2. Mark mandatory enforcement points (opening, every max-gap interval)
+          1. Compute how many slots needed to hit MIN_COVERAGE
+          2. Mark mandatory enforcement points (opening, every MAX_GAP interval)
           3. For every enforcement point, find the best candidate scene
           4. Fill remaining capacity with highest-priority eligible scenes
           5. Return ordered slot list [{scene, offset, duration, media_type, placement}]
 
-        This guarantees target coverage and gap constraints structurally.
+        This guarantees MIN_COVERAGE and MAX_GAP structurally — not as an afterthought.
         """
         slots: List[Dict] = []
         # average slot duration: mix of 3s images and 7.5s videos ≈ 5.5s
@@ -983,7 +983,7 @@ Return ONLY valid JSON (no markdown, no explanation):
 
         # ── Step 1: Mark mandatory enforcement points ─────────────────────────
         # Opening (must have media in first 3 seconds)
-        # Then every max-gap seconds after last media end
+        # Then every MAX_GAP seconds after last media end
         enforcement_times: List[float] = [0.0]  # opening
         t = self._max_gap
         while t < duration - 3.0:
@@ -1004,6 +1004,8 @@ Return ONLY valid JSON (no markdown, no explanation):
             )
 
         # ── Step 3: Assign enforcement slots ─────────────────────────────────
+        used_scene_ids: set = set()   # scene_ids already assigned a slot
+
         for enforce_t in enforcement_times:
             if len(slots) >= target_slots:
                 break
