@@ -1389,30 +1389,36 @@ Return ONLY valid JSON (no markdown, no explanation):
         return results
 
     def _detect_media_type(self, path: Path) -> str:
-        """Ask ffprobe what kind of media this file contains."""
+        """Detect media type — magic bytes FIRST (prevents MJPEG/JPEG misdetection)."""
+        # Magic bytes FIRST — JPEG/PNG/WEBP/GIF/BMP identified instantly and correctly.
+        # ffprobe stream=codec_type returns "video" for JPEG (MJPEG codec), so we must
+        # check image signatures before ever calling ffprobe.
+        try:
+            with open(path, "rb") as f:
+                header = f.read(12)
+            if (header[:3] == b"\xff\xd8\xff"              # JPEG
+                    or header[:8] == b"\x89PNG\r\n\x1a\n"  # PNG
+                    or b"WEBP" in header                    # WEBP
+                    or header[:6] in (b"GIF87a", b"GIF89a") # GIF
+                    or header[:2] == b"BM"):                # BMP
+                return "image"
+        except Exception:
+            pass
+        # Use ffprobe format_name (not codec_type) to detect real video containers.
+        # format_name is container-based and never misidentifies JPEG as video.
         try:
             cmd = [
                 "ffprobe", "-v", "error",
-                "-show_entries", "stream=codec_type",
+                "-show_entries", "format=format_name",
                 "-of", "default=noprint_wrappers=1:nokey=1",
                 str(path),
             ]
             out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL,
                                           timeout=10).decode().strip().lower()
-            if "video" in out:
+            video_formats = ("mp4", "matroska", "webm", "avi", "mov",
+                             "flv", "mkv", "wmv", "m4v", "3gp")
+            if any(vf in out for vf in video_formats):
                 return "video"
-            if "audio" in out:
-                return "unknown"   # audio-only — skip
-            # No streams but file exists → might be raw image (JPEG/PNG/WEBP)
-            # ffprobe can't always decode images; try header magic bytes
-            with open(path, "rb") as f:
-                header = f.read(12)
-            if (header[:3] == b"\xff\xd8\xff"           # JPEG
-                    or header[:8] == b"\x89PNG\r\n\x1a\n"  # PNG
-                    or header[:4] in (b"RIFF", b"WEBP")    # WEBP
-                    or header[:6] in (b"GIF87a", b"GIF89a")  # GIF
-                    or header[:2] in (b"BM",)):               # BMP
-                return "image"
             return "unknown"
         except Exception:
             return "unknown"
