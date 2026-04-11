@@ -46,6 +46,7 @@ python backend/super_auto_editor_cli.py \
 ## Speed choices
 
 - Segment-based assembly avoids expensive full-length overlays.
+- Segment generation runs in parallel workers (CPU-bounded).
 - Asset fetches are cached per query.
 - Downloads are concurrent and deterministic.
 - Image motion is fake zoom via tiny linear scale/crop transform.

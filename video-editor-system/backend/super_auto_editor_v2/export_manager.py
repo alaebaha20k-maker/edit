@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from math import ceil
+import os
 from pathlib import Path
 from time import perf_counter
 
@@ -43,17 +45,7 @@ class ExportManager:
         timeline = self.timeline_builder.load(timeline_path, script_text)
         self._log(f"Loaded timeline with {len(timeline)} blocks.")
 
-        segment_files: list[Path] = []
-        for idx, block in enumerate(timeline):
-            seg_path = self.config.temp_dir / f"seg_{idx:04d}.mp4"
-            self._log(f"Build block {idx}: type={block.type} start={block.start:.2f} end={block.end:.2f}")
-            if block.type == "avatar":
-                self._build_avatar_segment(avatar_video, block.start, block.duration, seg_path)
-                segment_files.append(seg_path)
-                continue
-            media_segment = self._build_media_segment(block, idx)
-            self._normalize_segment(media_segment, block.duration, seg_path)
-            segment_files.append(seg_path)
+        segment_files = self._build_all_segments_parallel(timeline, avatar_video)
 
         video_only = self.config.temp_dir / "video_only.mp4"
         self._log("Concatenating timeline segments…")
@@ -62,6 +54,31 @@ class ExportManager:
         self._mux_avatar_audio(avatar_video, video_only, output_path, mode)
         self._log(f"Done. Output={output_path}")
         return output_path
+
+    def _build_all_segments_parallel(self, timeline, avatar_video: Path) -> list[Path]:
+        jobs = []
+        max_workers = max(1, min(4, os.cpu_count() or 2))
+        self._log(f"Parallel segment build workers={max_workers}")
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            for idx, block in enumerate(timeline):
+                jobs.append(ex.submit(self._build_block, idx, block, avatar_video))
+            outputs: dict[int, Path] = {}
+            for fut in as_completed(jobs):
+                idx, seg_path = fut.result()
+                outputs[idx] = seg_path
+        return [outputs[i] for i in sorted(outputs.keys())]
+
+    def _build_block(self, idx: int, block, avatar_video: Path) -> tuple[int, Path]:
+        seg_path = self.config.temp_dir / f"seg_{idx:04d}.mp4"
+        self._log(f"Build block {idx}: type={block.type} start={block.start:.2f} end={block.end:.2f}")
+        if block.type == "avatar":
+            self._build_avatar_segment(avatar_video, block.start, block.duration, seg_path)
+            return idx, seg_path
+        media_segment = self._build_media_segment(block, idx)
+        if media_segment != seg_path:
+            # Fast remux to final segment filename (no extra effects pass).
+            self.ffmpeg.run(["-i", str(media_segment), "-c", "copy", str(seg_path)])
+        return idx, seg_path
 
     def _build_media_segment(self, block, scene_idx: int) -> Path:
         analysis = self.script_analyzer.analyze(block)
@@ -101,15 +118,16 @@ class ExportManager:
         if not downloaded:
             raise RuntimeError(f"Scene {scene_idx}: Brave returned no downloadable images.")
         clips = []
+        clip_duration = duration / max(1, len(downloaded))
         for i, asset in enumerate(downloaded):
             clip_key = hashlib.sha1(
-                f"{asset.path}:{self.config.image_duration_seconds}:{i}".encode("utf-8")
+                f"{asset.path}:{clip_duration:.3f}:{i}".encode("utf-8")
             ).hexdigest()[:16]
             clip = self.cache.generated_dir / f"imgclip_{clip_key}.mp4"
             motion = self.image_builder.pick_motion_style()
             # Uses lightweight scale/crop fake-zoom; much faster than zoompan.
             if not clip.exists():
-                self.image_builder.make_image_clip(asset.path, self.config.image_duration_seconds, motion, clip)
+                self.image_builder.make_image_clip(asset.path, clip_duration, motion, clip)
             clips.append(clip)
 
         scene_path = self.config.temp_dir / f"scene_{scene_idx}_images.mp4"
@@ -153,16 +171,6 @@ class ExportManager:
             "-c:v", "libx264",
             "-preset", "ultrafast",
             "-crf", "28",
-            str(out_path),
-        ])
-
-    def _normalize_segment(self, segment_path: Path, duration: float, out_path: Path) -> None:
-        self.ffmpeg.run([
-            "-i", str(segment_path),
-            "-t", f"{duration:.3f}",
-            "-an",
-            "-vf", f"scale={self.config.resolution_w}:{self.config.resolution_h},fps={self.config.fps}",
-            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
             str(out_path),
         ])
 
