@@ -15,6 +15,7 @@ downstream component gets rich, precise signal instead of bare keywords.
 
 import re
 
+from super_auto_editor_v2.analyze.global_topic_extractor import STOP_WORDS_GLOBAL
 from super_auto_editor_v2.models import VisualIntent
 
 
@@ -88,7 +89,7 @@ SUBJECT_TYPE_HINTS: dict[str, list[str]] = {
 # Public API
 # ---------------------------------------------------------------------------
 
-def extract_visual_intent(text: str) -> VisualIntent:
+def extract_visual_intent(text: str, global_topic: str = "") -> VisualIntent:
     """
     Fast heuristic extraction of visual intent from a script segment.
     No external API calls.  Returns a VisualIntent with as much detail
@@ -97,7 +98,7 @@ def extract_visual_intent(text: str) -> VisualIntent:
     words_raw = re.findall(r"[A-Za-z0-9']+", text)
     words_lower = [w.lower() for w in words_raw]
 
-    primary_subject = _extract_primary_subject(text, words_lower)
+    primary_subject = _extract_primary_subject(text, words_lower, global_topic)
     subject_type = _detect_subject_type(primary_subject, words_lower)
     action = _find_first(words_lower, ACTION_VERBS) or "showing"
     environment = _find_first(words_lower, ENVIRONMENT_WORDS) or ""
@@ -165,39 +166,52 @@ def merge_gemini_intent(base: VisualIntent, gemini_data: dict) -> VisualIntent:
 # Internals
 # ---------------------------------------------------------------------------
 
-def _extract_primary_subject(text: str, words_lower: list[str]) -> str:
+def _extract_primary_subject(text: str, words_lower: list[str], global_topic: str = "") -> str:
     """
-    Try product patterns first, then named entities, then first title-case word.
+    Extract the actual primary subject, NEVER returning stop words.
+    CRITICAL BUG FIX: Previous code returned "The", "That", "They" as subjects!
     """
     # 1. Product / brand patterns (most specific)
     for pattern in PRODUCT_PATTERNS:
         m = re.search(pattern, text)
         if m:
             candidate = m.group(0).strip()
-            if len(candidate) > 2:
+            if len(candidate) > 2 and candidate.lower() not in STOP_WORDS_GLOBAL:
                 return candidate
 
-    # 2. Multi-word title-case phrase (e.g. "Ford Focus", "New York City")
+    # 2. Multi-word title-case phrase (e.g. "Ford Focus", "U-shaped barndominium")
     title_phrases = re.findall(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z0-9]+)+)\b", text)
     if title_phrases:
-        return title_phrases[0]
+        for phrase in title_phrases:
+            if phrase.lower() not in STOP_WORDS_GLOBAL:
+                return phrase
 
-    # 3. Single capitalised word (not a sentence start if possible)
+    # 3. Compound nouns (adjective + noun patterns like "wraparound porch", "glass wall")
+    compound_pattern = r"\b([a-z]+(?:[-]?[a-z]+)?)\s+([a-z]{5,})\b"
+    compounds = re.findall(compound_pattern, text.lower())
+    for adj, noun in compounds:
+        if adj not in STOP_WORDS_GLOBAL and noun not in STOP_WORDS_GLOBAL:
+            candidate = f"{adj} {noun}"
+            if len(candidate) > 5:
+                return candidate
+
+    # 4. Single capitalised word (not a sentence start, and NOT a stop word)
     cap_words = [w for w in re.findall(r"\b([A-Z][a-z]{2,})\b", text)]
-    # Skip if it's the very first word of the sentence only
     sentence_starts = {s.split()[0] for s in re.split(r"[.!?]", text) if s.strip()}
-    non_start_caps = [w for w in cap_words if w not in sentence_starts]
+    non_start_caps = [w for w in cap_words if w not in sentence_starts and w.lower() not in STOP_WORDS_GLOBAL]
     if non_start_caps:
         return non_start_caps[0]
-    if cap_words:
-        return cap_words[0]
 
-    # 4. Fall back to first meaningful token
-    stop = {"the", "a", "an", "is", "are", "was", "were", "be", "been", "has",
-            "have", "had", "do", "does", "did", "will", "would", "could",
-            "should", "may", "might", "shall", "can", "need", "ought"}
-    meaningful = [w for w in words_lower if w not in stop and len(w) > 3]
-    return meaningful[0] if meaningful else "subject"
+    # 5. Fallback to first meaningful token (length > 3, not a stop word)
+    meaningful = [w for w in words_lower if w not in STOP_WORDS_GLOBAL and len(w) > 3]
+    if meaningful:
+        return meaningful[0]
+
+    # 6. Last resort: use global topic if available, otherwise generic
+    if global_topic and global_topic.lower() not in STOP_WORDS_GLOBAL:
+        return global_topic
+
+    return "subject"
 
 
 def _detect_subject_type(subject: str, words_lower: list[str]) -> str:
