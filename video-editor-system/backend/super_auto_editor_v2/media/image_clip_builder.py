@@ -24,8 +24,9 @@ class ImageClipBuilder:
 
         # cover = scale factor needed so the image fills the output canvas at minimum.
         # Handles images smaller than 1920x1080 (e.g. thumbnails, low-res downloads).
+        # Uses if(gt(...)) instead of max() for Windows FFmpeg compatibility.
         # trunc(...//2)*2 forces even pixel dimensions required by libx264.
-        cover = f"max({self.w}/iw,{self.h}/ih)"
+        cover = f"if(gt({self.w}/iw,{self.h}/ih),{self.w}/iw,{self.h}/ih)"
         scale_w = f"trunc(iw*({cover})*({zoom_expr})/2)*2"
         scale_h = f"trunc(ih*({cover})*({zoom_expr})/2)*2"
 
