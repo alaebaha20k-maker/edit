@@ -14,28 +14,36 @@ class ImageClipBuilder:
         self.fps = fps
 
     def make_image_clip(self, image_path: Path, duration: float, motion_style: str, out_path: Path) -> Path:
-        # Speed-first fake zoom: animated scale (eval=frame), no zoompan.
-        # This gives visible motion while staying lightweight.
         d = max(duration, 0.1)
+        total_frames = max(1, int(round(d * self.fps)))
+
         if motion_style == "push_out_soft":
-            zoom_expr = f"1.04-0.04*(t/{d:.4f})"
+            # Zoom out: starts at 1.04x, ends at 1.00x.
+            z_expr = f"1.04-0.04*on/{total_frames}"
         else:
-            zoom_expr = f"1.00+0.04*(t/{d:.4f})"
+            # Zoom in: starts at 1.00x, ends at 1.04x.
+            z_expr = f"1.0+0.04*on/{total_frames}"
 
-        # cover = scale factor needed so the image fills the output canvas at minimum.
-        # Handles images smaller than 1920x1080 (e.g. thumbnails, low-res downloads).
-        # trunc(...//2)*2 forces even pixel dimensions required by libx264.
-        cover = f"max({self.w}/iw,{self.h}/ih)"
-        scale_w = f"trunc(iw*({cover})*({zoom_expr})/2)*2"
-        scale_h = f"trunc(ih*({cover})*({zoom_expr})/2)*2"
-
+        # Three-stage filter — all compatible with Windows FFmpeg:
+        # 1. scale: cover output canvas exactly (force_original_aspect_ratio handles
+        #    any source size — thumbnails, portrait shots, wide images).
+        # 2. crop: center-crop to exact 1920x1080.
+        # 3. zoompan: animate the zoom using output frame number (on).
+        #    zoompan is the FFmpeg-standard approach for image Ken Burns effect.
+        #    It avoids scale:eval=frame, which on Windows FFmpeg cannot use the
+        #    `t` timestamp variable for looped still-image inputs (t=0 always).
+        # -r {fps} before -i forces the looped image to produce frames at the
+        #    correct rate so zoompan:d and -t align exactly.
         vf = (
-            f"scale={scale_w}:{scale_h}:eval=frame,"
+            f"scale={self.w}:{self.h}:force_original_aspect_ratio=increase,"
             f"crop={self.w}:{self.h},"
-            f"fps={self.fps},format=yuv420p"
+            f"zoompan=z='{z_expr}'"
+            f":x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2'"
+            f":d={total_frames}:s={self.w}x{self.h}:fps={self.fps},"
+            f"format=yuv420p"
         )
         self.ffmpeg.run([
-            "-loop", "1", "-t", f"{duration:.3f}", "-i", str(image_path),
+            "-loop", "1", "-r", str(self.fps), "-t", f"{d:.3f}", "-i", str(image_path),
             "-vf", vf,
             "-an",
             "-c:v", "libx264",
