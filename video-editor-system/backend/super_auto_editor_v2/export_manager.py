@@ -53,7 +53,7 @@ class ExportManager:
         self._log("Concatenating timeline segments…")
         self._concat_segments(segment_files, video_only_raw)
         video_only = self.config.temp_dir / "video_only.mp4"
-        self._fit_video_duration(video_only_raw, avatar_duration, video_only)
+        self._fit_video_duration(video_only_raw, avatar_duration, video_only, avatar_video)
         self._log("Muxing avatar audio to final output…")
         self._mux_avatar_audio(avatar_video, video_only, output_path, mode, avatar_duration)
         self._log(f"Done. Output={output_path}")
@@ -96,11 +96,8 @@ class ExportManager:
         return " ".join(words[:max_words]).strip()
 
     def _build_from_images(self, scene_idx: int, duration: float, queries: list[str]) -> Path:
-        # Specific scenes target 15-20s visual rhythm: prefer 7 images when duration allows.
-        if duration >= 15:
-            wanted = min(self.config.brave_image_count_max, 7)
-        else:
-            wanted = min(self.config.brave_image_count_max, max(1, ceil(duration / self.config.image_duration_seconds)))
+        # Product requirement: 4 images per scene, ~3s each (speed + consistency).
+        wanted = 4
         self._log(f"Scene {scene_idx}: Brave target images={wanted}")
         candidates = []
         seen_queries = set()
@@ -159,7 +156,7 @@ class ExportManager:
             except Exception:
                 return self._build_neutral_fallback(scene_idx, duration)
         clips = []
-        clip_duration = duration / max(1, len(downloaded))
+        clip_duration = 3.0
         for i, asset in enumerate(downloaded):
             clip_key = hashlib.sha1(
                 f"{asset.path}:{clip_duration:.3f}:{i}".encode("utf-8")
@@ -172,10 +169,22 @@ class ExportManager:
             clips.append(clip)
 
         scene_path = self.config.temp_dir / f"scene_{scene_idx}_images.mp4"
-        if len(clips) == 1:
-            return clips[0]
-        self.video_builder.concat_image_clips(clips, scene_path)
-        return scene_path
+        needed = max(1, ceil(duration / clip_duration))
+        timeline_clips = [clips[i % len(clips)] for i in range(needed)]
+        if len(timeline_clips) == 1:
+            return timeline_clips[0]
+        self.video_builder.concat_image_clips(timeline_clips, scene_path)
+        trimmed = self.config.temp_dir / f"scene_{scene_idx}_images_trimmed.mp4"
+        self.ffmpeg.run([
+            "-i", str(scene_path),
+            "-t", f"{duration:.3f}",
+            "-an",
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-crf", "28",
+            str(trimmed),
+        ])
+        return trimmed
 
     def _build_neutral_fallback(self, scene_idx: int, duration: float) -> Path:
         out = self.config.temp_dir / f"scene_{scene_idx}_fallback.mp4"
@@ -200,7 +209,7 @@ class ExportManager:
         ranked = rank_videos(candidates, query=self._sanitize_query(queries[0] if queries else ""))
         if not ranked:
             raise RuntimeError(f"No pexels videos found for scene {scene_idx}")
-        best = ranked[0]
+        best = next((v for v in ranked if 10 <= v.duration <= 15), ranked[0])
         best_file = sorted(best.files, key=lambda v: abs(v.width - 1920) + abs(v.height - 1080))[0]
         downloaded = self.downloader.download_many([
             {
@@ -244,13 +253,31 @@ class ExportManager:
             str(out_path),
         ])
 
-    def _fit_video_duration(self, video_in: Path, target_duration: float, out_path: Path) -> None:
+    def _fit_video_duration(self, video_in: Path, target_duration: float, out_path: Path, avatar_video: Path) -> None:
         current = self.ffmpeg.probe_duration(video_in)
-        pad = max(0.0, target_duration - current)
-        vf = f"tpad=stop_mode=clone:stop_duration={pad:.3f},fps={self.config.fps},format=yuv420p"
+        gap = target_duration - current
+        if gap > 0.2:
+            # Fill missing tail using avatar visuals (prevents long frozen frames).
+            filler = self.config.temp_dir / "video_tail_filler.mp4"
+            self._build_avatar_segment(avatar_video, current, gap, filler)
+            list_file = self.config.temp_dir / "fit_concat.txt"
+            list_file.write_text(
+                "\n".join([f"file '{video_in.as_posix()}'", f"file '{filler.as_posix()}'"]),
+                encoding="utf-8",
+            )
+            self.ffmpeg.run([
+                "-f", "concat", "-safe", "0", "-i", str(list_file),
+                "-an",
+                "-vf", f"fps={self.config.fps},format=yuv420p",
+                "-c:v", "libx264",
+                "-preset", "ultrafast",
+                "-crf", "28",
+                "-t", f"{target_duration:.3f}",
+                str(out_path),
+            ])
+            return
         self.ffmpeg.run([
             "-i", str(video_in),
-            "-vf", vf,
             "-t", f"{target_duration:.3f}",
             "-an",
             "-c:v", "libx264",

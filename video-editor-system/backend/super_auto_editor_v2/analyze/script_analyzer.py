@@ -32,6 +32,9 @@ class ScriptAnalyzer:
             keywords=data.get("keywords", []),
             entities=data.get("named_entities", []),
         )
+        gemini_queries = data.get("search_queries")
+        if isinstance(gemini_queries, list) and gemini_queries:
+            queries = [str(q).strip() for q in gemini_queries if str(q).strip()][:7] or queries
         return SceneAnalysis(
             keywords=data.get("keywords", []),
             named_entities=data.get("named_entities", []),
@@ -45,7 +48,7 @@ class ScriptAnalyzer:
             return None
         prompt = (
             "Extract JSON with keys: keywords (array), named_entities (array), "
-            "scene_type ('specific' or 'general'). "
+            "scene_type ('specific' or 'general'), search_queries (array). "
             "Return only JSON. Text:\n"
             f"{text}"
         )
@@ -108,6 +111,6 @@ class ScriptAnalyzer:
         top = " ".join(keywords[:3]) if keywords else text[:50]
         return [
             top,
-            f"{top} cinematic",
-            f"{top} 4k landscape",
+            f"{top} cinematic b-roll",
+            f"{top} moody lighting 4k",
         ]
