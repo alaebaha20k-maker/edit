@@ -214,9 +214,16 @@ class ExportManager:
     def _concat_segments(self, segments: list[Path], out_path: Path) -> None:
         filelist = self.config.temp_dir / "segments.txt"
         filelist.write_text("\n".join(f"file '{s.as_posix()}'" for s in segments), encoding="utf-8")
+        # Re-encode concat output for deterministic playback across mixed segment sources.
+        # This avoids black/blank frames caused by stream-copy concat incompatibilities.
         self.ffmpeg.run([
             "-f", "concat", "-safe", "0", "-i", str(filelist),
-            "-an", "-c:v", "copy", str(out_path),
+            "-an",
+            "-vf", f"fps={self.config.fps},format=yuv420p",
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-crf", "28",
+            str(out_path),
         ])
 
     def _mux_avatar_audio(self, avatar_video: Path, video_only: Path, output: Path, mode: str) -> None:
