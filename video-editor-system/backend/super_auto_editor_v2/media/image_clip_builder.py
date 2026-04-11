@@ -18,12 +18,19 @@ class ImageClipBuilder:
         # This gives visible motion while staying lightweight.
         d = max(duration, 0.1)
         if motion_style == "push_out_soft":
-            scale_expr = f"1.04-0.04*(t/{d:.4f})"
+            zoom_expr = f"1.04-0.04*(t/{d:.4f})"
         else:
-            scale_expr = f"1.00+0.04*(t/{d:.4f})"
+            zoom_expr = f"1.00+0.04*(t/{d:.4f})"
+
+        # cover = scale factor needed so the image fills the output canvas at minimum.
+        # Handles images smaller than 1920x1080 (e.g. thumbnails, low-res downloads).
+        # trunc(...//2)*2 forces even pixel dimensions required by libx264.
+        cover = f"max({self.w}/iw,{self.h}/ih)"
+        scale_w = f"trunc(iw*({cover})*({zoom_expr})/2)*2"
+        scale_h = f"trunc(ih*({cover})*({zoom_expr})/2)*2"
 
         vf = (
-            f"scale=iw*({scale_expr}):ih*({scale_expr}):eval=frame,"
+            f"scale={scale_w}:{scale_h}:eval=frame,"
             f"crop={self.w}:{self.h},"
             f"fps={self.fps},format=yuv420p"
         )

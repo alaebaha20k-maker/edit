@@ -64,8 +64,12 @@ class ExportManager:
                 jobs.append(ex.submit(self._build_block, idx, block, avatar_video))
             outputs: dict[int, Path] = {}
             for fut in as_completed(jobs):
-                idx, seg_path = fut.result()
-                outputs[idx] = seg_path
+                try:
+                    idx, seg_path = fut.result()
+                    outputs[idx] = seg_path
+                except Exception as exc:
+                    self._log(f"Segment build failed: {exc}")
+                    raise
         return [outputs[i] for i in sorted(outputs.keys())]
 
     def _build_block(self, idx: int, block, avatar_video: Path) -> tuple[int, Path]:
@@ -176,12 +180,16 @@ class ExportManager:
     def _build_from_pexels(self, scene_idx: int, duration: float, queries: list[str]) -> Path:
         candidates = []
         for q in queries[:3]:
-            candidates.extend(self.pexels.search(q, per_page=15))
+            try:
+                candidates.extend(self.pexels.search(q, per_page=15))
+            except Exception as exc:
+                self._log(f"Scene {scene_idx}: Pexels query failed '{q}' ({exc})")
             if candidates:
                 break
         ranked = rank_videos(candidates, query=queries[0])
         if not ranked:
-            raise RuntimeError(f"No pexels videos found for scene {scene_idx}")
+            self._log(f"Scene {scene_idx}: No Pexels videos found, falling back to Brave images.")
+            return self._build_from_images(scene_idx, duration, queries)
         best = ranked[0]
         best_file = sorted(best.files, key=lambda v: abs(v.width - 1920) + abs(v.height - 1080))[0]
         downloaded = self.downloader.download_many([
@@ -195,7 +203,8 @@ class ExportManager:
             }
         ])
         if not downloaded:
-            raise RuntimeError(f"Failed downloading pexels video for scene {scene_idx}")
+            self._log(f"Scene {scene_idx}: Pexels download failed, falling back to Brave images.")
+            return self._build_from_images(scene_idx, duration, queries)
         out = self.config.temp_dir / f"scene_{scene_idx}_video.mp4"
         # Single-pass trim + scale + mute for speed.
         return self.video_builder.build_from_video(downloaded[0].path, duration, out)
