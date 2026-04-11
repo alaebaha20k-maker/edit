@@ -51,7 +51,7 @@ class Downloader:
                         source = str(task.get("source", "")).lower()
                         if source == "brave" and "image" not in ctype:
                             continue
-                        if source == "pexels" and "video" not in ctype:
+                        if source == "pexels" and "video" not in ctype and "octet-stream" not in ctype:
                             continue
                         target.parent.mkdir(parents=True, exist_ok=True)
                         with target.open("wb") as f:

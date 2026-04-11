@@ -102,7 +102,7 @@ class ExportManager:
                 continue
             seen_queries.add(qn.lower())
             try:
-                candidates.extend(self.brave.search(qn, count=20))
+                candidates.extend(self.brave.search(qn, count=100))
             except Exception as exc:
                 self._log(f"Scene {scene_idx}: Brave query failed '{qn}' ({exc})")
                 continue
