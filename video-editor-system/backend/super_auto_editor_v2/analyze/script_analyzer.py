@@ -16,8 +16,17 @@ except Exception:  # optional dependency at runtime
 class ScriptAnalyzer:
     def __init__(self, gemini_api_key: str = ""):
         self.gemini_api_key = gemini_api_key
+        self.main_subject = ""
         if gemini_api_key and genai:
             genai.configure(api_key=gemini_api_key)
+
+    def set_context(self, full_script: str) -> None:
+        tokens = re.findall(r"[A-Za-z0-9\\-]+", full_script)
+        if not tokens:
+            self.main_subject = ""
+            return
+        # simple, fast heuristic: earliest meaningful phrase anchors topic.
+        self.main_subject = " ".join(tokens[:3]).strip()
 
     def analyze(self, block: TimelineBlock) -> SceneAnalysis:
         data = self._analyze_with_gemini(block.script_text) if self.gemini_api_key else None
@@ -133,6 +142,8 @@ class ScriptAnalyzer:
             # Keep exact phrase first for named/product scenes; avoids vague query drift.
             exact_phrase = " ".join(text.split()[:8]).strip()
             base = entities[0] if entities else (exact_phrase or " ".join(keywords[:3]))
+            if self.main_subject and self.main_subject.lower() not in base.lower():
+                base = f"{self.main_subject} {base}".strip()
             variants = [
                 base,
                 f"{base} front view",
@@ -146,6 +157,8 @@ class ScriptAnalyzer:
             return [q.strip() for q in variants if q.strip() and q.strip().lower() not in banned][:7]
 
         top = " ".join(keywords[:3]) if keywords else text[:50]
+        if self.main_subject and self.main_subject.lower() not in top.lower():
+            top = f"{self.main_subject} {top}".strip()
         return [
             top,
             f"{top} cinematic b-roll",

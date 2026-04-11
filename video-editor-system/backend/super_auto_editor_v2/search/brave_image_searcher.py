@@ -36,7 +36,7 @@ class BraveImageSearcher:
     def _fetch_paginated(self, query: str, total_count: int) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         page_size = min(100, max(20, total_count))
-        max_pages = 3
+        max_pages = 1  # speed-first: single page fetch
         for page in range(max_pages):
             offset = page * page_size
             payload = self._fetch_with_retry(query=query, count=page_size, offset=offset)

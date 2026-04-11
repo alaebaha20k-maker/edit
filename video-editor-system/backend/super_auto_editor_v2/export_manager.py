@@ -44,6 +44,7 @@ class ExportManager:
         self.config.temp_dir.mkdir(parents=True, exist_ok=True)
         avatar_duration = self.ffmpeg.probe_duration(avatar_video)
         script_text = script_path.read_text(encoding="utf-8")
+        self.script_analyzer.set_context(script_text)
         timeline = self.timeline_builder.load(timeline_path, script_text)
         self._log(f"Loaded timeline with {len(timeline)} blocks.")
 
@@ -102,7 +103,7 @@ class ExportManager:
         candidates = []
         seen_queries = set()
         search_deadline = time() + 12.0  # hard budget per specific scene for search speed
-        per_query_count = 80 if wanted >= 5 else 40
+        per_query_count = 30
         for q in queries[:7]:
             if time() > search_deadline:
                 self._log(f"Scene {scene_idx}: search deadline reached, using collected candidates.")
