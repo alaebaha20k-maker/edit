@@ -1,0 +1,22 @@
+{
+  "brave_api_key": "YOUR_BRAVE_API_KEY",
+  "pexels_api_key": "YOUR_PEXELS_API_KEY",
+  "gemini_api_key": "YOUR_GEMINI_API_KEY",
+  "resolution_w": 1920,
+  "resolution_h": 1080,
+  "fps": 30,
+  "image_duration_seconds": 3,
+  "brave_image_count_default": 5,
+  "brave_image_count_max": 7,
+  "pexels_video_min_seconds": 5,
+  "pexels_video_max_seconds": 20,
+  "concurrency_downloads": 8,
+  "concurrency_search": 6,
+  "cache_dir": "./cache/super_auto_editor",
+  "temp_dir": "./tmp/super_auto_editor",
+  "profiles": {
+    "ultra_fast_draft": {"preset": "ultrafast", "crf": 28},
+    "fast_final": {"preset": "veryfast", "crf": 24},
+    "quality_final": {"preset": "fast", "crf": 21}
+  }
+}
