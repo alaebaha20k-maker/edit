@@ -71,7 +71,15 @@ class BraveImageSearcher:
             height = int(item.get("height") or 0)
             if width < 1000 or height < 500:
                 continue
-            url = item.get("properties", {}).get("url") or item.get("url")
+            props = item.get("properties", {}) if isinstance(item.get("properties"), dict) else {}
+            url_candidates = [
+                props.get("url"),
+                props.get("image_url"),
+                item.get("url"),
+                item.get("image_url"),
+                item.get("thumbnail"),
+            ]
+            url = next((u for u in url_candidates if isinstance(u, str) and u.startswith("http")), "")
             if not url:
                 continue
             out.append(

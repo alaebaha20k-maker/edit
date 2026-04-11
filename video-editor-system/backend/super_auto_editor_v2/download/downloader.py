@@ -37,10 +37,15 @@ class Downloader:
     def _download_one(self, task: dict) -> DownloadedAsset | None:
         url = task["url"]
         target = self._target_path(url)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                          "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "*/*",
+        }
         if not target.exists():
             for _ in range(3):
                 try:
-                    with requests.get(url, timeout=self.timeout, stream=True) as r:
+                    with requests.get(url, timeout=self.timeout, stream=True, headers=headers) as r:
                         r.raise_for_status()
                         target.parent.mkdir(parents=True, exist_ok=True)
                         with target.open("wb") as f:

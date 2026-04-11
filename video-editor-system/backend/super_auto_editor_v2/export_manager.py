@@ -125,7 +125,24 @@ class ExportManager:
         ]
         downloaded = self.downloader.download_many(tasks)
         if not downloaded:
-            raise RuntimeError(f"Scene {scene_idx}: Brave returned no downloadable images.")
+            self._log(f"Scene {scene_idx}: Brave returned no downloadable images, retrying relaxed query.")
+            relaxed_q = " ".join((queries[0] if queries else "topic").split()[:2]).strip() or "topic"
+            relaxed = self.brave.search(relaxed_q, count=30)
+            relaxed_ranked = rank_images(relaxed, query=relaxed_q)[:wanted]
+            downloaded = self.downloader.download_many([
+                {
+                    "scene_id": f"scene_{scene_idx}",
+                    "asset_id": c.id,
+                    "source": "brave",
+                    "query": relaxed_q,
+                    "url": c.url,
+                    "metadata": {"width": c.width, "height": c.height},
+                }
+                for c in relaxed_ranked
+            ])
+        if not downloaded:
+            self._log(f"Scene {scene_idx}: Brave fallback failed, creating neutral backup clip.")
+            return self._build_neutral_fallback(scene_idx, duration)
         clips = []
         clip_duration = duration / max(1, len(downloaded))
         for i, asset in enumerate(downloaded):
@@ -144,6 +161,20 @@ class ExportManager:
             return clips[0]
         self.video_builder.concat_image_clips(clips, scene_path)
         return scene_path
+
+    def _build_neutral_fallback(self, scene_idx: int, duration: float) -> Path:
+        out = self.config.temp_dir / f"scene_{scene_idx}_fallback.mp4"
+        self.ffmpeg.run([
+            "-f", "lavfi",
+            "-i", f"color=c=0x111111:s={self.config.resolution_w}x{self.config.resolution_h}:r={self.config.fps}",
+            "-t", f"{duration:.3f}",
+            "-an",
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-crf", "30",
+            str(out),
+        ])
+        return out
 
     def _build_from_pexels(self, scene_idx: int, duration: float, queries: list[str]) -> Path:
         candidates = []
