@@ -97,7 +97,7 @@ class ScriptAnalyzer:
         dedup_entities = list(dict.fromkeys(named_entities))[:4]
         scene_type = classify_scene_type(text, dedup_entities)
         subject, action, environment = self._heuristic_visual_parts(text, keywords, dedup_entities)
-        search_queries = self._build_visual_queries(subject, action, environment, scene_type)
+        search_queries = self._build_subject_queries(subject, scene_type)
         return {
             "keywords": keywords,
             "named_entities": dedup_entities,
@@ -118,17 +118,17 @@ class ScriptAnalyzer:
         environment = next((w for w in words if w in env_terms), "office")
         return subject, action, environment
 
-    def _build_visual_queries(self, subject: str, action: str, environment: str, scene_type: str) -> list[str]:
-        base = f"{subject} {action} {environment}".strip()
+    def _build_subject_queries(self, subject: str, scene_type: str) -> list[str]:
+        base = subject.strip() or "subject"
         variants = [
             base,
-            f"{subject} {action} in {environment}",
-            f"{subject} {action} {environment} wide shot",
-            f"{subject} {action} {environment} close up",
-            f"{subject} {action} {environment} cinematic",
+            f"{base} close up",
+            f"{base} exterior",
+            f"{base} front view",
+            f"{base} high quality",
         ]
         if scene_type == "general":
-            variants.append(f"{subject} {action} {environment} b-roll")
+            variants = [base, f"{base} cinematic", f"{base} b-roll", f"{base} 4k"]
         return [q for q in variants if len(q.split()) <= 10][:8]
 
     def _build_queries(
