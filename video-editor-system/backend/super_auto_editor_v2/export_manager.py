@@ -4,6 +4,7 @@ import hashlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from math import ceil
 import os
+import re
 from pathlib import Path
 from time import perf_counter, time
 
@@ -41,17 +42,20 @@ class ExportManager:
     def build(self, avatar_video: Path, script_path: Path, timeline_path: Path, output_path: Path, mode: str) -> Path:
         self._t0 = perf_counter()
         self.config.temp_dir.mkdir(parents=True, exist_ok=True)
+        avatar_duration = self.ffmpeg.probe_duration(avatar_video)
         script_text = script_path.read_text(encoding="utf-8")
         timeline = self.timeline_builder.load(timeline_path, script_text)
         self._log(f"Loaded timeline with {len(timeline)} blocks.")
 
         segment_files = self._build_all_segments_parallel(timeline, avatar_video)
 
-        video_only = self.config.temp_dir / "video_only.mp4"
+        video_only_raw = self.config.temp_dir / "video_only_raw.mp4"
         self._log("Concatenating timeline segments…")
-        self._concat_segments(segment_files, video_only)
+        self._concat_segments(segment_files, video_only_raw)
+        video_only = self.config.temp_dir / "video_only.mp4"
+        self._fit_video_duration(video_only_raw, avatar_duration, video_only)
         self._log("Muxing avatar audio to final output…")
-        self._mux_avatar_audio(avatar_video, video_only, output_path, mode)
+        self._mux_avatar_audio(avatar_video, video_only, output_path, mode, avatar_duration)
         self._log(f"Done. Output={output_path}")
         return output_path
 
@@ -87,6 +91,10 @@ class ExportManager:
             return self._build_from_images(scene_idx, block.duration, analysis.search_queries)
         return self._build_from_pexels(scene_idx, block.duration, analysis.search_queries)
 
+    def _sanitize_query(self, query: str, max_words: int = 6) -> str:
+        words = re.findall(r"[A-Za-z0-9\\-]+", query)
+        return " ".join(words[:max_words]).strip()
+
     def _build_from_images(self, scene_idx: int, duration: float, queries: list[str]) -> Path:
         # Specific scenes target 15-20s visual rhythm: prefer 7 images when duration allows.
         if duration >= 15:
@@ -102,7 +110,7 @@ class ExportManager:
             if time() > search_deadline:
                 self._log(f"Scene {scene_idx}: search deadline reached, using collected candidates.")
                 break
-            qn = " ".join(q.strip().split()[:5])
+            qn = self._sanitize_query(q, max_words=6)
             if not qn or qn.lower() in seen_queries:
                 continue
             seen_queries.add(qn.lower())
@@ -113,7 +121,7 @@ class ExportManager:
                 continue
             if len(candidates) >= wanted * 3:
                 break
-        ranked = rank_images(candidates, query=queries[0])[:wanted]
+        ranked = rank_images(candidates, query=self._sanitize_query(queries[0] if queries else ""))[:wanted]
         tasks = [
             {
                 "scene_id": f"scene_{scene_idx}",
@@ -128,7 +136,7 @@ class ExportManager:
         downloaded = self.downloader.download_many(tasks)
         if not downloaded:
             self._log(f"Scene {scene_idx}: Brave returned no downloadable images, retrying relaxed query.")
-            relaxed_q = " ".join((queries[0] if queries else "topic").split()[:2]).strip() or "topic"
+            relaxed_q = self._sanitize_query((queries[0] if queries else "topic"), max_words=3) or "topic"
             relaxed = self.brave.search(relaxed_q, count=30)
             relaxed_ranked = rank_images(relaxed, query=relaxed_q)[:wanted]
             downloaded = self.downloader.download_many([
@@ -186,10 +194,10 @@ class ExportManager:
     def _build_from_pexels(self, scene_idx: int, duration: float, queries: list[str]) -> Path:
         candidates = []
         for q in queries[:3]:
-            candidates.extend(self.pexels.search(q, per_page=15))
+            candidates.extend(self.pexels.search(self._sanitize_query(q, max_words=5), per_page=15))
             if candidates:
                 break
-        ranked = rank_videos(candidates, query=queries[0])
+        ranked = rank_videos(candidates, query=self._sanitize_query(queries[0] if queries else ""))
         if not ranked:
             raise RuntimeError(f"No pexels videos found for scene {scene_idx}")
         best = ranked[0]
@@ -236,7 +244,22 @@ class ExportManager:
             str(out_path),
         ])
 
-    def _mux_avatar_audio(self, avatar_video: Path, video_only: Path, output: Path, mode: str) -> None:
+    def _fit_video_duration(self, video_in: Path, target_duration: float, out_path: Path) -> None:
+        current = self.ffmpeg.probe_duration(video_in)
+        pad = max(0.0, target_duration - current)
+        vf = f"tpad=stop_mode=clone:stop_duration={pad:.3f},fps={self.config.fps},format=yuv420p"
+        self.ffmpeg.run([
+            "-i", str(video_in),
+            "-vf", vf,
+            "-t", f"{target_duration:.3f}",
+            "-an",
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-crf", "28",
+            str(out_path),
+        ])
+
+    def _mux_avatar_audio(self, avatar_video: Path, video_only: Path, output: Path, mode: str, target_duration: float) -> None:
         profile = self.config.profiles.get(mode, self.config.profiles["ultra_fast_draft"])
         # Keep avatar audio through full timeline; all media visuals are mute.
         self.ffmpeg.run([
@@ -250,6 +273,6 @@ class ExportManager:
             "-r", str(self.config.fps),
             "-c:a", profile.audio_codec,
             "-movflags", "+faststart",
-            "-shortest",
+            "-t", f"{target_duration:.3f}",
             str(output),
         ])
