@@ -144,7 +144,12 @@ class ExportManager:
             ])
         if not downloaded:
             self._log(f"Scene {scene_idx}: Brave fallback failed, creating neutral backup clip.")
-            return self._build_neutral_fallback(scene_idx, duration)
+            try:
+                pexels_queries = [queries[0] if queries else "cinematic scene", "cinematic b-roll", "emotional scene"]
+                self._log(f"Scene {scene_idx}: switching to Pexels fallback for continuity.")
+                return self._build_from_pexels(scene_idx, duration, pexels_queries)
+            except Exception:
+                return self._build_neutral_fallback(scene_idx, duration)
         clips = []
         clip_duration = duration / max(1, len(downloaded))
         for i, asset in enumerate(downloaded):

@@ -24,7 +24,7 @@ class ScriptAnalyzer:
         if not data:
             data = self._heuristic_analyze(block.script_text)
 
-        scene_type = classify_scene_type(block.script_text, data.get("named_entities", []))
+        scene_type = data.get("scene_type") or classify_scene_type(block.script_text, data.get("named_entities", []))
         source: MediaSource = "brave_images" if scene_type == "specific" else "pexels_video"
         queries = self._build_queries(
             text=block.script_text,
@@ -44,7 +44,8 @@ class ScriptAnalyzer:
         if not genai:
             return None
         prompt = (
-            "Extract JSON with keys: keywords (array), named_entities (array). "
+            "Extract JSON with keys: keywords (array), named_entities (array), "
+            "scene_type ('specific' or 'general'). "
             "Return only JSON. Text:\n"
             f"{text}"
         )
@@ -56,7 +57,10 @@ class ScriptAnalyzer:
             end = raw.rfind("}")
             if start == -1 or end == -1:
                 return None
-            return json.loads(raw[start : end + 1])
+            parsed = json.loads(raw[start : end + 1])
+            if parsed.get("scene_type") not in ("specific", "general"):
+                parsed["scene_type"] = None
+            return parsed
         except Exception:
             return None
 

@@ -8,6 +8,7 @@ from super_auto_editor_v2.models import SceneType
 GENERIC_TERMS = {
     "success", "travel", "nature", "technology", "forest", "business", "city",
     "social media", "ai", "money", "meeting", "people", "cars", "space",
+    "walking", "street", "alone", "sad", "hope", "emotional", "cinematic", "room",
 }
 STOP_WORDS = {
     "the", "and", "for", "with", "this", "that", "from", "into", "then", "when", "where",
@@ -40,6 +41,10 @@ def classify_scene_type(text: str, entities: list[str]) -> SceneType:
         return "specific"
 
     if any(term in lower for term in GENERIC_TERMS) and title_case_count == 0:
+        return "general"
+
+    # Action/emotion sentences are usually conceptual B-roll -> general.
+    if any(v in lower for v in ("feels", "walking", "walks", "finds", "hope", "lost")) and title_case_count == 0:
         return "general"
 
     return "general"
