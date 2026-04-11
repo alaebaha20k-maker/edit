@@ -75,10 +75,7 @@ class ExportManager:
             self._build_avatar_segment(avatar_video, block.start, block.duration, seg_path)
             return idx, seg_path
         media_segment = self._build_media_segment(block, idx)
-        if media_segment != seg_path:
-            # Fast remux to final segment filename (no extra effects pass).
-            self.ffmpeg.run(["-i", str(media_segment), "-c", "copy", str(seg_path)])
-        return idx, seg_path
+        return idx, media_segment
 
     def _build_media_segment(self, block, scene_idx: int) -> Path:
         analysis = self.script_analyzer.analyze(block)

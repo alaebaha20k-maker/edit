@@ -26,6 +26,12 @@ def rank_videos(candidates: list[VideoCandidate], query: str) -> list[VideoCandi
     for c in candidates:
         resolution = min(1.0, (c.width * c.height) / (1920 * 1080))
         ratio = _ratio_score(c.width, c.height)
-        dur_penalty = 0.0 if 5 <= c.duration <= 20 else 0.2
-        c.score = resolution * 0.6 + ratio * 0.4 - dur_penalty
+        # Prefer 10-15s clips for general scenes while allowing 5-20s fallback.
+        if 10 <= c.duration <= 15:
+            dur_score = 1.0
+        elif 5 <= c.duration <= 20:
+            dur_score = 0.6
+        else:
+            dur_score = 0.1
+        c.score = resolution * 0.45 + ratio * 0.35 + dur_score * 0.20
     return sorted(candidates, key=lambda x: x.score, reverse=True)

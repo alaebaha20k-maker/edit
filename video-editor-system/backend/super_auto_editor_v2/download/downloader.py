@@ -47,11 +47,20 @@ class Downloader:
                 try:
                     with requests.get(url, timeout=self.timeout, stream=True, headers=headers) as r:
                         r.raise_for_status()
+                        ctype = (r.headers.get("Content-Type") or "").lower()
+                        source = str(task.get("source", "")).lower()
+                        if source == "brave" and "image" not in ctype:
+                            continue
+                        if source == "pexels" and "video" not in ctype:
+                            continue
                         target.parent.mkdir(parents=True, exist_ok=True)
                         with target.open("wb") as f:
                             for chunk in r.iter_content(chunk_size=65536):
                                 if chunk:
                                     f.write(chunk)
+                        if target.stat().st_size < 10 * 1024:
+                            target.unlink(missing_ok=True)
+                            continue
                     break
                 except Exception:
                     continue
