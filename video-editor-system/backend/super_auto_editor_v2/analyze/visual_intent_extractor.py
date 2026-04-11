@@ -1,0 +1,256 @@
+from __future__ import annotations
+
+"""
+visual_intent_extractor.py
+--------------------------
+Extracts structured visual intent from script text:
+  - WHAT to show (primary subject)
+  - HOW (action / visual style)
+  - WHERE (environment)
+  - MUST_SHOW / MUST_AVOID lists for relevance filtering
+
+Used by ScriptAnalyzer before scene classification so that every
+downstream component gets rich, precise signal instead of bare keywords.
+"""
+
+import re
+
+from super_auto_editor_v2.models import VisualIntent
+
+
+# ---------------------------------------------------------------------------
+# Static vocabulary tables
+# ---------------------------------------------------------------------------
+
+ACTION_VERBS: list[str] = [
+    "driving", "walking", "running", "sitting", "standing",
+    "showing", "displaying", "presenting", "using", "holding",
+    "working", "typing", "talking", "looking", "riding",
+    "flying", "swimming", "cooking", "eating", "drinking",
+    "launching", "announcing", "demonstrating", "exploring",
+    "building", "creating", "streaming", "playing",
+]
+
+ENVIRONMENT_WORDS: list[str] = [
+    "road", "highway", "city", "office", "home", "studio",
+    "showroom", "street", "park", "building", "interior", "exterior",
+    "mountain", "beach", "forest", "desert", "urban", "rural",
+    "stage", "arena", "lab", "factory", "restaurant", "hotel",
+    "stadium", "airport", "store", "mall", "gym", "school",
+]
+
+MOOD_WORDS: list[str] = [
+    "cinematic", "dramatic", "bright", "dark", "vibrant", "moody",
+    "energetic", "peaceful", "emotional", "inspiring", "powerful",
+    "sleek", "elegant", "futuristic", "vintage", "modern", "luxury",
+]
+
+AVOID_DEFAULTS: list[str] = [
+    "cartoon", "illustration", "anime", "drawing", "clipart",
+    "low quality", "watermark", "blurry", "stock photo watermark",
+]
+
+# Patterns for product/brand names (multi-word, optionally with year / suffix)
+PRODUCT_PATTERNS: list[str] = [
+    r"\b(iPhone|iPad|MacBook|iMac|AirPods|Apple Watch)\s*(?:Pro|Max|Ultra|Plus|Mini|Air)?\s*(?:\d{1,4})?\b",
+    r"\b(Galaxy|Pixel|Surface|Xperia|OnePlus)\s*(?:\w+)?\b",
+    r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z0-9]+)*(?:\s+\d{4})?)(?:\s+(?:Pro|Max|Ultra|Plus|Mini|SE|GT|RS))?\b",
+    r"\b[A-Z]{2,5}-?\d{3,4}\b",          # RTX-4090, RTX4090
+    r"\b\w+\s+\d{4}\b",                  # Ford 2024, iPhone 2023
+    r"\b\d{4}\s+[A-Z][a-z]+\b",          # 2024 Ford
+]
+
+SUBJECT_TYPE_HINTS: dict[str, list[str]] = {
+    "product": [
+        "phone", "car", "truck", "suv", "laptop", "tablet", "watch", "camera",
+        "headphones", "tv", "monitor", "console", "speaker", "drone", "robot",
+        "model", "version", "edition", "series", "pro", "max", "ultra",
+    ],
+    "person": [
+        "ceo", "founder", "president", "director", "actor", "singer", "athlete",
+        "scientist", "engineer", "doctor", "expert", "analyst",
+        "announced", "said", "stated", "revealed", "declared",
+    ],
+    "place": [
+        "city", "country", "state", "island", "mountain", "river", "lake",
+        "ocean", "park", "street", "avenue", "building", "tower", "bridge",
+        "museum", "stadium", "airport", "port",
+    ],
+    "concept": [
+        "success", "failure", "growth", "decline", "future", "past",
+        "technology", "innovation", "creativity", "strategy", "vision",
+        "freedom", "peace", "war", "love", "happiness", "fear",
+    ],
+}
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def extract_visual_intent(text: str) -> VisualIntent:
+    """
+    Fast heuristic extraction of visual intent from a script segment.
+    No external API calls.  Returns a VisualIntent with as much detail
+    as possible; callers can always refine with Gemini results.
+    """
+    words_raw = re.findall(r"[A-Za-z0-9']+", text)
+    words_lower = [w.lower() for w in words_raw]
+
+    primary_subject = _extract_primary_subject(text, words_lower)
+    subject_type = _detect_subject_type(primary_subject, words_lower)
+    action = _find_first(words_lower, ACTION_VERBS) or "showing"
+    environment = _find_first(words_lower, ENVIRONMENT_WORDS) or ""
+    mood = _find_first(words_lower, MOOD_WORDS) or "cinematic"
+
+    must_show = _build_must_show(primary_subject, subject_type)
+    must_avoid = list(AVOID_DEFAULTS)
+
+    search_queries = _build_initial_queries(primary_subject, subject_type, action, environment)
+
+    return VisualIntent(
+        primary_subject=primary_subject,
+        subject_type=subject_type,
+        action=action,
+        environment=environment,
+        mood=mood,
+        must_show=must_show,
+        must_avoid=must_avoid,
+        search_queries=search_queries,
+    )
+
+
+def merge_gemini_intent(base: VisualIntent, gemini_data: dict) -> VisualIntent:
+    """
+    Overlay Gemini-parsed fields on top of the heuristic VisualIntent.
+    Gemini wins on subject / type / queries; heuristics fill gaps.
+    """
+    subject = str(gemini_data.get("primary_subject") or gemini_data.get("subject") or "").strip()
+    if subject:
+        base.primary_subject = subject
+
+    stype = str(gemini_data.get("subject_type") or "").strip().lower()
+    if stype in SUBJECT_TYPE_HINTS:
+        base.subject_type = stype
+
+    action = str(gemini_data.get("visual_action") or gemini_data.get("action") or "").strip()
+    if action:
+        base.action = action
+
+    env = str(gemini_data.get("environment") or "").strip()
+    if env:
+        base.environment = env
+
+    mood = str(gemini_data.get("mood") or "").strip()
+    if mood:
+        base.mood = mood
+
+    must_show_raw = gemini_data.get("must_show") or []
+    if isinstance(must_show_raw, list):
+        base.must_show = [str(x) for x in must_show_raw if x]
+
+    must_avoid_raw = gemini_data.get("must_avoid") or []
+    if isinstance(must_avoid_raw, list):
+        extra_avoid = [str(x) for x in must_avoid_raw if x]
+        base.must_avoid = list(dict.fromkeys(base.must_avoid + extra_avoid))
+
+    queries_raw = gemini_data.get("search_queries") or []
+    if isinstance(queries_raw, list) and queries_raw:
+        base.search_queries = [str(q).strip() for q in queries_raw if str(q).strip()][:10]
+
+    return base
+
+
+# ---------------------------------------------------------------------------
+# Internals
+# ---------------------------------------------------------------------------
+
+def _extract_primary_subject(text: str, words_lower: list[str]) -> str:
+    """
+    Try product patterns first, then named entities, then first title-case word.
+    """
+    # 1. Product / brand patterns (most specific)
+    for pattern in PRODUCT_PATTERNS:
+        m = re.search(pattern, text)
+        if m:
+            candidate = m.group(0).strip()
+            if len(candidate) > 2:
+                return candidate
+
+    # 2. Multi-word title-case phrase (e.g. "Ford Focus", "New York City")
+    title_phrases = re.findall(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z0-9]+)+)\b", text)
+    if title_phrases:
+        return title_phrases[0]
+
+    # 3. Single capitalised word (not a sentence start if possible)
+    cap_words = [w for w in re.findall(r"\b([A-Z][a-z]{2,})\b", text)]
+    # Skip if it's the very first word of the sentence only
+    sentence_starts = {s.split()[0] for s in re.split(r"[.!?]", text) if s.strip()}
+    non_start_caps = [w for w in cap_words if w not in sentence_starts]
+    if non_start_caps:
+        return non_start_caps[0]
+    if cap_words:
+        return cap_words[0]
+
+    # 4. Fall back to first meaningful token
+    stop = {"the", "a", "an", "is", "are", "was", "were", "be", "been", "has",
+            "have", "had", "do", "does", "did", "will", "would", "could",
+            "should", "may", "might", "shall", "can", "need", "ought"}
+    meaningful = [w for w in words_lower if w not in stop and len(w) > 3]
+    return meaningful[0] if meaningful else "subject"
+
+
+def _detect_subject_type(subject: str, words_lower: list[str]) -> str:
+    subject_lower = subject.lower()
+    scores: dict[str, int] = {t: 0 for t in SUBJECT_TYPE_HINTS}
+    for stype, hints in SUBJECT_TYPE_HINTS.items():
+        for h in hints:
+            if h in subject_lower or h in words_lower:
+                scores[stype] += 1
+    best = max(scores, key=lambda k: scores[k])
+    return best if scores[best] > 0 else "concept"
+
+
+def _build_must_show(subject: str, subject_type: str) -> list[str]:
+    must: list[str] = []
+    if subject and subject != "subject":
+        must.append(subject)
+    if subject_type == "product":
+        must.extend(["real photo", "high resolution"])
+    elif subject_type == "person":
+        must.extend(["person", "face"])
+    elif subject_type == "place":
+        must.extend(["outdoor", "real photo"])
+    return must
+
+
+def _build_initial_queries(
+    subject: str,
+    subject_type: str,
+    action: str,
+    environment: str,
+) -> list[str]:
+    queries: list[str] = []
+    if subject_type in ("product", "person", "place"):
+        queries = [
+            f"{subject} official photo",
+            f"{subject} {action}" if action else f"{subject}",
+            f"{subject} {environment}" if environment else f"{subject} high resolution",
+            f"{subject} press photo",
+            f"{subject}",
+        ]
+    else:
+        queries = [
+            f"{subject} {action} {environment}".strip(),
+            f"{subject} cinematic",
+            f"{action} {environment} cinematic b-roll".strip(),
+            f"{subject}",
+        ]
+    return [q.strip() for q in queries if q.strip() and len(q.strip()) > 3][:8]
+
+
+def _find_first(words: list[str], vocab: list[str]) -> str:
+    for w in words:
+        if w in vocab:
+            return w
+    return ""
