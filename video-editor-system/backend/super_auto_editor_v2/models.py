@@ -6,8 +6,8 @@ from typing import Any, Literal
 
 
 BlockType = Literal["avatar", "media"]
-SceneType = Literal["specific", "general"]
-MediaSource = Literal["brave_images", "pexels_video"]
+SceneType = Literal["specific", "general", "mixed"]
+MediaSource = Literal["brave_images", "pexels_video", "mixed"]
 
 
 @dataclass(slots=True)
@@ -22,6 +22,19 @@ class TimelineBlock:
         return max(0.0, self.end - self.start)
 
 
+@dataclass
+class VisualIntent:
+    """Structured description of what needs to be shown visually for a scene."""
+    primary_subject: str = ""
+    subject_type: str = "concept"   # product | person | place | concept | action
+    action: str = ""
+    environment: str = ""
+    mood: str = ""
+    must_show: list[str] = field(default_factory=list)
+    must_avoid: list[str] = field(default_factory=list)
+    search_queries: list[str] = field(default_factory=list)
+
+
 @dataclass(slots=True)
 class SceneAnalysis:
     keywords: list[str]
@@ -29,6 +42,7 @@ class SceneAnalysis:
     scene_type: SceneType
     source: MediaSource
     search_queries: list[str]
+    visual_intent: VisualIntent | None = None
 
 
 @dataclass(slots=True)
@@ -40,6 +54,8 @@ class ImageCandidate:
     height: int
     source: str = "brave"
     score: float = 0.0
+    relevance_score: float = 0.0
+    matched_terms: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -59,6 +75,8 @@ class VideoCandidate:
     files: list[VideoFileVariant]
     source: str = "pexels"
     score: float = 0.0
+    relevance_score: float = 0.0
+    tags: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
