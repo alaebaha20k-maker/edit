@@ -23,11 +23,12 @@ class ImageClipBuilder:
             scale_expr = f"1.00+0.04*(t/{d:.4f})"
 
         vf = (
-            f"scale=iw*({scale_expr}):ih*({scale_expr}):eval=frame,"
-            f"crop={self.w}:{self.h},"
+            f"scale={self.w}:{self.h}:force_original_aspect_ratio=increase,"
+            f"scale=trunc(iw*({scale_expr})/2)*2:trunc(ih*({scale_expr})/2)*2:eval=frame,"
+            f"crop={self.w}:{self.h}:(in_w-{self.w})/2:(in_h-{self.h})/2,"
             f"fps={self.fps},format=yuv420p"
         )
-        self.ffmpeg.run([
+        cmd = [
             "-loop", "1", "-t", f"{duration:.3f}", "-i", str(image_path),
             "-vf", vf,
             "-an",
@@ -35,7 +36,23 @@ class ImageClipBuilder:
             "-preset", "ultrafast",
             "-crf", "28",
             str(out_path),
-        ])
+        ]
+        try:
+            self.ffmpeg.run(cmd)
+        except Exception:
+            # Fast safe fallback if motion expression fails on edge-case images.
+            self.ffmpeg.run([
+                "-loop", "1", "-t", f"{duration:.3f}", "-i", str(image_path),
+                "-vf", (
+                    f"scale={self.w}:{self.h}:force_original_aspect_ratio=increase,"
+                    f"crop={self.w}:{self.h},fps={self.fps},format=yuv420p"
+                ),
+                "-an",
+                "-c:v", "libx264",
+                "-preset", "ultrafast",
+                "-crf", "28",
+                str(out_path),
+            ])
         return out_path
 
     def pick_motion_style(self) -> str:
