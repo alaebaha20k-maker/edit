@@ -6216,6 +6216,21 @@ OUTPUT ONLY THE {chunk_size} PROMPTS."""
 super_editor_jobs: dict = {}   # job_id → {status, progress, message, result, error}
 
 
+def _ffprobe_duration(path: str) -> float:
+    """Fast duration probe for auto timeline fallback."""
+    try:
+        cmd = [
+            'ffprobe', '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            path,
+        ]
+        out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL).decode().strip()
+        return float(out)
+    except Exception:
+        return 0.0
+
+
 @app.route('/api/super-auto-editor/start', methods=['POST'])
 def super_auto_editor_start():
     """
@@ -6232,17 +6247,28 @@ def super_auto_editor_start():
 
     Returns: { job_id, status, message }
     """
+    SuperAutoEditor = None
+    v2_available = False
     try:
-        from super_auto_editor import SuperAutoEditor
+        from super_auto_editor_v2.config.settings import load_config
+        from super_auto_editor_v2.export_manager import ExportManager
+        v2_available = True
+    except Exception:
+        v2_available = False
+
+    try:
+        from super_auto_editor import SuperAutoEditor as _LegacySuperAutoEditor
+        SuperAutoEditor = _LegacySuperAutoEditor
     except SyntaxError as e:
-        return jsonify({
-            'success': False,
-            'error': (
-                "super_auto_editor.py has unresolved merge markers or invalid syntax. "
-                "Remove lines like <<<<<<<, =======, >>>>>>> and retry."
-            ),
-            'details': str(e)
-        }), 500
+        if not v2_available:
+            return jsonify({
+                'success': False,
+                'error': (
+                    "super_auto_editor.py has unresolved merge markers or invalid syntax. "
+                    "Remove lines like <<<<<<<, =======, >>>>>>> and retry."
+                ),
+                'details': str(e)
+            }), 500
 
     from settings_manager import SettingsManager
 
@@ -6251,9 +6277,25 @@ def super_auto_editor_start():
         avatar_path = None
         title = 'super_auto_output'
 
+        timeline_blocks = None
+        mode = 'ultra_fast_draft'
+        config_path = ''
+        use_v2 = None
+
         if request.content_type and 'multipart/form-data' in request.content_type:
             script = request.form.get('script', '').strip()
             title  = request.form.get('title', title)
+            mode   = (request.form.get('mode') or mode).strip() or mode
+            config_path = (request.form.get('config_path') or '').strip()
+            use_v2_raw = request.form.get('use_v2')
+            if use_v2_raw is not None:
+                use_v2 = str(use_v2_raw).lower() == 'true'
+            timeline_raw = (request.form.get('timeline_blocks') or '').strip()
+            if timeline_raw:
+                try:
+                    timeline_blocks = json.loads(timeline_raw)
+                except Exception:
+                    return jsonify({'success': False, 'error': 'Invalid timeline_blocks JSON'}), 400
             f      = request.files.get('avatar_file')
             if f:
                 fname       = secure_filename(f.filename)
@@ -6264,6 +6306,11 @@ def super_auto_editor_start():
             script      = data.get('script', '').strip()
             title       = data.get('title', title)
             avatar_path = data.get('avatar_path', '').strip()
+            mode = (data.get('mode') or mode).strip() or mode
+            config_path = (data.get('config_path') or '').strip()
+            if 'use_v2' in data:
+                use_v2 = bool(data.get('use_v2'))
+            timeline_blocks = data.get('timeline_blocks')
 
         if not script:
             return jsonify({'success': False, 'error': 'script is required'}), 400
@@ -6289,6 +6336,16 @@ def super_auto_editor_start():
         coverr_key        = api_keys.get('coverr',        '')
 
         sae_cfg = saved.get('super_auto_editor', {}) if isinstance(saved, dict) else {}
+        # Mode precedence: request.mode -> settings.mode -> map legacy settings.export_mode
+        if not mode or mode == 'ultra_fast_draft':
+            mode = (sae_cfg.get('mode') or mode).strip() if isinstance(sae_cfg, dict) else mode
+            if not mode or mode == 'ultra_fast_draft':
+                legacy_mode = (sae_cfg.get('export_mode', 'turbo') if isinstance(sae_cfg, dict) else 'turbo')
+                mode = {
+                    'turbo': 'ultra_fast_draft',
+                    'balanced': 'fast_final',
+                    'quality': 'quality_final',
+                }.get(str(legacy_mode).strip().lower(), 'ultra_fast_draft')
 
         # ── create job ───────────────────────────────────────────────────────
         job_id = str(uuid.uuid4())
@@ -6309,30 +6366,88 @@ def super_auto_editor_start():
                     super_editor_jobs[job_id]['progress'] = pct
                     super_editor_jobs[job_id]['message']  = msg
 
-                editor = SuperAutoEditor(
-                    gemini_keys       = gemini_keys,
-                    pexels_key        = pexels_key,
-                    pixabay_key       = pixabay_key,
-                    unsplash_key      = unsplash_key,
-                    brave_search_key  = brave_search_key,
-                    serper_key        = serper_key,
-                    google_search_key = google_search_key,
-                    videvo_key        = videvo_key,
-                    coverr_key        = coverr_key,
-                    export_mode       = sae_cfg.get('export_mode', 'turbo'),
-                    render_crf        = sae_cfg.get('render_crf'),
-                    max_fc_clips      = sae_cfg.get('max_fc_clips'),
-                    max_broll_coverage= sae_cfg.get('max_broll_coverage'),
-                    search_workers    = sae_cfg.get('search_workers'),
-                    download_workers  = sae_cfg.get('download_workers'),
-                    encode_workers    = sae_cfg.get('encode_workers'),
-                    progress_cb       = _progress,
-                )
-                result = editor.run(
-                    avatar_path = avatar_path,
-                    script      = script,
-                    title       = title,
-                )
+                default_engine = str(sae_cfg.get('engine', 'v2')).strip().lower() if isinstance(sae_cfg, dict) else 'v2'
+                default_use_v2 = bool(sae_cfg.get('use_v2', default_engine == 'v2')) if isinstance(sae_cfg, dict) else True
+                requested_use_v2 = default_use_v2 if use_v2 is None else use_v2
+                should_use_v2 = v2_available and (requested_use_v2 or bool(timeline_blocks))
+                if should_use_v2:
+                    _progress(10, 'Preparing v2 timeline files…')
+                    import tempfile
+                    from pathlib import Path
+
+                    # Build timeline if user did not provide one.
+                    if not timeline_blocks:
+                        # Speed-first default: open with avatar then alternate blocks.
+                        dur = _ffprobe_duration(avatar_path)
+                        cur = 0.0
+                        blocks = []
+                        first_avatar = min(3.0, max(0.5, dur))
+                        blocks.append({"type": "avatar", "start": 0.0, "end": first_avatar})
+                        cur = first_avatar
+                        flip = "media"
+                        while cur < dur:
+                            span = 10.0 if flip == "media" else 6.0
+                            nxt = min(dur, cur + span)
+                            blocks.append({"type": flip, "start": round(cur, 3), "end": round(nxt, 3)})
+                            cur = nxt
+                            flip = "avatar" if flip == "media" else "media"
+                        timeline_blocks = blocks
+
+                    temp_root = Path(tempfile.mkdtemp(prefix='sae_v2_'))
+                    script_path = temp_root / 'script.txt'
+                    timeline_path = temp_root / 'timeline.json'
+                    script_path.write_text(script, encoding='utf-8')
+                    timeline_path.write_text(json.dumps(timeline_blocks), encoding='utf-8')
+
+                    cfg = load_config(Path(config_path) if config_path else None)
+                    # Inject keys from saved settings so UI works without env setup.
+                    cfg.brave_api_key = cfg.brave_api_key or brave_search_key
+                    cfg.pexels_api_key = cfg.pexels_api_key or pexels_key
+                    cfg.gemini_api_key = cfg.gemini_api_key or (gemini_keys[0] if gemini_keys else '')
+                    manager = ExportManager(cfg)
+                    final_name = f"{secure_filename(title) if title else 'super_auto_output'}_{uuid.uuid4().hex[:8]}.mp4"
+                    output_path = Path(OUTPUT_FOLDER) / final_name
+                    _progress(20, 'Running Super Auto Editor v2…')
+                    manager.build(
+                        avatar_video=Path(avatar_path),
+                        script_path=script_path,
+                        timeline_path=timeline_path,
+                        output_path=output_path,
+                        mode=mode,
+                    )
+                    result = {
+                        'success': True,
+                        'output_path': str(output_path),
+                        'mode': mode,
+                        'engine': 'v2',
+                    }
+                else:
+                    if SuperAutoEditor is None:
+                        raise RuntimeError('Legacy SuperAutoEditor unavailable and v2 disabled.')
+                    editor = SuperAutoEditor(
+                        gemini_keys       = gemini_keys,
+                        pexels_key        = pexels_key,
+                        pixabay_key       = pixabay_key,
+                        unsplash_key      = unsplash_key,
+                        brave_search_key  = brave_search_key,
+                        serper_key        = serper_key,
+                        google_search_key = google_search_key,
+                        videvo_key        = videvo_key,
+                        coverr_key        = coverr_key,
+                        export_mode       = sae_cfg.get('export_mode', 'turbo'),
+                        render_crf        = sae_cfg.get('render_crf'),
+                        max_fc_clips      = sae_cfg.get('max_fc_clips'),
+                        max_broll_coverage= sae_cfg.get('max_broll_coverage'),
+                        search_workers    = sae_cfg.get('search_workers'),
+                        download_workers  = sae_cfg.get('download_workers'),
+                        encode_workers    = sae_cfg.get('encode_workers'),
+                        progress_cb       = _progress,
+                    )
+                    result = editor.run(
+                        avatar_path = avatar_path,
+                        script      = script,
+                        title       = title,
+                    )
                 super_editor_jobs[job_id].update({
                     'status':   'done',
                     'progress': 100,

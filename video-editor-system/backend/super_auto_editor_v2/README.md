@@ -46,8 +46,19 @@ python backend/super_auto_editor_cli.py \
 ## Speed choices
 
 - Segment-based assembly avoids expensive full-length overlays.
+- Segment generation runs in parallel workers (CPU-bounded).
 - Asset fetches are cached per query.
 - Downloads are concurrent and deterministic.
 - Image motion is fake zoom via tiny linear scale/crop transform.
 - Pexels segments are one-clip trim/scale/mute pass.
 - Final mux maps avatar audio once at the end.
+
+## Runtime logs
+
+The exporter prints exact terminal steps with elapsed time, for example:
+
+- timeline load
+- block-by-block build
+- media source decision (Brave vs Pexels)
+- image target count per scene
+- concat and final mux phases

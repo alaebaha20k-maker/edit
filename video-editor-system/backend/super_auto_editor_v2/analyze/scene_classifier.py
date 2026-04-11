@@ -9,10 +9,20 @@ GENERIC_TERMS = {
     "success", "travel", "nature", "technology", "forest", "business", "city",
     "social media", "ai", "money", "meeting", "people", "cars", "space",
 }
+STOP_WORDS = {
+    "the", "and", "for", "with", "this", "that", "from", "into", "then", "when", "where",
+    "your", "their", "have", "will", "about", "video", "scene", "show", "shows", "a", "an",
+}
 
 
 def classify_scene_type(text: str, entities: list[str]) -> SceneType:
     lower = text.lower()
+    words = [w for w in re.findall(r"[A-Za-z0-9]+", text) if w]
+    content_words = [w for w in words if w.lower() not in STOP_WORDS]
+
+    # Strong signals for specific/entity-driven scenes.
+    if re.search(r"\b[A-Za-z]+[- ]?\d{1,4}\b", text):  # e.g. iPhone 15, RTX-4090
+        return "specific"
     if entities:
         return "specific"
 
@@ -21,11 +31,15 @@ def classify_scene_type(text: str, entities: list[str]) -> SceneType:
     if any(len(item.split()) >= 2 for item in flattened):
         return "specific"
 
-    if any(term in lower for term in GENERIC_TERMS):
-        return "general"
-
-    words = [w for w in re.findall(r"[A-Za-z0-9]+", text) if len(w) > 2]
     title_case_count = sum(1 for w in words if w[:1].isupper())
     if title_case_count >= 2:
         return "specific"
+
+    # If chunk is short and focused, bias to specific (prevents over-routing to Pexels).
+    if 1 <= len(content_words) <= 5 and not any(term in lower for term in GENERIC_TERMS):
+        return "specific"
+
+    if any(term in lower for term in GENERIC_TERMS) and title_case_count == 0:
+        return "general"
+
     return "general"

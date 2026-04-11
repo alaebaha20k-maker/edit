@@ -85,14 +85,20 @@ class ScriptAnalyzer:
         entities: list[str],
     ) -> list[str]:
         if scene_type == "specific":
-            base = entities[0] if entities else " ".join(keywords[:3])
+            # Keep exact phrase first for named/product scenes; avoids vague query drift.
+            exact_phrase = " ".join(text.split()[:8]).strip()
+            base = entities[0] if entities else (exact_phrase or " ".join(keywords[:3]))
             variants = [
                 base,
                 f"{base} front view",
+                f"{base} side view",
+                f"{base} driving road",
                 f"{base} exterior",
+                f"{base} close up",
                 f"{base} high quality",
             ]
-            return [q.strip() for q in variants if q.strip()]
+            # 7 targeted query variants for better Brave recall on specific scenes.
+            return [q.strip() for q in variants if q.strip()][:7]
 
         top = " ".join(keywords[:3]) if keywords else text[:50]
         return [
