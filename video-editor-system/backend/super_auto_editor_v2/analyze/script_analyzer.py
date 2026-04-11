@@ -47,8 +47,11 @@ class ScriptAnalyzer:
         if not genai:
             return None
         prompt = (
-            "Extract JSON with keys: keywords (array), named_entities (array), "
-            "scene_type ('specific' or 'general'), search_queries (array). "
+            "Extract visual-beat JSON with keys: keywords (array), named_entities (array), "
+            "scene_type ('specific' or 'general'), subject, action, environment, mood, style, "
+            "search_queries (array of 5-8 queries, each 4-10 words, each must include subject+action+environment), "
+            "negative_keywords (array). "
+            "Focus on physically filmable visuals only; avoid abstract-only wording. "
             "Return only JSON. Text:\n"
             f"{text}"
         )
@@ -82,7 +85,41 @@ class ScriptAnalyzer:
                 elif i > 0 and (any(ch.isdigit() for ch in token) or token.isupper()):
                     named_entities.append(token)
         dedup_entities = list(dict.fromkeys(named_entities))[:4]
-        return {"keywords": keywords, "named_entities": dedup_entities}
+        scene_type = classify_scene_type(text, dedup_entities)
+        subject, action, environment = self._heuristic_visual_parts(text, keywords, dedup_entities)
+        search_queries = self._build_visual_queries(subject, action, environment, scene_type)
+        return {
+            "keywords": keywords,
+            "named_entities": dedup_entities,
+            "scene_type": scene_type,
+            "subject": subject,
+            "action": action,
+            "environment": environment,
+            "search_queries": search_queries,
+            "negative_keywords": ["cartoon", "illustration", "animation"],
+        }
+
+    def _heuristic_visual_parts(self, text: str, keywords: list[str], entities: list[str]) -> tuple[str, str, str]:
+        words = [w.lower() for w in re.findall(r"[A-Za-z0-9\\-]+", text)]
+        subject = entities[0] if entities else (keywords[0] if keywords else "person")
+        action_verbs = ["walking", "working", "talking", "driving", "typing", "looking", "sitting", "running"]
+        env_terms = ["office", "street", "city", "room", "forest", "studio", "meeting", "home", "night"]
+        action = next((w for w in words if w in action_verbs), "working")
+        environment = next((w for w in words if w in env_terms), "office")
+        return subject, action, environment
+
+    def _build_visual_queries(self, subject: str, action: str, environment: str, scene_type: str) -> list[str]:
+        base = f"{subject} {action} {environment}".strip()
+        variants = [
+            base,
+            f"{subject} {action} in {environment}",
+            f"{subject} {action} {environment} wide shot",
+            f"{subject} {action} {environment} close up",
+            f"{subject} {action} {environment} cinematic",
+        ]
+        if scene_type == "general":
+            variants.append(f"{subject} {action} {environment} b-roll")
+        return [q for q in variants if len(q.split()) <= 10][:8]
 
     def _build_queries(
         self,
