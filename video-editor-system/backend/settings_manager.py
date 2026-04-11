@@ -466,7 +466,10 @@ LANGUAGE: Auto-detect from title and script. Write EVERYTHING in that language."
                 'zoom_amount': 1.05      # zoom factor (1.05 = 5% zoom)
             },
             'super_auto_editor': {
-                'export_mode': 'turbo',      # turbo | balanced | quality
+                'engine': 'v2',              # v2 | legacy
+                'use_v2': True,
+                'mode': 'ultra_fast_draft',  # ultra_fast_draft | fast_final | quality_final
+                'export_mode': 'turbo',      # legacy: turbo | balanced | quality
                 'render_crf': 32,
                 'max_fc_clips': 40,
                 'max_broll_coverage': 0.60,
