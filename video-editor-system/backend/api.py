@@ -6358,6 +6358,7 @@ def super_auto_editor_start():
         }
 
         def _run():
+            nonlocal timeline_blocks
             try:
                 super_editor_jobs[job_id]['status']  = 'processing'
                 super_editor_jobs[job_id]['message'] = 'Starting Super Auto Editor…'
