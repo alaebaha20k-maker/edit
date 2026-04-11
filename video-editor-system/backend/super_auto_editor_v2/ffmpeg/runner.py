@@ -7,10 +7,7 @@ from pathlib import Path
 class FFmpegRunner:
     def run(self, args: list[str]) -> None:
         cmd = ["ffmpeg", "-y", *args]
-        result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-        if result.returncode != 0:
-            stderr_text = result.stderr.decode(errors="replace").strip()
-            raise subprocess.CalledProcessError(result.returncode, cmd, stderr=stderr_text)
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 
     def probe_duration(self, path: Path) -> float:
         cmd = [

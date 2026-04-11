@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from math import ceil
 import os
 from pathlib import Path
-from time import perf_counter
+from time import perf_counter, time
 
 from super_auto_editor_v2.analyze.script_analyzer import ScriptAnalyzer
 from super_auto_editor_v2.cache.cache_manager import CacheManager
@@ -64,12 +64,8 @@ class ExportManager:
                 jobs.append(ex.submit(self._build_block, idx, block, avatar_video))
             outputs: dict[int, Path] = {}
             for fut in as_completed(jobs):
-                try:
-                    idx, seg_path = fut.result()
-                    outputs[idx] = seg_path
-                except Exception as exc:
-                    self._log(f"Segment build failed: {exc}")
-                    raise
+                idx, seg_path = fut.result()
+                outputs[idx] = seg_path
         return [outputs[i] for i in sorted(outputs.keys())]
 
     def _build_block(self, idx: int, block, avatar_video: Path) -> tuple[int, Path]:
@@ -100,13 +96,18 @@ class ExportManager:
         self._log(f"Scene {scene_idx}: Brave target images={wanted}")
         candidates = []
         seen_queries = set()
+        search_deadline = time() + 12.0  # hard budget per specific scene for search speed
+        per_query_count = 80 if wanted >= 5 else 40
         for q in queries[:7]:
-            qn = q.strip()
+            if time() > search_deadline:
+                self._log(f"Scene {scene_idx}: search deadline reached, using collected candidates.")
+                break
+            qn = " ".join(q.strip().split()[:5])
             if not qn or qn.lower() in seen_queries:
                 continue
             seen_queries.add(qn.lower())
             try:
-                candidates.extend(self.brave.search(qn, count=100))
+                candidates.extend(self.brave.search(qn, count=per_query_count))
             except Exception as exc:
                 self._log(f"Scene {scene_idx}: Brave query failed '{qn}' ({exc})")
                 continue
@@ -180,16 +181,12 @@ class ExportManager:
     def _build_from_pexels(self, scene_idx: int, duration: float, queries: list[str]) -> Path:
         candidates = []
         for q in queries[:3]:
-            try:
-                candidates.extend(self.pexels.search(q, per_page=15))
-            except Exception as exc:
-                self._log(f"Scene {scene_idx}: Pexels query failed '{q}' ({exc})")
+            candidates.extend(self.pexels.search(q, per_page=15))
             if candidates:
                 break
         ranked = rank_videos(candidates, query=queries[0])
         if not ranked:
-            self._log(f"Scene {scene_idx}: No Pexels videos found, falling back to Brave images.")
-            return self._build_from_images(scene_idx, duration, queries)
+            raise RuntimeError(f"No pexels videos found for scene {scene_idx}")
         best = ranked[0]
         best_file = sorted(best.files, key=lambda v: abs(v.width - 1920) + abs(v.height - 1080))[0]
         downloaded = self.downloader.download_many([
@@ -203,8 +200,7 @@ class ExportManager:
             }
         ])
         if not downloaded:
-            self._log(f"Scene {scene_idx}: Pexels download failed, falling back to Brave images.")
-            return self._build_from_images(scene_idx, duration, queries)
+            raise RuntimeError(f"Failed downloading pexels video for scene {scene_idx}")
         out = self.config.temp_dir / f"scene_{scene_idx}_video.mp4"
         # Single-pass trim + scale + mute for speed.
         return self.video_builder.build_from_video(downloaded[0].path, duration, out)

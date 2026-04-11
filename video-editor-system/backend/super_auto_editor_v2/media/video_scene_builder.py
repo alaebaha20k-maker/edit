@@ -29,14 +29,9 @@ class VideoSceneBuilder:
     def concat_image_clips(self, clips: list[Path], out_path: Path) -> Path:
         list_file = out_path.with_suffix(".txt")
         list_file.write_text("\n".join(f"file '{p.as_posix()}'" for p in clips), encoding="utf-8")
-        # Re-encode with fps/format normalisation so timestamps reset cleanly between
-        # clips. Stream-copy (-c copy) can leave PTS gaps that cause black frames or
-        # audio-sync drift in the final concat pass.
         self.ffmpeg.run([
             "-f", "concat", "-safe", "0", "-i", str(list_file),
-            "-vf", f"fps={self.fps},format=yuv420p",
-            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
-            "-an",
+            "-c", "copy",
             str(out_path),
         ])
         return out_path

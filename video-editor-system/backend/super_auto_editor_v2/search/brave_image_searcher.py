@@ -20,7 +20,8 @@ class BraveImageSearcher:
         self.timeout = timeout
         self._lock = threading.Lock()
         self._last_call_ts = 0.0
-        self._min_interval_sec = 0.35  # soft client throttle to reduce 429 bursts
+        self._min_interval_sec = 0.20  # softer throttle for faster scene turn-around
+        self._enable_page_scrape_fallback = False  # disabled by default (slow)
 
     def search(self, query: str, count: int = 20) -> list[ImageCandidate]:
         if not query or len(query.strip()) < 3:
@@ -95,7 +96,7 @@ class BraveImageSearcher:
                 item.get("thumbnail"),
             ]
             url = next((u for u in url_candidates if self._is_direct_image_url(u)), "")
-            if not url:
+            if not url and self._enable_page_scrape_fallback:
                 page_url = item.get("url") if isinstance(item.get("url"), str) else ""
                 if page_url.startswith("http"):
                     extracted = self._extract_image_from_page(page_url)

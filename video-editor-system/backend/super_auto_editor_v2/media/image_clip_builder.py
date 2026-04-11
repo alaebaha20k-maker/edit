@@ -14,19 +14,21 @@ class ImageClipBuilder:
         self.fps = fps
 
     def make_image_clip(self, image_path: Path, duration: float, motion_style: str, out_path: Path) -> Path:
+        # Speed-first fake zoom: animated scale (eval=frame), no zoompan.
+        # This gives visible motion while staying lightweight.
         d = max(duration, 0.1)
+        if motion_style == "push_out_soft":
+            scale_expr = f"1.04-0.04*(t/{d:.4f})"
+        else:
+            scale_expr = f"1.00+0.04*(t/{d:.4f})"
 
-        # Static scale — no eval=frame, no zoompan, no per-frame expressions.
-        # Both scale:eval=frame and zoompan hang on this Windows FFmpeg build.
-        # force_original_aspect_ratio=increase + crop handles any source size
-        # (thumbnails, portrait images, low-res downloads).
         vf = (
-            f"scale={self.w}:{self.h}:force_original_aspect_ratio=increase,"
+            f"scale=iw*({scale_expr}):ih*({scale_expr}):eval=frame,"
             f"crop={self.w}:{self.h},"
             f"fps={self.fps},format=yuv420p"
         )
         self.ffmpeg.run([
-            "-loop", "1", "-t", f"{d:.3f}", "-i", str(image_path),
+            "-loop", "1", "-t", f"{duration:.3f}", "-i", str(image_path),
             "-vf", vf,
             "-an",
             "-c:v", "libx264",
