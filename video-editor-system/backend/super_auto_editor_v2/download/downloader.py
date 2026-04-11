@@ -1,0 +1,73 @@
+from __future__ import annotations
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from hashlib import sha1
+from pathlib import Path
+
+import requests
+
+from super_auto_editor_v2.cache.cache_manager import CacheManager
+from super_auto_editor_v2.models import DownloadedAsset
+
+
+class Downloader:
+    def __init__(self, cache: CacheManager, workers: int = 8, timeout: int = 20):
+        self.cache = cache
+        self.workers = workers
+        self.timeout = timeout
+
+    def _target_path(self, url: str) -> Path:
+        ext = ".bin"
+        for candidate in (".jpg", ".jpeg", ".png", ".webp", ".mp4"):
+            if candidate in url.lower():
+                ext = candidate
+                break
+        return self.cache.assets_dir / f"{sha1(url.encode('utf-8')).hexdigest()}{ext}"
+
+    def download_many(self, tasks: list[dict]) -> list[DownloadedAsset]:
+        out: list[DownloadedAsset] = []
+        with ThreadPoolExecutor(max_workers=self.workers) as ex:
+            futures = [ex.submit(self._download_one, t) for t in tasks]
+            for fut in as_completed(futures):
+                item = fut.result()
+                if item:
+                    out.append(item)
+        return out
+
+    def _download_one(self, task: dict) -> DownloadedAsset | None:
+        url = task["url"]
+        target = self._target_path(url)
+        if not target.exists():
+            for _ in range(3):
+                try:
+                    with requests.get(url, timeout=self.timeout, stream=True) as r:
+                        r.raise_for_status()
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        with target.open("wb") as f:
+                            for chunk in r.iter_content(chunk_size=65536):
+                                if chunk:
+                                    f.write(chunk)
+                    break
+                except Exception:
+                    continue
+        if not target.exists():
+            return None
+
+        asset = DownloadedAsset(
+            scene_id=task["scene_id"],
+            asset_id=task["asset_id"],
+            source=task["source"],
+            query=task["query"],
+            path=target,
+            metadata=task.get("metadata", {}),
+        )
+        self.cache.append_manifest(
+            {
+                "scene_id": asset.scene_id,
+                "asset_id": asset.asset_id,
+                "source": asset.source,
+                "query": asset.query,
+                "path": str(asset.path),
+            }
+        )
+        return asset
