@@ -98,8 +98,17 @@ class ExportManager:
             wanted = min(self.config.brave_image_count_max, max(1, ceil(duration / self.config.image_duration_seconds)))
         self._log(f"Scene {scene_idx}: Brave target images={wanted}")
         candidates = []
+        seen_queries = set()
         for q in queries[:7]:
-            candidates.extend(self.brave.search(q, count=20))
+            qn = q.strip()
+            if not qn or qn.lower() in seen_queries:
+                continue
+            seen_queries.add(qn.lower())
+            try:
+                candidates.extend(self.brave.search(qn, count=20))
+            except Exception as exc:
+                self._log(f"Scene {scene_idx}: Brave query failed '{qn}' ({exc})")
+                continue
             if len(candidates) >= wanted * 3:
                 break
         ranked = rank_images(candidates, query=queries[0])[:wanted]

@@ -84,6 +84,7 @@ class ScriptAnalyzer:
         keywords: list[str],
         entities: list[str],
     ) -> list[str]:
+        banned = {"it", "this", "that", "they", "we", "you", "he", "she"}
         if scene_type == "specific":
             # Keep exact phrase first for named/product scenes; avoids vague query drift.
             exact_phrase = " ".join(text.split()[:8]).strip()
@@ -98,7 +99,7 @@ class ScriptAnalyzer:
                 f"{base} high quality",
             ]
             # 7 targeted query variants for better Brave recall on specific scenes.
-            return [q.strip() for q in variants if q.strip()][:7]
+            return [q.strip() for q in variants if q.strip() and q.strip().lower() not in banned][:7]
 
         top = " ".join(keywords[:3]) if keywords else text[:50]
         return [
