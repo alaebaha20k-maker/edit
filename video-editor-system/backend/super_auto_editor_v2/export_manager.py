@@ -97,35 +97,22 @@ class ExportManager:
         return " ".join(words[:max_words]).strip()
 
     def _build_from_images(self, scene_idx: int, duration: float, queries: list[str]) -> Path:
-        # Product requirement: 4 images per scene, ~3s each (speed + consistency).
-        wanted = 4
+        # Product requirement: 5 images per scene, 3s each, subject-focused keyword.
+        wanted = 5
         self._log(f"Scene {scene_idx}: Brave target images={wanted}")
-        candidates = []
-        seen_queries = set()
-        search_deadline = time() + 12.0  # hard budget per specific scene for search speed
-        per_query_count = 30
-        for q in queries[:7]:
-            if time() > search_deadline:
-                self._log(f"Scene {scene_idx}: search deadline reached, using collected candidates.")
-                break
-            qn = self._sanitize_query(q, max_words=6)
-            if not qn or qn.lower() in seen_queries:
-                continue
-            seen_queries.add(qn.lower())
-            try:
-                candidates.extend(self.brave.search(qn, count=per_query_count))
-            except Exception as exc:
-                self._log(f"Scene {scene_idx}: Brave query failed '{qn}' ({exc})")
-                continue
-            if len(candidates) >= wanted * 3:
-                break
-        ranked = rank_images(candidates, query=self._sanitize_query(queries[0] if queries else ""))[:wanted]
+        main_query = self._sanitize_query(queries[0] if queries else "subject", max_words=4) or "subject"
+        candidates = self.brave.search(main_query, count=120)
+        # Prevent image duplication by URL.
+        unique = {}
+        for c in candidates:
+            unique[c.url] = c
+        ranked = rank_images(list(unique.values()), query=main_query)[:wanted]
         tasks = [
             {
                 "scene_id": f"scene_{scene_idx}",
                 "asset_id": c.id,
                 "source": "brave",
-                "query": queries[0],
+                "query": main_query,
                 "url": c.url,
                 "metadata": {"width": c.width, "height": c.height},
             }

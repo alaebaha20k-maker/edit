@@ -40,6 +40,7 @@ class ScriptAnalyzer:
             scene_type=scene_type,
             keywords=data.get("keywords", []),
             entities=data.get("named_entities", []),
+            subject=str(data.get("subject") or "").strip(),
         )
         gemini_queries = data.get("search_queries")
         if isinstance(gemini_queries, list) and gemini_queries:
@@ -136,12 +137,13 @@ class ScriptAnalyzer:
         scene_type: str,
         keywords: list[str],
         entities: list[str],
+        subject: str = "",
     ) -> list[str]:
         banned = {"it", "this", "that", "they", "we", "you", "he", "she"}
+        primary_subject = subject or (entities[0] if entities else " ".join(keywords[:2]))
         if scene_type == "specific":
-            # Keep exact phrase first for named/product scenes; avoids vague query drift.
-            exact_phrase = " ".join(text.split()[:8]).strip()
-            base = entities[0] if entities else (exact_phrase or " ".join(keywords[:3]))
+            # Subject-first query strategy: keep query simple and object-focused.
+            base = primary_subject.strip() or "subject"
             if self.main_subject and self.main_subject.lower() not in base.lower():
                 base = f"{self.main_subject} {base}".strip()
             variants = [
@@ -156,7 +158,7 @@ class ScriptAnalyzer:
             # 7 targeted query variants for better Brave recall on specific scenes.
             return [q.strip() for q in variants if q.strip() and q.strip().lower() not in banned][:7]
 
-        top = " ".join(keywords[:3]) if keywords else text[:50]
+        top = primary_subject.strip() or (" ".join(keywords[:3]) if keywords else text[:50])
         if self.main_subject and self.main_subject.lower() not in top.lower():
             top = f"{self.main_subject} {top}".strip()
         return [
