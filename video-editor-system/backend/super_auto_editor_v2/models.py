@@ -94,6 +94,7 @@ class RenderProfile:
     preset: str
     crf: int
     audio_codec: str = "aac"
+    tune: str = ""   # e.g. "fastdecode" for the turbo profile
 
 
 @dataclass(slots=True)
