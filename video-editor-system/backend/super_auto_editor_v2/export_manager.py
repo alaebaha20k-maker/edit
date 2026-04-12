@@ -417,37 +417,42 @@ class ExportManager:
         ])
         return out
 
-    # SPEED + SYNC FIX: Stream copy when possible, minimal re-encode as fallback
+    # SPEED + SYNC FIX: Stream copy only at near-zero starts; re-encode otherwise
     def _build_avatar_segment(
         self, avatar_video: Path, start: float, duration: float, out_path: Path
     ) -> None:
         """
-        SPEED FIX: Try stream copy first (instant, no quality loss, perfect sync).
-        Falls back to re-encode only if stream copy fails.
+        Use a simple keyframe-safety policy:
+        - Near-zero starts (<= 0.05s): try stream copy for speed.
+        - Non-zero starts: re-encode to guarantee clean segment starts.
         """
-        # Attempt 1: stream copy (10-100x faster, preserves exact timing)
-        try:
-            self.ffmpeg.run([
-                "-ss", f"{start:.3f}",
-                "-i", str(avatar_video),
-                "-t", f"{duration:.3f}",
-                "-c:v", "copy",
-                "-an",
-                str(out_path),
-            ])
-            return
-        except Exception:
-            pass  # Fall through to re-encode
+        can_stream_copy = start <= 0.05
 
-        # Attempt 2: re-encode fallback (lower CRF=18 for better face quality)
+        if can_stream_copy:
+            try:
+                self.ffmpeg.run([
+                    "-ss", f"{start:.3f}",
+                    "-i", str(avatar_video),
+                    "-t", f"{duration:.3f}",
+                    "-c:v", "copy",
+                    "-an",
+                    str(out_path),
+                ])
+                return
+            except Exception:
+                pass  # Fall through to re-encode
+
+        # Re-encode path (keeps current preset/crf defaults)
         self.ffmpeg.run([
+            "-fflags", "+genpts",
             "-ss", f"{start:.3f}",
             "-t", f"{duration:.3f}",
             "-i", str(avatar_video),
             "-an",
             "-vf", (
                 f"scale={self.config.resolution_w}:{self.config.resolution_h},"
-                f"fps={self.config.fps}"
+                f"fps={self.config.fps},"
+                "format=yuv420p"
             ),
             "-c:v", "libx264",
             "-preset", "ultrafast",
