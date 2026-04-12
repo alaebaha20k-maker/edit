@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import subprocess
 import re
+import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from math import ceil
 import os
@@ -30,6 +31,18 @@ from super_auto_editor_v2.timeline.timeline_builder import TimelineBuilder
 
 
 class ExportManager:
+    _CONCAT_STREAM_FIELDS = (
+        "codec_name",
+        "profile",
+        "level",
+        "width",
+        "height",
+        "pix_fmt",
+        "r_frame_rate",
+        "avg_frame_rate",
+        "time_base",
+    )
+
     def __init__(self, config: AppConfig):
         self.config = config
         self.cache = CacheManager(config.cache_dir)
@@ -404,37 +417,42 @@ class ExportManager:
         ])
         return out
 
-    # SPEED + SYNC FIX: Stream copy when possible, minimal re-encode as fallback
+    # SPEED + SYNC FIX: Stream copy only at near-zero starts; re-encode otherwise
     def _build_avatar_segment(
         self, avatar_video: Path, start: float, duration: float, out_path: Path
     ) -> None:
         """
-        SPEED FIX: Try stream copy first (instant, no quality loss, perfect sync).
-        Falls back to re-encode only if stream copy fails.
+        Use a simple keyframe-safety policy:
+        - Near-zero starts (<= 0.05s): try stream copy for speed.
+        - Non-zero starts: re-encode to guarantee clean segment starts.
         """
-        # Attempt 1: stream copy (10-100x faster, preserves exact timing)
-        try:
-            self.ffmpeg.run([
-                "-ss", f"{start:.3f}",
-                "-i", str(avatar_video),
-                "-t", f"{duration:.3f}",
-                "-c:v", "copy",
-                "-an",
-                str(out_path),
-            ])
-            return
-        except Exception:
-            pass  # Fall through to re-encode
+        can_stream_copy = start <= 0.05
 
-        # Attempt 2: re-encode fallback (lower CRF=18 for better face quality)
+        if can_stream_copy:
+            try:
+                self.ffmpeg.run([
+                    "-ss", f"{start:.3f}",
+                    "-i", str(avatar_video),
+                    "-t", f"{duration:.3f}",
+                    "-c:v", "copy",
+                    "-an",
+                    str(out_path),
+                ])
+                return
+            except Exception:
+                pass  # Fall through to re-encode
+
+        # Re-encode path (keeps current preset/crf defaults)
         self.ffmpeg.run([
+            "-fflags", "+genpts",
             "-ss", f"{start:.3f}",
             "-t", f"{duration:.3f}",
             "-i", str(avatar_video),
             "-an",
             "-vf", (
                 f"scale={self.config.resolution_w}:{self.config.resolution_h},"
-                f"fps={self.config.fps}"
+                f"fps={self.config.fps},"
+                "format=yuv420p"
             ),
             "-c:v", "libx264",
             "-preset", "ultrafast",
@@ -453,17 +471,25 @@ class ExportManager:
             encoding="utf-8",
         )
 
-        # Attempt 1: stream copy (instant, no quality loss)
-        try:
-            self.ffmpeg.run([
-                "-f", "concat", "-safe", "0", "-i", str(filelist),
-                "-c", "copy",
-                "-an",
-                str(out_path),
-            ])
-            return
-        except Exception:
-            pass  # Fall through to re-encode
+        can_copy_concat = self._can_concat_copy(segments)
+        if can_copy_concat:
+            # Attempt 1: stream copy (instant, no quality loss)
+            try:
+                self.ffmpeg.run([
+                    "-f", "concat", "-safe", "0", "-i", str(filelist),
+                    "-c", "copy",
+                    "-an",
+                    str(out_path),
+                ])
+                return
+            except Exception as exc:
+                self._log(
+                    "concat_copy_failed reason=ffmpeg_error "
+                    f"error={exc.__class__.__name__}; falling back to re-encode"
+                )
+                # Fall through to re-encode
+        else:
+            self._log("concat_copy_skipped reason=incompatible_streams")
 
         # Attempt 2: forced re-encode (compatible with all segment types)
         self.ffmpeg.run([
@@ -476,6 +502,75 @@ class ExportManager:
             "-crf", "28",
             str(out_path),
         ])
+
+    def _can_concat_copy(self, segments: list[Path]) -> bool:
+        if not segments:
+            self._log("concat_copy_skipped reason=no_segments")
+            return False
+
+        baseline_path = segments[0]
+        baseline_stream = self._probe_video_stream_info(baseline_path)
+        if baseline_stream is None:
+            self._log(
+                "concat_copy_skipped reason=probe_failed "
+                f"segment={baseline_path.as_posix()}"
+            )
+            return False
+
+        for segment in segments[1:]:
+            stream = self._probe_video_stream_info(segment)
+            if stream is None:
+                self._log(
+                    "concat_copy_skipped reason=probe_failed "
+                    f"segment={segment.as_posix()}"
+                )
+                return False
+
+            for field in self._CONCAT_STREAM_FIELDS:
+                baseline_value = baseline_stream.get(field)
+                current_value = stream.get(field)
+                if baseline_value != current_value:
+                    self._log(
+                        "concat_copy_skipped reason=stream_mismatch "
+                        f"field={field} baseline={baseline_value} "
+                        f"current={current_value} segment={segment.as_posix()}"
+                    )
+                    return False
+        return True
+
+    def _probe_video_stream_info(self, segment: Path) -> dict[str, object] | None:
+        cmd = [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            f"stream={','.join(self._CONCAT_STREAM_FIELDS)}",
+            "-of",
+            "json",
+            str(segment),
+        ]
+        try:
+            raw = subprocess.check_output(cmd, stderr=subprocess.PIPE).decode("utf-8")
+            data = json.loads(raw)
+        except (subprocess.CalledProcessError, json.JSONDecodeError) as exc:
+            self._log(
+                "concat_copy_skipped reason=probe_exception "
+                f"segment={segment.as_posix()} error={exc.__class__.__name__}"
+            )
+            return None
+
+        streams = data.get("streams", [])
+        if not streams:
+            self._log(
+                "concat_copy_skipped reason=no_video_stream "
+                f"segment={segment.as_posix()}"
+            )
+            return None
+
+        stream = streams[0]
+        return {field: stream.get(field) for field in self._CONCAT_STREAM_FIELDS}
 
     def _fit_video_duration(
         self,
