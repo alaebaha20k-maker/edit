@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
+import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from math import ceil
 import os
@@ -29,6 +31,18 @@ from super_auto_editor_v2.timeline.timeline_builder import TimelineBuilder
 
 
 class ExportManager:
+    _CONCAT_STREAM_FIELDS = (
+        "codec_name",
+        "profile",
+        "level",
+        "width",
+        "height",
+        "pix_fmt",
+        "r_frame_rate",
+        "avg_frame_rate",
+        "time_base",
+    )
+
     def __init__(self, config: AppConfig):
         self.config = config
         self.cache = CacheManager(config.cache_dir)
@@ -452,17 +466,25 @@ class ExportManager:
             encoding="utf-8",
         )
 
-        # Attempt 1: stream copy (instant, no quality loss)
-        try:
-            self.ffmpeg.run([
-                "-f", "concat", "-safe", "0", "-i", str(filelist),
-                "-c", "copy",
-                "-an",
-                str(out_path),
-            ])
-            return
-        except Exception:
-            pass  # Fall through to re-encode
+        can_copy_concat = self._can_concat_copy(segments)
+        if can_copy_concat:
+            # Attempt 1: stream copy (instant, no quality loss)
+            try:
+                self.ffmpeg.run([
+                    "-f", "concat", "-safe", "0", "-i", str(filelist),
+                    "-c", "copy",
+                    "-an",
+                    str(out_path),
+                ])
+                return
+            except Exception as exc:
+                self._log(
+                    "concat_copy_failed reason=ffmpeg_error "
+                    f"error={exc.__class__.__name__}; falling back to re-encode"
+                )
+                # Fall through to re-encode
+        else:
+            self._log("concat_copy_skipped reason=incompatible_streams")
 
         # Attempt 2: forced re-encode (compatible with all segment types)
         self.ffmpeg.run([
@@ -475,6 +497,75 @@ class ExportManager:
             "-crf", "28",
             str(out_path),
         ])
+
+    def _can_concat_copy(self, segments: list[Path]) -> bool:
+        if not segments:
+            self._log("concat_copy_skipped reason=no_segments")
+            return False
+
+        baseline_path = segments[0]
+        baseline_stream = self._probe_video_stream_info(baseline_path)
+        if baseline_stream is None:
+            self._log(
+                "concat_copy_skipped reason=probe_failed "
+                f"segment={baseline_path.as_posix()}"
+            )
+            return False
+
+        for segment in segments[1:]:
+            stream = self._probe_video_stream_info(segment)
+            if stream is None:
+                self._log(
+                    "concat_copy_skipped reason=probe_failed "
+                    f"segment={segment.as_posix()}"
+                )
+                return False
+
+            for field in self._CONCAT_STREAM_FIELDS:
+                baseline_value = baseline_stream.get(field)
+                current_value = stream.get(field)
+                if baseline_value != current_value:
+                    self._log(
+                        "concat_copy_skipped reason=stream_mismatch "
+                        f"field={field} baseline={baseline_value} "
+                        f"current={current_value} segment={segment.as_posix()}"
+                    )
+                    return False
+        return True
+
+    def _probe_video_stream_info(self, segment: Path) -> dict[str, object] | None:
+        cmd = [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            f"stream={','.join(self._CONCAT_STREAM_FIELDS)}",
+            "-of",
+            "json",
+            str(segment),
+        ]
+        try:
+            raw = subprocess.check_output(cmd, stderr=subprocess.PIPE).decode("utf-8")
+            data = json.loads(raw)
+        except (subprocess.CalledProcessError, json.JSONDecodeError) as exc:
+            self._log(
+                "concat_copy_skipped reason=probe_exception "
+                f"segment={segment.as_posix()} error={exc.__class__.__name__}"
+            )
+            return None
+
+        streams = data.get("streams", [])
+        if not streams:
+            self._log(
+                "concat_copy_skipped reason=no_video_stream "
+                f"segment={segment.as_posix()}"
+            )
+            return None
+
+        stream = streams[0]
+        return {field: stream.get(field) for field in self._CONCAT_STREAM_FIELDS}
 
     def _fit_video_duration(
         self,
