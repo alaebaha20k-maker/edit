@@ -4,6 +4,7 @@ import json
 import re
 from typing import Any
 
+from super_auto_editor_v2.analyze.global_topic_extractor import GlobalTopicExtractor
 from super_auto_editor_v2.analyze.scene_classifier import classify_scene_type
 from super_auto_editor_v2.analyze.visual_intent_extractor import (
     extract_visual_intent,
@@ -63,11 +64,18 @@ class ScriptAnalyzer:
     def __init__(self, gemini_api_key: str = ""):
         self.gemini_api_key = gemini_api_key
         self.main_subject = ""
+        self.global_topic_extractor = GlobalTopicExtractor(gemini_api_key)
+        self.global_topic_info: dict = {}
         if gemini_api_key and genai:
             genai.configure(api_key=gemini_api_key)
 
     def set_context(self, full_script: str) -> None:
-        """Extract an anchor subject from the full script for query enrichment."""
+        """Extract global topic and anchor subject from full script."""
+        # Extract global topic (CRITICAL FIX: used as fallback for stop-word subjects)
+        self.global_topic_info = self.global_topic_extractor.extract(full_script)
+        global_topic = self.global_topic_info.get("main_topic", "")
+        context_phrases = self.global_topic_info.get("context_phrases", [])
+
         # Look for brand/product names first
         product_match = re.search(
             r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z0-9]+)*(?:\s+\d{4})?)\b",
@@ -75,14 +83,16 @@ class ScriptAnalyzer:
         )
         if product_match:
             self.main_subject = product_match.group(0).strip()
-            return
-        # Fallback: first 3 tokens
-        tokens = re.findall(r"[A-Za-z0-9\-]+", full_script)
-        self.main_subject = " ".join(tokens[:3]).strip() if tokens else ""
+        else:
+            # Fallback: use global topic or first 3 tokens
+            self.main_subject = global_topic or " ".join(
+                re.findall(r"[A-Za-z0-9\-]+", full_script)[:3]
+            ).strip()
 
     def analyze(self, block: TimelineBlock) -> SceneAnalysis:
         # Step 1: heuristic visual intent (always runs - fast, no API)
-        heuristic_intent = extract_visual_intent(block.script_text)
+        global_topic = self.global_topic_info.get("main_topic", "")
+        heuristic_intent = extract_visual_intent(block.script_text, global_topic=global_topic)
 
         # Step 2: Gemini enrichment (if available)
         gemini_data = self._analyze_with_gemini(block.script_text) if self.gemini_api_key else None
@@ -180,13 +190,17 @@ class ScriptAnalyzer:
         if intent.search_queries:
             return intent.search_queries[:10]
 
-        # Priority 3: Build from intent fields
+        # Priority 3: Build from intent fields with global topic enrichment
         subject = intent.primary_subject or "subject"
         action = intent.action or ""
         env = intent.environment or ""
+        global_topic = self.global_topic_info.get("main_topic", "")
+        context_phrases = self.global_topic_info.get("context_phrases", [])
 
         if scene_type in ("specific", "mixed"):
             variants = [
+                # CRITICAL FIX: Always include global topic first for context
+                f"{global_topic} {subject}".strip() if global_topic and subject != global_topic else subject,
                 f"{subject} {action} {env}".strip(),
                 f"{subject} official photo",
                 f"{subject} high resolution",
@@ -197,6 +211,8 @@ class ScriptAnalyzer:
         else:
             mood = intent.mood or "cinematic"
             variants = [
+                # For general scenes, still include global context
+                f"{global_topic} {action} {env} {mood}".strip() if global_topic else f"{action} {env} {mood}".strip(),
                 f"{action} {env} {mood}".strip(),
                 f"{env} {mood} b-roll".strip() if env else f"{mood} b-roll",
                 f"{subject} cinematic",
@@ -209,13 +225,12 @@ class ScriptAnalyzer:
             q = q.strip()
             if not q:
                 continue
-            if (
-                self.main_subject
-                and self.main_subject.lower() not in q.lower()
-                and scene_type in ("specific", "mixed")
-            ):
-                q = f"{self.main_subject} {q}".strip()
             enriched.append(q)
+
+        # Add context phrases if available
+        if context_phrases:
+            for phrase in context_phrases[:2]:
+                enriched.append(f"{phrase} {subject}".strip() if subject else phrase)
 
         # Dedupe
         seen: set[str] = set()

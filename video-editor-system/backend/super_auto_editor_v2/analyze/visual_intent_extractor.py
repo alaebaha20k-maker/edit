@@ -15,6 +15,7 @@ downstream component gets rich, precise signal instead of bare keywords.
 
 import re
 
+from super_auto_editor_v2.analyze.global_topic_extractor import STOP_WORDS_GLOBAL
 from super_auto_editor_v2.models import VisualIntent
 
 
@@ -51,13 +52,22 @@ AVOID_DEFAULTS: list[str] = [
 ]
 
 # Patterns for product/brand names (multi-word, optionally with year / suffix)
+# IMPORTANT: Only match REAL products, not arbitrary capitalized words
 PRODUCT_PATTERNS: list[str] = [
-    r"\b(iPhone|iPad|MacBook|iMac|AirPods|Apple Watch)\s*(?:Pro|Max|Ultra|Plus|Mini|Air)?\s*(?:\d{1,4})?\b",
-    r"\b(Galaxy|Pixel|Surface|Xperia|OnePlus)\s*(?:\w+)?\b",
-    r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z0-9]+)*(?:\s+\d{4})?)(?:\s+(?:Pro|Max|Ultra|Plus|Mini|SE|GT|RS))?\b",
-    r"\b[A-Z]{2,5}-?\d{3,4}\b",          # RTX-4090, RTX4090
-    r"\b\w+\s+\d{4}\b",                  # Ford 2024, iPhone 2023
-    r"\b\d{4}\s+[A-Z][a-z]+\b",          # 2024 Ford
+    # Apple products
+    r"\b(iPhone|iPad|MacBook|iMac|AirPods|Apple Watch|iWatch)\s*(?:Pro|Max|Ultra|Plus|Mini|Air)?\s*(?:\d{1,4})?\b",
+    # Android/Samsung devices
+    r"\b(Galaxy|Pixel|Surface|Xperia|OnePlus)\s*(?:Pro|Max|Ultra|Plus|Fold|Note|S|Z)?\s*(?:\d{1,4})?\b",
+    # Car brands + model (MUST have brand name)
+    r"\b(Ford|Toyota|Honda|BMW|Mercedes|Audi|Tesla|Chevrolet|Volkswagen|Nissan|Hyundai|Kia|Mazda|Subaru|Lexus)\s+([A-Z][a-z0-9\s]+?)(?:\s*\d{4})?\b",
+    # Specific car models (Focus, Mustang, etc.)
+    r"\b(Model\s+[SXYZ3Y]|Mustang|Camaro|Civic|Accord|Corolla|Focus|Fusion|Ranger|F-150|Silverado|Ram)\b",
+    # Brand + Year (must be a KNOWN brand)
+    r"\b(Ford|Toyota|Honda|BMW|Mercedes|Tesla|Apple|Samsung|Google)\s+\d{4}\b",
+    # Year + Brand
+    r"\b\d{4}\s+(Ford|Toyota|Honda|BMW|Mercedes|Tesla|Apple|Samsung)\b",
+    # Model numbers (RTX-4090, RTX 4090)
+    r"\b[A-Z]{2,5}[-\s]?\d{3,4}\b",
 ]
 
 SUBJECT_TYPE_HINTS: dict[str, list[str]] = {
@@ -88,7 +98,7 @@ SUBJECT_TYPE_HINTS: dict[str, list[str]] = {
 # Public API
 # ---------------------------------------------------------------------------
 
-def extract_visual_intent(text: str) -> VisualIntent:
+def extract_visual_intent(text: str, global_topic: str = "") -> VisualIntent:
     """
     Fast heuristic extraction of visual intent from a script segment.
     No external API calls.  Returns a VisualIntent with as much detail
@@ -97,7 +107,7 @@ def extract_visual_intent(text: str) -> VisualIntent:
     words_raw = re.findall(r"[A-Za-z0-9']+", text)
     words_lower = [w.lower() for w in words_raw]
 
-    primary_subject = _extract_primary_subject(text, words_lower)
+    primary_subject = _extract_primary_subject(text, words_lower, global_topic)
     subject_type = _detect_subject_type(primary_subject, words_lower)
     action = _find_first(words_lower, ACTION_VERBS) or "showing"
     environment = _find_first(words_lower, ENVIRONMENT_WORDS) or ""
@@ -165,39 +175,105 @@ def merge_gemini_intent(base: VisualIntent, gemini_data: dict) -> VisualIntent:
 # Internals
 # ---------------------------------------------------------------------------
 
-def _extract_primary_subject(text: str, words_lower: list[str]) -> str:
+def _extract_primary_subject(text: str, words_lower: list[str], global_topic: str = "") -> str:
     """
-    Try product patterns first, then named entities, then first title-case word.
+    Extract the actual primary subject, NEVER returning stop words.
+    CRITICAL BUG FIX: Previous code returned "The", "That", "They" as subjects!
+
+    Strategy:
+    1. Product patterns (brand+model)
+    2. Title-case multi-word phrases (proper nouns)
+    3. Quoted phrases
+    4. Hyphenated compounds (wraparound porch, floor-to-ceiling, u-shaped)
+    5. Adjective + noun compounds
+    6. Capitalised words (not sentence starts)
+    7. Global topic fallback
+    8. Generic "subject"
     """
     # 1. Product / brand patterns (most specific)
     for pattern in PRODUCT_PATTERNS:
         m = re.search(pattern, text)
         if m:
             candidate = m.group(0).strip()
-            if len(candidate) > 2:
+            if len(candidate) > 2 and candidate.lower() not in STOP_WORDS_GLOBAL:
                 return candidate
 
-    # 2. Multi-word title-case phrase (e.g. "Ford Focus", "New York City")
+    # 2. Multi-word title-case phrase (e.g. "Ford Focus", "U-shaped barndominium")
+    # MUST have at least 2 words (the + ensures 1 or more additional words)
     title_phrases = re.findall(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z0-9]+)+)\b", text)
     if title_phrases:
-        return title_phrases[0]
+        for phrase in title_phrases:
+            phrase_lower = phrase.lower()
+            # Skip sentence starters and stop words
+            if phrase_lower not in STOP_WORDS_GLOBAL and len(phrase) > 3:
+                return phrase
 
-    # 3. Single capitalised word (not a sentence start if possible)
-    cap_words = [w for w in re.findall(r"\b([A-Z][a-z]{2,})\b", text)]
-    # Skip if it's the very first word of the sentence only
+    # 3. Quoted phrases (highest semantic value)
+    quoted = re.findall(r'"([^"]+)"|\'([^\']+)\'', text)
+    if quoted:
+        for q1, q2 in quoted:
+            candidate = (q1 or q2).strip()
+            if len(candidate) > 3:
+                return candidate
+
+    # 4. Hyphenated compounds first (floor-to-ceiling, U-shaped, etc.)
+    hyphen_compounds = re.findall(r"\b([A-Za-z]+-[A-Za-z]+(?:-[A-Za-z]+)*)\b", text)
+    if hyphen_compounds:
+        for compound in hyphen_compounds:
+            if compound.lower() not in STOP_WORDS_GLOBAL:
+                return compound
+
+    # 5. Adjective + noun compounds (look for adjective + noun with 5+ char noun)
+    # Common adjectives that precede nouns in visual contexts
+    common_adjectives = {
+        "modern", "beautiful", "large", "open", "custom", "unique", "stunning",
+        "elegant", "spacious", "bright", "glass", "steel", "wooden", "new",
+        "old", "small", "big", "outdoor", "indoor", "exterior", "interior",
+        "wraparound", "covered", "raised", "dramatic", "grand", "minimalist",
+    }
+    # Common verbs to EXCLUDE (don't confuse verbs with nouns)
+    common_verbs = {
+        "provides", "creates", "features", "offers", "becomes", "seems",
+        "appears", "stands", "shows", "includes", "contains", "requires",
+    }
+
+    # Convert to lowercase for pattern matching but preserve original case
+    text_lower = text.lower()
+    adj_noun_pattern = r"\b([a-z]{4,})\s+([a-z]{5,})\b"
+    matches = re.findall(adj_noun_pattern, text_lower)
+    if matches:
+        # Find the BEST match (adjective in our list)
+        for adj, noun in matches:
+            if (adj in common_adjectives and
+                noun not in STOP_WORDS_GLOBAL and
+                noun not in common_verbs):
+                # Return with proper capitalization
+                return f"{adj} {noun}"
+        # Fallback: if no "common adjective" match, still accept good adj+noun pairs
+        for adj, noun in matches:
+            if (adj not in STOP_WORDS_GLOBAL and
+                noun not in STOP_WORDS_GLOBAL and
+                noun not in common_verbs and
+                len(f"{adj} {noun}") > 8):
+                return f"{adj} {noun}"
+
+    # 6. Single capitalised word (not a sentence start, and NOT a stop word)
+    cap_words = [w for w in re.findall(r"\b([A-Z][a-z]{3,})\b", text)]
     sentence_starts = {s.split()[0] for s in re.split(r"[.!?]", text) if s.strip()}
-    non_start_caps = [w for w in cap_words if w not in sentence_starts]
+    non_start_caps = [w for w in cap_words if w not in sentence_starts and w.lower() not in STOP_WORDS_GLOBAL]
     if non_start_caps:
         return non_start_caps[0]
-    if cap_words:
-        return cap_words[0]
 
-    # 4. Fall back to first meaningful token
-    stop = {"the", "a", "an", "is", "are", "was", "were", "be", "been", "has",
-            "have", "had", "do", "does", "did", "will", "would", "could",
-            "should", "may", "might", "shall", "can", "need", "ought"}
-    meaningful = [w for w in words_lower if w not in stop and len(w) > 3]
-    return meaningful[0] if meaningful else "subject"
+    # 7. Fallback to first meaningful noun token (length > 4, not a stop word)
+    meaningful = [w for w in words_lower if w not in STOP_WORDS_GLOBAL and len(w) > 4]
+    if meaningful:
+        return meaningful[0]
+
+    # 8. Last resort: use global topic if available, otherwise generic
+    if global_topic and global_topic.lower() not in STOP_WORDS_GLOBAL:
+        return global_topic
+
+    return "subject"
 
 
 def _detect_subject_type(subject: str, words_lower: list[str]) -> str:
