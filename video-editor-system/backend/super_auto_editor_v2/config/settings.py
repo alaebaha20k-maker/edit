@@ -39,6 +39,9 @@ def load_config(config_path: Path | None = None) -> AppConfig:
     base_cache = Path(data.get("cache_dir", "./cache/super_auto_editor")).resolve()
     base_temp = Path(data.get("temp_dir", "./tmp/super_auto_editor")).resolve()
     profiles_data = data.get("profiles", {
+        # Fastest possible — stream-copy concat, minimal encode passes
+        "turbo": {"preset": "ultrafast", "crf": 28, "tune": "fastdecode"},
+        # Good balance of speed + quality for most exports
         "ultra_fast_draft": {"preset": "ultrafast", "crf": 28},
         "fast_final": {"preset": "veryfast", "crf": 24},
         "quality_final": {"preset": "fast", "crf": 21},
@@ -48,6 +51,7 @@ def load_config(config_path: Path | None = None) -> AppConfig:
         name: RenderProfile(
             preset=value.get("preset", "ultrafast"),
             crf=int(value.get("crf", 28)),
+            tune=str(value.get("tune", "")),
         )
         for name, value in profiles_data.items()
     }

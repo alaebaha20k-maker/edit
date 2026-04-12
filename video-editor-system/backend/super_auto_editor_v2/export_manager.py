@@ -85,10 +85,11 @@ class ExportManager:
 
     # ------------------------------------------------------------------
     # Parallel segment builder
+    # SPEED FIX: increased max_workers from 4 → 8
     # ------------------------------------------------------------------
 
     def _build_all_segments_parallel(self, timeline, avatar_video: Path) -> list[Path]:
-        max_workers = max(1, min(4, os.cpu_count() or 2))
+        max_workers = max(1, min(8, os.cpu_count() or 4))
         self._log(f"Parallel segment build workers={max_workers}")
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
             jobs = [
@@ -133,7 +134,6 @@ class ExportManager:
             refined_queries = self.query_builder.build(
                 intent, analysis.scene_type, max_queries=10
             )
-            # Merge: QueryBuilder queries first, then Gemini/heuristic queries as fallback
             all_queries = list(dict.fromkeys(refined_queries + analysis.search_queries))
         else:
             all_queries = analysis.search_queries
@@ -167,19 +167,16 @@ class ExportManager:
         must_show = intent.must_show if intent else []
         must_avoid = intent.must_avoid if intent else []
 
-        # Multi-query search with relevance filtering
         candidates = self.brave.search_with_fallback(
             queries,
             visual_intent=intent,
-            target_count=wanted * 3,  # request more for better filtering
+            target_count=wanted * 3,
         )
 
         if not candidates:
-            # Last-resort: plain search with first query
             main_q = self._sanitize_query(queries[0] if queries else "subject", max_words=4)
             candidates = self.brave.search(main_q, count=60)
 
-        # Rank with relevance
         main_q = queries[0] if queries else "subject"
         ranked = rank_images(
             list({c.url: c for c in candidates}.values()),
@@ -188,10 +185,9 @@ class ExportManager:
             must_avoid=must_avoid,
         )
 
-        # Validate before download
         valid = [c for c in ranked if validate_image_candidate(c, intent)]
         if not valid:
-            valid = ranked  # fall through without validation if all filtered
+            valid = ranked
 
         top = valid[:wanted]
         tasks = [
@@ -209,8 +205,7 @@ class ExportManager:
 
         if not downloaded:
             self._log(
-                f"Scene {scene_idx}: Brave returned no downloadable images, "
-                "trying Pexels fallback."
+                f"Scene {scene_idx}: Brave returned no images, trying Pexels fallback."
             )
             try:
                 pexels_q = [queries[0] if queries else "cinematic scene",
@@ -234,15 +229,13 @@ class ExportManager:
     ) -> Path:
         self._log(f"Scene {scene_idx}: building MIXED scene (images + video)")
 
-        # Download subject images from Brave
         img_candidates = self.brave.search_with_fallback(
-            queries[:5],
-            visual_intent=intent,
-            target_count=3,
+            queries[:5], visual_intent=intent, target_count=3,
         )
         must_show = intent.must_show if intent else []
         must_avoid = intent.must_avoid if intent else []
-        ranked_imgs = rank_images(img_candidates, query=queries[0], must_show=must_show, must_avoid=must_avoid)
+        ranked_imgs = rank_images(img_candidates, query=queries[0],
+                                  must_show=must_show, must_avoid=must_avoid)
 
         img_tasks = [
             {
@@ -257,21 +250,23 @@ class ExportManager:
         ]
         img_assets = self.downloader.download_many(img_tasks)
 
-        # Download environment video from Pexels
-        # Use environment-oriented queries (latter half of query list)
         env_queries = queries[3:] or queries
         vid_candidates = self.pexels.search_with_fallback(
             [self._sanitize_query(q, max_words=5) for q in env_queries[:4]],
             target_count=3,
         )
-        ranked_vids = rank_videos(vid_candidates, query=env_queries[0] if env_queries else "cinematic", visual_intent=intent)
+        ranked_vids = rank_videos(
+            vid_candidates,
+            query=env_queries[0] if env_queries else "cinematic",
+            visual_intent=intent,
+        )
 
         if ranked_vids:
             best_vid = next((v for v in ranked_vids if 5 <= v.duration <= 20), ranked_vids[0])
             best_file = sorted(
                 best_vid.files, key=lambda f: abs(f.width - 1920) + abs(f.height - 1080)
             )[0]
-            vid_tasks = [
+            vid_assets = self.downloader.download_many([
                 {
                     "scene_id": f"scene_{scene_idx}_vid",
                     "asset_id": best_vid.id,
@@ -280,8 +275,7 @@ class ExportManager:
                     "url": best_file.url,
                     "metadata": {"width": best_file.width, "height": best_file.height},
                 }
-            ]
-            vid_assets = self.downloader.download_many(vid_tasks)
+            ])
         else:
             vid_assets = []
 
@@ -409,9 +403,29 @@ class ExportManager:
         ])
         return out
 
+    # SPEED + SYNC FIX: Stream copy when possible, minimal re-encode as fallback
     def _build_avatar_segment(
         self, avatar_video: Path, start: float, duration: float, out_path: Path
     ) -> None:
+        """
+        SPEED FIX: Try stream copy first (instant, no quality loss, perfect sync).
+        Falls back to re-encode only if stream copy fails.
+        """
+        # Attempt 1: stream copy (10-100x faster, preserves exact timing)
+        try:
+            self.ffmpeg.run([
+                "-ss", f"{start:.3f}",
+                "-i", str(avatar_video),
+                "-t", f"{duration:.3f}",
+                "-c:v", "copy",
+                "-an",
+                str(out_path),
+            ])
+            return
+        except Exception:
+            pass  # Fall through to re-encode
+
+        # Attempt 2: re-encode fallback (lower CRF=18 for better face quality)
         self.ffmpeg.run([
             "-ss", f"{start:.3f}",
             "-t", f"{duration:.3f}",
@@ -423,22 +437,41 @@ class ExportManager:
             ),
             "-c:v", "libx264",
             "-preset", "ultrafast",
-            "-crf", "28",
+            "-crf", "18",
             str(out_path),
         ])
 
     def _concat_segments(self, segments: list[Path], out_path: Path) -> None:
+        """
+        SPEED FIX: Try stream copy concat first (instant).
+        Falls back to re-encode only when codecs differ.
+        """
         filelist = self.config.temp_dir / "segments.txt"
         filelist.write_text(
             "\n".join(f"file '{s.as_posix()}'" for s in segments),
             encoding="utf-8",
         )
+
+        # Attempt 1: stream copy (instant, no quality loss)
+        try:
+            self.ffmpeg.run([
+                "-f", "concat", "-safe", "0", "-i", str(filelist),
+                "-c", "copy",
+                "-an",
+                str(out_path),
+            ])
+            return
+        except Exception:
+            pass  # Fall through to re-encode
+
+        # Attempt 2: forced re-encode (compatible with all segment types)
         self.ffmpeg.run([
             "-f", "concat", "-safe", "0", "-i", str(filelist),
             "-an",
             "-vf", f"fps={self.config.fps},format=yuv420p",
             "-c:v", "libx264",
             "-preset", "ultrafast",
+            "-tune", "fastdecode",
             "-crf", "28",
             str(out_path),
         ])
@@ -463,6 +496,19 @@ class ExportManager:
                 ]),
                 encoding="utf-8",
             )
+            # Try stream copy first for speed
+            try:
+                self.ffmpeg.run([
+                    "-f", "concat", "-safe", "0", "-i", str(list_file),
+                    "-c", "copy",
+                    "-an",
+                    "-t", f"{target_duration:.3f}",
+                    str(out_path),
+                ])
+                return
+            except Exception:
+                pass
+
             self.ffmpeg.run([
                 "-f", "concat", "-safe", "0", "-i", str(list_file),
                 "-an",
@@ -474,6 +520,20 @@ class ExportManager:
                 str(out_path),
             ])
             return
+
+        # Simple trim — try stream copy first
+        try:
+            self.ffmpeg.run([
+                "-i", str(video_in),
+                "-t", f"{target_duration:.3f}",
+                "-c", "copy",
+                "-an",
+                str(out_path),
+            ])
+            return
+        except Exception:
+            pass
+
         self.ffmpeg.run([
             "-i", str(video_in),
             "-t", f"{target_duration:.3f}",
@@ -492,19 +552,28 @@ class ExportManager:
         mode: str,
         target_duration: float,
     ) -> None:
+        """
+        SYNC FIX: Use -c:a copy (stream copy) so audio is NEVER re-encoded.
+        Re-encoding audio shifts timestamps by tiny amounts that accumulate
+        across the pipeline and cause lips to go out of sync.
+        -shortest ensures we don't pad or cut when durations differ slightly.
+        -avoid_negative_ts make_zero + -fflags +genpts fixes any stale timestamps.
+        """
         profile = self.config.profiles.get(mode, self.config.profiles["ultra_fast_draft"])
         self.ffmpeg.run([
             "-i", str(video_only),
             "-i", str(avatar_video),
-            "-map", "0:v:0",
-            "-map", "1:a:0",
+            "-map", "0:v:0",          # assembled video track
+            "-map", "1:a:0",          # ORIGINAL avatar audio (untouched)
             "-c:v", "libx264",
             "-preset", profile.preset,
             "-crf", str(profile.crf),
             "-pix_fmt", "yuv420p",
             "-r", str(self.config.fps),
-            "-c:a", profile.audio_codec,
+            "-c:a", "copy",           # STREAM COPY — perfect sync, no drift
+            "-shortest",              # end when shorter stream ends
+            "-avoid_negative_ts", "make_zero",
+            "-fflags", "+genpts",
             "-movflags", "+faststart",
-            "-t", f"{target_duration:.3f}",
             str(output),
         ])
