@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import subprocess
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from math import ceil
@@ -483,6 +485,7 @@ class ExportManager:
         out_path: Path,
         avatar_video: Path,
     ) -> None:
+        fit_output = self.config.temp_dir / "video_only_fit.mp4"
         current = self.ffmpeg.probe_duration(video_in)
         gap = target_duration - current
         if gap > 0.2:
@@ -503,46 +506,73 @@ class ExportManager:
                     "-c", "copy",
                     "-an",
                     "-t", f"{target_duration:.3f}",
-                    str(out_path),
+                    str(fit_output),
                 ])
-                return
             except Exception:
-                pass
+                self.ffmpeg.run([
+                    "-f", "concat", "-safe", "0", "-i", str(list_file),
+                    "-an",
+                    "-vf", f"fps={self.config.fps},format=yuv420p",
+                    "-c:v", "libx264",
+                    "-preset", "ultrafast",
+                    "-crf", "28",
+                    "-t", f"{target_duration:.3f}",
+                    str(fit_output),
+                ])
 
+        else:
+            # Simple trim — try stream copy first
+            try:
+                self.ffmpeg.run([
+                    "-i", str(video_in),
+                    "-t", f"{target_duration:.3f}",
+                    "-c", "copy",
+                    "-an",
+                    str(fit_output),
+                ])
+            except Exception:
+                self.ffmpeg.run([
+                    "-i", str(video_in),
+                    "-t", f"{target_duration:.3f}",
+                    "-an",
+                    "-c:v", "libx264",
+                    "-preset", "ultrafast",
+                    "-crf", "28",
+                    str(fit_output),
+                ])
+
+        self._normalize_video_timestamps(fit_output, out_path)
+
+    def _normalize_video_timestamps(self, video_in: Path, out_path: Path) -> None:
+        normalized = self.config.temp_dir / "video_only_normalized.mp4"
+        try:
             self.ffmpeg.run([
-                "-f", "concat", "-safe", "0", "-i", str(list_file),
+                "-fflags", "+genpts",
+                "-i", str(video_in),
+                "-map", "0:v:0",
+                "-an",
+                "-c:v", "copy",
+                "-avoid_negative_ts", "make_zero",
+                "-movflags", "+faststart",
+                str(normalized),
+            ])
+        except Exception:
+            self.ffmpeg.run([
+                "-fflags", "+genpts",
+                "-i", str(video_in),
+                "-map", "0:v:0",
                 "-an",
                 "-vf", f"fps={self.config.fps},format=yuv420p",
+                "-vsync", "cfr",
                 "-c:v", "libx264",
                 "-preset", "ultrafast",
                 "-crf", "28",
-                "-t", f"{target_duration:.3f}",
-                str(out_path),
+                "-avoid_negative_ts", "make_zero",
+                "-movflags", "+faststart",
+                str(normalized),
             ])
-            return
 
-        # Simple trim — try stream copy first
-        try:
-            self.ffmpeg.run([
-                "-i", str(video_in),
-                "-t", f"{target_duration:.3f}",
-                "-c", "copy",
-                "-an",
-                str(out_path),
-            ])
-            return
-        except Exception:
-            pass
-
-        self.ffmpeg.run([
-            "-i", str(video_in),
-            "-t", f"{target_duration:.3f}",
-            "-an",
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-crf", "28",
-            str(out_path),
-        ])
+        normalized.replace(out_path)
 
     def _mux_avatar_audio(
         self,
@@ -559,6 +589,32 @@ class ExportManager:
         -shortest ensures we don't pad or cut when durations differ slightly.
         -avoid_negative_ts make_zero + -fflags +genpts fixes any stale timestamps.
         """
+        if not self._has_stream(avatar_video, "a:0"):
+            raise ValueError(
+                "Avatar video has no audio stream (a:0); cannot mux with -c:a copy."
+            )
+
+        if not self._has_stream(video_only, "v:0"):
+            raise ValueError("Assembled video has no video stream (v:0); mux aborted.")
+
+        video_duration = self.ffmpeg.probe_duration(video_only)
+        avatar_audio_duration = self._probe_stream_duration(avatar_video, "a:0")
+        if avatar_audio_duration is None:
+            avatar_audio_duration = self.ffmpeg.probe_duration(avatar_video)
+
+        self._log(
+            "Pre-mux durations: "
+            f"video_only={video_duration:.3f}s "
+            f"avatar_audio={avatar_audio_duration:.3f}s "
+            f"target={target_duration:.3f}s"
+        )
+        if abs(video_duration - avatar_audio_duration) > 0.08:
+            self._log(
+                "WARNING duration drift before mux exceeds tolerance: "
+                f"|video-audio|={abs(video_duration - avatar_audio_duration):.3f}s "
+                "(tol=0.080s)"
+            )
+
         profile = self.config.profiles.get(mode, self.config.profiles["ultra_fast_draft"])
         self.ffmpeg.run([
             "-i", str(video_only),
@@ -577,3 +633,45 @@ class ExportManager:
             "-movflags", "+faststart",
             str(output),
         ])
+
+        muxed_duration = self.ffmpeg.probe_duration(output)
+        muxed_audio_duration = self._probe_stream_duration(output, "a:0")
+        if muxed_audio_duration is None:
+            muxed_audio_duration = muxed_duration
+
+        self._log(
+            "Post-mux durations: "
+            f"output={muxed_duration:.3f}s "
+            f"output_audio={muxed_audio_duration:.3f}s "
+            f"target={target_duration:.3f}s"
+        )
+        if abs(muxed_duration - muxed_audio_duration) > 0.08:
+            self._log(
+                "WARNING duration drift after mux exceeds tolerance: "
+                f"|output-output_audio|={abs(muxed_duration - muxed_audio_duration):.3f}s "
+                "(tol=0.080s)"
+            )
+
+    def _has_stream(self, media_path: Path, stream_selector: str) -> bool:
+        cmd = [
+            "ffprobe", "-v", "error",
+            "-select_streams", stream_selector,
+            "-show_entries", "stream=index",
+            "-of", "csv=p=0",
+            str(media_path),
+        ]
+        out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL).decode().strip()
+        return bool(out)
+
+    def _probe_stream_duration(self, media_path: Path, stream_selector: str) -> float | None:
+        cmd = [
+            "ffprobe", "-v", "error",
+            "-select_streams", stream_selector,
+            "-show_entries", "stream=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(media_path),
+        ]
+        out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL).decode().strip()
+        if not out or out == "N/A":
+            return None
+        return float(out.splitlines()[0])
