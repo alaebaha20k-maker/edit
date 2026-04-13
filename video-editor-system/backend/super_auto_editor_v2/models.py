@@ -89,6 +89,20 @@ class DownloadedAsset:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class MediaPlan:
+    """
+    Gemini-generated media plan for a single 15s media segment.
+    api_choice: "SERPER" | "PEXELS" | "MERGE"
+    MERGE = Serper image + Pexels video combined into one clip.
+    """
+    primary_keyword: str
+    fallback_keyword: str
+    api_choice: str = "PEXELS"   # default: Pexels video
+    serper_keyword: str = ""     # used when api_choice == "MERGE"
+    pexels_keyword: str = ""     # used when api_choice == "MERGE"
+
+
 @dataclass(slots=True)
 class RenderProfile:
     preset: str
