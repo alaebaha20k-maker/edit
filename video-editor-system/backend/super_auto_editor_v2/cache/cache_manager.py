@@ -39,11 +39,22 @@ class CacheManager:
 
     def append_manifest(self, item: dict[str, Any]) -> None:
         with self._manifest_lock:
-            try:
-                data = json.loads(self.manifest_path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, FileNotFoundError):
-                data = []
-            if not isinstance(data, list):
-                data = []
+            data = self._safe_load_manifest()
             data.append(item)
             self.manifest_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    def _safe_load_manifest(self) -> list[dict[str, Any]]:
+        try:
+            raw = self.manifest_path.read_text(encoding="utf-8").strip()
+            if not raw:
+                return []
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, list) else []
+        except json.JSONDecodeError:
+            # Recover from previously corrupted concurrent writes.
+            backup = self.manifest_path.with_suffix(".corrupt.json")
+            try:
+                self.manifest_path.replace(backup)
+            except Exception:
+                pass
+            return []

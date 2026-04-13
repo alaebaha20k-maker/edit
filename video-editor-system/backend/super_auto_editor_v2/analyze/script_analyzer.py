@@ -4,115 +4,154 @@ import json
 import re
 from typing import Any
 
+from super_auto_editor_v2.analyze.global_topic_extractor import GlobalTopicExtractor
 from super_auto_editor_v2.analyze.scene_classifier import classify_scene_type
-from super_auto_editor_v2.models import MediaSource, SceneAnalysis, TimelineBlock
+from super_auto_editor_v2.analyze.visual_intent_extractor import (
+    extract_visual_intent,
+    merge_gemini_intent,
+)
+from super_auto_editor_v2.models import MediaSource, SceneAnalysis, TimelineBlock, VisualIntent
 
 try:
     import google.generativeai as genai
 except Exception:  # optional dependency at runtime
     genai = None
 
-# ---- filler words stripped before building image-search queries ----
-_FILLER = {
-    "the", "a", "an", "and", "or", "but", "for", "with", "this", "that",
-    "from", "into", "then", "when", "where", "your", "their", "have", "will",
-    "about", "video", "scene", "show", "shows", "also", "very", "just", "its",
-    "it", "they", "we", "you", "he", "she", "was", "were", "are", "is", "in",
-    "on", "to", "of", "at", "by", "as", "so", "if", "all", "can", "has",
-    "been", "do", "does", "did", "our", "be", "not", "no", "new", "how",
-}
+# ---------------------------------------------------------------------------
+# Improved Gemini prompt for precise visual intent extraction
+# ---------------------------------------------------------------------------
 
-# ---- topic-category hints used to pick relevant visual modifiers ----
-_CAR_HINTS = {"car", "vehicle", "sedan", "suv", "truck", "coupe", "hatchback",
-              "ford", "toyota", "bmw", "audi", "mercedes", "tesla", "honda",
-              "chevrolet", "hyundai", "kia", "nissan", "volkswagen", "vw",
-              "driving", "engine", "horsepower", "mph", "torque"}
-_TECH_HINTS = {"phone", "laptop", "tablet", "iphone", "ipad", "android",
-               "samsung", "pixel", "macbook", "gpu", "cpu", "rtx", "chip",
-               "processor", "gadget", "device", "smartphone", "watch",
-               "earbuds", "headphones", "camera", "console", "playstation",
-               "xbox", "nintendo", "software", "app"}
-_PERSON_HINTS = {"ceo", "founder", "actor", "singer", "president", "player",
-                 "athlete", "coach", "director", "artist", "musician",
-                 "influencer", "youtuber", "celebrity"}
-_FOOD_HINTS = {"recipe", "food", "dish", "meal", "restaurant", "cook",
-               "cooking", "ingredient", "pizza", "burger", "sushi", "coffee",
-               "chocolate", "cake"}
-_PLACE_HINTS = {"city", "country", "island", "mountain", "beach", "lake",
-                "park", "museum", "tower", "bridge", "hotel", "resort",
-                "airport", "stadium"}
+_GEMINI_PROMPT_TEMPLATE = """You are a professional video editor deciding what visuals to show for each script segment.
 
+For the text below, identify exactly what should appear on screen.
 
-def _detect_category(text_lower: str, entities: list[str]) -> str:
-    """Return a rough topic category from the script text."""
-    combined = text_lower + " " + " ".join(e.lower() for e in entities)
-    tokens = set(combined.split())
-    if tokens & _CAR_HINTS:
-        return "car"
-    if tokens & _TECH_HINTS:
-        return "tech"
-    if tokens & _PERSON_HINTS:
-        return "person"
-    if tokens & _FOOD_HINTS:
-        return "food"
-    if tokens & _PLACE_HINTS:
-        return "place"
-    return "generic"
+Return ONLY valid JSON with these keys:
 
+{{
+  "primary_subject": "The EXACT thing that MUST appear on screen. For products include brand+model+year. For people include name+role. For places include specific name.",
+  "subject_type": "One of: product | person | place | concept | action",
+  "visual_action": "What should be happening: e.g. 'driving on highway', 'front view', 'close-up', 'aerial view', 'interior walkthrough'",
+  "environment": "Where the visual takes place: e.g. 'highway', 'showroom', 'office', 'outdoors', 'studio'",
+  "mood": "Visual mood: e.g. 'cinematic', 'bright', 'dramatic', 'professional', 'energetic'",
+  "must_show": ["list", "of", "things", "that", "MUST", "appear"],
+  "must_avoid": ["cartoon", "illustration", "watermark", "low quality"],
+  "search_queries": [
+    "MOST SPECIFIC query first - include brand+model+year+action",
+    "Second most specific - brand+model+context",
+    "Moderate specificity - brand+model",
+    "Broader fallback - category+action",
+    "Generic fallback - just the category"
+  ],
+  "scene_type": "specific | general | mixed",
+  "keywords": ["main", "keywords"],
+  "named_entities": ["Named Entity One", "Named Entity Two"]
+}}
 
-def _clean_subject(text: str) -> str:
-    """Extract the meaningful subject from script text, stripping filler."""
-    words = text.split()
-    clean = [w for w in words if w.lower() not in _FILLER]
-    return " ".join(clean[:6]).strip()
+Rules:
+- For "Ford Focus 2024 driving on highway": primary_subject="Ford Focus 2024", subject_type="product", search_queries=["Ford Focus 2024 driving highway", "Ford Focus 2024 exterior", "Ford Focus 2024", "Ford car highway", "car driving highway"]
+- For "Elon Musk announced the product": primary_subject="Elon Musk", subject_type="person"
+- For "success requires hard work": subject_type="concept", scene_type="general"
+- search_queries[0] must be the MOST SPECIFIC - never a single generic word
+- must_avoid always include: cartoon, illustration, anime, drawing, watermark
+
+TEXT TO ANALYZE:
+{text}
+
+Return JSON only, no markdown, no explanation."""
 
 
 class ScriptAnalyzer:
     def __init__(self, gemini_api_key: str = ""):
         self.gemini_api_key = gemini_api_key
+        self.main_subject = ""
+        self.global_topic_extractor = GlobalTopicExtractor(gemini_api_key)
+        self.global_topic_info: dict = {}
         if gemini_api_key and genai:
             genai.configure(api_key=gemini_api_key)
 
-    def analyze(self, block: TimelineBlock) -> SceneAnalysis:
-        data = self._analyze_with_gemini(block.script_text) if self.gemini_api_key else None
-        if not data:
-            data = self._heuristic_analyze(block.script_text)
+    def set_context(self, full_script: str) -> None:
+        """Extract global topic and anchor subject from full script."""
+        # Extract global topic (CRITICAL FIX: used as fallback for stop-word subjects)
+        self.global_topic_info = self.global_topic_extractor.extract(full_script)
+        global_topic = self.global_topic_info.get("main_topic", "")
+        context_phrases = self.global_topic_info.get("context_phrases", [])
 
-        scene_type = classify_scene_type(block.script_text, data.get("named_entities", []))
-        source: MediaSource = "brave_images" if scene_type == "specific" else "pexels_video"
-        queries = self._build_queries(
-            text=block.script_text,
-            scene_type=scene_type,
-            keywords=data.get("keywords", []),
-            entities=data.get("named_entities", []),
+        # Look for brand/product names first
+        product_match = re.search(
+            r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z0-9]+)*(?:\s+\d{4})?)\b",
+            full_script,
         )
+        if product_match:
+            self.main_subject = product_match.group(0).strip()
+        else:
+            # Fallback: use global topic or first 3 tokens
+            self.main_subject = global_topic or " ".join(
+                re.findall(r"[A-Za-z0-9\-]+", full_script)[:3]
+            ).strip()
+
+    def analyze(self, block: TimelineBlock) -> SceneAnalysis:
+        # Step 1: heuristic visual intent (always runs - fast, no API)
+        global_topic = self.global_topic_info.get("main_topic", "")
+        heuristic_intent = extract_visual_intent(block.script_text, global_topic=global_topic)
+
+        # Step 2: Gemini enrichment (if available)
+        gemini_data = self._analyze_with_gemini(block.script_text) if self.gemini_api_key else None
+
+        if gemini_data:
+            visual_intent = merge_gemini_intent(heuristic_intent, gemini_data)
+        else:
+            visual_intent = heuristic_intent
+
+        # Step 3: classify scene type (uses VisualIntent + brand DB)
+        raw_scene_type = (
+            gemini_data.get("scene_type")
+            if gemini_data and gemini_data.get("scene_type") in ("specific", "general", "mixed")
+            else None
+        )
+        if raw_scene_type:
+            scene_type = raw_scene_type
+        else:
+            scene_type = classify_scene_type(
+                block.script_text,
+                visual_intent.must_show + [visual_intent.primary_subject],
+                subject_type=visual_intent.subject_type,
+            )
+
+        # Step 4: determine media source
+        source: MediaSource = _scene_type_to_source(scene_type)
+
+        # Step 5: build final queries
+        queries = self._resolve_queries(visual_intent, scene_type, gemini_data)
+
+        # Step 6: extract keywords / entities for downstream consumers
+        keywords = (
+            [str(k) for k in (gemini_data.get("keywords") or [])]
+            if gemini_data
+            else _heuristic_keywords(block.script_text)
+        )
+        named_entities = (
+            [str(e) for e in (gemini_data.get("named_entities") or [])]
+            if gemini_data
+            else [visual_intent.primary_subject] if visual_intent.primary_subject else []
+        )
+
         return SceneAnalysis(
-            keywords=data.get("keywords", []),
-            named_entities=data.get("named_entities", []),
+            keywords=keywords[:8],
+            named_entities=named_entities[:4],
             scene_type=scene_type,
             source=source,
             search_queries=queries,
+            visual_intent=visual_intent,
         )
 
-    # ------------------------------------------------------------------ #
-    #  Gemini extraction (richer prompt → better keywords + entities)     #
-    # ------------------------------------------------------------------ #
+    # ------------------------------------------------------------------
+    # Gemini call
+    # ------------------------------------------------------------------
 
     def _analyze_with_gemini(self, text: str) -> dict[str, Any] | None:
         if not genai:
             return None
-        prompt = (
-            "You are analysing a short video script excerpt for an automated "
-            "image/video search pipeline. Return ONLY valid JSON.\n\n"
-            "Keys:\n"
-            '  "keywords"       – 3-6 visually descriptive words (nouns/adjectives '
-            "that would match good stock images). Remove filler.\n"
-            '  "named_entities" – proper nouns: product names, brand names, '
-            "person names, place names. Keep model numbers (e.g. iPhone 15, RTX 4090).\n"
-            '  "visual_subject" – the single best short phrase (2-5 words) that '
-            "describes what an image result SHOULD look like for this text.\n\n"
-            f"Text:\n{text}"
-        )
+        prompt = _GEMINI_PROMPT_TEMPLATE.format(text=text)
         try:
             model = genai.GenerativeModel("gemini-1.5-flash")
             resp = model.generate_content(prompt)
@@ -121,136 +160,106 @@ class ScriptAnalyzer:
             end = raw.rfind("}")
             if start == -1 or end == -1:
                 return None
-            return json.loads(raw[start : end + 1])
+            parsed = json.loads(raw[start : end + 1])
+            # Validate scene_type
+            if parsed.get("scene_type") not in ("specific", "general", "mixed"):
+                parsed["scene_type"] = None
+            return parsed
         except Exception:
             return None
 
-    # ------------------------------------------------------------------ #
-    #  Heuristic fallback                                                 #
-    # ------------------------------------------------------------------ #
+    # ------------------------------------------------------------------
+    # Query resolution
+    # ------------------------------------------------------------------
 
-    def _heuristic_analyze(self, text: str) -> dict[str, Any]:
-        tokens = re.findall(r"[A-Za-z0-9][A-Za-z0-9\-]+", text)
-        keywords = [t for t in tokens if t.lower() not in _FILLER and len(t) > 2][:8]
-        named_entities: list[str] = []
-        for i, token in enumerate(tokens):
-            if token[:1].isupper() and token.lower() not in _FILLER:
-                if i + 1 < len(tokens) and tokens[i + 1][:1].isupper():
-                    named_entities.append(f"{token} {tokens[i + 1]}")
-                else:
-                    named_entities.append(token)
-        dedup_entities = list(dict.fromkeys(named_entities))[:4]
-        return {"keywords": keywords, "named_entities": dedup_entities}
-
-    # ------------------------------------------------------------------ #
-    #  Smart query builder — category-aware visual search queries         #
-    # ------------------------------------------------------------------ #
-
-    def _build_queries(
+    def _resolve_queries(
         self,
-        text: str,
+        intent: VisualIntent,
         scene_type: str,
-        keywords: list[str],
-        entities: list[str],
+        gemini_data: dict | None,
     ) -> list[str]:
-        banned = {"it", "this", "that", "they", "we", "you", "he", "she", ""}
+        # Priority 1: Gemini-provided queries (most precise)
+        if gemini_data:
+            raw = gemini_data.get("search_queries") or []
+            if isinstance(raw, list) and raw:
+                queries = [str(q).strip() for q in raw if str(q).strip()][:10]
+                if queries:
+                    return queries
 
-        if scene_type == "specific":
-            return self._build_specific_queries(text, keywords, entities, banned)
-        return self._build_general_queries(text, keywords, entities, banned)
+        # Priority 2: VisualIntent queries from heuristic extractor
+        if intent.search_queries:
+            return intent.search_queries[:10]
 
-    # -- SPECIFIC scenes → Brave Images (5-7 targeted queries) ---------- #
+        # Priority 3: Build from intent fields with global topic enrichment
+        subject = intent.primary_subject or "subject"
+        action = intent.action or ""
+        env = intent.environment or ""
+        global_topic = self.global_topic_info.get("main_topic", "")
+        context_phrases = self.global_topic_info.get("context_phrases", [])
 
-    def _build_specific_queries(
-        self, text: str, keywords: list[str], entities: list[str], banned: set[str],
-    ) -> list[str]:
-        # Core subject: prefer named entity, then cleaned script, then keywords.
-        subject = (
-            entities[0]
-            if entities
-            else _clean_subject(text) or " ".join(keywords[:3])
-        )
-        category = _detect_category(text.lower(), entities)
-
-        # Category-aware visual modifiers.
-        if category == "car":
-            modifiers = [
-                "photo", "front view", "exterior", "on road",
-                "side profile", "close up", "official press photo",
-            ]
-        elif category == "tech":
-            modifiers = [
-                "product photo", "official", "hands on", "close up",
-                "unboxing", "studio shot", "HD",
-            ]
-        elif category == "person":
-            modifiers = [
-                "portrait", "photo", "speaking", "press photo",
-                "high resolution", "official", "HD",
-            ]
-        elif category == "food":
-            modifiers = [
-                "photo", "close up", "plated", "top view",
-                "restaurant", "homemade", "HD",
-            ]
-        elif category == "place":
-            modifiers = [
-                "photo", "aerial view", "panorama", "landmark",
-                "travel", "scenic", "HD",
+        if scene_type in ("specific", "mixed"):
+            variants = [
+                # CRITICAL FIX: Always include global topic first for context
+                f"{global_topic} {subject}".strip() if global_topic and subject != global_topic else subject,
+                f"{subject} {action} {env}".strip(),
+                f"{subject} official photo",
+                f"{subject} high resolution",
+                f"{subject} {action}".strip() if action else f"{subject} front view",
+                f"{subject} {env}".strip() if env else f"{subject} exterior",
+                subject,
             ]
         else:
-            modifiers = [
-                "photo", "high quality", "close up", "HD",
-                "official image", "detailed", "professional",
+            mood = intent.mood or "cinematic"
+            variants = [
+                # For general scenes, still include global context
+                f"{global_topic} {action} {env} {mood}".strip() if global_topic else f"{action} {env} {mood}".strip(),
+                f"{action} {env} {mood}".strip(),
+                f"{env} {mood} b-roll".strip() if env else f"{mood} b-roll",
+                f"{subject} cinematic",
+                f"{subject}",
             ]
 
-        variants: list[str] = [subject]
-        for mod in modifiers:
-            variants.append(f"{subject} {mod}")
-            if len(variants) >= 7:
-                break
-
-        return [q.strip() for q in variants if q.strip().lower() not in banned][:7]
-
-    # -- GENERAL scenes → Pexels Videos (3-5 mood/aesthetic queries) ---- #
-
-    def _build_general_queries(
-        self, text: str, keywords: list[str], entities: list[str], banned: set[str],
-    ) -> list[str]:
-        # Build a compact topic phrase from content words.
-        topic = _clean_subject(text) if text else ""
-        if not topic:
-            topic = " ".join(keywords[:3])
-        # Shorten to avoid overly long Pexels queries (API works best ≤ 4 words).
-        topic_words = topic.split()[:4]
-        short_topic = " ".join(topic_words)
-
-        category = _detect_category(text.lower(), entities)
-
-        # Pick aesthetic modifiers that complement the topic category.
-        if category == "car":
-            extras = ["driving cinematic", "highway aerial", "car motion"]
-        elif category == "tech":
-            extras = ["technology modern", "digital abstract", "futuristic"]
-        elif category == "person":
-            extras = ["people lifestyle", "crowd cinematic", "portrait"]
-        elif category == "food":
-            extras = ["food preparation", "cooking cinematic", "ingredients"]
-        elif category == "place":
-            extras = ["aerial landscape", "travel cinematic", "scenic nature"]
-        else:
-            extras = ["cinematic", "aerial", "abstract motion"]
-
-        variants: list[str] = [short_topic]
-        for extra in extras:
-            variants.append(f"{short_topic} {extra}")
-        # Deduplicate and trim.
-        seen: set[str] = set()
-        out: list[str] = []
+        # Enrich with main_subject context if needed
+        enriched = []
         for q in variants:
             q = q.strip()
-            low = q.lower()
-            if low not in seen and low not in banned:
-                seen.add(low)
-                out.append(q)
-        return out[:5]
+            if not q:
+                continue
+            enriched.append(q)
+
+        # Add context phrases if available
+        if context_phrases:
+            for phrase in context_phrases[:2]:
+                enriched.append(f"{phrase} {subject}".strip() if subject else phrase)
+
+        # Dedupe
+        seen: set[str] = set()
+        result = []
+        for q in enriched:
+            if q.lower() not in seen:
+                seen.add(q.lower())
+                result.append(q)
+
+        return [q for q in result if len(q.split()) <= 12][:10]
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _scene_type_to_source(scene_type: str) -> MediaSource:
+    if scene_type == "specific":
+        return "brave_images"
+    if scene_type == "mixed":
+        return "mixed"
+    return "pexels_video"
+
+
+def _heuristic_keywords(text: str) -> list[str]:
+    stop_words = {
+        "the", "and", "for", "with", "this", "that", "from", "into", "then",
+        "when", "where", "your", "their", "have", "will", "about", "video",
+        "a", "an", "in", "on", "at", "to", "of", "is", "are", "was",
+    }
+    tokens = re.findall(r"[A-Za-z0-9][A-Za-z0-9\-]+", text)
+    return [t for t in tokens if t.lower() not in stop_words and len(t) > 2][:8]
