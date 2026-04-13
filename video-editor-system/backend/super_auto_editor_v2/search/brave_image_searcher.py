@@ -40,7 +40,11 @@ class BraveImageSearcher:
         self.timeout = timeout
         self._lock = threading.Lock()
         self._last_call_ts = 0.0
-        self._min_interval_sec = 0.20
+        self._min_interval_sec = 0.25
+        # Limit concurrent HTTP requests to 3 regardless of how many threads call us.
+        # Without this, 80+ parallel scenes all blast the API simultaneously → 429 storm
+        # → 4-retry backoff → each thread waits 30+ seconds → 10-minute hangs.
+        self._http_semaphore = threading.Semaphore(3)
 
     def search(self, query: str, count: int = 20) -> list[ImageCandidate]:
         if not query or len(query.strip()) < 3:
@@ -48,7 +52,8 @@ class BraveImageSearcher:
         cached = self.cache.load_search("brave", query)
         if cached:
             return self._parse(cached)
-        results = self._fetch_paginated(query=query, total_count=count)
+        with self._http_semaphore:   # cap to 3 concurrent HTTP calls
+            results = self._fetch_paginated(query=query, total_count=count)
         self.cache.save_search("brave", query, {"results": results})
         return self._parse({"results": results})
 
@@ -72,7 +77,7 @@ class BraveImageSearcher:
             if len(all_candidates) >= target_count:
                 break
 
-            raw = self.search(query, count=40)
+            raw = self.search(query, count=20)
 
             for candidate in raw:
                 if candidate.url in seen_urls:
@@ -106,7 +111,7 @@ class BraveImageSearcher:
 
     def _fetch_with_retry(self, query: str, count: int, offset: int = 0) -> dict[str, Any] | None:
         backoff = 1.0
-        for _ in range(4):
+        for _ in range(2):   # 2 retries max (was 4) — fail fast, move to next query
             try:
                 return self._fetch(query=query, count=count, offset=offset)
             except requests.HTTPError as e:
@@ -114,10 +119,10 @@ class BraveImageSearcher:
                 if status != 429:
                     raise
                 time.sleep(backoff)
-                backoff = min(backoff * 2, 8.0)
+                backoff = min(backoff * 2, 4.0)   # max 4s backoff (was 8s)
             except requests.RequestException:
                 time.sleep(backoff)
-                backoff = min(backoff * 2, 8.0)
+                backoff = min(backoff * 2, 4.0)
         return None
 
     def _fetch(self, query: str, count: int, offset: int = 0) -> dict[str, Any]:

@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-import subprocess
 import re
 import subprocess
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FutureTimeoutError
 from math import ceil
 import os
 from pathlib import Path
@@ -126,8 +125,15 @@ class ExportManager:
         if not media_blocks:
             return []
 
-        max_workers = max(1, min(8, os.cpu_count() or 4))
+        # 4 workers: enough to parallelise network+FFmpeg without blasting the Brave API.
+        # (The BraveImageSearcher._http_semaphore caps concurrent HTTP to 3 regardless.)
+        max_workers = max(1, min(4, os.cpu_count() or 4))
         self._log(f"Parallel media clip build — workers={max_workers}")
+
+        # Per-scene timeout: 90 s should cover the slowest legitimate Brave + FFmpeg job.
+        # Overall timeout: generous enough for 100+ scenes but prevents infinite hangs.
+        PER_SCENE_TIMEOUT = 90
+        OVERALL_TIMEOUT = max(len(media_blocks) * 15, 360)
 
         results: dict[int, tuple[float, float, Path]] = {}
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
@@ -135,14 +141,24 @@ class ExportManager:
                 ex.submit(self._build_media_overlay_clip, idx, block): idx
                 for idx, block in media_blocks
             }
-            for fut in as_completed(jobs):
-                idx = jobs[fut]
-                try:
-                    result = fut.result()
-                    if result is not None:
-                        results[idx] = result
-                except Exception as exc:
-                    self._log(f"Block {idx} failed: {exc}")
+            try:
+                for fut in as_completed(jobs, timeout=OVERALL_TIMEOUT):
+                    idx = jobs[fut]
+                    try:
+                        result = fut.result(timeout=PER_SCENE_TIMEOUT)
+                        if result is not None:
+                            results[idx] = result
+                    except FutureTimeoutError:
+                        self._log(f"Block {idx} timed out after {PER_SCENE_TIMEOUT}s — skipping")
+                    except Exception as exc:
+                        self._log(f"Block {idx} failed: {exc}")
+            except FutureTimeoutError:
+                self._log(
+                    f"Overall media-build timeout ({OVERALL_TIMEOUT}s) reached — "
+                    f"composing with {len(results)} completed clip(s)"
+                )
+                for fut in jobs:
+                    fut.cancel()
 
         # Return clips sorted by their timeline position
         return [results[i] for i in sorted(results.keys()) if i in results]
