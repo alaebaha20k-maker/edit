@@ -15,9 +15,9 @@ from super_auto_editor_v2.search.asset_ranker import calculate_relevance
 class BraveImageSearcher:
     BASE_URL = "https://api.search.brave.com/res/v1/images/search"
 
-    # Minimum dimension requirements for a usable image
-    MIN_WIDTH = 640
-    MIN_HEIGHT = 360
+    # Minimum dimension requirements — reject anything below 720p
+    MIN_WIDTH = 1280
+    MIN_HEIGHT = 720
 
     # URL patterns for trusted image CDNs (used as fallback when no extension)
     TRUSTED_CDN_PATTERNS = [
