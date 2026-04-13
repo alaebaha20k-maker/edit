@@ -24,11 +24,12 @@ from super_auto_editor_v2.models import VisualIntent
 # ---------------------------------------------------------------------------
 
 ACTION_VERBS: list[str] = [
+    # Only VISUAL actions — abstract/meta verbs excluded intentionally
+    # ("showing", "displaying", "presenting" produce nonsense queries like "truck showing")
     "driving", "walking", "running", "sitting", "standing",
-    "showing", "displaying", "presenting", "using", "holding",
-    "working", "typing", "talking", "looking", "riding",
-    "flying", "swimming", "cooking", "eating", "drinking",
-    "launching", "announcing", "demonstrating", "exploring",
+    "using", "holding", "working", "typing", "talking", "looking",
+    "riding", "flying", "swimming", "cooking", "eating", "drinking",
+    "launching", "demonstrating", "exploring",
     "building", "creating", "streaming", "playing",
 ]
 
@@ -109,14 +110,16 @@ def extract_visual_intent(text: str, global_topic: str = "") -> VisualIntent:
 
     primary_subject = _extract_primary_subject(text, words_lower, global_topic)
     subject_type = _detect_subject_type(primary_subject, words_lower)
-    action = _find_first(words_lower, ACTION_VERBS) or "showing"
+    action = _find_first(words_lower, ACTION_VERBS) or ""
     environment = _find_first(words_lower, ENVIRONMENT_WORDS) or ""
     mood = _find_first(words_lower, MOOD_WORDS) or "cinematic"
 
     must_show = _build_must_show(primary_subject, subject_type)
     must_avoid = list(AVOID_DEFAULTS)
 
-    search_queries = _build_initial_queries(primary_subject, subject_type, action, environment)
+    search_queries = _build_initial_queries(
+        primary_subject, subject_type, action, environment, global_topic
+    )
 
     return VisualIntent(
         primary_subject=primary_subject,
@@ -231,10 +234,16 @@ def _extract_primary_subject(text: str, words_lower: list[str], global_topic: st
         "old", "small", "big", "outdoor", "indoor", "exterior", "interior",
         "wraparound", "covered", "raised", "dramatic", "grand", "minimalist",
     }
-    # Common verbs to EXCLUDE (don't confuse verbs with nouns)
+    # Common verbs to EXCLUDE (don't confuse verbs with nouns).
+    # Includes 3rd-person singular forms (-s/-es) that look like nouns.
     common_verbs = {
         "provides", "creates", "features", "offers", "becomes", "seems",
         "appears", "stands", "shows", "includes", "contains", "requires",
+        # Motion / action verbs (present tense 3rd-person)
+        "drives", "rides", "runs", "walks", "flies", "swims", "talks",
+        "moves", "works", "plays", "builds", "makes", "takes", "gives",
+        "lives", "comes", "goes", "starts", "stops", "turns", "looks",
+        "brings", "keeps", "leads", "means", "needs", "puts", "sets",
     }
 
     # Convert to lowercase for pattern matching but preserve original case
@@ -305,22 +314,36 @@ def _build_initial_queries(
     subject_type: str,
     action: str,
     environment: str,
+    global_topic: str = "",
 ) -> list[str]:
+    # Enrich queries with global topic when subject is missing that context.
+    # e.g. subject="truck", global_topic="Ford F-150" → first query "Ford F-150 truck"
+    topic_adds_context = (
+        global_topic
+        and global_topic.lower() not in subject.lower()
+        and subject.lower() not in global_topic.lower()
+    )
+
     queries: list[str] = []
     if subject_type in ("product", "person", "place"):
         queries = [
+            # Global topic + subject as the most specific first query
+            f"{global_topic} {subject}".strip() if topic_adds_context else subject,
             f"{subject} official photo",
-            f"{subject} {action}" if action else f"{subject}",
-            f"{subject} {environment}" if environment else f"{subject} high resolution",
+            f"{subject} {action}".strip() if action else f"{subject} high resolution",
+            f"{subject} {environment}".strip() if environment else f"{subject} exterior",
             f"{subject} press photo",
             f"{subject}",
         ]
     else:
+        mood = "cinematic"
         queries = [
+            f"{global_topic} {subject} {action} {environment}".strip() if topic_adds_context
+            else f"{subject} {action} {environment}".strip(),
             f"{subject} {action} {environment}".strip(),
-            f"{subject} cinematic",
-            f"{action} {environment} cinematic b-roll".strip(),
-            f"{subject}",
+            f"{subject} {mood}",
+            f"{action} {environment} {mood} b-roll".strip(),
+            subject,
         ]
     return [q.strip() for q in queries if q.strip() and len(q.strip()) > 3][:8]
 
