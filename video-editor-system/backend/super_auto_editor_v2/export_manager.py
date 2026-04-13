@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import subprocess
 import re
+import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from math import ceil
 import os
@@ -29,6 +32,18 @@ from super_auto_editor_v2.timeline.timeline_builder import TimelineBuilder
 
 
 class ExportManager:
+    _CONCAT_STREAM_FIELDS = (
+        "codec_name",
+        "profile",
+        "level",
+        "width",
+        "height",
+        "pix_fmt",
+        "r_frame_rate",
+        "avg_frame_rate",
+        "time_base",
+    )
+
     def __init__(self, config: AppConfig):
         self.config = config
         self.cache = CacheManager(config.cache_dir)
