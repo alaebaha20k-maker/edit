@@ -19,13 +19,22 @@ from difflib import SequenceMatcher
 from super_auto_editor_v2.models import ImageCandidate, VideoCandidate, VisualIntent
 
 
-MIN_IMAGE_RELEVANCE = 0.08   # drop completely irrelevant images
+MIN_IMAGE_RELEVANCE = 0.25   # must have real word overlap to pass (was 0.08)
 MIN_VIDEO_RELEVANCE = 0.0    # videos use tag scores; keep all and sort
 
 DEFAULT_MUST_AVOID = [
-    "cartoon", "illustration", "anime", "drawing", "clipart",
-    "watermark", "vector", "icon", "logo", "avatar",
-    "1x1", "pixel", "thumbnail", "placeholder",
+    # Art / illustration
+    "cartoon", "illustration", "anime", "manga", "drawing", "clipart",
+    "vector", "sketch", "pixel art", "comic",
+    # Merchandise / print-on-demand (Brave returns these for ANY keyword)
+    "t-shirt", "tshirt", "hoodie", "sweatshirt", "tank top",
+    "sticker", "poster", "mug", "phone case", "pillow",
+    "merch", "merchandise", "redbubble", "teepublic", "zazzle",
+    "printful", "spreadshirt", "cafepress",
+    # Low quality signals
+    "watermark", "icon", "logo", "avatar", "badge",
+    "1x1", "pixel", "thumbnail", "placeholder", "emoji",
+    "low quality", "blurry", "stock photo watermark",
 ]
 
 
@@ -95,11 +104,11 @@ def rank_videos(
         avoid_hit = sum(1 for a in must_avoid if a.lower() in tag_words)
         relevance = max(0.0, relevance - avoid_hit * 0.15)
 
-        # Duration score: prefer 8-15s clips
+        # Duration score: prefer 15-20s clips (longer scenes look better)
         duration = c.duration
-        if 8 <= duration <= 15:
+        if 15 <= duration <= 20:
             dur_score = 1.0
-        elif 5 <= duration <= 20:
+        elif 10 <= duration <= 25:
             dur_score = 0.6
         else:
             dur_score = 0.2
@@ -167,10 +176,10 @@ def _calculate_relevance(
         similarity = SequenceMatcher(None, query_lower, snippet).ratio()
         score += similarity * 0.10
 
-    # 5. Must-avoid penalty
+    # 5. Must-avoid penalty — harsh so garbage never survives
     for term in must_avoid:
         if term.lower() in text:
-            score -= 0.12
+            score -= 0.30
 
     return max(0.0, min(1.0, score)), list(dict.fromkeys(matched))
 

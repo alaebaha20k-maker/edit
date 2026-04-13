@@ -102,6 +102,11 @@ def classify_scene_type(
     """
     Classify a script segment into 'specific', 'general', or 'mixed'.
 
+    RULE: Brave images are ONLY used for verified named entities — known brands,
+    named people, specific cities.  Everything else goes to Pexels video.
+    Generic nouns like "truck", "car", "building" are NEVER "specific" on their
+    own — they produce garbage from Brave (anime, t-shirts, merchandise).
+
     Parameters
     ----------
     text : str
@@ -112,70 +117,28 @@ def classify_scene_type(
         Optional subject type from VisualIntent ('product', 'person', etc.).
     """
     lower = text.lower()
-    words = re.findall(r"[A-Za-z0-9]+", text)
-    content_words = [w for w in words if w.lower() not in STOP_WORDS]
 
     # ------------------------------------------------------------------
-    # Priority 1: VisualIntent already determined subject type
+    # ONLY these two triggers make a scene "specific" (→ Brave images):
+    #   1. A KNOWN BRAND is literally in the text
+    #   2. A PRODUCT PATTERN regex fires (brand + model)
+    # Everything else → Pexels video ("general").
     # ------------------------------------------------------------------
-    if subject_type in ("product", "person", "place"):
-        # If there is also an action/environment word → mixed
-        has_env = any(env in lower for env in _ENVIRONMENT_WORDS)
-        if has_env:
-            return "mixed"
-        return "specific"
 
-    # ------------------------------------------------------------------
-    # Priority 2: Known brand appears in text
-    # ------------------------------------------------------------------
+    # Priority 1: Known brand appears in text → Brave is appropriate
     if _has_known_brand(lower):
         has_env = any(env in lower for env in _ENVIRONMENT_WORDS)
         return "mixed" if has_env else "specific"
 
-    # ------------------------------------------------------------------
-    # Priority 3: Product pattern regex
-    # ------------------------------------------------------------------
+    # Priority 2: Product pattern regex (brand+model like "F-150", "iPhone 15")
     for pattern in PRODUCT_PATTERNS:
         if re.search(pattern, text, re.IGNORECASE):
             has_env = any(env in lower for env in _ENVIRONMENT_WORDS)
             return "mixed" if has_env else "specific"
 
     # ------------------------------------------------------------------
-    # Priority 4: Named entity present
-    # ------------------------------------------------------------------
-    if entities:
-        return "specific"
-
-    # ------------------------------------------------------------------
-    # Priority 5: Quoted phrase (multi-word) → specific
-    # ------------------------------------------------------------------
-    quoted = re.findall(r'"([^"]+)"|\'([^\']+)\'', text)
-    flat_quoted = [q1 or q2 for q1, q2 in quoted]
-    if any(len(q.split()) >= 2 for q in flat_quoted):
-        return "specific"
-
-    # ------------------------------------------------------------------
-    # Priority 6: Title-case multi-word phrase (potential named entity)
-    # ------------------------------------------------------------------
-    title_phrases = re.findall(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b", text)
-    if title_phrases:
-        return "specific"
-
-    # ------------------------------------------------------------------
-    # Priority 7: Truly generic / abstract → general
-    # ------------------------------------------------------------------
-    word_set = {w.lower() for w in words}
-    if word_set & TRULY_GENERIC and not _has_known_brand(lower):
-        return "general"
-
-    # ------------------------------------------------------------------
-    # Priority 8: Very short, non-abstract segment → specific (safer)
-    # ------------------------------------------------------------------
-    if 1 <= len(content_words) <= 4:
-        return "specific"
-
-    # ------------------------------------------------------------------
-    # Default: lean general for long abstract sentences
+    # Everything else → Pexels video.  Generic nouns, abstract concepts,
+    # unnamed subjects all get better results from Pexels than Brave.
     # ------------------------------------------------------------------
     return "general"
 

@@ -27,11 +27,22 @@ class BraveImageSearcher:
         "motortrend.", "caranddriver.", "netcarshow.", "autoblog.",
     ]
 
-    # URL fragments that indicate icons / logos / tiny images
+    # URL fragments that indicate icons, logos, merchandise, or junk images.
+    # Brave returns anime/t-shirt/merch results for ANY generic keyword.
     BAD_URL_FRAGMENTS = [
+        # Low-quality markers
         "icon", "logo", "avatar", "thumbnail", "favicon",
         "1x1", "pixel", "placeholder", "badge", "emoji",
         "sprite", "button", "banner-small",
+        # Merchandise / print-on-demand sites
+        "redbubble", "teepublic", "zazzle", "spreadshirt", "cafepress",
+        "printful", "teespring", "merch", "merchandise",
+        "t-shirt", "tshirt", "hoodie", "sticker", "poster",
+        "phone-case", "phonecase", "mug", "pillow",
+        # Art / anime
+        "anime", "manga", "deviantart", "artstation", "pixiv",
+        "drawing", "illustration", "cartoon", "comic",
+        "wallpaper", "pinterest.com/pin",
     ]
 
     def __init__(self, api_key: str, cache: CacheManager, timeout: int = 10):
@@ -84,10 +95,10 @@ class BraveImageSearcher:
                     continue
                 seen_urls.add(candidate.url)
 
-                # Relevance gate
+                # Relevance gate — must have real word overlap, not just fuzzy similarity
                 text = f"{candidate.title} {candidate.url}"
                 relevance, _ = calculate_relevance(text, subject or query, must_show, must_avoid)
-                if relevance < 0.08:
+                if relevance < 0.25:
                     continue
 
                 candidate.relevance_score = relevance
