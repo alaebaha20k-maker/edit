@@ -48,7 +48,10 @@ MOOD_WORDS: list[str] = [
 ]
 
 AVOID_DEFAULTS: list[str] = [
-    "cartoon", "illustration", "anime", "drawing", "clipart",
+    "cartoon", "illustration", "anime", "manga", "drawing", "clipart",
+    "comic", "sketch", "vector", "pixel art",
+    "t-shirt", "tshirt", "hoodie", "sticker", "poster", "mug",
+    "merch", "merchandise", "phone case", "pillow",
     "low quality", "watermark", "blurry", "stock photo watermark",
 ]
 
