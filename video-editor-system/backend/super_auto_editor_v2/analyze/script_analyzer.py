@@ -102,20 +102,15 @@ class ScriptAnalyzer:
         else:
             visual_intent = heuristic_intent
 
-        # Step 3: classify scene type (uses VisualIntent + brand DB)
-        raw_scene_type = (
-            gemini_data.get("scene_type")
-            if gemini_data and gemini_data.get("scene_type") in ("specific", "general", "mixed")
-            else None
+        # Step 3: classify scene type
+        # IMPORTANT: Gemini's scene_type is NOT trusted for Brave routing.
+        # Only the classifier (which checks KNOWN_BRANDS) decides if Brave is used.
+        # This prevents Brave returning anime/t-shirts for generic nouns.
+        scene_type = classify_scene_type(
+            block.script_text,
+            visual_intent.must_show + [visual_intent.primary_subject],
+            subject_type=visual_intent.subject_type,
         )
-        if raw_scene_type:
-            scene_type = raw_scene_type
-        else:
-            scene_type = classify_scene_type(
-                block.script_text,
-                visual_intent.must_show + [visual_intent.primary_subject],
-                subject_type=visual_intent.subject_type,
-            )
 
         # Step 4: determine media source
         source: MediaSource = _scene_type_to_source(scene_type)

@@ -495,7 +495,7 @@ class ExportManager:
             query=self._sanitize_query(queries[0] if queries else ""),
             visual_intent=intent,
         )
-        best = next((v for v in ranked if 10 <= v.duration <= 15), ranked[0])
+        best = next((v for v in ranked if 15 <= v.duration <= 20), ranked[0])
         best_file = sorted(
             best.files, key=lambda f: abs(f.width - 1920) + abs(f.height - 1080)
         )[0]
