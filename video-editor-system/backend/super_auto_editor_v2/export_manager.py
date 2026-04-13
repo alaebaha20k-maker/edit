@@ -62,8 +62,16 @@ class ExportManager:
         output_path: Path,
         mode: str,
     ) -> Path:
+        """
+        Overlay architecture:
+          - Avatar video is the base layer — audio is NEVER touched
+          - Media clips are built in parallel and overlaid at their exact timestamps
+          - Single FFmpeg pass at the end using filter_complex overlay chain
+          - No avatar segmentation, no concat, no audio re-encode → perfect sync
+        """
         self._t0 = perf_counter()
         self.config.temp_dir.mkdir(parents=True, exist_ok=True)
+
         avatar_duration = self.ffmpeg.probe_duration(avatar_video)
         script_text = script_path.read_text(encoding="utf-8")
         self.script_analyzer.set_context(script_text)
@@ -71,54 +79,190 @@ class ExportManager:
         timeline = self.timeline_builder.load(timeline_path, script_text)
         self._log(f"Loaded timeline with {len(timeline)} blocks.")
 
-        segment_files = self._build_all_segments_parallel(timeline, avatar_video)
+        # Only build media blocks — avatar is left untouched as the base layer
+        media_blocks = [
+            (idx, block)
+            for idx, block in enumerate(timeline)
+            if block.type == "media"
+        ]
+        self._log(f"Building {len(media_blocks)} media overlay clips…")
 
-        video_only_raw = self.config.temp_dir / "video_only_raw.mp4"
-        self._log("Concatenating timeline segments…")
-        self._concat_segments(segment_files, video_only_raw)
-        video_only = self.config.temp_dir / "video_only.mp4"
-        self._fit_video_duration(video_only_raw, avatar_duration, video_only, avatar_video)
-        self._log("Muxing avatar audio to final output…")
-        self._mux_avatar_audio(avatar_video, video_only, output_path, mode, avatar_duration)
+        # Build all media clips in parallel
+        overlay_clips = self._build_media_clips_parallel(media_blocks)
+        # overlay_clips: list of (start_sec, end_sec, clip_path) sorted by start
+
+        self._log(
+            f"Composing final video with {len(overlay_clips)} overlay(s) "
+            f"over {avatar_duration:.2f}s avatar…"
+        )
+        self._compose_with_overlay(
+            avatar_video, overlay_clips, output_path, mode, avatar_duration
+        )
         self._log(f"Done. Output={output_path}")
         return output_path
 
     # ------------------------------------------------------------------
-    # Parallel segment builder
-    # SPEED FIX: increased max_workers from 4 → 8
+    # Parallel media clip builder
     # ------------------------------------------------------------------
 
-    def _build_all_segments_parallel(self, timeline, avatar_video: Path) -> list[Path]:
+    def _build_media_clips_parallel(
+        self, media_blocks: list[tuple[int, object]]
+    ) -> list[tuple[float, float, Path]]:
+        if not media_blocks:
+            return []
+
         max_workers = max(1, min(8, os.cpu_count() or 4))
-        self._log(f"Parallel segment build workers={max_workers}")
+        self._log(f"Parallel media clip build — workers={max_workers}")
+
+        results: dict[int, tuple[float, float, Path]] = {}
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
-            jobs = [
-                ex.submit(self._build_block, idx, block, avatar_video)
-                for idx, block in enumerate(timeline)
-            ]
-            outputs: dict[int, Path] = {}
+            jobs = {
+                ex.submit(self._build_media_overlay_clip, idx, block): idx
+                for idx, block in media_blocks
+            }
             for fut in as_completed(jobs):
-                idx, seg_path = fut.result()
-                outputs[idx] = seg_path
-        return [outputs[i] for i in sorted(outputs.keys())]
+                idx = jobs[fut]
+                try:
+                    result = fut.result()
+                    if result is not None:
+                        results[idx] = result
+                except Exception as exc:
+                    self._log(f"Block {idx} failed: {exc}")
 
-    def _build_block(self, idx: int, block, avatar_video: Path) -> tuple[int, Path]:
-        seg_path = self.config.temp_dir / f"seg_{idx:04d}.mp4"
+        # Return clips sorted by their timeline position
+        return [results[i] for i in sorted(results.keys()) if i in results]
+
+    def _build_media_overlay_clip(
+        self, idx: int, block: object
+    ) -> tuple[float, float, Path] | None:
         self._log(
-            f"Build block {idx}: type={block.type} "
-            f"start={block.start:.2f} end={block.end:.2f}"
+            f"Build media clip {idx}: "
+            f"start={block.start:.2f}s  end={block.end:.2f}s  "
+            f"duration={block.duration:.2f}s"
         )
-        if block.type == "avatar":
-            self._build_avatar_segment(avatar_video, block.start, block.duration, seg_path)
-            return idx, seg_path
-        media_segment = self._build_media_segment(block, idx)
-        return idx, media_segment
+        try:
+            clip_path = self._build_media_segment(block, idx)
+            return (block.start, block.end, clip_path)
+        except Exception as exc:
+            self._log(f"Media clip {idx} failed ({exc}), using neutral fallback")
+            try:
+                fallback = self._build_neutral_fallback(idx, block.duration)
+                return (block.start, block.end, fallback)
+            except Exception:
+                return None
 
     # ------------------------------------------------------------------
-    # Media segment dispatch
+    # Single-pass FFmpeg overlay composition
     # ------------------------------------------------------------------
 
-    def _build_media_segment(self, block, scene_idx: int) -> Path:
+    def _compose_with_overlay(
+        self,
+        avatar_video: Path,
+        overlay_clips: list[tuple[float, float, Path]],
+        output_path: Path,
+        mode: str,
+        avatar_duration: float,
+    ) -> None:
+        """
+        Build the final video in a single FFmpeg call:
+          - [0:v] is the full avatar video (base layer)
+          - [1:v] … [N:v] are pre-built media clips (overlay layers)
+          - Each clip is offset to its timeline position via setpts=PTS+START/TB
+          - Overlays are chained: base → c0 → c1 … → vout
+          - Audio is ALWAYS stream-copied from the avatar (0:a:0), zero drift
+        """
+        profile = self.config.profiles.get(mode, self.config.profiles["ultra_fast_draft"])
+
+        if not overlay_clips:
+            self._log("No media clips — transcoding avatar directly with render profile…")
+            encode_args = ["-preset", profile.preset, "-crf", str(profile.crf)]
+            if profile.tune:
+                encode_args += ["-tune", profile.tune]
+            self.ffmpeg.run([
+                "-i", str(avatar_video),
+                "-c:v", "libx264",
+                *encode_args,
+                "-pix_fmt", "yuv420p",
+                "-r", str(self.config.fps),
+                "-c:a", "copy",
+                "-t", f"{avatar_duration:.3f}",
+                "-movflags", "+faststart",
+                str(output_path),
+            ])
+            return
+
+        # --- Build the argument list ----------------------------------------
+        args: list[str] = ["-i", str(avatar_video)]
+        for _, _, clip_path in overlay_clips:
+            args += ["-i", str(clip_path)]
+
+        # --- filter_complex ---------------------------------------------------
+        W = self.config.resolution_w
+        H = self.config.resolution_h
+        FPS = self.config.fps
+        filter_parts: list[str] = []
+
+        # 1. Normalise the base (avatar) video
+        filter_parts.append(
+            f"[0:v]scale={W}:{H}:force_original_aspect_ratio=decrease,"
+            f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,"
+            f"fps={FPS},format=yuv420p"
+            f"[base]"
+        )
+
+        # 2. Normalise each media clip and offset its PTS to timeline position
+        for i, (start, _end, _path) in enumerate(overlay_clips):
+            # scale → match resolution; setpts offsets timestamps so the clip
+            # "appears" at the correct position in the output timeline
+            filter_parts.append(
+                f"[{i + 1}:v]"
+                f"scale={W}:{H}:force_original_aspect_ratio=decrease,"
+                f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,"
+                f"fps={FPS},format=yuv420p,"
+                f"setpts=PTS+{start:.3f}/TB"
+                f"[c{i}]"
+            )
+
+        # 3. Chain overlay filters — each clip is active only within its window
+        prev = "base"
+        for i, (start, end, _path) in enumerate(overlay_clips):
+            out_label = "vout" if i == len(overlay_clips) - 1 else f"v{i}"
+            # eof_action=pass: when the clip runs out, fall through to base
+            filter_parts.append(
+                f"[{prev}][c{i}]"
+                f"overlay=x=0:y=0"
+                f":enable='between(t,{start:.3f},{end:.3f})'"
+                f":eof_action=pass"
+                f"[{out_label}]"
+            )
+            prev = out_label
+
+        filter_complex = ";".join(filter_parts)
+
+        encode_args = ["-preset", profile.preset, "-crf", str(profile.crf)]
+        if profile.tune:
+            encode_args += ["-tune", profile.tune]
+
+        args += [
+            "-filter_complex", filter_complex,
+            "-map", "[vout]",           # composed video
+            "-map", "0:a:0",            # original avatar audio — NEVER re-encoded
+            "-c:v", "libx264",
+            *encode_args,
+            "-pix_fmt", "yuv420p",
+            "-r", str(FPS),
+            "-c:a", "copy",             # stream copy → zero drift, perfect sync
+            "-t", f"{avatar_duration:.3f}",
+            "-movflags", "+faststart",
+            str(output_path),
+        ]
+        self.ffmpeg.run(args)
+
+    # ------------------------------------------------------------------
+    # Media segment dispatch  (unchanged logic, now returns overlay clip)
+    # ------------------------------------------------------------------
+
+    def _build_media_segment(self, block: object, scene_idx: int) -> Path:
         analysis = self.script_analyzer.analyze(block)
         intent = analysis.visual_intent
 
@@ -129,7 +273,6 @@ class ExportManager:
             f"queries={analysis.search_queries[:2]}"
         )
 
-        # Build refined query list using QueryBuilder
         if intent:
             refined_queries = self.query_builder.build(
                 intent, analysis.scene_type, max_queries=10
@@ -208,8 +351,11 @@ class ExportManager:
                 f"Scene {scene_idx}: Brave returned no images, trying Pexels fallback."
             )
             try:
-                pexels_q = [queries[0] if queries else "cinematic scene",
-                            "cinematic b-roll", "atmospheric footage"]
+                pexels_q = [
+                    queries[0] if queries else "cinematic scene",
+                    "cinematic b-roll",
+                    "atmospheric footage",
+                ]
                 return self._build_from_pexels(scene_idx, duration, pexels_q, intent)
             except Exception:
                 return self._build_neutral_fallback(scene_idx, duration)
@@ -234,8 +380,10 @@ class ExportManager:
         )
         must_show = intent.must_show if intent else []
         must_avoid = intent.must_avoid if intent else []
-        ranked_imgs = rank_images(img_candidates, query=queries[0],
-                                  must_show=must_show, must_avoid=must_avoid)
+        ranked_imgs = rank_images(
+            img_candidates, query=queries[0],
+            must_show=must_show, must_avoid=must_avoid,
+        )
 
         img_tasks = [
             {
@@ -261,10 +409,14 @@ class ExportManager:
             visual_intent=intent,
         )
 
+        vid_assets: list[DownloadedAsset] = []
         if ranked_vids:
-            best_vid = next((v for v in ranked_vids if 5 <= v.duration <= 20), ranked_vids[0])
+            best_vid = next(
+                (v for v in ranked_vids if 5 <= v.duration <= 20), ranked_vids[0]
+            )
             best_file = sorted(
-                best_vid.files, key=lambda f: abs(f.width - 1920) + abs(f.height - 1080)
+                best_vid.files,
+                key=lambda f: abs(f.width - 1920) + abs(f.height - 1080),
             )[0]
             vid_assets = self.downloader.download_many([
                 {
@@ -276,8 +428,6 @@ class ExportManager:
                     "metadata": {"width": best_file.width, "height": best_file.height},
                 }
             ])
-        else:
-            vid_assets = []
 
         if not img_assets and not vid_assets:
             return self._build_neutral_fallback(scene_idx, duration)
@@ -362,7 +512,18 @@ class ExportManager:
         timeline_clips = [clips[i % len(clips)] for i in range(needed)]
 
         if len(timeline_clips) == 1:
-            return timeline_clips[0]
+            # Single clip: trim to exact duration and return
+            trimmed = self.config.temp_dir / f"scene_{scene_idx}_images_trimmed.mp4"
+            self.ffmpeg.run([
+                "-i", str(timeline_clips[0]),
+                "-t", f"{duration:.3f}",
+                "-an",
+                "-c:v", "libx264",
+                "-preset", "ultrafast",
+                "-crf", "28",
+                str(trimmed),
+            ])
+            return trimmed
 
         self.video_builder.concat_image_clips(timeline_clips, scene_path)
         trimmed = self.config.temp_dir / f"scene_{scene_idx}_images_trimmed.mp4"
@@ -386,6 +547,7 @@ class ExportManager:
         return " ".join(words[:max_words]).strip()
 
     def _build_neutral_fallback(self, scene_idx: int, duration: float) -> Path:
+        """Dark frame clip used when all media sources fail."""
         out = self.config.temp_dir / f"scene_{scene_idx}_fallback.mp4"
         self.ffmpeg.run([
             "-f", "lavfi",
@@ -402,178 +564,3 @@ class ExportManager:
             str(out),
         ])
         return out
-
-    # SPEED + SYNC FIX: Stream copy when possible, minimal re-encode as fallback
-    def _build_avatar_segment(
-        self, avatar_video: Path, start: float, duration: float, out_path: Path
-    ) -> None:
-        """
-        SPEED FIX: Try stream copy first (instant, no quality loss, perfect sync).
-        Falls back to re-encode only if stream copy fails.
-        """
-        # Attempt 1: stream copy (10-100x faster, preserves exact timing)
-        try:
-            self.ffmpeg.run([
-                "-ss", f"{start:.3f}",
-                "-i", str(avatar_video),
-                "-t", f"{duration:.3f}",
-                "-c:v", "copy",
-                "-an",
-                str(out_path),
-            ])
-            return
-        except Exception:
-            pass  # Fall through to re-encode
-
-        # Attempt 2: re-encode fallback (lower CRF=18 for better face quality)
-        self.ffmpeg.run([
-            "-ss", f"{start:.3f}",
-            "-t", f"{duration:.3f}",
-            "-i", str(avatar_video),
-            "-an",
-            "-vf", (
-                f"scale={self.config.resolution_w}:{self.config.resolution_h},"
-                f"fps={self.config.fps}"
-            ),
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-crf", "18",
-            str(out_path),
-        ])
-
-    def _concat_segments(self, segments: list[Path], out_path: Path) -> None:
-        """
-        SPEED FIX: Try stream copy concat first (instant).
-        Falls back to re-encode only when codecs differ.
-        """
-        filelist = self.config.temp_dir / "segments.txt"
-        filelist.write_text(
-            "\n".join(f"file '{s.as_posix()}'" for s in segments),
-            encoding="utf-8",
-        )
-
-        # Attempt 1: stream copy (instant, no quality loss)
-        try:
-            self.ffmpeg.run([
-                "-f", "concat", "-safe", "0", "-i", str(filelist),
-                "-c", "copy",
-                "-an",
-                str(out_path),
-            ])
-            return
-        except Exception:
-            pass  # Fall through to re-encode
-
-        # Attempt 2: forced re-encode (compatible with all segment types)
-        self.ffmpeg.run([
-            "-f", "concat", "-safe", "0", "-i", str(filelist),
-            "-an",
-            "-vf", f"fps={self.config.fps},format=yuv420p",
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-tune", "fastdecode",
-            "-crf", "28",
-            str(out_path),
-        ])
-
-    def _fit_video_duration(
-        self,
-        video_in: Path,
-        target_duration: float,
-        out_path: Path,
-        avatar_video: Path,
-    ) -> None:
-        current = self.ffmpeg.probe_duration(video_in)
-        gap = target_duration - current
-        if gap > 0.2:
-            filler = self.config.temp_dir / "video_tail_filler.mp4"
-            self._build_avatar_segment(avatar_video, current, gap, filler)
-            list_file = self.config.temp_dir / "fit_concat.txt"
-            list_file.write_text(
-                "\n".join([
-                    f"file '{video_in.as_posix()}'",
-                    f"file '{filler.as_posix()}'",
-                ]),
-                encoding="utf-8",
-            )
-            # Try stream copy first for speed
-            try:
-                self.ffmpeg.run([
-                    "-f", "concat", "-safe", "0", "-i", str(list_file),
-                    "-c", "copy",
-                    "-an",
-                    "-t", f"{target_duration:.3f}",
-                    str(out_path),
-                ])
-                return
-            except Exception:
-                pass
-
-            self.ffmpeg.run([
-                "-f", "concat", "-safe", "0", "-i", str(list_file),
-                "-an",
-                "-vf", f"fps={self.config.fps},format=yuv420p",
-                "-c:v", "libx264",
-                "-preset", "ultrafast",
-                "-crf", "28",
-                "-t", f"{target_duration:.3f}",
-                str(out_path),
-            ])
-            return
-
-        # Simple trim — try stream copy first
-        try:
-            self.ffmpeg.run([
-                "-i", str(video_in),
-                "-t", f"{target_duration:.3f}",
-                "-c", "copy",
-                "-an",
-                str(out_path),
-            ])
-            return
-        except Exception:
-            pass
-
-        self.ffmpeg.run([
-            "-i", str(video_in),
-            "-t", f"{target_duration:.3f}",
-            "-an",
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-crf", "28",
-            str(out_path),
-        ])
-
-    def _mux_avatar_audio(
-        self,
-        avatar_video: Path,
-        video_only: Path,
-        output: Path,
-        mode: str,
-        target_duration: float,
-    ) -> None:
-        """
-        SYNC FIX: Use -c:a copy (stream copy) so audio is NEVER re-encoded.
-        Re-encoding audio shifts timestamps by tiny amounts that accumulate
-        across the pipeline and cause lips to go out of sync.
-        -shortest ensures we don't pad or cut when durations differ slightly.
-        -avoid_negative_ts make_zero + -fflags +genpts fixes any stale timestamps.
-        """
-        profile = self.config.profiles.get(mode, self.config.profiles["ultra_fast_draft"])
-        self.ffmpeg.run([
-            "-i", str(video_only),
-            "-i", str(avatar_video),
-            "-map", "0:v:0",          # assembled video track
-            "-map", "1:a:0",          # ORIGINAL avatar audio (untouched)
-            "-c:v", "libx264",
-            "-preset", profile.preset,
-            "-crf", str(profile.crf),
-            "-pix_fmt", "yuv420p",
-            "-r", str(self.config.fps),
-            "-c:a", "copy",           # STREAM COPY — perfect sync, no drift
-            "-shortest",              # end when shorter stream ends
-            "-avoid_negative_ts", "make_zero",
-            "-fflags", "+genpts",
-            "-movflags", "+faststart",
-            str(output),
-        ])

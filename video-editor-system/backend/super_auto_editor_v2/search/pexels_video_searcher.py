@@ -66,7 +66,7 @@ class PexelsVideoSearcher:
         for item in payload.get("videos", []):
             files = []
             for vfile in item.get("video_files", []):
-                if int(vfile.get("width", 0) or 0) < 640:
+                if int(vfile.get("width", 0) or 0) < 1280:
                     continue
                 files.append(
                     VideoFileVariant(
