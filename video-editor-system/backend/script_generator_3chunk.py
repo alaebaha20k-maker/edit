@@ -337,11 +337,23 @@ class ScriptGenerator3Chunk:
         outline_format = ""
         for i in range(1, total_chunks + 1):
             role = chunk_roles.get(i, "BODY / DEVELOPMENT")
+            if i == total_chunks:
+                closing_extra = (
+                    f"CLOSING RULES (mandatory for this chunk):\n"
+                    f"  - Every step must BUILD toward the CTA — no new tangents, no new examples left unfinished.\n"
+                    f"  - Use the formula's EXACT closing technique (emotional payoff, final takeaway, or summary beat).\n"
+                    f"  - The last step before CTA must deliver the CLIMAX promised by the title.\n"
+                    f"  - Final step = the exact CTA from the formula (copy verbatim).\n"
+                    f"  - The script MUST feel 100%% complete — no trailing thoughts, no mid-sentence cuts.\n"
+                )
+            else:
+                closing_extra = ""
             outline_format += (
                 f"<chunk_{i}_sections>which formula sections go in chunk {i} (pipe-separated)</chunk_{i}_sections>\n"
                 f"<chunk_{i}_outline>\n"
                 f"STEP-BY-STEP writing recipe for Chunk {i} ({role}), 100% specific to title \"{title}\".\n"
                 f"For each step: STEP N — what to write | TECHNIQUE — formula rule | MANDATORY — verbatim phrase\n"
+                f"{closing_extra}"
                 f"</chunk_{i}_outline>\n\n"
             )
 
@@ -475,6 +487,17 @@ Output the following XML structure. Do NOT add markdown or code blocks.
         outline_format = ""
         for i in range(1, total_chunks + 1):
             role = chunk_roles.get(i, "BODY / DEVELOPMENT")
+            if i == total_chunks:
+                closing_extra = (
+                    f"CLOSING RULES (mandatory for this chunk):\n"
+                    f"  - Every step must BUILD toward the CTA — no new tangents, no unfinished examples.\n"
+                    f"  - Use the formula's EXACT closing technique (emotional payoff, summary beat, final takeaway).\n"
+                    f"  - The last body step must deliver the CLIMAX promised by the title.\n"
+                    f"  - Final step = copy the exact CTA phrase from the Writing Guidelines VERBATIM.\n"
+                    f"  - The script MUST feel 100%% complete — every sentence finished, no trailing thoughts.\n"
+                )
+            else:
+                closing_extra = ""
             outline_format += (
                 f"<chunk_{i}_sections>which formula sections go in chunk {i} (pipe-separated)</chunk_{i}_sections>\n"
                 f"<chunk_{i}_outline>\n"
@@ -486,6 +509,7 @@ Output the following XML structure. Do NOT add markdown or code blocks.
                 f"  MANDATORY – any required phrase from guidelines (copy VERBATIM)\n"
                 f"  TRANSITION – how to move to the next step\n"
                 f"Do NOT say 'follow the guidelines'. Write the actual recipe.\n"
+                f"{closing_extra}"
                 f"</chunk_{i}_outline>\n\n"
             )
 
@@ -901,8 +925,20 @@ OUTPUT FORMAT — strict:
                 f"Then STOP. Nothing after. Not one word.\n"
             )
             role_note = (
-                f"FINAL CHUNK — write closing + CTA per the Writing Guidelines.\n"
-                f"After CTA: STOP immediately. The payoff is complete."
+                f"FINAL CHUNK — CLOSING + CTA. Apply the niche formula's EXACT closing technique.\n"
+                f"\n"
+                f"MANDATORY CLOSING RULES:\n"
+                f"  1. BUILD with momentum — every sentence escalates toward the CTA. Zero loose tangents.\n"
+                f"  2. Use the formula's specific closing structure: emotional payoff / summary beat / final takeaway.\n"
+                f"  3. COMPLETE every sentence you start — no trailing thoughts, no mid-sentence cuts, no half-finished ideas.\n"
+                f"  4. The paragraph before the CTA = the CLIMAX the title promised. Deliver it fully.\n"
+                f"  5. CTA must be EXACTLY: '{cta_action}' — copy verbatim from your Writing Guidelines.\n"
+                f"  6. After the CTA: STOP. No 'and that's all', no new topic, no extra line.\n"
+                f"\n"
+                f"FORBIDDEN in this chunk: introducing a new topic you won't finish, "
+                f"summarising in vague filler phrases ('and that's all for today', 'so there you have it'), "
+                f"repeating points already made, ending on a question without answering it.\n"
+                f"The viewer must finish this script feeling the journey is 100%% complete."
             )
         else:
             stop_instruction = ""
