@@ -16,6 +16,7 @@ class TimelineBlock:
     start: float
     end: float
     script_text: str = ""
+    hook: bool = False   # True for the 0-3s hook media block (global topic, max impact)
 
     @property
     def duration(self) -> float:
