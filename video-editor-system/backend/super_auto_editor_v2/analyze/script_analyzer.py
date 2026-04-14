@@ -180,7 +180,7 @@ class ScriptAnalyzer:
         )
 
         try:
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            model = genai.GenerativeModel("gemini-2.5-flash")
             resp = model.generate_content(prompt)
             raw = (resp.text or "").strip()
             # Extract JSON array
@@ -305,7 +305,7 @@ class ScriptAnalyzer:
             return None
         prompt = _GEMINI_PROMPT_TEMPLATE.format(text=text)
         try:
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            model = genai.GenerativeModel("gemini-2.5-flash")
             resp = model.generate_content(prompt)
             raw = (resp.text or "").strip()
             start = raw.find("{")
