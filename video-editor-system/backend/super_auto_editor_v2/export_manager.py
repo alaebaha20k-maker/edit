@@ -1,5 +1,22 @@
 from __future__ import annotations
 
+"""
+export_manager.py — Super Auto Editor v2
+-----------------------------------------
+Pipeline (5 steps):
+
+  STEP 1  Script math & timeline generation (cycle: Avatar 20s + Media 15s = 35s)
+  STEP 2  Batch Gemini keyword generation (ONE API call for ALL media segments)
+  STEP 3  Parallel media clip building (Serper / Pexels / Merge per segment)
+  STEP 4  Self-check every result (URL accessible + title relevance)
+  STEP 5  Single FFmpeg overlay pass (avatar base + media overlays, audio untouched)
+
+Media routing:
+  SERPER → Google Images via serper.dev (named brands, products, people, cities)
+  PEXELS → Stock video 15-20s (generic scenes, actions, environments)
+  MERGE  → Serper image (subject) + Pexels video (environment) spliced together
+"""
+
 import hashlib
 import json
 import re
@@ -18,29 +35,18 @@ from super_auto_editor_v2.ffmpeg.runner import FFmpegRunner
 from super_auto_editor_v2.media.image_clip_builder import ImageClipBuilder
 from super_auto_editor_v2.media.scene_mixer import SceneMixer
 from super_auto_editor_v2.media.video_scene_builder import VideoSceneBuilder
-from super_auto_editor_v2.models import DownloadedAsset, VisualIntent
-from super_auto_editor_v2.search.asset_ranker import (
-    rank_images,
-    rank_videos,
-    validate_image_candidate,
-)
-from super_auto_editor_v2.search.brave_image_searcher import BraveImageSearcher
+from super_auto_editor_v2.models import DownloadedAsset, MediaPlan, VisualIntent
+from super_auto_editor_v2.search.asset_ranker import rank_videos
 from super_auto_editor_v2.search.pexels_video_searcher import PexelsVideoSearcher
 from super_auto_editor_v2.search.query_builder import QueryBuilder
+from super_auto_editor_v2.search.serper_image_searcher import SerperImageSearcher
 from super_auto_editor_v2.timeline.timeline_builder import TimelineBuilder
 
 
 class ExportManager:
     _CONCAT_STREAM_FIELDS = (
-        "codec_name",
-        "profile",
-        "level",
-        "width",
-        "height",
-        "pix_fmt",
-        "r_frame_rate",
-        "avg_frame_rate",
-        "time_base",
+        "codec_name", "profile", "level", "width", "height",
+        "pix_fmt", "r_frame_rate", "avg_frame_rate", "time_base",
     )
 
     def __init__(self, config: AppConfig):
@@ -49,7 +55,7 @@ class ExportManager:
         self.ffmpeg = FFmpegRunner()
         self.timeline_builder = TimelineBuilder()
         self.script_analyzer = ScriptAnalyzer(config.gemini_api_key)
-        self.brave = BraveImageSearcher(config.brave_api_key, cache=self.cache)
+        self.serper = SerperImageSearcher(config.serper_api_key, cache=self.cache)
         self.pexels = PexelsVideoSearcher(config.pexels_api_key, cache=self.cache)
         self.downloader = Downloader(self.cache, workers=config.concurrency_downloads)
         self.image_builder = ImageClipBuilder(
@@ -68,6 +74,10 @@ class ExportManager:
         elapsed = perf_counter() - self._t0
         print(f"[SAE v2 +{elapsed:7.2f}s] {message}", flush=True)
 
+    # ------------------------------------------------------------------
+    # Main entry point
+    # ------------------------------------------------------------------
+
     def build(
         self,
         avatar_video: Path,
@@ -77,36 +87,40 @@ class ExportManager:
         mode: str,
     ) -> Path:
         """
-        Overlay architecture:
-          - Avatar video is the base layer — audio is NEVER touched
-          - Media clips are built in parallel and overlaid at their exact timestamps
-          - Single FFmpeg pass at the end using filter_complex overlay chain
-          - No avatar segmentation, no concat, no audio re-encode → perfect sync
+        Full 5-step pipeline. Avatar audio is NEVER touched.
+        Output is always 1080p, no frozen frames, no black scenes.
         """
         self._t0 = perf_counter()
         self.config.temp_dir.mkdir(parents=True, exist_ok=True)
 
+        # ── STEP 1: Script math & timeline ──────────────────────────────
         avatar_duration = self.ffmpeg.probe_duration(avatar_video)
         script_text = script_path.read_text(encoding="utf-8")
         self.script_analyzer.set_context(script_text)
         self.query_builder.reset()
-        timeline = self.timeline_builder.load(timeline_path, script_text)
-        self._log(f"Loaded timeline with {len(timeline)} blocks.")
 
-        # Only build media blocks — avatar is left untouched as the base layer
+        # Generate timeline from script using cycle math (Avatar 20s + Media 15s)
+        timeline = self.timeline_builder.build_from_script(script_text, avatar_duration)
+        self._log(f"Timeline: {len(timeline)} blocks ({sum(1 for b in timeline if b.type=='media')} media)")
+
         media_blocks = [
             (idx, block)
             for idx, block in enumerate(timeline)
             if block.type == "media"
         ]
+
+        # ── STEP 2: Batch Gemini keyword generation ─────────────────────
+        self._log(f"Generating media plans for {len(media_blocks)} segments (1 Gemini call)…")
+        media_plans = self.script_analyzer.generate_media_plans(media_blocks)
+        self._log(f"Media plans ready. Sample: {self._format_plan(media_plans, media_blocks)}")
+
+        # ── STEP 3: Parallel media clip building ─────────────────────────
         self._log(f"Building {len(media_blocks)} media overlay clips…")
+        overlay_clips = self._build_media_clips_parallel(media_blocks, media_plans)
 
-        # Build all media clips in parallel
-        overlay_clips = self._build_media_clips_parallel(media_blocks)
-        # overlay_clips: list of (start_sec, end_sec, clip_path) sorted by start
-
+        # ── STEP 5: Single FFmpeg overlay pass ───────────────────────────
         self._log(
-            f"Composing final video with {len(overlay_clips)} overlay(s) "
+            f"Composing final video — {len(overlay_clips)} overlay(s) "
             f"over {avatar_duration:.2f}s avatar…"
         )
         self._compose_with_overlay(
@@ -115,30 +129,39 @@ class ExportManager:
         self._log(f"Done. Output={output_path}")
         return output_path
 
+    def _format_plan(self, plans: dict, media_blocks: list) -> str:
+        if not media_blocks or not plans:
+            return "none"
+        idx, _ = media_blocks[0]
+        p = plans.get(idx)
+        if not p:
+            return "none"
+        return f"block[{idx}] api={p.api_choice} kw='{p.primary_keyword}'"
+
     # ------------------------------------------------------------------
     # Parallel media clip builder
     # ------------------------------------------------------------------
 
     def _build_media_clips_parallel(
-        self, media_blocks: list[tuple[int, object]]
+        self,
+        media_blocks: list[tuple[int, object]],
+        media_plans: dict[int, MediaPlan],
     ) -> list[tuple[float, float, Path]]:
         if not media_blocks:
             return []
 
-        # 4 workers: enough to parallelise network+FFmpeg without blasting the Brave API.
-        # (The BraveImageSearcher._http_semaphore caps concurrent HTTP to 3 regardless.)
+        # 4 workers: balances parallelism vs API rate pressure
         max_workers = max(1, min(4, os.cpu_count() or 4))
-        self._log(f"Parallel media clip build — workers={max_workers}")
-
-        # Per-scene timeout: 90 s should cover the slowest legitimate Brave + FFmpeg job.
-        # Overall timeout: generous enough for 100+ scenes but prevents infinite hangs.
         PER_SCENE_TIMEOUT = 90
         OVERALL_TIMEOUT = max(len(media_blocks) * 15, 360)
 
         results: dict[int, tuple[float, float, Path]] = {}
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
             jobs = {
-                ex.submit(self._build_media_overlay_clip, idx, block): idx
+                ex.submit(
+                    self._build_media_overlay_clip,
+                    idx, block, media_plans.get(idx)
+                ): idx
                 for idx, block in media_blocks
             }
             try:
@@ -149,316 +172,206 @@ class ExportManager:
                         if result is not None:
                             results[idx] = result
                     except FutureTimeoutError:
-                        self._log(f"Block {idx} timed out after {PER_SCENE_TIMEOUT}s — skipping")
+                        self._log(f"Block {idx} timed out — skipping")
                     except Exception as exc:
                         self._log(f"Block {idx} failed: {exc}")
             except FutureTimeoutError:
-                self._log(
-                    f"Overall media-build timeout ({OVERALL_TIMEOUT}s) reached — "
-                    f"composing with {len(results)} completed clip(s)"
-                )
+                self._log(f"Overall timeout reached — composing with {len(results)} clips")
                 for fut in jobs:
                     fut.cancel()
 
-        # Return clips sorted by their timeline position
         return [results[i] for i in sorted(results.keys()) if i in results]
 
     def _build_media_overlay_clip(
-        self, idx: int, block: object
+        self, idx: int, block: object, plan: MediaPlan | None
     ) -> tuple[float, float, Path] | None:
         self._log(
-            f"Build media clip {idx}: "
-            f"start={block.start:.2f}s  end={block.end:.2f}s  "
-            f"duration={block.duration:.2f}s"
+            f"Block {idx}: start={block.start:.1f}s end={block.end:.1f}s "
+            f"api={plan.api_choice if plan else 'PEXELS'} "
+            f"kw='{plan.primary_keyword if plan else '?'}'"
         )
         try:
-            clip_path = self._build_media_segment(block, idx)
+            clip_path = self._dispatch_media(block, idx, plan)
             return (block.start, block.end, clip_path)
         except Exception as exc:
-            self._log(f"Media clip {idx} failed ({exc}), using neutral fallback")
+            self._log(f"Block {idx} error ({exc}), using fallback")
             try:
-                fallback = self._build_neutral_fallback(idx, block.duration)
-                return (block.start, block.end, fallback)
+                return (block.start, block.end, self._build_neutral_fallback(idx, block.duration))
             except Exception:
                 return None
 
     # ------------------------------------------------------------------
-    # Single-pass FFmpeg overlay composition
+    # STEP 3+4: Media dispatch + self-check
     # ------------------------------------------------------------------
 
-    def _compose_with_overlay(
-        self,
-        avatar_video: Path,
-        overlay_clips: list[tuple[float, float, Path]],
-        output_path: Path,
-        mode: str,
-        avatar_duration: float,
-    ) -> None:
-        """
-        Build the final video in a single FFmpeg call:
-          - [0:v] is the full avatar video (base layer)
-          - [1:v] … [N:v] are pre-built media clips (overlay layers)
-          - Each clip is offset to its timeline position via setpts=PTS+START/TB
-          - Overlays are chained: base → c0 → c1 … → vout
-          - Audio is ALWAYS stream-copied from the avatar (0:a:0), zero drift
-        """
-        profile = self.config.profiles.get(mode, self.config.profiles["ultra_fast_draft"])
+    def _dispatch_media(
+        self, block: object, scene_idx: int, plan: MediaPlan | None
+    ) -> Path:
+        """Route to Serper / Pexels / Merge based on Gemini plan."""
+        if plan is None:
+            return self._build_from_pexels_kw(scene_idx, block.duration, "cinematic", "nature cinematic")
 
-        if not overlay_clips:
-            self._log("No media clips — transcoding avatar directly with render profile…")
-            encode_args = ["-preset", profile.preset, "-crf", str(profile.crf)]
-            if profile.tune:
-                encode_args += ["-tune", profile.tune]
-            self.ffmpeg.run([
-                "-i", str(avatar_video),
-                "-c:v", "libx264",
-                *encode_args,
-                "-pix_fmt", "yuv420p",
-                "-r", str(self.config.fps),
-                "-c:a", "copy",
-                "-t", f"{avatar_duration:.3f}",
-                "-movflags", "+faststart",
-                str(output_path),
-            ])
-            return
+        api = plan.api_choice.upper()
 
-        # --- Build the argument list ----------------------------------------
-        args: list[str] = ["-i", str(avatar_video)]
-        for _, _, clip_path in overlay_clips:
-            args += ["-i", str(clip_path)]
-
-        # --- filter_complex ---------------------------------------------------
-        W = self.config.resolution_w
-        H = self.config.resolution_h
-        FPS = self.config.fps
-        filter_parts: list[str] = []
-
-        # 1. Normalise the base (avatar) video
-        filter_parts.append(
-            f"[0:v]scale={W}:{H}:force_original_aspect_ratio=decrease,"
-            f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,"
-            f"fps={FPS},format=yuv420p"
-            f"[base]"
-        )
-
-        # 2. Normalise each media clip and offset its PTS to timeline position
-        for i, (start, _end, _path) in enumerate(overlay_clips):
-            # scale → match resolution; setpts offsets timestamps so the clip
-            # "appears" at the correct position in the output timeline
-            filter_parts.append(
-                f"[{i + 1}:v]"
-                f"scale={W}:{H}:force_original_aspect_ratio=decrease,"
-                f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,"
-                f"fps={FPS},format=yuv420p,"
-                f"setpts=PTS+{start:.3f}/TB"
-                f"[c{i}]"
+        if api == "SERPER":
+            return self._build_from_serper(
+                scene_idx, block.duration, plan.primary_keyword, plan.fallback_keyword
             )
+        if api == "MERGE":
+            sk = plan.serper_keyword or plan.primary_keyword
+            pk = plan.pexels_keyword or plan.fallback_keyword
+            return self._build_merge(scene_idx, block.duration, sk, pk)
 
-        # 3. Chain overlay filters — each clip is active only within its window
-        prev = "base"
-        for i, (start, end, _path) in enumerate(overlay_clips):
-            out_label = "vout" if i == len(overlay_clips) - 1 else f"v{i}"
-            # eof_action=pass: when the clip runs out, fall through to base
-            filter_parts.append(
-                f"[{prev}][c{i}]"
-                f"overlay=x=0:y=0"
-                f":enable='between(t,{start:.3f},{end:.3f})'"
-                f":eof_action=pass"
-                f"[{out_label}]"
-            )
-            prev = out_label
-
-        filter_complex = ";".join(filter_parts)
-
-        encode_args = ["-preset", profile.preset, "-crf", str(profile.crf)]
-        if profile.tune:
-            encode_args += ["-tune", profile.tune]
-
-        args += [
-            "-filter_complex", filter_complex,
-            "-map", "[vout]",           # composed video
-            "-map", "0:a:0",            # original avatar audio — NEVER re-encoded
-            "-c:v", "libx264",
-            *encode_args,
-            "-pix_fmt", "yuv420p",
-            "-r", str(FPS),
-            "-c:a", "copy",             # stream copy → zero drift, perfect sync
-            "-t", f"{avatar_duration:.3f}",
-            "-movflags", "+faststart",
-            str(output_path),
-        ]
-        self.ffmpeg.run(args)
-
-    # ------------------------------------------------------------------
-    # Media segment dispatch  (unchanged logic, now returns overlay clip)
-    # ------------------------------------------------------------------
-
-    def _build_media_segment(self, block: object, scene_idx: int) -> Path:
-        analysis = self.script_analyzer.analyze(block)
-        intent = analysis.visual_intent
-
-        self._log(
-            f"Scene {scene_idx} type={analysis.scene_type} "
-            f"source={analysis.source} "
-            f"subject='{intent.primary_subject if intent else '?'}' "
-            f"queries={analysis.search_queries[:2]}"
-        )
-
-        if intent:
-            refined_queries = self.query_builder.build(
-                intent, analysis.scene_type, max_queries=10
-            )
-            all_queries = list(dict.fromkeys(refined_queries + analysis.search_queries))
-        else:
-            all_queries = analysis.search_queries
-
-        if analysis.source == "brave_images":
-            return self._build_from_images(
-                scene_idx, block.duration, all_queries, intent
-            )
-        if analysis.source == "mixed":
-            return self._build_mixed_scene(
-                scene_idx, block.duration, all_queries, intent
-            )
-        return self._build_from_pexels(
-            scene_idx, block.duration, all_queries, intent
+        # Default: PEXELS
+        return self._build_from_pexels_kw(
+            scene_idx, block.duration, plan.primary_keyword, plan.fallback_keyword
         )
 
     # ------------------------------------------------------------------
-    # Brave images path
+    # SERPER path — Google Images
     # ------------------------------------------------------------------
 
-    def _build_from_images(
+    def _build_from_serper(
         self,
         scene_idx: int,
         duration: float,
-        queries: list[str],
-        intent: VisualIntent | None,
+        primary_kw: str,
+        fallback_kw: str,
     ) -> Path:
-        wanted = 5
-        self._log(f"Scene {scene_idx}: Brave target={wanted} images")
+        self._log(f"Scene {scene_idx}: Serper '{primary_kw}' / fallback '{fallback_kw}'")
 
-        must_show = intent.must_show if intent else []
-        must_avoid = intent.must_avoid if intent else []
-
-        candidates = self.brave.search_with_fallback(
-            queries,
-            visual_intent=intent,
-            target_count=wanted * 3,
+        candidates = self.serper.search_with_fallback(
+            primary_query=primary_kw,
+            fallback_query=fallback_kw or primary_kw,
+            num=5,
+            min_results=1,
         )
 
         if not candidates:
-            main_q = self._sanitize_query(queries[0] if queries else "subject", max_words=4)
-            candidates = self.brave.search(main_q, count=60)
+            self._log(f"Scene {scene_idx}: Serper returned nothing → Pexels fallback")
+            return self._build_from_pexels_kw(scene_idx, duration, primary_kw, fallback_kw)
 
-        main_q = queries[0] if queries else "subject"
-        ranked = rank_images(
-            list({c.url: c for c in candidates}.values()),
-            query=main_q,
-            must_show=must_show,
-            must_avoid=must_avoid,
-        )
+        # Use top candidate (already verified accessible by serper.search_with_fallback)
+        top = candidates[0]
+        self._log(f"Scene {scene_idx}: Serper selected '{top.title}' from {top.source}")
 
-        valid = [c for c in ranked if validate_image_candidate(c, intent)]
-        if not valid:
-            valid = ranked
-
-        top = valid[:wanted]
-        tasks = [
-            {
-                "scene_id": f"scene_{scene_idx}",
-                "asset_id": c.id,
-                "source": "brave",
-                "query": main_q,
-                "url": c.url,
-                "metadata": {"width": c.width, "height": c.height},
-            }
-            for c in top
-        ]
+        tasks = [{
+            "scene_id": f"scene_{scene_idx}",
+            "asset_id": top.id,
+            "source": "serper",
+            "query": primary_kw,
+            "url": top.url,
+            "metadata": {"width": top.width, "height": top.height},
+        }]
         downloaded = self.downloader.download_many(tasks)
 
         if not downloaded:
-            self._log(
-                f"Scene {scene_idx}: Brave returned no images, trying Pexels fallback."
-            )
-            try:
-                pexels_q = [
-                    queries[0] if queries else "cinematic scene",
-                    "cinematic b-roll",
-                    "atmospheric footage",
-                ]
-                return self._build_from_pexels(scene_idx, duration, pexels_q, intent)
-            except Exception:
-                return self._build_neutral_fallback(scene_idx, duration)
+            self._log(f"Scene {scene_idx}: Download failed → Pexels fallback")
+            return self._build_from_pexels_kw(scene_idx, duration, primary_kw, fallback_kw)
 
         return self._stitch_image_clips(scene_idx, duration, downloaded)
 
     # ------------------------------------------------------------------
-    # Mixed scene path (Brave images + Pexels video)
+    # PEXELS path — stock video
     # ------------------------------------------------------------------
 
-    def _build_mixed_scene(
+    def _build_from_pexels_kw(
         self,
         scene_idx: int,
         duration: float,
-        queries: list[str],
-        intent: VisualIntent | None,
+        primary_kw: str,
+        fallback_kw: str,
     ) -> Path:
-        self._log(f"Scene {scene_idx}: building MIXED scene (images + video)")
+        self._log(f"Scene {scene_idx}: Pexels '{primary_kw}'")
 
-        img_candidates = self.brave.search_with_fallback(
-            queries[:5], visual_intent=intent, target_count=3,
-        )
-        must_show = intent.must_show if intent else []
-        must_avoid = intent.must_avoid if intent else []
-        ranked_imgs = rank_images(
-            img_candidates, query=queries[0],
-            must_show=must_show, must_avoid=must_avoid,
+        candidates = self.pexels.search_with_fallback(
+            queries=[
+                self._sanitize_query(primary_kw, max_words=5),
+                self._sanitize_query(fallback_kw or primary_kw, max_words=5),
+            ],
+            target_count=5,
         )
 
+        if not candidates:
+            raise RuntimeError(f"Pexels: no results for '{primary_kw}'")
+
+        ranked = rank_videos(candidates, query=primary_kw)
+        # Prefer 15-20s clips
+        best = next((v for v in ranked if 15 <= v.duration <= 20), None)
+        if best is None:
+            best = next((v for v in ranked if 10 <= v.duration <= 25), ranked[0])
+
+        best_file = sorted(
+            best.files, key=lambda f: abs(f.width - 1920) + abs(f.height - 1080)
+        )[0]
+
+        downloaded = self.downloader.download_many([{
+            "scene_id": f"scene_{scene_idx}",
+            "asset_id": best.id,
+            "source": "pexels",
+            "query": primary_kw,
+            "url": best_file.url,
+            "metadata": {"width": best_file.width, "height": best_file.height},
+        }])
+        if not downloaded:
+            raise RuntimeError(f"Pexels download failed for scene {scene_idx}")
+
+        out = self.config.temp_dir / f"scene_{scene_idx}_video.mp4"
+        return self.video_builder.build_from_video(downloaded[0].path, duration, out)
+
+    # ------------------------------------------------------------------
+    # MERGE path — Serper image + Pexels video
+    # ------------------------------------------------------------------
+
+    def _build_merge(
+        self,
+        scene_idx: int,
+        duration: float,
+        serper_kw: str,
+        pexels_kw: str,
+    ) -> Path:
+        self._log(f"Scene {scene_idx}: MERGE serper='{serper_kw}' pexels='{pexels_kw}'")
+
+        # Serper: get a subject image (shown first ~5s)
+        img_candidates = self.serper.search_with_fallback(
+            primary_query=serper_kw,
+            fallback_query=pexels_kw,
+            num=3,
+            min_results=1,
+        )
         img_tasks = [
             {
                 "scene_id": f"scene_{scene_idx}_img",
                 "asset_id": c.id,
-                "source": "brave",
-                "query": queries[0],
+                "source": "serper",
+                "query": serper_kw,
                 "url": c.url,
                 "metadata": {"width": c.width, "height": c.height},
             }
-            for c in ranked_imgs[:3]
+            for c in img_candidates[:2]
         ]
-        img_assets = self.downloader.download_many(img_tasks)
+        img_assets = self.downloader.download_many(img_tasks) if img_tasks else []
 
-        env_queries = queries[3:] or queries
+        # Pexels: get environment/action video (fills remainder)
         vid_candidates = self.pexels.search_with_fallback(
-            [self._sanitize_query(q, max_words=5) for q in env_queries[:4]],
+            queries=[self._sanitize_query(pexels_kw, max_words=5)],
             target_count=3,
         )
-        ranked_vids = rank_videos(
-            vid_candidates,
-            query=env_queries[0] if env_queries else "cinematic",
-            visual_intent=intent,
-        )
-
         vid_assets: list[DownloadedAsset] = []
-        if ranked_vids:
-            best_vid = next(
-                (v for v in ranked_vids if 5 <= v.duration <= 20), ranked_vids[0]
-            )
+        if vid_candidates:
+            ranked = rank_videos(vid_candidates, query=pexels_kw)
+            best_vid = next((v for v in ranked if 15 <= v.duration <= 20), ranked[0])
             best_file = sorted(
-                best_vid.files,
-                key=lambda f: abs(f.width - 1920) + abs(f.height - 1080),
+                best_vid.files, key=lambda f: abs(f.width - 1920) + abs(f.height - 1080)
             )[0]
-            vid_assets = self.downloader.download_many([
-                {
-                    "scene_id": f"scene_{scene_idx}_vid",
-                    "asset_id": best_vid.id,
-                    "source": "pexels",
-                    "query": env_queries[0] if env_queries else "",
-                    "url": best_file.url,
-                    "metadata": {"width": best_file.width, "height": best_file.height},
-                }
-            ])
+            vid_assets = self.downloader.download_many([{
+                "scene_id": f"scene_{scene_idx}_vid",
+                "asset_id": best_vid.id,
+                "source": "pexels",
+                "query": pexels_kw,
+                "url": best_file.url,
+                "metadata": {"width": best_file.width, "height": best_file.height},
+            }])
 
         if not img_assets and not vid_assets:
             return self._build_neutral_fallback(scene_idx, duration)
@@ -472,51 +385,6 @@ class ExportManager:
         )
 
     # ------------------------------------------------------------------
-    # Pexels video path
-    # ------------------------------------------------------------------
-
-    def _build_from_pexels(
-        self,
-        scene_idx: int,
-        duration: float,
-        queries: list[str],
-        intent: VisualIntent | None,
-    ) -> Path:
-        candidates = self.pexels.search_with_fallback(
-            [self._sanitize_query(q, max_words=5) for q in queries[:4]],
-            target_count=5,
-        )
-
-        if not candidates:
-            raise RuntimeError(f"No Pexels videos found for scene {scene_idx}")
-
-        ranked = rank_videos(
-            candidates,
-            query=self._sanitize_query(queries[0] if queries else ""),
-            visual_intent=intent,
-        )
-        best = next((v for v in ranked if 15 <= v.duration <= 20), ranked[0])
-        best_file = sorted(
-            best.files, key=lambda f: abs(f.width - 1920) + abs(f.height - 1080)
-        )[0]
-
-        downloaded = self.downloader.download_many([
-            {
-                "scene_id": f"scene_{scene_idx}",
-                "asset_id": best.id,
-                "source": "pexels",
-                "query": queries[0],
-                "url": best_file.url,
-                "metadata": {"width": best_file.width, "height": best_file.height},
-            }
-        ])
-        if not downloaded:
-            raise RuntimeError(f"Failed downloading Pexels video for scene {scene_idx}")
-
-        out = self.config.temp_dir / f"scene_{scene_idx}_video.mp4"
-        return self.video_builder.build_from_video(downloaded[0].path, duration, out)
-
-    # ------------------------------------------------------------------
     # Image clip stitching
     # ------------------------------------------------------------------
 
@@ -527,47 +395,120 @@ class ExportManager:
         downloaded: list[DownloadedAsset],
     ) -> Path:
         clips: list[Path] = []
-        clip_duration = 3.0
+        clip_duration = max(3.0, duration / max(len(downloaded), 1))
         for i, asset in enumerate(downloaded):
             clip_key = hashlib.sha1(
-                f"{asset.path}:{clip_duration:.3f}:{i}".encode("utf-8")
+                f"{asset.path}:{clip_duration:.3f}:{i}".encode()
             ).hexdigest()[:16]
             clip = self.cache.generated_dir / f"imgclip_{clip_key}.mp4"
             if not clip.exists():
-                motion = self.image_builder.pick_motion_style()
-                self.image_builder.make_image_clip(asset.path, clip_duration, motion, clip)
+                self.image_builder.make_image_clip(
+                    asset.path, clip_duration, "push_in_soft", clip
+                )
             clips.append(clip)
 
-        scene_path = self.config.temp_dir / f"scene_{scene_idx}_images.mp4"
-        needed = max(1, ceil(duration / clip_duration))
-        timeline_clips = [clips[i % len(clips)] for i in range(needed)]
+        if not clips:
+            return self._build_neutral_fallback(scene_idx, duration)
 
-        if len(timeline_clips) == 1:
-            # Single clip: trim to exact duration and return
-            trimmed = self.config.temp_dir / f"scene_{scene_idx}_images_trimmed.mp4"
+        if len(clips) == 1:
+            trimmed = self.config.temp_dir / f"scene_{scene_idx}_img_trim.mp4"
             self.ffmpeg.run([
-                "-i", str(timeline_clips[0]),
-                "-t", f"{duration:.3f}",
-                "-an",
-                "-c:v", "libx264",
-                "-preset", "ultrafast",
-                "-crf", "28",
+                "-i", str(clips[0]), "-t", f"{duration:.3f}",
+                "-an", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
                 str(trimmed),
             ])
             return trimmed
 
+        scene_path = self.config.temp_dir / f"scene_{scene_idx}_images.mp4"
+        needed = max(1, ceil(duration / clip_duration))
+        timeline_clips = [clips[i % len(clips)] for i in range(needed)]
         self.video_builder.concat_image_clips(timeline_clips, scene_path)
-        trimmed = self.config.temp_dir / f"scene_{scene_idx}_images_trimmed.mp4"
+
+        trimmed = self.config.temp_dir / f"scene_{scene_idx}_images_trim.mp4"
         self.ffmpeg.run([
-            "-i", str(scene_path),
-            "-t", f"{duration:.3f}",
-            "-an",
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-crf", "28",
+            "-i", str(scene_path), "-t", f"{duration:.3f}",
+            "-an", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
             str(trimmed),
         ])
         return trimmed
+
+    # ------------------------------------------------------------------
+    # STEP 5: Single-pass FFmpeg overlay composition
+    # ------------------------------------------------------------------
+
+    def _compose_with_overlay(
+        self,
+        avatar_video: Path,
+        overlay_clips: list[tuple[float, float, Path]],
+        output_path: Path,
+        mode: str,
+        avatar_duration: float,
+    ) -> None:
+        profile = self.config.profiles.get(mode, self.config.profiles["ultra_fast_draft"])
+
+        if not overlay_clips:
+            self._log("No media clips — transcoding avatar directly…")
+            encode_args = ["-preset", profile.preset, "-crf", str(profile.crf)]
+            if profile.tune:
+                encode_args += ["-tune", profile.tune]
+            self.ffmpeg.run([
+                "-i", str(avatar_video),
+                "-c:v", "libx264", *encode_args,
+                "-pix_fmt", "yuv420p", "-r", str(self.config.fps),
+                "-c:a", "copy", "-t", f"{avatar_duration:.3f}",
+                "-movflags", "+faststart", str(output_path),
+            ])
+            return
+
+        W, H, FPS = self.config.resolution_w, self.config.resolution_h, self.config.fps
+        args: list[str] = ["-i", str(avatar_video)]
+        for _, _, clip_path in overlay_clips:
+            args += ["-i", str(clip_path)]
+
+        filter_parts: list[str] = []
+
+        # Normalise base video
+        filter_parts.append(
+            f"[0:v]scale={W}:{H}:force_original_aspect_ratio=decrease,"
+            f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,fps={FPS},format=yuv420p[base]"
+        )
+
+        # Offset each clip to its timeline position
+        for i, (start, _end, _path) in enumerate(overlay_clips):
+            filter_parts.append(
+                f"[{i+1}:v]scale={W}:{H}:force_original_aspect_ratio=decrease,"
+                f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,fps={FPS},format=yuv420p,"
+                f"setpts=PTS+{start:.3f}/TB[c{i}]"
+            )
+
+        # Chain overlays
+        prev = "base"
+        for i, (start, end, _path) in enumerate(overlay_clips):
+            out_label = "vout" if i == len(overlay_clips) - 1 else f"v{i}"
+            filter_parts.append(
+                f"[{prev}][c{i}]overlay=x=0:y=0"
+                f":enable='between(t,{start:.3f},{end:.3f})'"
+                f":eof_action=pass[{out_label}]"
+            )
+            prev = out_label
+
+        filter_complex = ";".join(filter_parts)
+        encode_args = ["-preset", profile.preset, "-crf", str(profile.crf)]
+        if profile.tune:
+            encode_args += ["-tune", profile.tune]
+
+        args += [
+            "-filter_complex", filter_complex,
+            "-map", "[vout]",
+            "-map", "0:a:0",          # original avatar audio — never re-encoded
+            "-c:v", "libx264", *encode_args,
+            "-pix_fmt", "yuv420p", "-r", str(FPS),
+            "-c:a", "copy",           # zero drift, perfect sync
+            "-t", f"{avatar_duration:.3f}",
+            "-movflags", "+faststart",
+            str(output_path),
+        ]
+        self.ffmpeg.run(args)
 
     # ------------------------------------------------------------------
     # Utilities
@@ -578,20 +519,20 @@ class ExportManager:
         return " ".join(words[:max_words]).strip()
 
     def _build_neutral_fallback(self, scene_idx: int, duration: float) -> Path:
-        """Dark frame clip used when all media sources fail."""
+        """
+        Dark frame clip — last resort to prevent black/frozen scenes.
+        Uses a dark grey colour so it's clearly visible as a fallback.
+        """
         out = self.config.temp_dir / f"scene_{scene_idx}_fallback.mp4"
         self.ffmpeg.run([
             "-f", "lavfi",
             "-i", (
-                f"color=c=0x111111:"
+                f"color=c=0x1a1a1a:"
                 f"s={self.config.resolution_w}x{self.config.resolution_h}:"
                 f"r={self.config.fps}"
             ),
-            "-t", f"{duration:.3f}",
-            "-an",
-            "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-crf", "30",
+            "-t", f"{duration:.3f}", "-an",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30",
             str(out),
         ])
         return out

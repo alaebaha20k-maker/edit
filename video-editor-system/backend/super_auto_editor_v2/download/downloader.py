@@ -49,7 +49,7 @@ class Downloader:
                         r.raise_for_status()
                         ctype = (r.headers.get("Content-Type") or "").lower()
                         source = str(task.get("source", "")).lower()
-                        if source == "brave" and "image" not in ctype:
+                        if source in ("brave", "serper") and "image" not in ctype:
                             continue
                         if source == "pexels" and "video" not in ctype and "octet-stream" not in ctype:
                             continue
