@@ -169,6 +169,13 @@ class ScriptGenerator3Chunk:
                 if verbose:
                     print(f"   💾 Formula DNA cached ({len(dna):,} chars) — next run will be faster")
 
+        # CRITICAL: Always keep the raw formula in plan regardless of DNA path.
+        # _parse_outlines_only sets _formula_text="" to save memory, but the chunk
+        # builder needs the raw formula to inject alongside DNA for small/medium formulas.
+        # Without this, formula rules are silently dropped when DNA cache is used.
+        if not plan.get("_formula_text"):
+            plan["_formula_text"] = formula
+
         if verbose:
             outline_map = plan.get("chunk_section_content", {})
             status = f"{len(outline_map)}/{total_chunks} chunk outlines extracted"
@@ -788,42 +795,58 @@ OUTPUT FORMAT — strict:
         outline      = plan.get("chunk_section_content", {}).get(str(chunk.index), "")
         sections_label = " | ".join(sections_now) if sections_now else f"part {chunk.index} of {total_chunks}"
 
-        # ── FORMULA BLOCK — adaptive based on what PHASE 1 extracted ────────────
+        # ── FORMULA BLOCK — adaptive based on formula size and DNA quality ────────
         #
-        # CASE A — formula_dna extraction succeeded (>= 1500 chars):
-        #   laws_block  = formula_dna at position-0 (organized, complete, in attention)
-        #   formula_block = EMPTY — DNA has everything, re-injecting raw formula would:
-        #                   (a) bloat prompts to 200K+ chars for large formulas
-        #                   (b) create "lost in the middle" again despite the DNA fix
-        #                   (c) waste tokens on every chunk call
+        # CASE A — formula fits in context (≤ 65K chars):
+        #   laws_block    = DNA at position-0 (organized priority summary)
+        #   formula_block = FULL raw formula also injected — guarantees zero rules missed.
+        #   DNA + raw formula together = maximum compliance. Gemini 2.5 handles this easily.
         #
-        # CASE B — formula_dna is empty or too short (PHASE 1 failed):
-        #   laws_block  = empty
-        #   formula_block = FULL raw formula — model must read it directly
+        # CASE B — large formula (> 65K chars):
+        #   laws_block    = DNA only (raw formula too large to inject per chunk)
+        #   formula_block = EMPTY — DNA must cover everything
         #
-        # This means formulas of ANY size (10K or 300K) are handled correctly:
-        # large formulas → DNA extraction → compact prompt per chunk
-        # tiny formulas → DNA also fine, or fallback to raw
-        DNA_MIN_CHARS = 1500   # minimum chars to trust the DNA extraction
+        # CASE C — DNA extraction failed:
+        #   laws_block    = empty
+        #   formula_block = FULL raw formula — model reads it directly
+        #
+        # Why inject both for small/medium formulas: DNA compression loses specific rules.
+        # A 42K formula compressed to 3K DNA can silently drop 90% of specific instructions.
+        # Belt-and-suspenders: DNA for attention priority, raw formula for completeness.
+        DNA_MIN_CHARS = 1500
+        FORMULA_DUAL_INJECT_LIMIT = 65000   # inject both DNA + raw formula below this size
 
-        dna_good = len(formula_dna) >= DNA_MIN_CHARS
+        dna_good     = len(formula_dna) >= DNA_MIN_CHARS
+        formula_fits = full_formula and len(full_formula) <= FORMULA_DUAL_INJECT_LIMIT
 
         if dna_good:
             laws_block = (
                 f"╔{'═' * 66}╗\n"
-                f"║     COMPLETE NICHE FORMULA — ALL LAWS EXTRACTED FROM GUIDELINES     ║\n"
+                f"║     NICHE FORMULA PRIORITY SUMMARY (extracted from Writing Guidelines)  ║\n"
                 f"╚{'═' * 66}╝\n"
-                f"CRITICAL: This is the FULL DNA of your niche formula.\n"
-                f"Every law below was extracted from the Writing Guidelines by the planner.\n"
-                f"EVERY law is mandatory. Read ALL 10 sections before writing a single word.\n"
+                f"Read this first — it highlights the MOST CRITICAL laws from your formula.\n"
                 f"{'─' * 68}\n"
                 f"{formula_dna}\n"
                 f"{'─' * 68}\n"
-                f"COMPLIANCE: Before each paragraph check —\n"
+                f"COMPLIANCE CHECK before writing each paragraph:\n"
                 f"  ✓ Opening laws followed?  ✓ Tone correct?  ✓ Mandatory phrases used?\n"
                 f"  ✓ Forbidden words avoided?  ✓ Structure correct?  ✓ Niche laws applied?\n\n"
             )
-            formula_block = ""   # DNA covers everything — raw formula NOT re-injected
+            if formula_fits:
+                # Also inject full raw formula — belt-and-suspenders for medium formulas.
+                # DNA compression can miss specific phrases/rules; raw formula ensures 100% coverage.
+                formula_block = (
+                    f"════════════════ COMPLETE WRITING GUIDELINES — EVERY RULE APPLIES ════════════════\n"
+                    f"The formula above is a summary. THIS is the full law. All {len(full_formula):,} characters apply.\n"
+                    f"Read every section. Every rule below is mandatory — summary above + full text here.\n"
+                    f"{'─' * 68}\n"
+                    f"{full_formula}\n"
+                    f"{'─' * 68}\n"
+                    f"END OF WRITING GUIDELINES — every sentence must execute a rule from above.\n"
+                    f"{'═' * 68}\n\n"
+                )
+            else:
+                formula_block = ""   # Large formula: DNA only (raw too large per chunk)
 
         elif full_formula:
             # DNA extraction failed — inject the raw formula as the primary reference
