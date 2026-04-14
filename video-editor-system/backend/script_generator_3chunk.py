@@ -14,6 +14,11 @@ Workflow:
     Build per-chunk step-by-step recipe, specific to this title.
     Lock anchor, promo count, CTA.
 
+  PHASE 1 — FAST PATH (when DNA is cached):
+    Skip formula re-read. Load cached DNA.
+    Run a compact outline-only call (title-specific, no formula re-read).
+    Saves 15-30s per generation for the same niche.
+
   PHASE 2–N — WRITE (Gemini Pro, 1 call per chunk):
     When DNA extraction succeeded:
       → laws_block (formula_dna) at position-0 = all niche laws in working memory
@@ -26,9 +31,11 @@ Workflow:
   PHASE FINAL — POST: Merge → strip stop → clean → dedup → length enforce.
 """
 
+import hashlib
 import json
 import re
 import time
+from pathlib import Path
 import google.generativeai as genai
 from typing import Dict, List, Optional
 from config import Config
@@ -38,6 +45,40 @@ from settings_manager import SettingsManager
 from utils import detect_language_from_text, get_language_name
 
 STOP_SIGNAL = "=== END OF SCRIPT — DO NOT CONTINUE ==="
+
+# ---------------------------------------------------------------------------
+# Formula DNA cache — disk-based, keyed by MD5 of the niche formula text.
+# When the same niche is used again, Phase 1 skips the full formula re-read
+# and runs a compact outline-only call instead (saves 15–30 s per generation).
+# ---------------------------------------------------------------------------
+_DNA_CACHE_DIR = Path("./cache/formula_dna")
+_DNA_MIN_CHARS = 1500   # minimum chars to consider a DNA extraction valid
+
+
+def _formula_cache_key(formula: str) -> str:
+    return hashlib.md5(formula.encode("utf-8")).hexdigest()
+
+
+def _load_cached_dna(formula: str) -> str:
+    """Return cached formula DNA for this formula text, or '' if not cached."""
+    try:
+        _DNA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        path = _DNA_CACHE_DIR / f"{_formula_cache_key(formula)}.json"
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8")).get("dna", "")
+    except Exception:
+        pass
+    return ""
+
+
+def _save_cached_dna(formula: str, dna: str) -> None:
+    """Persist formula DNA to disk cache for future generations."""
+    try:
+        _DNA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        path = _DNA_CACHE_DIR / f"{_formula_cache_key(formula)}.json"
+        path.write_text(json.dumps({"dna": dna, "formula_len": len(formula)}), encoding="utf-8")
+    except Exception:
+        pass
 
 
 class ScriptGenerator3Chunk:
@@ -110,8 +151,24 @@ class ScriptGenerator3Chunk:
         if verbose:
             print(f"🔧 PHASE 1 — PLAN")
             print(f"   Formula   : {len(formula):,} chars (Writing Guidelines)")
-            print(f"   Parsing sections + extracting rules per chunk...")
-        plan = self._parse_formula(title, formula, language, total_chunks, verbose)
+
+        # ── DNA cache check — skip full formula re-read when possible ─────────
+        cached_dna = _load_cached_dna(formula)
+        if cached_dna:
+            if verbose:
+                print(f"   ✅ Formula DNA cache HIT ({len(cached_dna):,} chars) — outline-only call")
+            plan = self._parse_outlines_only(title, cached_dna, language, total_chunks, verbose)
+        else:
+            if verbose:
+                print(f"   Parsing sections + extracting rules per chunk...")
+            plan = self._parse_formula(title, formula, language, total_chunks, verbose)
+            # Cache DNA so the next generation of the same niche is faster
+            dna = plan.get("formula_dna", "")
+            if len(dna) >= _DNA_MIN_CHARS:
+                _save_cached_dna(formula, dna)
+                if verbose:
+                    print(f"   💾 Formula DNA cached ({len(dna):,} chars) — next run will be faster")
+
         if verbose:
             outline_map = plan.get("chunk_section_content", {})
             status = f"{len(outline_map)}/{total_chunks} chunk outlines extracted"
@@ -189,7 +246,7 @@ class ScriptGenerator3Chunk:
                 # Use last 500 chars as continuation context — gives the next chunk
                 # enough sentence fragments to continue naturally without restarting.
                 previous_context = chunk_text[-500:].strip()
-                time.sleep(1)   # was 4s — reduced for speed
+                time.sleep(0.3)   # minimal inter-chunk gap (was 4s → 1s → 0.3s)
 
         # ── Post-processing ───────────────────────────────────────────────────
         if verbose:
@@ -260,7 +317,132 @@ class ScriptGenerator3Chunk:
         }
 
     # =========================================================================
-    # STEP 0 — FORMULA PARSER
+    # STEP 0-FAST — OUTLINE-ONLY (when DNA is cached)
+    # =========================================================================
+
+    def _parse_outlines_only(
+        self,
+        title: str,
+        cached_dna: str,
+        language: str,
+        total_chunks: int,
+        verbose: bool = False,
+    ) -> dict:
+        """
+        Fast Phase 1 path: DNA already cached — only generate title-specific
+        chunk outlines. No formula re-read → saves 15–30 s per generation.
+        Uses a compact prompt (~5K tokens instead of 70K+).
+        """
+        chunk_roles = {1: "HOOK / OPENING", total_chunks: "CLOSING / CTA"}
+        outline_format = ""
+        for i in range(1, total_chunks + 1):
+            role = chunk_roles.get(i, "BODY / DEVELOPMENT")
+            outline_format += (
+                f"<chunk_{i}_sections>which formula sections go in chunk {i} (pipe-separated)</chunk_{i}_sections>\n"
+                f"<chunk_{i}_outline>\n"
+                f"STEP-BY-STEP writing recipe for Chunk {i} ({role}), 100% specific to title \"{title}\".\n"
+                f"For each step: STEP N — what to write | TECHNIQUE — formula rule | MANDATORY — verbatim phrase\n"
+                f"</chunk_{i}_outline>\n\n"
+            )
+
+        prompt = f"""You are a script outline generator.
+The Formula DNA below contains ALL niche laws already extracted from the Writing Guidelines.
+Use it to create chunk-specific writing recipes tailored to this exact title.
+
+FORMULA DNA (complete niche laws):
+{cached_dna}
+
+VIDEO TITLE: "{title}"
+LANGUAGE: {language}
+CHUNKS: {total_chunks}  (chunk 1 = hook/opening, chunk {total_chunks} = closing/CTA)
+
+Output the following XML structure. Do NOT add markdown or code blocks.
+
+<sections>all section names from the DNA, pipe-separated</sections>
+<anchor>main subject or story at the heart of this video title</anchor>
+<promo_count>integer — how many [PROMO] blocks the DNA requires. 0 if none.</promo_count>
+<cta>exact CTA text from the DNA verbatim</cta>
+
+{outline_format}"""
+
+        try:
+            if verbose:
+                print(f"   📤 Outline-only call ({len(prompt):,} chars, DNA cached)...")
+            model    = genai.GenerativeModel(Config.GEMINI_PLAN_MODEL)
+            response = model.generate_content(
+                prompt,
+                generation_config={"temperature": 0.1, "max_output_tokens": 32768},
+            )
+            text = response.text.strip()
+            if verbose:
+                print(f"   📥 Outlines received: {len(text):,} chars")
+        except Exception as e:
+            if verbose:
+                print(f"   ⚠️  Outline-only call failed ({e}) — using cached DNA without outlines")
+            # Minimal plan: DNA works as the laws_block per chunk
+            fallback_secs = [f"Part {i}" for i in range(1, total_chunks + 1)]
+            return {
+                "sections"             : fallback_secs,
+                "chunk_sections"       : {str(i): [fallback_secs[i - 1]] for i in range(1, total_chunks + 1)},
+                "chunk_section_content": {},
+                "_formula_text"        : "",
+                "anchor"               : title,
+                "promo_count"          : 0,
+                "cta_action"           : "subscribe and hit the bell",
+                "formula_dna"          : cached_dna,
+                "closing_note"         : "close with subscribe CTA",
+            }
+
+        # Reuse same XML parsing logic as _parse_formula
+        text = re.sub(r'```[^\n]*\n', '', text)
+        text = re.sub(r'```', '', text)
+
+        chunk_section_content: Dict[str, str] = {}
+        chunk_sections: Dict[str, List[str]] = {}
+
+        for i in range(1, total_chunks + 1):
+            sec_m = re.search(rf'<chunk_{i}_sections>(.*?)</chunk_{i}_sections>', text, re.DOTALL | re.IGNORECASE)
+            if sec_m:
+                secs = [s.strip() for s in sec_m.group(1).strip().split("|") if s.strip()]
+                if secs:
+                    chunk_sections[str(i)] = secs
+            out_m = re.search(rf'<chunk_{i}_outline>(.*?)</chunk_{i}_outline>', text, re.DOTALL | re.IGNORECASE)
+            if out_m:
+                content = out_m.group(1).strip()
+                if content and len(content) > 80:
+                    chunk_section_content[str(i)] = content
+
+        def _xml(tag: str, fallback: str = "") -> str:
+            m = re.search(rf'<{tag}>(.*?)</{tag}>', text, re.DOTALL | re.IGNORECASE)
+            return m.group(1).strip() if m else fallback
+
+        raw_sections = _xml("sections", "")
+        sections = [s.strip() for s in raw_sections.split("|") if s.strip()] if raw_sections else []
+        for i in range(1, total_chunks + 1):
+            if str(i) not in chunk_sections:
+                chunk_sections[str(i)] = [sections[i - 1]] if i <= len(sections) else [f"Part {i}"]
+
+        anchor = _xml("anchor", title) or title
+        try:
+            promo_count = int(re.sub(r"[^\d]", "", _xml("promo_count", "0")) or "0")
+        except ValueError:
+            promo_count = 0
+        cta_action  = _xml("cta", "subscribe and hit the bell") or "subscribe and hit the bell"
+
+        return {
+            "sections"             : sections,
+            "chunk_sections"       : chunk_sections,
+            "chunk_section_content": chunk_section_content,
+            "_formula_text"        : "",   # DNA is used — raw formula not needed
+            "anchor"               : anchor,
+            "promo_count"          : promo_count,
+            "cta_action"           : cta_action,
+            "formula_dna"          : cached_dna,
+            "closing_note"         : "close with subscribe CTA",
+        }
+
+    # =========================================================================
+    # STEP 0 — FORMULA PARSER (full path, first generation per niche)
     # =========================================================================
 
     def _parse_formula(
@@ -816,7 +998,7 @@ OUTPUT FORMAT — strict:
             if verbose:
                 print(f"   ⚠️  {label} too short ({len(text):,} < {min_ok:,}) "
                       f"— retrying (attempt {short_attempt + 1}/{MAX_SHORT_RETRIES})...")
-            time.sleep(4)
+            time.sleep(2)
 
         return text
 
@@ -876,9 +1058,25 @@ OUTPUT FORMAT — strict:
             extend_tokens = min(65536, max(int(extend_chars / 3 * 1.3) + 3000, 6000))
             tail          = current_script[-800:].strip()
 
-            prompt = f"""══════════ WRITING GUIDELINES (execute ALL rules) ══════════
-{formula}
-════════════════════════════════════════════════════════════
+            # Use DNA when available — avoids re-injecting the full 70K formula
+            # into every extension call (10x smaller prompt = significantly faster response)
+            formula_dna = plan.get("formula_dna", "") if plan else ""
+            use_dna = len(formula_dna) >= _DNA_MIN_CHARS
+
+            if use_dna:
+                formula_block = (
+                    f"══════════ NICHE FORMULA DNA (ALL LAWS) ══════════\n"
+                    f"{formula_dna}\n"
+                    f"══════════════════════════════════════════════════\n"
+                )
+            else:
+                formula_block = (
+                    f"══════════ WRITING GUIDELINES (execute ALL rules) ══════════\n"
+                    f"{formula}\n"
+                    f"════════════════════════════════════════════════════════════\n"
+                )
+
+            prompt = f"""{formula_block}
 {forbidden_ext}
 ⚠️  SCRIPT EXTENSION — YOU ARE CONTINUING A SCRIPT ALREADY IN PROGRESS.
 DO NOT start a new intro. DO NOT write a new hook. DO NOT say 'Bonjour' or 'Hello' or any greeting.
@@ -894,15 +1092,18 @@ THE SCRIPT ENDED HERE — CONTINUE FROM THIS EXACT POINT:
 "{tail}"
 
 TASK: {body_hint}
-Write at least {extend_chars:,} characters. Apply the Writing Guidelines tone, style, structure.
+Write at least {extend_chars:,} characters. Apply the formula tone, style, structure.
 
 WRITE IN {language.upper()} — CONTINUE NOW:"""
+
+            # Flash is fast enough for extensions — formula is explicit via DNA
+            ext_model = Config.GEMINI_PLAN_MODEL if use_dna else Config.GEMINI_SCRIPT_MODEL
 
             try:
                 extension = self._call_api(
                     prompt=prompt,
                     system_instruction=system_instruction,
-                    model_name=Config.GEMINI_SCRIPT_MODEL,
+                    model_name=ext_model,
                     temperature=0.85,
                     max_output_tokens=extend_tokens,
                     target_chars=extend_chars,
@@ -914,7 +1115,7 @@ WRITE IN {language.upper()} — CONTINUE NOW:"""
                 if verbose:
                     remaining = max(0, target_length - new_total)
                     print(f"   Extension {attempt+1}: +{len(extension):,} chars → total {new_total:,} / {target_length:,}  (still need: {remaining:,})")
-                time.sleep(4)
+                time.sleep(2)
             except Exception as e:
                 if verbose:
                     print(f"   ⚠️  Extension {attempt + 1} failed: {e}")
