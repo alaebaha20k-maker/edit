@@ -29,45 +29,66 @@ except Exception:
 # ---------------------------------------------------------------------------
 
 _BATCH_KEYWORDS_PROMPT = """\
-You are a professional video editor choosing B-roll media keywords for a full video script.
+You are a professional video editor sourcing B-roll footage for a YouTube video.
+For each 15-second B-roll window, generate highly specific stock media search queries.
 
 VIDEO TOPIC: {global_topic}
+KEY VISUAL ELEMENTS: {key_visuals}
+CONTEXT PHRASES: {context_phrases}
 SCRIPT PREVIEW: {script_preview}
 
-Below are {n_segments} MEDIA SEGMENTS — each one is a 15-second B-roll window.
-Generate one media plan per segment. Return ONLY a JSON array — no markdown, no explanation.
+── THINKING PROCESS (apply internally to each segment) ───────────────────────
+Step 1 — VISUALIZE: Describe the exact image/video frame a camera would show.
+Step 2 — GENERATE: Turn that visual description into stock-site search queries.
+──────────────────────────────────────────────────────────────────────────────
 
+QUERY RULES (strictly enforced):
+✅ Every query MUST be 5+ words — no single keywords, no 2-3 word phrases
+✅ Format: [subject] + [action] + [setting] + [mood/style]
+✅ Concrete and photographable ONLY
+✅ Replace abstract/emotional concepts with visible actions:
+   • "success"    → "entrepreneur smiling signing deal at office desk"
+   • "innovation" → "engineer testing new prototype on laboratory bench"
+   • "motivation" → "athlete sprinting on track at sunrise golden light"
+   • "growth"     → "business chart rising on laptop screen close-up"
+   • "future"     → "modern city skyline aerial view blue hour"
+   • "happiness"  → "family laughing together in sunny backyard"
+✅ Include brand/model name when the script explicitly mentions it
+✅ Use stock-site descriptors: cinematic, aerial, close-up, slow motion, 4K, golden hour
+✅ Each segment must have a UNIQUE query — no duplicates across the video
+
+❌ NEVER use abstract single words: innovation, future, AI, digital, concept,
+   data, network, smart, cloud, cyber, technology, solution, success (alone)
+❌ No merch/art queries: no "shirt", "poster", "art", "drawing", "wallpaper"
+❌ No single-word or 2-word queries
+
+API CHOICE RULES:
+- SERPER  → Google Images. Use ONLY for named brands, specific people, specific city landmarks.
+            Examples: "Ford F-150 2024 red truck exterior side view",
+                      "Elon Musk speaking at product launch on stage",
+                      "New York City Times Square night lights aerial"
+- PEXELS  → Stock video 15-20 seconds. Use for generic scenes, actions, environments.
+            Examples: "businessman walking through busy downtown street cinematic",
+                      "aerial drone shot green mountain forest at sunrise",
+                      "construction workers building steel frame on sunny day"
+- MERGE   → Named subject image (Serper) + action/environment video (Pexels) spliced.
+            serper_keyword = the specific named subject
+            pexels_keyword = the action or environment around it
+            Example: serper="Tesla Model 3 white exterior side view",
+                     pexels="electric car driving on highway at sunset cinematic"
+
+Return ONLY a JSON array — no markdown, no explanation, no code fences:
 [
   {{
     "idx": 0,
-    "primary_keyword": "most specific photographable noun phrase",
-    "fallback_keyword": "slightly broader fallback if primary returns nothing",
-    "api_choice": "SERPER",
+    "visual_scene": "One sentence: exactly what the camera frame shows",
+    "primary_keyword": "highly specific 5-8 word stock footage search query",
+    "fallback_keyword": "slightly broader 5-7 word fallback stock footage query",
+    "api_choice": "SERPER|PEXELS|MERGE",
     "serper_keyword": null,
     "pexels_keyword": null
   }}
 ]
-
-API CHOICE RULES:
-- SERPER  → Google Images. Use for NAMED brands, models, people, specific cities.
-            Examples: "Ford F-150 2024 red exterior", "Elon Musk speaking stage",
-                      "New York City skyline night", "iPhone 15 Pro unboxing"
-- PEXELS  → Stock video 15-20s. Use for generic actions, environments, landscapes.
-            Examples: "highway driving cinematic sunset", "busy office workers meeting",
-                      "mountain forest aerial drone", "construction workers building"
-- MERGE   → Serper image (specific subject) + Pexels video (environment/action).
-            Set serper_keyword = named subject, pexels_keyword = environment.
-            Example: serper="Ford F-150 exterior red", pexels="highway driving truck"
-
-KEYWORD RULES (strictly enforced):
-- Physical and photographable ONLY — NO abstract concepts
-- Include brand/model when mentioned: NEVER "truck" alone if "Ford F-150" was said
-- Short noun phrases with descriptive adjectives (stock-site language)
-- No articles (a, the) unless critical
-- No repeated keywords across all segments — each must be unique
-- NEVER use: innovation, future, AI, digital, concept, data, network, smart, cloud, cyber
-- NEVER use keywords that produce merch: do not add "shirt", "poster", "art" etc.
-- Emotional direction must match script tone
 
 MEDIA SEGMENTS (the avatar script text shown during each B-roll window):
 {segments_json}
@@ -80,28 +101,42 @@ Return the JSON array only. One entry per segment, idx matching the order above.
 # ---------------------------------------------------------------------------
 
 _GEMINI_PROMPT_TEMPLATE = """\
-You are a professional video editor deciding what visuals to show for a script segment.
+You are a professional video editor deciding exactly what B-roll footage to show for a script segment.
 
-Return ONLY valid JSON with these keys:
+THINKING PROCESS:
+Step 1 — VISUALIZE: What would a camera show? Describe the exact visual frame in one sentence.
+Step 2 — GENERATE: Convert that visual description into highly specific stock footage search queries.
 
+QUERY RULES:
+- Every query MUST be 5+ words minimum
+- Format: [subject] + [action] + [setting] + [mood/style]
+- Replace abstract/emotional with VISIBLE actions:
+  "success" → "executive celebrating promotion shaking hands in office"
+  "growth"  → "green plant growing time-lapse in sunlight"
+  "future"  → "modern city skyline aerial drone shot blue hour"
+- Use stock-site descriptors: cinematic, aerial, close-up, 4K, golden hour, slow motion
+- NEVER use alone: innovation, future, AI, digital, concept, data, cloud, smart, cyber
+
+Return ONLY valid JSON:
 {{
-  "primary_subject": "The EXACT thing that MUST appear on screen.",
+  "visual_scene": "One sentence: exactly what the camera frame shows",
+  "primary_subject": "The exact concrete thing shown on screen",
   "subject_type": "product | person | place | concept | action",
-  "visual_action": "What should be happening: e.g. 'driving on highway'",
-  "environment": "Where the visual takes place",
-  "mood": "Visual mood: cinematic | bright | dramatic | professional",
-  "must_show": ["list", "of", "required", "elements"],
-  "must_avoid": ["cartoon", "illustration", "watermark", "low quality"],
+  "visual_action": "What is visually happening (e.g. 'driving on sunlit highway')",
+  "environment": "Where it takes place (e.g. 'modern open-plan office')",
+  "mood": "cinematic | bright | dramatic | professional | warm | cold",
+  "must_show": ["concrete", "visual", "element", "required"],
+  "must_avoid": ["cartoon", "illustration", "watermark", "anime", "low quality"],
   "search_queries": [
-    "MOST SPECIFIC query first",
-    "Second specific",
-    "Moderate",
-    "Broader fallback",
-    "Generic fallback"
+    "most specific 6-8 word query with subject action setting mood",
+    "second specific 5-7 word query different angle or setting",
+    "medium 5-6 word fallback query",
+    "broader 5 word fallback",
+    "generic 5 word fallback"
   ],
   "scene_type": "specific | general | mixed",
-  "keywords": ["main", "keywords"],
-  "named_entities": ["Named Entity One"]
+  "keywords": ["concrete", "visual", "keywords"],
+  "named_entities": ["Named Entity If Present"]
 }}
 
 TEXT TO ANALYZE:
@@ -163,17 +198,21 @@ class ScriptAnalyzer:
         self, media_blocks: list[tuple[int, TimelineBlock]]
     ) -> dict[int, MediaPlan]:
         global_topic = self.global_topic_info.get("main_topic", "")
-        script_preview = self._full_script[:600].replace("\n", " ")
+        key_visuals = self.global_topic_info.get("key_visuals", [])
+        context_phrases = self.global_topic_info.get("context_phrases", [])
+        script_preview = self._full_script[:800].replace("\n", " ")
 
         # Build segments JSON — what the avatar says during each media window
         segments = [
-            {"idx": i, "segment_text": block.script_text[:300]}
+            {"idx": i, "segment_text": block.script_text[:400]}
             for i, (_, block) in enumerate(media_blocks)
         ]
         segments_json = json.dumps(segments, indent=2)
 
         prompt = _BATCH_KEYWORDS_PROMPT.format(
             global_topic=global_topic or "general topic",
+            key_visuals=", ".join(key_visuals) if key_visuals else "see script",
+            context_phrases=", ".join(context_phrases) if context_phrases else "",
             script_preview=script_preview,
             n_segments=len(media_blocks),
             segments_json=segments_json,
@@ -204,9 +243,16 @@ class ScriptAnalyzer:
             if api_choice not in ("SERPER", "PEXELS", "MERGE"):
                 api_choice = "PEXELS"
 
+            primary_kw = str(entry.get("primary_keyword") or "").strip()
+            fallback_kw = str(entry.get("fallback_keyword") or "").strip()
+
+            # Enforce minimum 5-word queries — pad with topic context if too short
+            primary_kw = self._ensure_rich_query(primary_kw, global_topic)
+            fallback_kw = self._ensure_rich_query(fallback_kw, global_topic)
+
             plans[block_idx] = MediaPlan(
-                primary_keyword=str(entry.get("primary_keyword") or "").strip(),
-                fallback_keyword=str(entry.get("fallback_keyword") or "").strip(),
+                primary_keyword=primary_kw,
+                fallback_keyword=fallback_kw,
                 api_choice=api_choice,
                 serper_keyword=str(entry.get("serper_keyword") or "").strip(),
                 pexels_keyword=str(entry.get("pexels_keyword") or "").strip(),
@@ -230,27 +276,55 @@ class ScriptAnalyzer:
     def _heuristic_plan_for(self, block: TimelineBlock) -> MediaPlan:
         """Fast heuristic media plan when Gemini is unavailable."""
         global_topic = self.global_topic_info.get("main_topic", "")
+        key_visuals = self.global_topic_info.get("key_visuals", [])
         intent = extract_visual_intent(block.script_text, global_topic=global_topic)
 
-        subject = intent.primary_subject or global_topic or "cinematic"
-        action = intent.action or ""
-        env = intent.environment or ""
+        subject = intent.primary_subject or global_topic or "person"
+        action = intent.action or "working"
+        env = intent.environment or "outdoors"
+        mood = intent.mood or "cinematic"
 
-        primary = f"{subject} {action}".strip() if action else subject
-        fallback = f"{subject} {env}".strip() if env else f"{subject} cinematic"
-
-        # Decide API: Serper only if subject looks like a named brand
-        from super_auto_editor_v2.analyze.scene_classifier import (
-            KNOWN_BRANDS,
-            _has_known_brand,
+        # Build 5+ word queries
+        primary = f"{subject} {action} {env} {mood}".strip()
+        fallback = (
+            f"{global_topic} {action} {env} cinematic".strip()
+            if global_topic and global_topic.lower() not in subject.lower()
+            else f"{subject} {env} professional shot"
         )
+
+        # Enrich with key visuals if subject is generic
+        if len(subject.split()) <= 1 and key_visuals:
+            primary = f"{key_visuals[0]} {action} {env} {mood}".strip()
+
+        from super_auto_editor_v2.analyze.scene_classifier import _has_known_brand
         use_serper = _has_known_brand(block.script_text.lower())
 
         return MediaPlan(
-            primary_keyword=primary,
-            fallback_keyword=fallback,
+            primary_keyword=self._ensure_rich_query(primary, global_topic),
+            fallback_keyword=self._ensure_rich_query(fallback, global_topic),
             api_choice="SERPER" if use_serper else "PEXELS",
         )
+
+    def _ensure_rich_query(self, query: str, global_topic: str) -> str:
+        """
+        Guarantee the query has at least 5 words.
+        If it's too short, pad it with global topic context and stock descriptors.
+        """
+        words = query.split()
+        if len(words) >= 5:
+            return query
+        # Pad with global topic if it adds new info
+        if global_topic and global_topic.lower() not in query.lower():
+            query = f"{global_topic} {query}".strip()
+        words = query.split()
+        # Still short — add cinematic descriptor
+        if len(words) < 5:
+            padding = ["cinematic", "professional shot", "high quality footage"]
+            for p in padding:
+                query = f"{query} {p}"
+                if len(query.split()) >= 5:
+                    break
+        return query.strip()
 
     # ------------------------------------------------------------------
     # Per-block analysis (used for SceneAnalysis metadata / Gemini fallback)
