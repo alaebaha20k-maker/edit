@@ -28,9 +28,10 @@ from super_auto_editor_v2.models import ImageCandidate
 class SerperImageSearcher:
     BASE_URL = "https://google.serper.dev/images"
 
-    # Minimum dimensions — accept anything ≥ 800×450 (roughly 720p-class)
-    MIN_WIDTH = 800
-    MIN_HEIGHT = 450
+    # Minimum dimensions — full HD floor (1280×720)
+    # Serper returns known dimensions; images below this are too low quality for 1080p video
+    MIN_WIDTH = 1280
+    MIN_HEIGHT = 720
 
     # Source domains that consistently return garbage (merch, fan-art, etc.)
     BAD_DOMAINS: frozenset[str] = frozenset({
@@ -38,7 +39,9 @@ class SerperImageSearcher:
         "cafepress.com", "teespring.com", "printful.com", "merch.amazon.com",
         "deviantart.com", "artstation.com", "pixiv.net", "zerochan.net",
         "myanimelist.net", "danbooru.donmai.us",
-        "amazon.com", "ebay.com", "etsy.com",  # product listings, not photos
+        "amazon.com", "ebay.com", "etsy.com",  # product listings, not real photos
+        "shutterstock.com", "gettyimages.com", "istockphoto.com",  # watermarked stock
+        "dreamstime.com", "123rf.com", "depositphotos.com",
     })
 
     # URL path fragments that indicate junk images
@@ -46,6 +49,7 @@ class SerperImageSearcher:
         "t-shirt", "tshirt", "hoodie", "sticker", "mug", "poster",
         "merch", "merchandise", "anime", "manga", "cartoon",
         "phone-case", "phonecase", "pillow", "wallpaper",
+        "thumbnail", "preview", "watermark", "sample",
     ]
 
     # Title terms that indicate art/merch — rejected even if URL looks OK
@@ -54,7 +58,8 @@ class SerperImageSearcher:
         "illustration", "drawing", "clipart", "vector", "pixel art",
         "t-shirt", "tshirt", "hoodie", "sticker", "poster", "mug",
         "merch", "merchandise", "redbubble", "teepublic",
-        "free download", "wallpaper hd",
+        "free download", "wallpaper hd", "watermark", "shutterstock",
+        "getty images", "istock", "dreamstime",
     ]
 
     def __init__(self, api_key: str, cache: CacheManager, timeout: int = 10):
@@ -71,7 +76,7 @@ class SerperImageSearcher:
     # Public API
     # ------------------------------------------------------------------
 
-    def search(self, query: str, num: int = 5) -> list[ImageCandidate]:
+    def search(self, query: str, num: int = 8) -> list[ImageCandidate]:
         """Search Google Images via Serper. Results are cached."""
         if not query or len(query.strip()) < 3:
             return []
