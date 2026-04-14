@@ -6402,6 +6402,7 @@ def super_auto_editor_start():
 
                     cfg = load_config(Path(config_path) if config_path else None)
                     # Inject keys from saved settings so UI works without env setup.
+                    cfg.serper_api_key = cfg.serper_api_key or serper_key
                     cfg.brave_api_key = cfg.brave_api_key or brave_search_key
                     cfg.pexels_api_key = cfg.pexels_api_key or pexels_key
                     cfg.gemini_api_key = cfg.gemini_api_key or (gemini_keys[0] if gemini_keys else '')

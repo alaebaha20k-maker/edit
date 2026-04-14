@@ -118,7 +118,7 @@ Script (first 2000 chars):
 Return JSON only with keys: main_topic, topic_type, key_visuals (array), context_phrases (array)."""
 
         try:
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            model = genai.GenerativeModel("gemini-2.5-flash")
             resp = model.generate_content(prompt)
             raw = (resp.text or "").strip()
             start = raw.find("{")
