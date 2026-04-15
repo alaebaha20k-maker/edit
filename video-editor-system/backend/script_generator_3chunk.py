@@ -745,19 +745,16 @@ ANALYSIS RULES:
     # =========================================================================
 
     def _build_system_instruction(self, language: str) -> str:
-        """
-        Keep the system instruction SHORT.
+        return f"""You are an elite video script writer trained to execute niche formulas exactly.
+Your ONLY job is to follow the Writing Guidelines and Formula Core given in the prompt.
+You do not improvise style, structure, or tone. You execute the formula — sentence by sentence.
 
-        Research shows LLMs ignore the "middle" of very long system instructions
-        (the "lost in the middle" problem). A 40K formula buried there becomes
-        background noise — the model defaults to its built-in writing style.
-
-        The formula MUST be at the TOP of the user message where the model
-        pays full attention to it. The system instruction only sets format rules.
-        """
-        return f"""You are a professional video script writer.
-Your job is to execute the Writing Guidelines given to you EXACTLY — sentence by sentence.
-You do not improvise style, structure, or content. You execute the formula.
+STYLE MANDATE (non-negotiable):
+- Do NOT write like generic AI. Do NOT default to bland YouTube-style content.
+- Do NOT use soft filler: "So today", "In this video we will", "Let me know in the comments".
+- Do NOT use vague transitions, feel-good padding, or soft summaries.
+- Write like someone sharing a secret — direct, specific, confident, formula-driven.
+- Every sentence must be earned. Every paragraph must escalate or reveal something new.
 
 OUTPUT FORMAT — strict:
 1. Write 100% in {language} — every word, no exceptions.
@@ -769,7 +766,115 @@ OUTPUT FORMAT — strict:
 7. Stop immediately after the final CTA line."""
 
     # =========================================================================
-    # CHUNK PROMPT — minimal, formula-first
+    # FIX 2+4: FORMULA CORE — universal quality laws + chunk-specific rules
+    # Injected at position-0 in every chunk prompt, before DNA and raw formula.
+    # =========================================================================
+
+    def _get_chunk_rules(self, chunk_index: int, total_chunks: int) -> str:
+        """Chunk-position-specific writing rules (Fix 4)."""
+        if chunk_index == 1:
+            return (
+                "  OPENING RULES:\n"
+                "  • HOOK: Open with the highest-tension sentence possible. No warmup, no build-up.\n"
+                "  • PAYLOAD EARLY: Reveal the core promise or mechanism within the first paragraph.\n"
+                "  • CURIOSITY GAP: Create an open question the viewer MUST stay to answer.\n"
+                "  • SETUP: Establish why this matters to THIS viewer, RIGHT NOW.\n"
+                "  ✗ FORBIDDEN: greetings, 'today we will', 'in this video', slow warmups, 'imagine'."
+            )
+        elif chunk_index == total_chunks:
+            return (
+                "  CLOSING RULES:\n"
+                "  • BYPASS: Remove every last objection before the viewer can think of it.\n"
+                "  • EXECUTION CLARITY: Make the next step obvious and frictionless.\n"
+                "  • ENDING RESIDUE: Deliver one memorable, quotable line before the CTA.\n"
+                "  • CTA: Use the exact CTA from the Writing Guidelines — no improvisation.\n"
+                "  ✗ FORBIDDEN: new topics, vague summaries, trailing thoughts, mid-sentence cuts."
+            )
+        else:
+            mid_ratio = chunk_index / total_chunks
+            if mid_ratio < 0.55:
+                return (
+                    "  EARLY-MIDDLE RULES:\n"
+                    "  • MECHANISM: Explain HOW/WHY with specifics — not what, but the inside view.\n"
+                    "  • PROOF: Add a concrete example, stat, or story within every major point.\n"
+                    "  • ESCALATION: Each paragraph raises the stakes or reveals a new layer.\n"
+                    "  • RETENTION HOOK: End on a partial reveal — make them need the next section.\n"
+                    "  ✗ FORBIDDEN: generic explanations, summarizing what was already said."
+                )
+            else:
+                return (
+                    "  LATE-MIDDLE RULES:\n"
+                    "  • DEPTH: Go deeper — this is where most scripts go shallow. Don't.\n"
+                    "  • CONTRAST: Show what happens with vs. without — make stakes visceral.\n"
+                    "  • MOMENTUM: Writing accelerates. Sentences get shorter. Energy rises.\n"
+                    "  • BRIDGE: Set up the final section — leave the viewer leaning forward.\n"
+                    "  ✗ FORBIDDEN: new setups without payoff, restating earlier points."
+                )
+
+    def _build_formula_core(self, chunk_index: int, total_chunks: int) -> str:
+        """
+        Compact universal quality laws + chunk-specific rules.
+        Injected at position-0 in every chunk prompt (Fix 2 + Fix 4).
+        These are the behavioral laws that enforce quality across all niches.
+        """
+        chunk_rules = self._get_chunk_rules(chunk_index, total_chunks)
+        return (
+            f"╔{'═' * 68}╗\n"
+            f"║          FORMULA CORE — MANDATORY FOR EVERY SENTENCE IN THIS CHUNK         ║\n"
+            f"╚{'═' * 68}╝\n"
+            f"UNIVERSAL LAWS — check before writing each sentence:\n"
+            f"  HOOK: First sentence of any section must grab. No preamble.\n"
+            f"  PAYLOAD EARLY: Give the core value/mechanism in the first 20%% of this chunk.\n"
+            f"  ESCALATION: Each paragraph must raise stakes. Never flatten. Never plateau.\n"
+            f"  RETENTION: End every major beat with an open loop or 'wait for it' signal.\n"
+            f"  SPECIFICITY: Replace every vague claim with a number, name, date, or fact.\n"
+            f"  NO FILLER: Zero filler sentences. Every sentence must earn its place.\n"
+            f"  NO REPETITION: Never restate what was said — unless adding entirely new value.\n"
+            f"  STRONG LINES: At least one sentence per section the viewer will remember.\n"
+            f"{'─' * 70}\n"
+            f"STYLE LOCK:\n"
+            f"  ✗ Do NOT write like generic AI. No bland YouTube voice.\n"
+            f"  ✗ No soft summaries, vague transitions, or feel-good padding.\n"
+            f"  ✗ Do NOT start sentences with: So, Now, Well, Basically, In other words, Remember.\n"
+            f"  ✓ Sound like the formula's intended voice — direct, specific, confident.\n"
+            f"  ✓ Write like someone who KNOWS and is sharing a secret, not explaining a concept.\n"
+            f"{'─' * 70}\n"
+            f"CHUNK {chunk_index}/{total_chunks} — POSITION-SPECIFIC RULES:\n"
+            f"{chunk_rules}\n"
+            f"{'═' * 70}\n\n"
+        )
+
+    def _build_self_check(self, chunk_index: int, total_chunks: int, is_final: bool) -> str:
+        """
+        Self-check block appended to every chunk prompt before 'WRITE NOW' (Fix 3).
+        Forces the model to verify quality before outputting.
+        """
+        checks = [
+            "No filler sentences (every sentence adds value or cut it)",
+            "No vague claims (add number / name / fact to every vague statement)",
+            "No repetition (no point restated from earlier without new value)",
+            "Escalation intact (each paragraph raises stakes or reveals more)",
+        ]
+        if chunk_index == 1:
+            checks.insert(0, "Hook strength: does the first sentence grab without warmup?")
+            checks.insert(1, "Payload delivered: is the core mechanism in the first 20%%?")
+        if is_final:
+            checks.append("Ending residue: one memorable quotable line before CTA?")
+            checks.append("CTA is exact and verbatim from the Writing Guidelines?")
+        else:
+            checks.append("Open loop: does the ending make the viewer NEED to keep watching?")
+
+        check_list = "\n".join(f"  ✓ {c}" for c in checks)
+        return (
+            f"\n{'─' * 70}\n"
+            f"SELF-CHECK — verify BEFORE outputting:\n"
+            f"{check_list}\n"
+            f"If any check fails → rewrite that part internally first. Only output text that passes ALL checks.\n"
+            f"{'─' * 70}\n"
+        )
+
+    # =========================================================================
+    # CHUNK PROMPT — formula-first, self-checking
     # =========================================================================
 
     def _build_chunk_prompt(
@@ -971,17 +1076,31 @@ OUTPUT FORMAT — strict:
                 f"Write {word_target} words of body content then stop (next chunk continues)."
             )
 
-        # ── Prompt assembly (LAWS-FIRST → OUTLINE-FIRST architecture) ───────────
-        # Order: laws → task/outline → continuation → boundary → promo → formula → role → length
-        #
-        # laws_block   @ position-0  → niche laws in working memory during entire write
-        # task_block   @ position-1  → specific recipe for this chunk (outline)
-        # formula_block @ middle     → full reference without burying the laws/recipe
-        #
-        # This solves TWO "lost in the middle" problems:
-        #   1. Laws extracted compactly → always in attention (not buried in 33K formula)
-        #   2. Outline at top → model follows recipe, not generic YouTube instinct
+        # ── Build new quality/enforcement blocks ─────────────────────────────────
+        formula_core_block = self._build_formula_core(chunk.index, total_chunks)  # Fix 2+4
+        self_check_block   = self._build_self_check(chunk.index, total_chunks, is_final)  # Fix 3
+
+        # ── Length control — in-prompt, not trimming (Fix 6) ──────────────────
+        max_chars  = int(chunk.target_chars * 1.10)   # tight ceiling (was 1.20)
+        length_block = (
+            f"LENGTH CONTROL:\n"
+            f"  Target : {chunk.target_chars:,} characters (~{word_target} words)\n"
+            f"  Maximum: {max_chars:,} characters — stop before this limit, never exceed it.\n"
+            f"  Do NOT pad to fill length. Do NOT cut short to save effort.\n"
+            f"  Write exactly what the formula requires — no more, no less.\n"
+        )
+
+        # ── Prompt assembly ────────────────────────────────────────────────────
+        # Order:
+        #   formula_core_block @ position-0  → universal + chunk-specific quality laws (Fix 2+4)
+        #   laws_block         @ position-1  → DNA priority summary of niche formula
+        #   task_block         @ position-2  → specific writing recipe for this chunk
+        #   continuation/boundary/promo      → context management
+        #   formula_block      @ body        → full raw Writing Guidelines (Fix 1)
+        #   role + length                    → position note + tight length target (Fix 6)
+        #   self_check_block   @ end         → quality gate before output (Fix 3)
         prompt = (
+            f"{formula_core_block}"
             f"{laws_block}"
             f"{task_block}"
             f"{continuation}"
@@ -989,10 +1108,8 @@ OUTPUT FORMAT — strict:
             f"{promo_reminder}"
             f"{formula_block}"
             f"ROLE: {role_note}\n"
-            f"LENGTH: Write at least {chunk.target_chars:,} characters "
-            f"(~{word_target} words, max {int(chunk.target_chars * 1.20):,} chars).\n"
-            f"Fill every word with formula content. Do NOT rush. Do NOT stop early.\n"
-            f"FINAL CHECK before writing: mandatory phrases used? forbidden words avoided? tone correct?\n"
+            f"{length_block}"
+            f"{self_check_block}"
             f"{stop_instruction}\n"
             f"WRITE NOW:"
         )
