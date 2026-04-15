@@ -20,13 +20,13 @@ Workflow:
     Saves 15-30s per generation for the same niche.
 
   PHASE 2–N — WRITE (Gemini Pro, 1 call per chunk):
-    When DNA extraction succeeded:
-      → laws_block (formula_dna) at position-0 = all niche laws in working memory
-      → step-by-step outline at position-1
-      → raw formula NOT re-injected (DNA covers everything, avoids prompt bloat)
-    When DNA extraction failed (fallback):
-      → full raw formula injected as primary source
-    This handles formulas of ANY size correctly.
+    Every chunk prompt contains (in order):
+      → Formula Core (position-0): universal quality laws + chunk-specific rules
+      → DNA summary (position-1): organized niche laws extracted in Phase 1
+      → full raw Writing Guidelines (when formula ≤ 65K chars): belt-and-suspenders
+      → step-by-step outline: specific recipe for this chunk
+      → self-check block: quality gate the model must verify before outputting
+    For large formulas (> 65K): DNA only (raw too large to inject per chunk).
 
   PHASE FINAL — POST: Merge → strip stop → clean → dedup → length enforce.
 """
@@ -198,12 +198,16 @@ class ScriptGenerator3Chunk:
                 dna_ok      = len(dna_preview) >= 1500
                 print(f"✍️  PHASE {chunk.index + 1} — WRITE Chunk {chunk.index}/{total_chunks}: {chunk.role}...")
                 print(f"   📋 Niche formula : {formula_chars:,} chars total")
+                dual = formula_chars <= 65000
                 if dna_ok:
                     dna_lines = len([l for l in dna_preview.split('\n') if l.strip()])
-                    print(f"   ⚖️  Formula DNA  : {dna_lines} law-lines ({len(dna_preview):,} chars) "
-                          f"@ position-0 — raw formula NOT re-injected")
+                    inject_note = (
+                        f"+ full {formula_chars:,}-char formula also injected (dual-inject)"
+                        if dual else "DNA only (formula > 65K)"
+                    )
+                    print(f"   ⚖️  Formula DNA  : {dna_lines} law-lines ({len(dna_preview):,} chars) — {inject_note}")
                 else:
-                    print(f"   ⚠️  DNA failed   : raw formula ({formula_chars:,} chars) injected as fallback")
+                    print(f"   ⚠️  DNA failed   : full raw formula ({formula_chars:,} chars) injected directly")
                 if sections_done:
                     print(f"   ✅ Sections done : {', '.join(sections_done)}")
 
@@ -452,7 +456,7 @@ Output the following XML structure. Do NOT add markdown or code blocks.
             "sections"             : sections,
             "chunk_sections"       : chunk_sections,
             "chunk_section_content": chunk_section_content,
-            "_formula_text"        : "",   # DNA is used — raw formula not needed
+            "_formula_text"        : "",   # restored to raw formula after this call (see generate_script)
             "anchor"               : anchor,
             "promo_count"          : promo_count,
             "cta_action"           : cta_action,
