@@ -14,7 +14,8 @@ class VideoSceneBuilder:
 
     def build_from_video(self, source: Path, duration: float, out_path: Path) -> Path:
         # Speed-first: single trim+scale pass and drop source audio immediately.
-        vf = f"scale={self.w}:{self.h}:force_original_aspect_ratio=increase,crop={self.w}:{self.h},fps={self.fps}"
+        # format=yuv420p ensures clip is composition-ready — no conversion needed in filter_complex
+        vf = f"scale={self.w}:{self.h}:force_original_aspect_ratio=increase,crop={self.w}:{self.h},fps={self.fps},format=yuv420p"
         self.ffmpeg.run([
             "-ss", "0", "-t", f"{duration:.3f}", "-i", str(source),
             "-vf", vf,

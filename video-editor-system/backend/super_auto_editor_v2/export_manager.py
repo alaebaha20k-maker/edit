@@ -473,12 +473,13 @@ class ExportManager:
             f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,fps={FPS},format=yuv420p[base]"
         )
 
-        # Offset each clip to its timeline position
+        # Offset each clip to its timeline position.
+        # All overlay clips are pre-built at exactly W×H, FPS, yuv420p by the clip builders
+        # (image_clip_builder, video_scene_builder, scene_mixer) — no scale/pad/format needed here.
+        # Stripping those 4 filters per clip removes ~132 redundant filter ops for 33 overlays.
         for i, (start, _end, _path) in enumerate(overlay_clips):
             filter_parts.append(
-                f"[{i+1}:v]scale={W}:{H}:force_original_aspect_ratio=decrease,"
-                f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,fps={FPS},format=yuv420p,"
-                f"setpts=PTS+{start:.3f}/TB[c{i}]"
+                f"[{i+1}:v]setpts=PTS+{start:.3f}/TB[c{i}]"
             )
 
         # Chain overlays

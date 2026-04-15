@@ -6,7 +6,8 @@ from pathlib import Path
 
 class FFmpegRunner:
     def run(self, args: list[str]) -> None:
-        cmd = ["ffmpeg", "-y", *args]
+        # -threads 0 → use all available CPU cores for decoding and filter graph
+        cmd = ["ffmpeg", "-y", "-threads", "0", *args]
         subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 
     def probe_duration(self, path: Path) -> float:

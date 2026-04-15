@@ -188,10 +188,12 @@ class SceneMixer:
         """Trim, scale, and mute a video clip."""
         if out.exists() and out.stat().st_size > 0:
             return  # cache hit
+        # format=yuv420p ensures clip is composition-ready — no conversion needed in filter_complex
         vf = (
             f"scale={self.w}:{self.h}:force_original_aspect_ratio=increase,"
             f"crop={self.w}:{self.h},"
-            f"fps={self.fps}"
+            f"fps={self.fps},"
+            f"format=yuv420p"
         )
         self.ffmpeg.run([
             "-ss", "0",
