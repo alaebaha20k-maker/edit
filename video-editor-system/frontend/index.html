@@ -36,6 +36,10 @@
             <span class="nav-icon">📁</span>
             <span class="nav-text">Output Files</span>
         </button>
+        <button class="nav-btn" onclick="showTab('digital-create')" data-tab="digital-create">
+            <span class="nav-icon">📚</span>
+            <span class="nav-text">Digital Create</span>
+        </button>
     </nav>
 
     <!-- MAIN CONTENT AREA -->
@@ -70,6 +74,12 @@
                     <h3>Output Files</h3>
                     <p>Browse generated videos</p>
                     <button onclick="showTab('output')" class="btn-primary">Browse Files</button>
+                </div>
+                <div class="dashboard-card">
+                    <div class="card-icon">📚</div>
+                    <h3>Digital Create</h3>
+                    <p>Generate high-quality AI ebooks as PDF</p>
+                    <button onclick="showTab('digital-create')" class="btn-primary">Create Ebook</button>
                 </div>
             </div>
 
@@ -1155,6 +1165,62 @@
             </div>
         </div>
 
+        <!-- ============================================ -->
+        <!-- DIGITAL CREATE TAB -->
+        <!-- ============================================ -->
+        <div id="tab-digital-create" class="tab-content">
+            <h2>📚 Digital Create</h2>
+            <p class="subtitle">Generate high-quality AI-powered ebooks as professional PDFs using Gemini 2.5 Pro</p>
+
+            <section class="step">
+                <h3><span class="step-number">1</span> Ebook Title</h3>
+                <input type="text" id="ebook-title" class="input-field"
+                    placeholder="e.g. Toyota Models — Problems & Solutions" style="width:100%;box-sizing:border-box;">
+            </section>
+
+            <section class="step">
+                <h3><span class="step-number">2</span> Details / Topics</h3>
+                <textarea id="ebook-details" class="input-field" rows="5"
+                    placeholder="Describe what you want in the ebook. Be specific: topics, sections, depth level, target audience, key questions to answer..."
+                    style="width:100%;box-sizing:border-box;resize:vertical;"></textarea>
+            </section>
+
+            <section class="step">
+                <h3><span class="step-number">3</span> Number of Pages</h3>
+                <select id="ebook-pages" class="input-field" style="width:220px;">
+                    <option value="20">20 pages</option>
+                    <option value="30">30 pages</option>
+                    <option value="50" selected>50 pages</option>
+                    <option value="75">75 pages</option>
+                    <option value="100">100 pages</option>
+                    <option value="150">150 pages</option>
+                    <option value="200">200 pages</option>
+                </select>
+            </section>
+
+            <section class="step">
+                <button onclick="generateEbook()" class="btn-primary" id="ebook-generate-btn"
+                    style="padding:14px 36px;font-size:16px;font-weight:700;">
+                    📚 Generate Ebook
+                </button>
+            </section>
+
+            <div id="ebook-status" style="display:none; margin-top:24px;">
+                <div style="background:#1a1a2e; border:1px solid #4f46e5; border-radius:12px; padding:20px;">
+                    <div id="ebook-status-text" style="color:#c7d2fe; font-size:14px; margin-bottom:12px;">Starting...</div>
+                    <div style="background:#0f0f1f; border-radius:6px; overflow:hidden; height:8px;">
+                        <div id="ebook-progress-bar" style="height:100%; width:0%; background:linear-gradient(90deg,#6366f1,#8b5cf6); transition:width 0.5s ease;"></div>
+                    </div>
+                    <div id="ebook-download-link" style="margin-top:16px; display:none;">
+                        <a id="ebook-download-a" href="#" download
+                            style="display:inline-block; background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff; padding:12px 28px; border-radius:8px; text-decoration:none; font-weight:700; font-size:15px;">
+                            ⬇️ Download PDF
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </main>
 
     <!-- ============================================ -->
@@ -1998,5 +2064,72 @@ TAGS: comma-separated, under 400 chars, match the title keywords"></textarea>
 
     <script src="app.js?v=20260303-vault"></script>
     <script src="capcut_editor.js?v=20260207"></script>
+    <script>
+    // ── Digital Create — Ebook Generator ──────────────────────────────────
+    let _ebookPollTimer = null;
+
+    async function generateEbook() {
+        const title   = document.getElementById('ebook-title').value.trim();
+        const details = document.getElementById('ebook-details').value.trim();
+        const pages   = parseInt(document.getElementById('ebook-pages').value, 10);
+
+        if (!title)   { alert('Please enter an ebook title.'); return; }
+        if (!details) { alert('Please describe what you want in the ebook.'); return; }
+
+        // Read Gemini key from settings (same key used by script writer)
+        const geminiKey = localStorage.getItem('gemini_api_key') || '';
+        if (!geminiKey) { alert('Please set your Gemini API key in Settings first.'); return; }
+
+        document.getElementById('ebook-generate-btn').disabled = true;
+        document.getElementById('ebook-status').style.display = 'block';
+        document.getElementById('ebook-download-link').style.display = 'none';
+        _updateEbookProgress(5, 'Starting Gemini 2.5 Pro research...');
+
+        try {
+            const resp = await fetch('/api/ebook/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, details, pages, gemini_api_key: geminiKey })
+            });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error || 'Failed to start');
+            _pollEbookStatus(data.job_id);
+        } catch(e) {
+            _updateEbookProgress(0, '❌ Error: ' + e.message);
+            document.getElementById('ebook-generate-btn').disabled = false;
+        }
+    }
+
+    function _pollEbookStatus(jobId) {
+        if (_ebookPollTimer) clearInterval(_ebookPollTimer);
+        _ebookPollTimer = setInterval(async () => {
+            try {
+                const r = await fetch('/api/ebook/status/' + jobId);
+                const d = await r.json();
+                if (d.status === 'running') {
+                    const pct = d.progress || 10;
+                    _updateEbookProgress(pct, d.message || 'Working...');
+                } else if (d.status === 'done') {
+                    clearInterval(_ebookPollTimer);
+                    _updateEbookProgress(100, '✅ Ebook ready! Click below to download.');
+                    const dlLink = document.getElementById('ebook-download-link');
+                    const dlA    = document.getElementById('ebook-download-a');
+                    dlA.href = d.download_url;
+                    dlLink.style.display = 'block';
+                    document.getElementById('ebook-generate-btn').disabled = false;
+                } else if (d.status === 'error') {
+                    clearInterval(_ebookPollTimer);
+                    _updateEbookProgress(0, '❌ ' + (d.error || 'Generation failed'));
+                    document.getElementById('ebook-generate-btn').disabled = false;
+                }
+            } catch(e) { /* network glitch, keep polling */ }
+        }, 3000);
+    }
+
+    function _updateEbookProgress(pct, message) {
+        document.getElementById('ebook-progress-bar').style.width = pct + '%';
+        document.getElementById('ebook-status-text').textContent  = message;
+    }
+    </script>
 </body>
 </html>
