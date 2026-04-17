@@ -800,3 +800,106 @@ function showAlert(containerId, message, type) {
         container.innerHTML = '';
     }, 5000);
 }
+
+
+// =============================================================================
+// 📚 DIGITAL CREATE — Ebook Generator
+// =============================================================================
+
+let _ebookJobId = null;
+let _ebookPollInterval = null;
+
+async function generateEbook() {
+    const statusDiv  = document.getElementById('ebook-status');
+    const title      = (document.getElementById('ebook-title').value || '').trim();
+    const details    = (document.getElementById('ebook-details').value || '').trim();
+    const pages      = parseInt(document.getElementById('ebook-pages').value) || 50;
+
+    if (!title) {
+        statusDiv.innerHTML = '<div class="alert alert-error">❌ Please enter an ebook title.</div>';
+        return;
+    }
+    if (!details || details.length < 20) {
+        statusDiv.innerHTML = '<div class="alert alert-error">❌ Please describe what you want inside the ebook (at least 20 characters).</div>';
+        return;
+    }
+
+    statusDiv.innerHTML = `
+        <div class="alert alert-info" style="padding:16px;">
+            <strong>📚 Starting ebook generation…</strong><br>
+            <small>Phase 1: Deep research &amp; chapter outline with Gemini 2.5 Pro</small>
+            <div style="margin-top:10px;background:#e2e8f0;border-radius:4px;height:8px;overflow:hidden;">
+                <div id="ebook-progress-bar" style="height:100%;background:linear-gradient(90deg,#667eea,#764ba2);width:5%;transition:width 2s;border-radius:4px;"></div>
+            </div>
+            <small id="ebook-progress-text" style="color:#718096;margin-top:4px;display:block;">Sending request…</small>
+        </div>`;
+
+    try {
+        const res  = await fetch('/api/ebook/generate', {
+            method : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body   : JSON.stringify({ title, details, pages }),
+        });
+        const data = await res.json();
+        if (!data.success) {
+            statusDiv.innerHTML = `<div class="alert alert-error">❌ ${data.error}</div>`;
+            return;
+        }
+        _ebookJobId = data.job_id;
+        _ebookPollInterval = setInterval(_pollEbookStatus, 4000);
+        _updateEbookProgress(10, 'Research in progress…');
+    } catch (err) {
+        statusDiv.innerHTML = `<div class="alert alert-error">❌ Error: ${err.message}</div>`;
+    }
+}
+
+async function _pollEbookStatus() {
+    if (!_ebookJobId) return;
+    try {
+        const res  = await fetch(`/api/ebook/status/${_ebookJobId}`);
+        const data = await res.json();
+
+        if (data.status === 'running') {
+            // Animate progress bar forward each poll
+            const bar = document.getElementById('ebook-progress-bar');
+            if (bar) {
+                const cur = parseInt(bar.style.width) || 10;
+                const nxt = Math.min(cur + 6, 90);
+                bar.style.width = nxt + '%';
+            }
+            _updateEbookProgress(null, data.progress || 'Writing chapters…');
+            return;
+        }
+
+        clearInterval(_ebookPollInterval);
+        _ebookPollInterval = null;
+
+        if (data.status === 'done') {
+            const r = data.result || {};
+            document.getElementById('ebook-status').innerHTML = `
+                <div class="alert alert-success" style="padding:18px;">
+                    <strong>✅ Ebook Generated Successfully!</strong><br><br>
+                    📖 <strong>${r.chapters} chapters</strong> written<br>
+                    📝 <strong>${(r.total_words || 0).toLocaleString()} words</strong><br>
+                    ⏱️ Generated in <strong>${r.elapsed}s</strong><br><br>
+                    <a href="${data.download_url}" download
+                       class="btn btn-success"
+                       style="display:inline-block;margin-top:8px;text-decoration:none;font-size:15px;padding:12px 28px;">
+                        ⬇️ Download PDF
+                    </a>
+                </div>`;
+        } else {
+            document.getElementById('ebook-status').innerHTML =
+                `<div class="alert alert-error">❌ Generation failed: ${data.error || 'Unknown error'}</div>`;
+        }
+    } catch (err) {
+        console.error('Poll error:', err);
+    }
+}
+
+function _updateEbookProgress(pct, message) {
+    const bar  = document.getElementById('ebook-progress-bar');
+    const text = document.getElementById('ebook-progress-text');
+    if (bar && pct !== null) bar.style.width = pct + '%';
+    if (text && message)    text.textContent = message;
+}

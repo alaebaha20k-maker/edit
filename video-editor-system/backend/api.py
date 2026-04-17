@@ -6521,6 +6521,101 @@ def super_auto_editor_download(job_id):
     )
 
 
+# =============================================================================
+# 📚 DIGITAL CREATE — Ebook Generator
+# =============================================================================
+
+# In-memory job store (same pattern as super-auto-editor)
+_ebook_jobs: dict = {}
+
+
+@app.route('/api/ebook/generate', methods=['POST'])
+def ebook_generate():
+    """
+    Start an ebook generation job (background thread).
+    Body: { title, details, pages }
+    Returns: { job_id, status: "queued" }
+    """
+    import threading
+    import uuid
+    from config import Config
+
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    title   = (data.get('title') or '').strip()
+    details = (data.get('details') or '').strip()
+    pages   = int(data.get('pages') or 50)
+
+    if not title:
+        return jsonify({'error': 'title is required'}), 400
+    if not details:
+        return jsonify({'error': 'details is required'}), 400
+    if pages < 5 or pages > 500:
+        return jsonify({'error': 'pages must be between 5 and 500'}), 400
+
+    errors = Config.validate_api_keys()
+    if any('GEMINI' in e for e in errors):
+        return jsonify({'error': 'Gemini API key not configured'}), 500
+
+    job_id = str(uuid.uuid4())[:8]
+    _ebook_jobs[job_id] = {
+        'status'  : 'running',
+        'title'   : title,
+        'pages'   : pages,
+        'progress': 'Starting research…',
+        'result'  : None,
+        'error'   : None,
+    }
+
+    def _run():
+        try:
+            from ebook_generator import EbookGenerator
+            gen    = EbookGenerator()
+            result = gen.generate(title=title, details=details, pages=pages, verbose=True)
+            _ebook_jobs[job_id]['status'] = 'done'
+            _ebook_jobs[job_id]['result'] = result
+        except Exception as exc:
+            _ebook_jobs[job_id]['status'] = 'error'
+            _ebook_jobs[job_id]['error']  = str(exc)
+            print(f"[ebook] job {job_id} failed: {exc}")
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({'success': True, 'job_id': job_id, 'status': 'running'})
+
+
+@app.route('/api/ebook/status/<job_id>', methods=['GET'])
+def ebook_status(job_id):
+    """Poll for ebook job status."""
+    job = _ebook_jobs.get(job_id)
+    if not job:
+        return jsonify({'error': 'Job not found'}), 404
+    resp = dict(job)
+    resp['success'] = True
+    if job['status'] == 'done' and job.get('result'):
+        resp['download_url'] = f'/api/ebook/download/{job_id}'
+    return jsonify(resp)
+
+
+@app.route('/api/ebook/download/<job_id>', methods=['GET'])
+def ebook_download(job_id):
+    """Download the finished PDF."""
+    job = _ebook_jobs.get(job_id)
+    if not job or job['status'] != 'done':
+        return jsonify({'error': 'Not ready'}), 404
+    result   = job.get('result', {})
+    pdf_path = result.get('pdf_path', '')
+    if not pdf_path or not os.path.exists(pdf_path):
+        return jsonify({'error': 'File not found'}), 404
+    return send_file(
+        pdf_path,
+        as_attachment=True,
+        download_name=os.path.basename(pdf_path),
+        mimetype='application/pdf',
+    )
+
+
 if __name__ == '__main__':
     print("="*60)
     print("🎬 VIDEO EDITOR API SERVER")
