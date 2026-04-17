@@ -2076,6 +2076,10 @@ TAGS: comma-separated, under 400 chars, match the title keywords"></textarea>
         if (!title)   { alert('Please enter an ebook title.'); return; }
         if (!details) { alert('Please describe what you want in the ebook.'); return; }
 
+        // Read Gemini key from settings (same key used by script writer)
+        const geminiKey = localStorage.getItem('gemini_api_key') || '';
+        if (!geminiKey) { alert('Please set your Gemini API key in Settings first.'); return; }
+
         document.getElementById('ebook-generate-btn').disabled = true;
         document.getElementById('ebook-status').style.display = 'block';
         document.getElementById('ebook-download-link').style.display = 'none';
@@ -2085,7 +2089,7 @@ TAGS: comma-separated, under 400 chars, match the title keywords"></textarea>
             const resp = await fetch('/api/ebook/generate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title, details, pages })
+                body: JSON.stringify({ title, details, pages, gemini_api_key: geminiKey })
             });
             const data = await resp.json();
             if (!data.success) throw new Error(data.error || 'Failed to start');
