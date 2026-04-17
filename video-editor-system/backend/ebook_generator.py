@@ -27,8 +27,8 @@ from config import Config
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
-RESEARCH_MODEL = "gemini-2.5-pro-preview-06-05"
-WRITE_MODEL    = "gemini-2.5-pro-preview-06-05"
+RESEARCH_MODEL = "gemini-2.5-pro"
+WRITE_MODEL    = "gemini-2.5-pro"
 
 # Words per PDF page (standard ebook density)
 WORDS_PER_PAGE = 350
