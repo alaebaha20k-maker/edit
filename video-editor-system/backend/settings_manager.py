@@ -550,7 +550,7 @@ LANGUAGE: Auto-detect from title and script. Write EVERYTHING in that language."
         if gemini_seo is not None and gemini_seo != '':
             settings['api_keys']['gemini_seo'] = gemini_seo
         if claude_key is not None and claude_key != '':
-            settings['api_keys']['claude_key'] = claude_key
+            settings['api_keys']['claude_api_key'] = claude_key
 
         # Save to file
         with open(cls.SETTINGS_FILE, 'w') as f:
@@ -568,7 +568,8 @@ LANGUAGE: Auto-detect from title and script. Write EVERYTHING in that language."
             gemini_translate_1=gemini_translate_1 if gemini_translate_1 else None,
             gemini_translate_2=gemini_translate_2 if gemini_translate_2 else None,
             gemini_prompts_key=gemini_prompts if gemini_prompts else None,
-            gemini_seo_key=gemini_seo if gemini_seo else None
+            gemini_seo_key=gemini_seo if gemini_seo else None,
+            claude_key=claude_key if claude_key else None
         )
 
         return settings
