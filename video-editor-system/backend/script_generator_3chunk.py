@@ -1085,13 +1085,16 @@ OUTPUT FORMAT — strict:
         self_check_block   = self._build_self_check(chunk.index, total_chunks, is_final)  # Fix 3
 
         # ── Length control — in-prompt, not trimming (Fix 6) ──────────────────
-        max_chars  = int(chunk.target_chars * 1.10)   # tight ceiling (was 1.20)
+        max_chars  = int(chunk.target_chars * 1.15)   # ceiling: 15% over target
+        min_chars  = int(chunk.target_chars * 0.92)   # floor: never fall below 92%
         length_block = (
-            f"LENGTH CONTROL:\n"
-            f"  Target : {chunk.target_chars:,} characters (~{word_target} words)\n"
-            f"  Maximum: {max_chars:,} characters — stop before this limit, never exceed it.\n"
-            f"  Do NOT pad to fill length. Do NOT cut short to save effort.\n"
-            f"  Write exactly what the formula requires — no more, no less.\n"
+            f"LENGTH CONTROL — MANDATORY:\n"
+            f"  Target  : {chunk.target_chars:,} characters (~{word_target} words)\n"
+            f"  Minimum : {min_chars:,} characters — stopping below this is a FAILURE.\n"
+            f"  Maximum : {max_chars:,} characters — stay under this.\n"
+            f"  FILL every section fully. Every point needs depth, examples, specificity.\n"
+            f"  DO NOT end early. DO NOT skip sections. DO NOT summarize — WRITE IN FULL.\n"
+            f"  Cutting short to save effort is FORBIDDEN.\n"
         )
 
         # ── Prompt assembly ────────────────────────────────────────────────────
@@ -1136,7 +1139,10 @@ OUTPUT FORMAT — strict:
         verbose: bool = False,
     ) -> str:
         MAX_API_RETRIES   = 3
-        MAX_SHORT_RETRIES = 2
+        MAX_SHORT_RETRIES = 3
+
+        active_prompt = prompt
+        last_text     = ""
 
         for short_attempt in range(MAX_SHORT_RETRIES + 1):
             for attempt in range(MAX_API_RETRIES + 1):
@@ -1146,7 +1152,7 @@ OUTPUT FORMAT — strict:
                         system_instruction=system_instruction,
                     )
                     response = model.generate_content(
-                        prompt,
+                        active_prompt,
                         generation_config={
                             "temperature"      : temperature,
                             "max_output_tokens": max_output_tokens,
@@ -1172,15 +1178,34 @@ OUTPUT FORMAT — strict:
                     time.sleep(wait)
 
             text    = response.text.strip()
-            min_ok  = int(target_chars * 0.50)
+            min_ok  = int(target_chars * 0.85)
             if len(text) >= min_ok or short_attempt == MAX_SHORT_RETRIES:
-                return text
+                # If we have a continuation, prepend the earlier output
+                return (last_text + "\n\n" + text).strip() if last_text else text
+
             if verbose:
                 print(f"   ⚠️  {label} too short ({len(text):,} < {min_ok:,}) "
                       f"— retrying (attempt {short_attempt + 1}/{MAX_SHORT_RETRIES})...")
+
+            # Build continuation prompt: show what was written, demand more
+            still_need = target_chars - len(text)
+            last_text  = (last_text + "\n\n" + text).strip() if last_text else text
+            active_prompt = (
+                f"⚠️  LENGTH FAILURE — CONTINUATION REQUIRED ⚠️\n\n"
+                f"You wrote {len(last_text):,} characters but the target is {target_chars:,}.\n"
+                f"You MUST write at least {still_need:,} MORE characters of high-quality content.\n\n"
+                f"RULES:\n"
+                f"• Continue DIRECTLY from the last line below — do NOT restart, do NOT repeat.\n"
+                f"• Add depth, examples, specifics, elaboration — not padding.\n"
+                f"• Follow the formula exactly. Every sentence must earn its place.\n"
+                f"• Do NOT include greetings, meta-comments, or explanations.\n\n"
+                f"--- CONTINUE FROM HERE ---\n"
+                f"{last_text[-600:]}\n"
+                f"--- WRITE {still_need:,}+ MORE CHARACTERS NOW ---\n"
+            )
             time.sleep(2)
 
-        return text
+        return last_text
 
     # =========================================================================
     # EXTENSION (if merged script is short)
