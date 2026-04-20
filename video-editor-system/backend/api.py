@@ -6616,6 +6616,84 @@ def ebook_download(job_id):
     )
 
 
+# =============================================================================
+# 🧬 FORMULA EXTRACTOR — Extract a writing formula from a long script and save
+#     it as a Content Niche selectable in the Script Writer.
+# =============================================================================
+
+_formula_jobs: dict = {}
+
+
+@app.route('/api/niches/extract-from-script', methods=['POST'])
+def extract_formula_from_script():
+    """
+    Start a formula-extraction job in a background thread.
+    Body: { name, language, script }
+    Returns: { job_id, status: "running" }
+    """
+    import threading
+    import uuid
+
+    data = request.get_json() or {}
+    name     = (data.get('name')     or '').strip()
+    language = (data.get('language') or 'English').strip()
+    script   = (data.get('script')   or '').strip()
+
+    if not name:                              return jsonify({'error': 'name is required'}), 400
+    if not script:                            return jsonify({'error': 'script is required'}), 400
+    if len(script) < 500:                     return jsonify({'error': 'script too short (min 500 chars)'}), 400
+    if len(script) > 250_000:                 return jsonify({'error': 'script too long (max 250,000 chars)'}), 400
+
+    errors = Config.validate_api_keys()
+    if any('GEMINI' in e for e in errors):
+        return jsonify({'error': 'Gemini API key not configured'}), 500
+
+    job_id = str(uuid.uuid4())[:8]
+    _formula_jobs[job_id] = {
+        'status'  : 'running',
+        'progress': 0,
+        'message' : 'Queued…',
+        'niche_id': None,
+        'error'   : None,
+    }
+
+    def _cb(pct, msg):
+        _formula_jobs[job_id]['progress'] = pct
+        _formula_jobs[job_id]['message']  = msg
+
+    def _run():
+        try:
+            from formula_extractor import FormulaExtractor
+            from niche_manager      import NicheManager
+
+            formula = FormulaExtractor().extract(
+                script=script, name=name, language=language, progress_cb=_cb,
+            )
+            niche = NicheManager.create_niche(
+                name=name, language=language, writing_guidelines=formula
+            )
+            _formula_jobs[job_id]['status']        = 'done'
+            _formula_jobs[job_id]['niche_id']      = niche['id']
+            _formula_jobs[job_id]['formula_chars'] = len(formula)
+            print(f"[formula] job {job_id}  ✅  niche {niche['id']} ({len(formula):,} chars)")
+        except Exception as exc:
+            _formula_jobs[job_id]['status'] = 'error'
+            _formula_jobs[job_id]['error']  = str(exc)
+            print(f"[formula] job {job_id}  ❌  {exc}")
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({'success': True, 'job_id': job_id, 'status': 'running'})
+
+
+@app.route('/api/niches/extract-status/<job_id>', methods=['GET'])
+def formula_extract_status(job_id):
+    """Poll progress / result of a formula-extraction job."""
+    job = _formula_jobs.get(job_id)
+    if not job:
+        return jsonify({'error': 'job not found'}), 404
+    return jsonify(dict(job))
+
+
 if __name__ == '__main__':
     print("="*60)
     print("🎬 VIDEO EDITOR API SERVER")
