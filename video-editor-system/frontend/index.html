@@ -187,6 +187,53 @@
                     <button onclick="generateScript()" class="btn-secondary">🤖 Generate Script</button>
                 </div>
 
+                <!-- 🧬 FORMULA EXTRACTOR — build a new niche from an existing script -->
+                <div style="margin-top: 22px; padding: 18px; background: linear-gradient(135deg, rgba(139,92,246,0.08), rgba(99,102,241,0.05)); border: 1px solid #6366f1; border-radius: 12px;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;" onclick="toggleFormulaExtractor()">
+                        <h4 style="margin:0; color:#c7d2fe; font-size:15px;">🧬 Extract Formula from Existing Script</h4>
+                        <span id="formulaExtractToggleIcon" style="color:#a5b4fc; font-size:18px;">▼</span>
+                    </div>
+                    <p style="margin:8px 0 0 0; color:#9ca3af; font-size:12px;">
+                        Paste a long script (up to 250,000 chars). Gemini 2.5 Pro will analyse it in full and build a 30K+ character writing formula — saved as a new Content Niche you can select above.
+                    </p>
+
+                    <div id="formulaExtractBody" style="display:none; margin-top:16px;">
+                        <div class="input-group" style="margin-top:0;">
+                            <label>Niche / Formula Name</label>
+                            <input type="text" id="fx-name" class="input-large" placeholder="e.g. Trading Psychology Pro — from Master Script">
+                        </div>
+                        <div class="input-group">
+                            <label>Language</label>
+                            <select id="fx-language" class="input-large">
+                                <option value="English" selected>English</option>
+                                <option value="French">French</option>
+                                <option value="Spanish">Spanish</option>
+                                <option value="German">German</option>
+                                <option value="Arabic">Arabic</option>
+                                <option value="Portuguese">Portuguese</option>
+                                <option value="Italian">Italian</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label>Source Script <span id="fx-char-count" style="color:#9ca3af; font-weight:400;">(0 chars)</span></label>
+                            <textarea id="fx-script" rows="12" class="textarea-large"
+                                placeholder="Paste the full long-form script you want to reverse-engineer into a reusable formula..."
+                                maxlength="250000"
+                                oninput="document.getElementById('fx-char-count').textContent='('+this.value.length.toLocaleString()+' chars)'"></textarea>
+                        </div>
+                        <button onclick="extractFormula()" id="fx-btn" class="btn-secondary" style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-weight:700;">
+                            🧬 Analyze & Build Formula
+                        </button>
+
+                        <div id="fx-status" style="display:none; margin-top:16px; background:#0f0f1f; border:1px solid #4f46e5; border-radius:10px; padding:14px;">
+                            <div id="fx-status-text" style="color:#c7d2fe; font-size:13px; margin-bottom:10px;">Starting…</div>
+                            <div style="background:#1a1a2e; border-radius:6px; overflow:hidden; height:6px;">
+                                <div id="fx-progress-bar" style="height:100%; width:0%; background:linear-gradient(90deg,#6366f1,#8b5cf6); transition:width 0.4s ease;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div id="scriptResult" class="result-box" style="display: none;"></div>
                 <div id="scriptStats" class="stats-box" style="display: none;"></div>
 
@@ -2125,6 +2172,102 @@ TAGS: comma-separated, under 400 chars, match the title keywords"></textarea>
     function _updateEbookProgress(pct, message) {
         document.getElementById('ebook-progress-bar').style.width = pct + '%';
         document.getElementById('ebook-status-text').textContent  = message;
+    }
+
+    // ── 🧬 Formula Extractor — build a niche from a long script ────────────
+    function toggleFormulaExtractor() {
+        const body = document.getElementById('formulaExtractBody');
+        const icon = document.getElementById('formulaExtractToggleIcon');
+        const open = body.style.display !== 'none';
+        body.style.display = open ? 'none'  : 'block';
+        icon.textContent   = open ? '▼'     : '▲';
+    }
+
+    let _fxPollTimer = null;
+
+    async function extractFormula() {
+        const name     = document.getElementById('fx-name').value.trim();
+        const language = document.getElementById('fx-language').value;
+        const script   = document.getElementById('fx-script').value.trim();
+
+        if (!name)                 { alert('Please enter a name for the new formula / niche.'); return; }
+        if (script.length < 500)   { alert('Script is too short. Paste at least 500 characters.'); return; }
+        if (script.length > 250000){ alert('Script is too long. Max 250,000 characters.'); return; }
+
+        const btn = document.getElementById('fx-btn');
+        btn.disabled = true;
+        btn.textContent = '⏳ Analyzing…';
+        document.getElementById('fx-status').style.display = 'block';
+        _updateFxProgress(3, 'Sending to Gemini 2.5 Pro…');
+
+        try {
+            const resp = await fetch('/api/niches/extract-from-script', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, language, script })
+            });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error || 'Failed to start');
+            _pollFxStatus(data.job_id);
+        } catch(e) {
+            _updateFxProgress(0, '❌ ' + e.message);
+            btn.disabled = false;
+            btn.textContent = '🧬 Analyze & Build Formula';
+        }
+    }
+
+    function _pollFxStatus(jobId) {
+        if (_fxPollTimer) clearInterval(_fxPollTimer);
+        _fxPollTimer = setInterval(async () => {
+            try {
+                const r = await fetch('/api/niches/extract-status/' + jobId);
+                const d = await r.json();
+                if (d.status === 'running') {
+                    _updateFxProgress(d.progress || 10, d.message || 'Working…');
+                } else if (d.status === 'done') {
+                    clearInterval(_fxPollTimer);
+                    _updateFxProgress(100, `✅ Formula ready (${(d.formula_chars || 0).toLocaleString()} chars). Niche added.`);
+                    // Refresh the niche dropdown so the new formula is selectable
+                    if (typeof loadNichesForGenerator === 'function') {
+                        loadNichesForGenerator(d.niche_id);
+                    } else {
+                        _refreshGeneratorNicheSelect(d.niche_id);
+                    }
+                    const btn = document.getElementById('fx-btn');
+                    btn.disabled = false;
+                    btn.textContent = '🧬 Analyze & Build Formula';
+                } else if (d.status === 'error') {
+                    clearInterval(_fxPollTimer);
+                    _updateFxProgress(0, '❌ ' + (d.error || 'Extraction failed'));
+                    const btn = document.getElementById('fx-btn');
+                    btn.disabled = false;
+                    btn.textContent = '🧬 Analyze & Build Formula';
+                }
+            } catch(e) { /* transient network glitch — keep polling */ }
+        }, 4000);
+    }
+
+    function _updateFxProgress(pct, message) {
+        document.getElementById('fx-progress-bar').style.width = pct + '%';
+        document.getElementById('fx-status-text').textContent  = message;
+    }
+
+    // Fallback refresh — reads /api/niches and repopulates the select
+    async function _refreshGeneratorNicheSelect(selectId) {
+        try {
+            const r = await fetch('/api/niches');
+            const d = await r.json();
+            const sel = document.getElementById('generatorNicheSelect');
+            if (!sel || !d.niches) return;
+            sel.innerHTML = '<option value="">-- Select a niche --</option>';
+            d.niches.forEach(n => {
+                const opt = document.createElement('option');
+                opt.value = n.id;
+                opt.textContent = `${n.name} (${n.language})`;
+                if (n.id === selectId) opt.selected = true;
+                sel.appendChild(opt);
+            });
+        } catch(e) { console.error('Failed to refresh niches:', e); }
     }
     </script>
 </body>
