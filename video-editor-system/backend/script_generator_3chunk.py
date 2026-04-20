@@ -100,6 +100,7 @@ class ScriptGenerator3Chunk:
         niche_id: str,
         length: int = 10000,
         verbose: bool = True,
+        provider: str = "gemini",   # "gemini" | "claude"
     ) -> Dict:
 
         start_time = time.time()
@@ -229,16 +230,25 @@ class ScriptGenerator3Chunk:
             temp         = self._get_temperature(chunk.role)
             chunk_tokens = min(65536, max(int(chunk.target_chars / 3 * 1.25) + 2000, 4000))
 
-            chunk_text = self._call_api(
-                prompt=prompt,
-                system_instruction=system_instruction,
-                model_name=Config.GEMINI_SCRIPT_MODEL,
-                temperature=temp,
-                max_output_tokens=chunk_tokens,
-                target_chars=chunk.target_chars,
-                label=f"Chunk {chunk.index}/{total_chunks}",
-                verbose=verbose,
-            )
+            if provider == "claude":
+                chunk_text = self._call_api_claude(
+                    prompt=prompt,
+                    system_instruction=system_instruction,
+                    target_chars=chunk.target_chars,
+                    label=f"Chunk {chunk.index}/{total_chunks}",
+                    verbose=verbose,
+                )
+            else:
+                chunk_text = self._call_api(
+                    prompt=prompt,
+                    system_instruction=system_instruction,
+                    model_name=Config.GEMINI_SCRIPT_MODEL,
+                    temperature=temp,
+                    max_output_tokens=chunk_tokens,
+                    target_chars=chunk.target_chars,
+                    label=f"Chunk {chunk.index}/{total_chunks}",
+                    verbose=verbose,
+                )
 
             # Count promo tags placed so far
             promo_count_so_far += len(re.findall(
@@ -788,11 +798,13 @@ OUTPUT FORMAT — strict:
         elif chunk_index == total_chunks:
             return (
                 "  CLOSING RULES:\n"
-                "  • BYPASS: Remove every last objection before the viewer can think of it.\n"
-                "  • EXECUTION CLARITY: Make the next step obvious and frictionless.\n"
-                "  • ENDING RESIDUE: Deliver one memorable, quotable line before the CTA.\n"
-                "  • CTA: Use the exact CTA from the Writing Guidelines — no improvisation.\n"
-                "  ✗ FORBIDDEN: new topics, vague summaries, trailing thoughts, mid-sentence cuts."
+                "  • CONTENT FIRST: 90%+ of this chunk is REAL CONTENT — insights, payoff, resolution, depth.\n"
+                "  • BYPASS: Proactively kill every remaining objection before the viewer thinks of it.\n"
+                "  • PAYOFF: Deliver the full emotional/logical payoff the title promised — no shortcuts.\n"
+                "  • FINAL STORY: Include one final concrete example, story beat, or case result that seals the point.\n"
+                "  • RESIDUE LINE: One quotable, memorable sentence the viewer will replay in their head.\n"
+                "  • CTA LAST: CTA comes ONLY at the very end — after all content is complete.\n"
+                "  ✗ FORBIDDEN: jumping to CTA early, vague summaries, 'so there you have it', trailing thoughts, new topics."
             )
         else:
             mid_ratio = chunk_index / total_chunks
@@ -863,8 +875,11 @@ OUTPUT FORMAT — strict:
             checks.insert(0, "Hook strength: does the first sentence grab without warmup?")
             checks.insert(1, "Payload delivered: is the core mechanism in the first 20%%?")
         if is_final:
-            checks.append("Ending residue: one memorable quotable line before CTA?")
-            checks.append("CTA is exact and verbatim from the Writing Guidelines?")
+            checks.append("Closing body fills 90%+ of the chunk — not just a brief CTA?")
+            checks.append("All 5 closing steps written: payoff, objection kill, final story, transformation, residue?")
+            checks.append("Residue line: one quotable sentence the viewer will remember?")
+            checks.append("CTA is exact and verbatim — placed LAST after all content?")
+            checks.append("No vague summaries or 'that's all for today' filler?")
         else:
             checks.append("Open loop: does the ending make the viewer NEED to keep watching?")
 
@@ -1050,27 +1065,35 @@ OUTPUT FORMAT — strict:
             boundary_block = ""
 
         # ── Final chunk stop ───────────────────────────────────────────────────
+        cta_chars_approx = len(cta_action) + 20
+        closing_body_chars = chunk.target_chars - cta_chars_approx
+
         if is_final:
             stop_instruction = (
-                f"\n⛔ HARD STOP: After writing the final CTA ('{cta_action}') write:\n"
-                f"{STOP_SIGNAL}\n"
-                f"Then STOP. Nothing after. Not one word.\n"
+                f"\n⛔ STOP SIGNAL: After the CTA line write exactly: {STOP_SIGNAL}\n"
+                f"Write this ONLY after the CTA. Do not write it early.\n"
             )
             role_note = (
-                f"FINAL CHUNK — CLOSING + CTA. Apply the niche formula's EXACT closing technique.\n"
+                f"FINAL CHUNK — CLOSING BODY + CTA.\n"
                 f"\n"
-                f"MANDATORY CLOSING RULES:\n"
-                f"  1. BUILD with momentum — every sentence escalates toward the CTA. Zero loose tangents.\n"
-                f"  2. Use the formula's specific closing structure: emotional payoff / summary beat / final takeaway.\n"
-                f"  3. COMPLETE every sentence you start — no trailing thoughts, no mid-sentence cuts, no half-finished ideas.\n"
-                f"  4. The paragraph before the CTA = the CLIMAX the title promised. Deliver it fully.\n"
-                f"  5. CTA must be EXACTLY: '{cta_action}' — copy verbatim from your Writing Guidelines.\n"
-                f"  6. After the CTA: STOP. No 'and that's all', no new topic, no extra line.\n"
+                f"THIS CHUNK HAS {chunk.target_chars:,} CHARACTERS TO FILL.\n"
+                f"  • CLOSING CONTENT: ~{closing_body_chars:,} chars of real, deep, high-value content.\n"
+                f"  • CTA SECTION: only the last ~{cta_chars_approx} chars.\n"
                 f"\n"
-                f"FORBIDDEN in this chunk: introducing a new topic you won't finish, "
-                f"summarising in vague filler phrases ('and that's all for today', 'so there you have it'), "
-                f"repeating points already made, ending on a question without answering it.\n"
-                f"The viewer must finish this script feeling the journey is 100%% complete."
+                f"CLOSING CONTENT STRUCTURE (fill in this exact order):\n"
+                f"  STEP 1 — DEPTH PAYOFF: Complete the deepest insight promised by the title. Give the full mechanism.\n"
+                f"  STEP 2 — OBJECTION KILL: Address the top 2-3 objections the viewer has right now. Destroy them with specifics.\n"
+                f"  STEP 3 — FINAL STORY / RESULT: One concrete example, case, or result that locks everything in.\n"
+                f"  STEP 4 — TRANSFORMATION MOMENT: Show the viewer who they become if they act on this. Be visceral.\n"
+                f"  STEP 5 — RESIDUE LINE: One quotable sentence they will repeat to someone tomorrow.\n"
+                f"  STEP 6 — CTA: '{cta_action}' — exact, verbatim, no changes.\n"
+                f"\n"
+                f"MANDATORY:\n"
+                f"  • Do NOT jump to the CTA after step 1 or 2. The full 5 steps must be written first.\n"
+                f"  • Every step gets multiple paragraphs — not one sentence.\n"
+                f"  • The viewer must feel the journey is 100%% complete AND that they must act.\n"
+                f"\n"
+                f"FORBIDDEN: vague summaries, 'so there you have it', new topics, repeating earlier points verbatim.\n"
             )
         else:
             stop_instruction = ""
@@ -1085,13 +1108,16 @@ OUTPUT FORMAT — strict:
         self_check_block   = self._build_self_check(chunk.index, total_chunks, is_final)  # Fix 3
 
         # ── Length control — in-prompt, not trimming (Fix 6) ──────────────────
-        max_chars  = int(chunk.target_chars * 1.10)   # tight ceiling (was 1.20)
+        max_chars  = int(chunk.target_chars * 1.15)   # ceiling: 15% over target
+        min_chars  = int(chunk.target_chars * 0.92)   # floor: never fall below 92%
         length_block = (
-            f"LENGTH CONTROL:\n"
-            f"  Target : {chunk.target_chars:,} characters (~{word_target} words)\n"
-            f"  Maximum: {max_chars:,} characters — stop before this limit, never exceed it.\n"
-            f"  Do NOT pad to fill length. Do NOT cut short to save effort.\n"
-            f"  Write exactly what the formula requires — no more, no less.\n"
+            f"LENGTH CONTROL — MANDATORY:\n"
+            f"  Target  : {chunk.target_chars:,} characters (~{word_target} words)\n"
+            f"  Minimum : {min_chars:,} characters — stopping below this is a FAILURE.\n"
+            f"  Maximum : {max_chars:,} characters — stay under this.\n"
+            f"  FILL every section fully. Every point needs depth, examples, specificity.\n"
+            f"  DO NOT end early. DO NOT skip sections. DO NOT summarize — WRITE IN FULL.\n"
+            f"  Cutting short to save effort is FORBIDDEN.\n"
         )
 
         # ── Prompt assembly ────────────────────────────────────────────────────
@@ -1136,7 +1162,10 @@ OUTPUT FORMAT — strict:
         verbose: bool = False,
     ) -> str:
         MAX_API_RETRIES   = 3
-        MAX_SHORT_RETRIES = 2
+        MAX_SHORT_RETRIES = 3
+
+        active_prompt = prompt
+        last_text     = ""
 
         for short_attempt in range(MAX_SHORT_RETRIES + 1):
             for attempt in range(MAX_API_RETRIES + 1):
@@ -1146,7 +1175,7 @@ OUTPUT FORMAT — strict:
                         system_instruction=system_instruction,
                     )
                     response = model.generate_content(
-                        prompt,
+                        active_prompt,
                         generation_config={
                             "temperature"      : temperature,
                             "max_output_tokens": max_output_tokens,
@@ -1172,15 +1201,116 @@ OUTPUT FORMAT — strict:
                     time.sleep(wait)
 
             text    = response.text.strip()
-            min_ok  = int(target_chars * 0.50)
+            min_ok  = int(target_chars * 0.85)
             if len(text) >= min_ok or short_attempt == MAX_SHORT_RETRIES:
-                return text
+                # If we have a continuation, prepend the earlier output
+                return (last_text + "\n\n" + text).strip() if last_text else text
+
             if verbose:
                 print(f"   ⚠️  {label} too short ({len(text):,} < {min_ok:,}) "
                       f"— retrying (attempt {short_attempt + 1}/{MAX_SHORT_RETRIES})...")
+
+            # Build continuation prompt: show what was written, demand more
+            still_need = target_chars - len(text)
+            last_text  = (last_text + "\n\n" + text).strip() if last_text else text
+            active_prompt = (
+                f"⚠️  LENGTH FAILURE — CONTINUATION REQUIRED ⚠️\n\n"
+                f"You wrote {len(last_text):,} characters but the target is {target_chars:,}.\n"
+                f"You MUST write at least {still_need:,} MORE characters of high-quality content.\n\n"
+                f"RULES:\n"
+                f"• Continue DIRECTLY from the last line below — do NOT restart, do NOT repeat.\n"
+                f"• Add depth, examples, specifics, elaboration — not padding.\n"
+                f"• Follow the formula exactly. Every sentence must earn its place.\n"
+                f"• Do NOT include greetings, meta-comments, or explanations.\n\n"
+                f"--- CONTINUE FROM HERE ---\n"
+                f"{last_text[-600:]}\n"
+                f"--- WRITE {still_need:,}+ MORE CHARACTERS NOW ---\n"
+            )
             time.sleep(2)
 
-        return text
+        return last_text
+
+    # =========================================================================
+    # CLAUDE API CALL — proxy at api.gngn.my (same prompt structure as Gemini)
+    # =========================================================================
+
+    def _call_api_claude(
+        self,
+        prompt: str,
+        system_instruction: str,
+        target_chars: int,
+        label: str = "",
+        verbose: bool = False,
+    ) -> str:
+        """Call Claude claude-sonnet-4-6 via the custom proxy using plain requests."""
+        import requests as _requests
+
+        CLAUDE_ENDPOINT = "https://api.gngn.my/v1/messages"
+        CLAUDE_MODEL    = "claude-sonnet-4-6"
+        MAX_TOKENS      = 16000
+        MAX_SHORT_RETRIES = 3
+
+        api_key = Config.get_claude_api_key()
+        if not api_key:
+            raise RuntimeError("Claude API key not configured. Add it in Settings → Claude API.")
+
+        headers = {
+            "Content-Type" : "application/json",
+            "Authorization": f"Bearer {api_key}",
+        }
+
+        active_prompt = prompt
+        last_text     = ""
+
+        for short_attempt in range(MAX_SHORT_RETRIES + 1):
+            body = {
+                "model"     : CLAUDE_MODEL,
+                "max_tokens": MAX_TOKENS,
+                "system"    : system_instruction,
+                "messages"  : [{"role": "user", "content": active_prompt}],
+            }
+
+            for attempt in range(4):
+                try:
+                    resp = _requests.post(
+                        CLAUDE_ENDPOINT, headers=headers, json=body, timeout=180
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    text = (data.get("content", [{}])[0].get("text") or "").strip()
+                    break
+                except Exception as exc:
+                    err = str(exc)
+                    is_rate = "429" in err or "overloaded" in err.lower() or "rate" in err.lower()
+                    if not is_rate or attempt == 3:
+                        raise
+                    wait = 30 * (attempt + 1)
+                    if verbose:
+                        print(f"   ⚠️  Claude rate limit — waiting {wait}s (attempt {attempt+1}/3)...")
+                    time.sleep(wait)
+
+            min_ok = int(target_chars * 0.85)
+            if len(text) >= min_ok or short_attempt == MAX_SHORT_RETRIES:
+                return (last_text + "\n\n" + text).strip() if last_text else text
+
+            if verbose:
+                print(f"   ⚠️  {label} too short ({len(text):,} < {min_ok:,}) "
+                      f"— Claude retry {short_attempt + 1}/{MAX_SHORT_RETRIES}...")
+
+            still_need = target_chars - len(text)
+            last_text  = (last_text + "\n\n" + text).strip() if last_text else text
+            active_prompt = (
+                f"⚠️  LENGTH FAILURE — CONTINUATION REQUIRED ⚠️\n\n"
+                f"You wrote {len(last_text):,} characters but the target is {target_chars:,}.\n"
+                f"Write at least {still_need:,} MORE characters of high-quality content.\n\n"
+                f"Continue DIRECTLY from the last line below — do NOT restart, do NOT repeat:\n"
+                f"--- CONTINUE FROM HERE ---\n"
+                f"{last_text[-600:]}\n"
+                f"--- WRITE {still_need:,}+ MORE CHARACTERS NOW ---\n"
+            )
+            time.sleep(2)
+
+        return last_text
 
     # =========================================================================
     # EXTENSION (if merged script is short)

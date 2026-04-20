@@ -123,12 +123,18 @@ class Config:
         saved = cls._load_saved_config()
         return saved.get('gemini_seo') or os.getenv('GEMINI_SEO_KEY', '')
 
+    @classmethod
+    def get_claude_api_key(cls):
+        """Get Claude API key for the script writer proxy (api.gngn.my)."""
+        saved = cls._load_saved_config()
+        return saved.get('claude_api_key') or os.getenv('ANTHROPIC_AUTH_TOKEN', '')
+
     # For backward compatibility, make them accessible as class attributes
     GEMINI_API_KEY = property(lambda self: self.get_gemini_api_key())
     REPLICATE_API_TOKEN = property(lambda self: self.get_replicate_api_token())
 
     @classmethod
-    def save_api_config(cls, gemini_key=None, director_gemini_key=None, gemini_image_key=None, replicate_token=None, inworld_key=None, inworld_secret=None, gemini_translate_1=None, gemini_translate_2=None, gemini_prompts_key=None, gemini_seo_key=None):
+    def save_api_config(cls, gemini_key=None, director_gemini_key=None, gemini_image_key=None, replicate_token=None, inworld_key=None, inworld_secret=None, gemini_translate_1=None, gemini_translate_2=None, gemini_prompts_key=None, gemini_seo_key=None, claude_key=None):
         """Save API keys to config file"""
         cls.DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -162,6 +168,8 @@ class Config:
             config['gemini_prompts'] = gemini_prompts_key
         if gemini_seo_key:
             config['gemini_seo'] = gemini_seo_key
+        if claude_key:
+            config['claude_api_key'] = claude_key
 
         # Save to file
         with open(cls.API_CONFIG_FILE, 'w') as f:

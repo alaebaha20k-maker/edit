@@ -241,6 +241,7 @@ function _applyApiKeysToForm(api_keys) {
     setField('geminiTranslate2Key', api_keys.gemini_translate_2);
     setField('geminiPromptsKey',    api_keys.gemini_prompts);
     setField('geminiSeoKey',        api_keys.gemini_seo);
+    setField('claudeKey',           api_keys.claude_key);
 }
 
 const loadSettings = () => {
@@ -317,7 +318,8 @@ const saveSettings = async () => {
                 gemini_translate_1: document.getElementById('geminiTranslate1Key')?.value || '',
                 gemini_translate_2: document.getElementById('geminiTranslate2Key')?.value || '',
                 gemini_prompts:     document.getElementById('geminiPromptsKey')?.value || '',
-                gemini_seo:         document.getElementById('geminiSeoKey')?.value || ''
+                gemini_seo:         document.getElementById('geminiSeoKey')?.value || '',
+                claude_key:         document.getElementById('claudeKey')?.value || ''
             },
             title_formulas: appState.titleFormulas || [],
             script_formulas: appState.scriptFormulas || [],
@@ -351,7 +353,8 @@ const saveSettings = async () => {
                     gemini_translate_1: settings.api_keys.gemini_translate_1,
                     gemini_translate_2: settings.api_keys.gemini_translate_2,
                     gemini_prompts: settings.api_keys.gemini_prompts,
-                    gemini_seo: settings.api_keys.gemini_seo
+                    gemini_seo: settings.api_keys.gemini_seo,
+                    claude_key: settings.api_keys.claude_key
                 })
             });
             if (!response.ok) console.warn('Failed to save API keys to backend');
@@ -1048,13 +1051,16 @@ async function generateScript() {
             throw new Error('Please select a content niche first. Create niches in Settings.');
         }
 
-        // 3-CHUNK MODE (Backend handles chunking with niche guidelines)
+        // Detect chosen AI engine
+        const engineRadio = document.querySelector('input[name="aiEngine"]:checked');
+        const provider    = engineRadio ? engineRadio.value : 'gemini';
+        const engineLabel = provider === 'claude' ? '🔮 Claude Sonnet' : '🤖 Gemini 2.5 Pro';
+
         if (resultBox) {
-            resultBox.innerHTML = `<p>🤖 Generating script (3-Chunk Mode)...</p>
-                <p style="color: #888; font-size: 0.9em;">Using niche writing guidelines. Please wait...</p>`;
+            resultBox.innerHTML = `<p>${engineLabel} — Generating script (3-Chunk Mode)…</p>
+                <p style="color:#888;font-size:0.9em;">Using niche writing guidelines. Please wait…</p>`;
         }
 
-        // Update last generation time BEFORE making the call
         appState.lastGenerationTime = Date.now();
 
             const response = await fetch('/api/generate-script', {
@@ -1063,7 +1069,8 @@ async function generateScript() {
                 body: JSON.stringify({
                     title: title,
                     niche_id: selectedNicheId,
-                    length: selectedLength
+                    length: selectedLength,
+                    provider: provider
                 })
             });
 
