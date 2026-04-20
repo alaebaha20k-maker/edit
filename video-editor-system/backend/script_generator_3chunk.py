@@ -1277,7 +1277,7 @@ OUTPUT FORMAT — strict:
             for attempt in range(4):
                 try:
                     resp = _requests.post(
-                        CLAUDE_ENDPOINT, headers=headers, json=body, timeout=180
+                        CLAUDE_ENDPOINT, headers=headers, json=body, timeout=600
                     )
                     resp.raise_for_status()
                     data = resp.json()
