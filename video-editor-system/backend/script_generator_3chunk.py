@@ -134,7 +134,11 @@ class ScriptGenerator3Chunk:
             print(f"Language: {language}" + (
                 f" (detected, overrides niche: {original_niche_lang})"
                 if detected_lang_name != original_niche_lang else ""))
-            print(f"Models  : plan={Config.GEMINI_PLAN_MODEL}  write={Config.GEMINI_SCRIPT_MODEL}")
+            if provider == "claude":
+                print(f"Engine  : 🔮 Claude Sonnet (claude-sonnet-4-6) via api.gngn.my")
+                print(f"          plan={Config.GEMINI_PLAN_MODEL} (outline)  write=claude-sonnet-4-6 (chunks)")
+            else:
+                print(f"Engine  : 🤖 Gemini  plan={Config.GEMINI_PLAN_MODEL}  write={Config.GEMINI_SCRIPT_MODEL}")
             print(f"{'='*70}\n")
 
         # ── Step 0: Plan chunks ───────────────────────────────────────────────
