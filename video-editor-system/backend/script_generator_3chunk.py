@@ -100,6 +100,7 @@ class ScriptGenerator3Chunk:
         niche_id: str,
         length: int = 10000,
         verbose: bool = True,
+        provider: str = "gemini",   # "gemini" | "claude"
     ) -> Dict:
 
         start_time = time.time()
@@ -229,16 +230,25 @@ class ScriptGenerator3Chunk:
             temp         = self._get_temperature(chunk.role)
             chunk_tokens = min(65536, max(int(chunk.target_chars / 3 * 1.25) + 2000, 4000))
 
-            chunk_text = self._call_api(
-                prompt=prompt,
-                system_instruction=system_instruction,
-                model_name=Config.GEMINI_SCRIPT_MODEL,
-                temperature=temp,
-                max_output_tokens=chunk_tokens,
-                target_chars=chunk.target_chars,
-                label=f"Chunk {chunk.index}/{total_chunks}",
-                verbose=verbose,
-            )
+            if provider == "claude":
+                chunk_text = self._call_api_claude(
+                    prompt=prompt,
+                    system_instruction=system_instruction,
+                    target_chars=chunk.target_chars,
+                    label=f"Chunk {chunk.index}/{total_chunks}",
+                    verbose=verbose,
+                )
+            else:
+                chunk_text = self._call_api(
+                    prompt=prompt,
+                    system_instruction=system_instruction,
+                    model_name=Config.GEMINI_SCRIPT_MODEL,
+                    temperature=temp,
+                    max_output_tokens=chunk_tokens,
+                    target_chars=chunk.target_chars,
+                    label=f"Chunk {chunk.index}/{total_chunks}",
+                    verbose=verbose,
+                )
 
             # Count promo tags placed so far
             promo_count_so_far += len(re.findall(
@@ -1212,6 +1222,88 @@ OUTPUT FORMAT — strict:
                 f"• Add depth, examples, specifics, elaboration — not padding.\n"
                 f"• Follow the formula exactly. Every sentence must earn its place.\n"
                 f"• Do NOT include greetings, meta-comments, or explanations.\n\n"
+                f"--- CONTINUE FROM HERE ---\n"
+                f"{last_text[-600:]}\n"
+                f"--- WRITE {still_need:,}+ MORE CHARACTERS NOW ---\n"
+            )
+            time.sleep(2)
+
+        return last_text
+
+    # =========================================================================
+    # CLAUDE API CALL — proxy at api.gngn.my (same prompt structure as Gemini)
+    # =========================================================================
+
+    def _call_api_claude(
+        self,
+        prompt: str,
+        system_instruction: str,
+        target_chars: int,
+        label: str = "",
+        verbose: bool = False,
+    ) -> str:
+        """Call Claude claude-sonnet-4-6 via the custom proxy using plain requests."""
+        import requests as _requests
+
+        CLAUDE_ENDPOINT = "https://api.gngn.my/v1/messages"
+        CLAUDE_MODEL    = "claude-sonnet-4-6"
+        MAX_TOKENS      = 16000
+        MAX_SHORT_RETRIES = 3
+
+        api_key = Config.get_claude_api_key()
+        if not api_key:
+            raise RuntimeError("Claude API key not configured. Add it in Settings → Claude API.")
+
+        headers = {
+            "Content-Type" : "application/json",
+            "Authorization": f"Bearer {api_key}",
+        }
+
+        active_prompt = prompt
+        last_text     = ""
+
+        for short_attempt in range(MAX_SHORT_RETRIES + 1):
+            body = {
+                "model"     : CLAUDE_MODEL,
+                "max_tokens": MAX_TOKENS,
+                "system"    : system_instruction,
+                "messages"  : [{"role": "user", "content": active_prompt}],
+            }
+
+            for attempt in range(4):
+                try:
+                    resp = _requests.post(
+                        CLAUDE_ENDPOINT, headers=headers, json=body, timeout=180
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    text = (data.get("content", [{}])[0].get("text") or "").strip()
+                    break
+                except Exception as exc:
+                    err = str(exc)
+                    is_rate = "429" in err or "overloaded" in err.lower() or "rate" in err.lower()
+                    if not is_rate or attempt == 3:
+                        raise
+                    wait = 30 * (attempt + 1)
+                    if verbose:
+                        print(f"   ⚠️  Claude rate limit — waiting {wait}s (attempt {attempt+1}/3)...")
+                    time.sleep(wait)
+
+            min_ok = int(target_chars * 0.85)
+            if len(text) >= min_ok or short_attempt == MAX_SHORT_RETRIES:
+                return (last_text + "\n\n" + text).strip() if last_text else text
+
+            if verbose:
+                print(f"   ⚠️  {label} too short ({len(text):,} < {min_ok:,}) "
+                      f"— Claude retry {short_attempt + 1}/{MAX_SHORT_RETRIES}...")
+
+            still_need = target_chars - len(text)
+            last_text  = (last_text + "\n\n" + text).strip() if last_text else text
+            active_prompt = (
+                f"⚠️  LENGTH FAILURE — CONTINUATION REQUIRED ⚠️\n\n"
+                f"You wrote {len(last_text):,} characters but the target is {target_chars:,}.\n"
+                f"Write at least {still_need:,} MORE characters of high-quality content.\n\n"
+                f"Continue DIRECTLY from the last line below — do NOT restart, do NOT repeat:\n"
                 f"--- CONTINUE FROM HERE ---\n"
                 f"{last_text[-600:]}\n"
                 f"--- WRITE {still_need:,}+ MORE CHARACTERS NOW ---\n"

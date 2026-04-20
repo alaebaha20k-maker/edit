@@ -487,7 +487,8 @@ LANGUAGE: Auto-detect from title and script. Write EVERYTHING in that language."
                      brave_search: str = None, serper: str = None,
                      google_search: str = None, videvo: str = None, coverr: str = None,
                      gemini_translate_1: str = None, gemini_translate_2: str = None,
-                     gemini_prompts: str = None, gemini_seo: str = None) -> Dict:
+                     gemini_prompts: str = None, gemini_seo: str = None,
+                     claude_key: str = None) -> Dict:
         """
         Save API keys to settings file
 
@@ -548,6 +549,8 @@ LANGUAGE: Auto-detect from title and script. Write EVERYTHING in that language."
             settings['api_keys']['gemini_prompts'] = gemini_prompts
         if gemini_seo is not None and gemini_seo != '':
             settings['api_keys']['gemini_seo'] = gemini_seo
+        if claude_key is not None and claude_key != '':
+            settings['api_keys']['claude_key'] = claude_key
 
         # Save to file
         with open(cls.SETTINGS_FILE, 'w') as f:
