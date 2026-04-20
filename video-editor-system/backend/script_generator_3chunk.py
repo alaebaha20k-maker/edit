@@ -788,11 +788,13 @@ OUTPUT FORMAT — strict:
         elif chunk_index == total_chunks:
             return (
                 "  CLOSING RULES:\n"
-                "  • BYPASS: Remove every last objection before the viewer can think of it.\n"
-                "  • EXECUTION CLARITY: Make the next step obvious and frictionless.\n"
-                "  • ENDING RESIDUE: Deliver one memorable, quotable line before the CTA.\n"
-                "  • CTA: Use the exact CTA from the Writing Guidelines — no improvisation.\n"
-                "  ✗ FORBIDDEN: new topics, vague summaries, trailing thoughts, mid-sentence cuts."
+                "  • CONTENT FIRST: 90%+ of this chunk is REAL CONTENT — insights, payoff, resolution, depth.\n"
+                "  • BYPASS: Proactively kill every remaining objection before the viewer thinks of it.\n"
+                "  • PAYOFF: Deliver the full emotional/logical payoff the title promised — no shortcuts.\n"
+                "  • FINAL STORY: Include one final concrete example, story beat, or case result that seals the point.\n"
+                "  • RESIDUE LINE: One quotable, memorable sentence the viewer will replay in their head.\n"
+                "  • CTA LAST: CTA comes ONLY at the very end — after all content is complete.\n"
+                "  ✗ FORBIDDEN: jumping to CTA early, vague summaries, 'so there you have it', trailing thoughts, new topics."
             )
         else:
             mid_ratio = chunk_index / total_chunks
@@ -863,8 +865,11 @@ OUTPUT FORMAT — strict:
             checks.insert(0, "Hook strength: does the first sentence grab without warmup?")
             checks.insert(1, "Payload delivered: is the core mechanism in the first 20%%?")
         if is_final:
-            checks.append("Ending residue: one memorable quotable line before CTA?")
-            checks.append("CTA is exact and verbatim from the Writing Guidelines?")
+            checks.append("Closing body fills 90%+ of the chunk — not just a brief CTA?")
+            checks.append("All 5 closing steps written: payoff, objection kill, final story, transformation, residue?")
+            checks.append("Residue line: one quotable sentence the viewer will remember?")
+            checks.append("CTA is exact and verbatim — placed LAST after all content?")
+            checks.append("No vague summaries or 'that's all for today' filler?")
         else:
             checks.append("Open loop: does the ending make the viewer NEED to keep watching?")
 
@@ -1050,27 +1055,35 @@ OUTPUT FORMAT — strict:
             boundary_block = ""
 
         # ── Final chunk stop ───────────────────────────────────────────────────
+        cta_chars_approx = len(cta_action) + 20
+        closing_body_chars = chunk.target_chars - cta_chars_approx
+
         if is_final:
             stop_instruction = (
-                f"\n⛔ HARD STOP: After writing the final CTA ('{cta_action}') write:\n"
-                f"{STOP_SIGNAL}\n"
-                f"Then STOP. Nothing after. Not one word.\n"
+                f"\n⛔ STOP SIGNAL: After the CTA line write exactly: {STOP_SIGNAL}\n"
+                f"Write this ONLY after the CTA. Do not write it early.\n"
             )
             role_note = (
-                f"FINAL CHUNK — CLOSING + CTA. Apply the niche formula's EXACT closing technique.\n"
+                f"FINAL CHUNK — CLOSING BODY + CTA.\n"
                 f"\n"
-                f"MANDATORY CLOSING RULES:\n"
-                f"  1. BUILD with momentum — every sentence escalates toward the CTA. Zero loose tangents.\n"
-                f"  2. Use the formula's specific closing structure: emotional payoff / summary beat / final takeaway.\n"
-                f"  3. COMPLETE every sentence you start — no trailing thoughts, no mid-sentence cuts, no half-finished ideas.\n"
-                f"  4. The paragraph before the CTA = the CLIMAX the title promised. Deliver it fully.\n"
-                f"  5. CTA must be EXACTLY: '{cta_action}' — copy verbatim from your Writing Guidelines.\n"
-                f"  6. After the CTA: STOP. No 'and that's all', no new topic, no extra line.\n"
+                f"THIS CHUNK HAS {chunk.target_chars:,} CHARACTERS TO FILL.\n"
+                f"  • CLOSING CONTENT: ~{closing_body_chars:,} chars of real, deep, high-value content.\n"
+                f"  • CTA SECTION: only the last ~{cta_chars_approx} chars.\n"
                 f"\n"
-                f"FORBIDDEN in this chunk: introducing a new topic you won't finish, "
-                f"summarising in vague filler phrases ('and that's all for today', 'so there you have it'), "
-                f"repeating points already made, ending on a question without answering it.\n"
-                f"The viewer must finish this script feeling the journey is 100%% complete."
+                f"CLOSING CONTENT STRUCTURE (fill in this exact order):\n"
+                f"  STEP 1 — DEPTH PAYOFF: Complete the deepest insight promised by the title. Give the full mechanism.\n"
+                f"  STEP 2 — OBJECTION KILL: Address the top 2-3 objections the viewer has right now. Destroy them with specifics.\n"
+                f"  STEP 3 — FINAL STORY / RESULT: One concrete example, case, or result that locks everything in.\n"
+                f"  STEP 4 — TRANSFORMATION MOMENT: Show the viewer who they become if they act on this. Be visceral.\n"
+                f"  STEP 5 — RESIDUE LINE: One quotable sentence they will repeat to someone tomorrow.\n"
+                f"  STEP 6 — CTA: '{cta_action}' — exact, verbatim, no changes.\n"
+                f"\n"
+                f"MANDATORY:\n"
+                f"  • Do NOT jump to the CTA after step 1 or 2. The full 5 steps must be written first.\n"
+                f"  • Every step gets multiple paragraphs — not one sentence.\n"
+                f"  • The viewer must feel the journey is 100%% complete AND that they must act.\n"
+                f"\n"
+                f"FORBIDDEN: vague summaries, 'so there you have it', new topics, repeating earlier points verbatim.\n"
             )
         else:
             stop_instruction = ""
