@@ -2065,7 +2065,8 @@ def get_api_keys_status():
                 'inworld': mask_key(api_keys.get('inworld', '')),
                 'inworld_secret': mask_key(api_keys.get('inworld_secret', '')),
                 'pexels': mask_key(api_keys.get('pexels', '')),
-                'pixabay': mask_key(api_keys.get('pixabay', ''))
+                'pixabay': mask_key(api_keys.get('pixabay', '')),
+                'claude_key': mask_key(api_keys.get('claude_api_key', ''))
             },
             'settings_file': str(SettingsManager.SETTINGS_FILE),
             'file_exists': SettingsManager.SETTINGS_FILE.exists()
