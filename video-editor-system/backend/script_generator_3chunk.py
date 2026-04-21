@@ -232,7 +232,7 @@ class ScriptGenerator3Chunk:
             )
 
             temp         = self._get_temperature(chunk.role)
-            chunk_tokens = min(65536, max(int(chunk.target_chars / 3 * 1.25) + 2000, 4000))
+            chunk_tokens = min(65536, max(int(chunk.target_chars / 2 * 1.0) + 4000, 8000))
 
             if provider == "claude":
                 chunk_text = self._call_api_claude(
@@ -1205,7 +1205,7 @@ OUTPUT FORMAT — strict:
                     time.sleep(wait)
 
             text    = response.text.strip()
-            min_ok  = int(target_chars * 0.85)
+            min_ok  = int(target_chars * 0.70)
             if len(text) >= min_ok or short_attempt == MAX_SHORT_RETRIES:
                 # If we have a continuation, prepend the earlier output
                 return (last_text + "\n\n" + text).strip() if last_text else text
@@ -1251,7 +1251,7 @@ OUTPUT FORMAT — strict:
 
         CLAUDE_ENDPOINT = "https://api.gngn.my/v1/messages"
         CLAUDE_MODEL    = "claude-sonnet-4-6"
-        MAX_TOKENS      = 16000
+        MAX_TOKENS      = 65536
         MAX_SHORT_RETRIES = 3
 
         api_key = Config.get_claude_api_key()
@@ -1277,7 +1277,7 @@ OUTPUT FORMAT — strict:
             for attempt in range(4):
                 try:
                     resp = _requests.post(
-                        CLAUDE_ENDPOINT, headers=headers, json=body, timeout=600
+                        CLAUDE_ENDPOINT, headers=headers, json=body, timeout=(30, 900)
                     )
                     resp.raise_for_status()
                     data = resp.json()
@@ -1293,7 +1293,7 @@ OUTPUT FORMAT — strict:
                         print(f"   ⚠️  Claude rate limit — waiting {wait}s (attempt {attempt+1}/3)...")
                     time.sleep(wait)
 
-            min_ok = int(target_chars * 0.85)
+            min_ok = int(target_chars * 0.70)
             if len(text) >= min_ok or short_attempt == MAX_SHORT_RETRIES:
                 return (last_text + "\n\n" + text).strip() if last_text else text
 
