@@ -914,16 +914,15 @@ let _batchPollInterval = null;
 let _batchResults = [];
 let _batchNiches = [];
 
-function toggleBatchWriter() {
+async function toggleBatchWriter() {
     const body = document.getElementById('batchWriterBody');
     const icon = document.getElementById('batchToggleIcon');
     const isOpen = body.style.display !== 'none';
     body.style.display = isOpen ? 'none' : 'block';
     icon.textContent = isOpen ? '▼' : '▲';
     if (!isOpen) {
-        // Load niches on first open
-        loadBatchNiches();
-        // Add initial 3 empty rows
+        // Load niches then add initial rows
+        await loadBatchNiches();
         if (_batchRowCount === 0) {
             addBatchRow();
             addBatchRow();
@@ -934,40 +933,65 @@ function toggleBatchWriter() {
 
 async function loadBatchNiches() {
     if (_batchNiches.length > 0) return;
+    await reloadBatchNiches();
+}
+
+async function reloadBatchNiches() {
     try {
         const resp = await fetch('/api/niches');
         const data = await resp.json();
         _batchNiches = data.niches || [];
-        const sel = document.getElementById('batch-niche-select');
-        if (!sel) return;
-        sel.innerHTML = '<option value="">— Select Niche —</option>';
+        // Refresh all niche dropdowns in existing rows
         _batchNiches.forEach(n => {
-            const opt = document.createElement('option');
-            opt.value = n.id;
-            opt.textContent = n.name;
-            sel.appendChild(opt);
+            document.querySelectorAll('[id^="batch-niche-"]').forEach(sel => {
+                if (sel.querySelector('option[value="' + n.id + '"]')) return;
+                const opt = document.createElement('option');
+                opt.value = n.id;
+                opt.textContent = n.name;
+                sel.appendChild(opt);
+            });
         });
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error('Failed to load niches:', e); }
 }
 
-function addBatchRow(title = '', engine = '') {
+function addBatchRow(title = '', nicheId = '', length = '60000', engine = 'gemini') {
     _batchRowCount++;
     const container = document.getElementById('batch-rows-container');
     const rowNum = _batchRowCount;
 
     const row = document.createElement('div');
     row.id = `batch-row-${rowNum}`;
-    row.style.cssText = 'display:grid; grid-template-columns:auto 1fr 110px 40px; gap:8px; margin-bottom:6px; align-items:center;';
+    row.style.cssText = 'display:grid; grid-template-columns:auto 1fr 1fr 1fr 90px 40px; gap:6px; margin-bottom:6px; align-items:center;';
     row.innerHTML = `
         <span style="font-size:13px; color:#6b7280; min-width:22px; text-align:right;">${rowNum}.</span>
-        <input type="text" id="batch-title-${rowNum}" class="input-large" style="font-size:13px; padding:7px 10px;" placeholder="Enter video title…" value="${_escapeHtmlAttr(title)}">
-        <select id="batch-eng-${rowNum}" class="input-large" style="font-size:12px; padding:7px 6px;">
+        <input type="text" id="batch-title-${rowNum}" class="input-large" style="font-size:13px; padding:7px 8px;" placeholder="Video title…" value="${_escapeHtmlAttr(title)}">
+        <select id="batch-niche-${rowNum}" class="input-large" style="font-size:12px; padding:7px 4px;"></select>
+        <select id="batch-length-${rowNum}" class="input-large" style="font-size:12px; padding:7px 4px;">
+            <option value="10000" ${length === '10000' ? 'selected' : ''}>10k</option>
+            <option value="30000" ${length === '30000' ? 'selected' : ''}>30k</option>
+            <option value="60000" ${length === '60000' ? 'selected' : ''}>60k</option>
+            <option value="100000" ${length === '100000' ? 'selected' : ''}>100k</option>
+            <option value="200000" ${length === '200000' ? 'selected' : ''}>200k</option>
+            <option value="240000" ${length === '240000' ? 'selected' : ''}>240k</option>
+        </select>
+        <select id="batch-eng-${rowNum}" class="input-large" style="font-size:12px; padding:7px 4px;">
             <option value="gemini" ${engine === 'gemini' ? 'selected' : ''}>🤖 Gemini</option>
             <option value="claude" ${engine === 'claude' ? 'selected' : ''}>🔮 Claude</option>
         </select>
         <button onclick="removeBatchRow(${rowNum})" style="background:none; border:none; color:#ef4444; cursor:pointer; font-size:18px; padding:4px; text-align:center;" title="Remove">×</button>
     `;
     container.appendChild(row);
+
+    // Populate niche dropdown for this row
+    const nicheSel = document.getElementById(`batch-niche-${rowNum}`);
+    nicheSel.innerHTML = '<option value="">— Niche —</option>';
+    _batchNiches.forEach(n => {
+        const opt = document.createElement('option');
+        opt.value = n.id;
+        opt.textContent = n.name;
+        if (n.id === nicheId) opt.selected = true;
+        nicheSel.appendChild(opt);
+    });
 }
 
 function removeBatchRow(rowNum) {
@@ -976,50 +1000,60 @@ function removeBatchRow(rowNum) {
 }
 
 async function startBatchScripts() {
-    const nicheId  = document.getElementById('batch-niche-select').value;
-    const length   = parseInt(document.getElementById('batch-length').value);
     const delaySec = parseInt(document.getElementById('batch-delay').value);
 
-    if (!nicheId) {
-        alert('Please select a Content Niche first.');
-        return;
-    }
-
-    // Collect all rows
+    // Collect all rows — each row has its own niche + length + engine
     const rows = document.querySelectorAll('[id^="batch-row-"]');
     const titles = [];
+    const titlesNiches = [];
+    const titlesLengths = [];
     const titlesEngines = [];
 
-    rows.forEach(row => {
+    for (const row of rows) {
         const id = row.id.replace('batch-row-', '');
-        const titleInput = document.getElementById(`batch-title-${id}`);
-        const engSelect  = document.getElementById(`batch-eng-${id}`);
-        if (!titleInput || !engSelect) return;
+        const titleInput  = document.getElementById(`batch-title-${id}`);
+        const nicheSelect = document.getElementById(`batch-niche-${id}`);
+        const lengthSelect = document.getElementById(`batch-length-${id}`);
+        const engSelect   = document.getElementById(`batch-eng-${id}`);
+        if (!titleInput || !nicheSelect || !lengthSelect || !engSelect) continue;
         const title = titleInput.value.trim();
-        if (!title) return;
+        if (!title) continue;
         titles.push(title);
+        titlesNiches.push(nicheSelect.value);
+        titlesLengths.push(parseInt(lengthSelect.value));
         titlesEngines.push(engSelect.value);
-    });
+    }
 
     if (titles.length === 0) {
-        alert('Please add at least one title.');
+        alert('Please add at least one title with a niche selected.');
         return;
     }
 
-    // Show progress
+    const missingNiche = titlesNiches.some(n => !n);
+    if (missingNiche) {
+        alert('Please select a Content Niche for every row before generating.');
+        return;
+    }
+
     document.getElementById('batch-progress').style.display = 'block';
     document.getElementById('batch-start-btn').disabled = true;
     document.getElementById('batch-download-all-btn').style.display = 'none';
     _batchResults = [];
-    _updateBatchProgressUI(0, `Starting ${titles.length} scripts — processing one by one with ${delaySec}s delay…`);
+    _updateBatchProgressUI(0, `Starting ${titles.length} scripts — ${delaySec}s delay between each…`);
     document.getElementById('batch-rows-container').style.opacity = '0.6';
 
     try {
-        // One-by-one staggered: delay between each script to avoid rate limits
         const resp = await fetch('/api/batch-generate-scripts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ titles, titles_engines: titlesEngines, niche_id: nicheId, length, parallel: false, delay_seconds: delaySec })
+            body: JSON.stringify({
+                titles,
+                titles_niches: titlesNiches,
+                titles_lengths: titlesLengths,
+                titles_engines: titlesEngines,
+                parallel: false,
+                delay_seconds: delaySec,
+            })
         });
         const data = await resp.json();
         if (!data.success) {

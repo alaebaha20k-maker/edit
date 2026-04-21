@@ -1156,6 +1156,8 @@ def _generate_single_script(title, niche_id, length, provider, index, job_id):
     result = {
         'index': index,
         'title': title,
+        'niche_id': niche_id,
+        'length': length,
         'engine': provider,
         'status': 'running',
         'error': None,
@@ -1208,24 +1210,19 @@ def _generate_single_script(title, niche_id, length, provider, index, job_id):
 @app.route('/api/batch-generate-scripts', methods=['POST'])
 def batch_generate_scripts():
     """
-    Generate multiple scripts in parallel using Gemini + Claude simultaneously.
-    Titles are split evenly between the two engines for max speed.
+    Generate multiple scripts — each with its own niche, length, and engine.
+    Each title is processed independently with its own settings.
 
     POST body:
     {
       "titles": ["Title 1", "Title 2", ...],
-      "titles_engines": ["gemini", "claude", "gemini", ...],  // optional — one per title
-      "niche_id": "...",
-      "length": 60000,
-      "parallel": true   // Gemini + Claude both working at same time
+      "titles_niches": ["niche_id_1", "niche_id_2", ...],
+      "titles_lengths": [60000, 100000, ...],
+      "titles_engines": ["gemini", "claude", ...],
+      "parallel": false,       // false = one-by-one with delay (safe)
+      "delay_seconds": 5,
     }
-
-    Engine assignment modes:
-    - titles_engines array provided → each title uses its specified engine
-    - parallel=true + both keys → Gemini takes even-indexed, Claude takes odd-indexed
-    - parallel=false            → all titles use the single configured engine
     """
-    from script_generator_3chunk import ScriptGenerator3Chunk
     from config import Config
 
     try:
@@ -1233,11 +1230,12 @@ def batch_generate_scripts():
         if not data:
             return jsonify({'error': 'No data provided'}), 400
 
-        raw_titles = data.get('titles', [])
-        niche_id   = data.get('niche_id')
-        length     = data.get('length', Config.DEFAULT_SCRIPT_LENGTH)
-        parallel   = data.get('parallel', True)
-        titles_engines = data.get('titles_engines', [])   # optional per-title engines
+        raw_titles       = data.get('titles', [])
+        titles_niches    = data.get('titles_niches', [])
+        titles_lengths   = data.get('titles_lengths', [])
+        titles_engines   = data.get('titles_engines', [])
+        parallel         = data.get('parallel', False)
+        delay_seconds    = int(data.get('delay_seconds', 5))
 
         # Parse titles
         if isinstance(raw_titles, str):
@@ -1247,72 +1245,71 @@ def batch_generate_scripts():
 
         if not titles:
             return jsonify({'error': 'No titles provided'}), 400
-        if not niche_id:
-            return jsonify({'error': 'niche_id is required'}), 400
-        if not Config.validate_script_length(length):
-            return jsonify({
-                'error': f'Invalid length. Must be between {Config.MIN_SCRIPT_LENGTH} and {Config.MAX_SCRIPT_LENGTH}'
-            }), 400
 
-        niche = NicheManager.get_niche(niche_id)
-        if not niche:
-            return jsonify({'error': 'Niche not found'}), 404
+        # Validate all rows have niche + length
+        for i, title in enumerate(titles):
+            nid   = titles_niches[i] if i < len(titles_niches) else None
+            nlen  = titles_lengths[i] if i < len(titles_lengths) else Config.DEFAULT_SCRIPT_LENGTH
+            neng  = titles_engines[i] if i < len(titles_engines) else 'gemini'
+
+            if not nid:
+                return jsonify({'error': f'Missing niche for title: "{title}"'}), 400
+            niche = NicheManager.get_niche(nid)
+            if not niche:
+                return jsonify({'error': f'Niche not found for title: "{title}"'}), 404
+            if not Config.validate_script_length(nlen):
+                return jsonify({
+                    'error': f'Invalid length {nlen} for title: "{title}". '
+                              f'Must be between {Config.MIN_SCRIPT_LENGTH} and {Config.MAX_SCRIPT_LENGTH}.'
+                }), 400
 
         has_gemini = bool(Config.get_gemini_api_key())
         has_claude = bool(Config.get_claude_api_key())
-
         if not has_gemini and not has_claude:
             return jsonify({'error': 'No API key configured (Gemini or Claude)'}), 500
 
-        # Resolve engine per title
-        per_title_engines = titles_engines if titles_engines else []
-        titles_with_engines = []
+        # Build full per-title data list
+        titles_full = []
         for i, title in enumerate(titles):
-            if per_title_engines and i < len(per_title_engines):
-                eng = per_title_engines[i].lower()
-            elif parallel and has_gemini and has_claude:
-                eng = 'gemini' if i % 2 == 0 else 'claude'
-            elif has_gemini:
-                eng = 'gemini'
-            else:
-                eng = 'claude'
-            titles_with_engines.append((i, title, eng))
+            nid  = titles_niches[i] if i < len(titles_niches) else None
+            nlen = titles_lengths[i] if i < len(titles_lengths) else Config.DEFAULT_SCRIPT_LENGTH
+            neng = titles_engines[i].lower() if i < len(titles_engines) else 'gemini'
+
+            # Fallback to available engine if chosen engine not available
+            if neng == 'claude' and not has_claude:
+                neng = 'gemini'
+            elif neng == 'gemini' and not has_gemini:
+                neng = 'claude'
+
+            titles_full.append({'index': i, 'title': title, 'niche_id': nid, 'length': nlen, 'engine': neng})
 
         job_id = str(uuid.uuid4())
-        total  = len(titles)
+        total  = len(titles_full)
+        gemini_count = sum(1 for t in titles_full if t['engine'] == 'gemini')
+        claude_count = sum(1 for t in titles_full if t['engine'] == 'claude')
 
-        # Group by engine so Gemini threads and Claude threads can fire simultaneously
-        gemini_items = [(i, t, 'gemini') for i, t, e in titles_with_engines if e == 'gemini']
-        claude_items = [(i, t, 'claude') for i, t, e in titles_with_engines if e == 'claude']
-
-        engine_note = (
-            f"Parallel: Gemini {len(gemini_items)} + Claude {len(claude_items)}"
-            if parallel and has_gemini and has_claude
-            else f"Gemini {len(gemini_items)}"
-            if has_gemini
-            else f"Claude {len(claude_items)}"
-        )
+        engine_note = f"Gemini {gemini_count} + Claude {claude_count}"
 
         _batch_jobs[job_id] = {
             'titles': titles,
+            'titles_full': titles_full,
             'total': total,
             'completed': 0,
             'results': {},
             'status': 'running',
             'progress_pct': 0,
             'engine_note': engine_note,
+            'delay_seconds': delay_seconds,
         }
 
-        print(f"\n🚀 Batch job {job_id[:8]} — {total} scripts — {engine_note}")
+        print(f"\n🚀 Batch job {job_id[:8]} — {total} scripts — {engine_note} — {delay_seconds}s delay")
 
-        # Fire ALL threads simultaneously — Gemini group and Claude group both start at once
-        # When parallel=False: all titles go to single engine (sequential safety mode)
-        # When parallel=True:  odd=Gemini, even=Claude interleaved (max speed)
-        all_items = gemini_items + claude_items
-        for idx, title, engine in all_items:
+        # Fire all threads simultaneously — Gemini + Claude both work at same time
+        for item in titles_full:
             t = threading.Thread(
                 target=_generate_single_script,
-                args=(title, niche_id, length, engine, idx, job_id)
+                args=(item['title'], item['niche_id'], item['length'], item['engine'],
+                      item['index'], job_id)
             )
             t.daemon = True
             t.start()
@@ -1322,8 +1319,7 @@ def batch_generate_scripts():
             'job_id': job_id,
             'total': total,
             'engines': engine_note,
-            'titles_engines': [e for _, _, e in titles_with_engines],
-            'message': f'Batch started — {total} scripts queued. Poll /api/batch-status/{job_id} for progress.'
+            'message': f'Batch started — {total} scripts queued. {delay_seconds}s delay between each.'
         }), 202
 
     except Exception as e:

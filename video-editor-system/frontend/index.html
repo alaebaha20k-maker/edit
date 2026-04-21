@@ -266,42 +266,31 @@
                     <div id="batchWriterBody" style="display:none; margin-top:16px;">
 
                         <!-- Global Controls -->
-                        <div style="display:grid; grid-template-columns:1fr 1fr 180px; gap:10px; margin-bottom:14px;">
+                        <div style="display:grid; grid-template-columns:180px auto; gap:10px; margin-bottom:14px; align-items:end;">
                             <div class="input-group" style="margin:0;">
-                                <label style="font-size:12px; color:#9ca3af;">Content Niche</label>
-                                <select id="batch-niche-select" class="input-large" style="font-size:13px;">
-                                    <option value="">— Select Niche —</option>
-                                </select>
-                            </div>
-                            <div class="input-group" style="margin:0;">
-                                <label style="font-size:12px; color:#9ca3af;">Script Length</label>
-                                <select id="batch-length" class="input-large" style="font-size:13px;">
-                                    <option value="10000">Standard — 10k</option>
-                                    <option value="30000">Extended — 30k</option>
-                                    <option value="60000" selected>Master Class — 60k</option>
-                                    <option value="100000">Mega Doc — 100k</option>
-                                    <option value="200000">Full Masterclass — 200k</option>
-                                    <option value="240000">Maximum — 240k</option>
-                                </select>
-                            </div>
-                            <div class="input-group" style="margin:0;">
-                                <label style="font-size:12px; color:#9ca3af;">Delay between scripts</label>
+                                <label style="font-size:12px; color:#9ca3af;">Global Delay Between Scripts</label>
                                 <select id="batch-delay" class="input-large" style="font-size:13px;">
-                                    <option value="0">No delay (fastest)</option>
+                                    <option value="0">No delay (fastest — risky)</option>
                                     <option value="3">3 seconds</option>
                                     <option value="5" selected>5 seconds (safe)</option>
-                                    <option value="10">10 seconds</option>
+                                    <option value="10">10 seconds (safer)</option>
                                     <option value="15">15 seconds (max safety)</option>
                                 </select>
+                            </div>
+                            <div class="input-group" style="margin:0;">
+                                <label style="font-size:12px; color:#6b7280;">&nbsp;</label>
+                                <button onclick="reloadBatchNiches()" style="font-size:12px; padding:8px 14px; cursor:pointer; background:#1f2937; border:1px solid #374151; border-radius:8px; color:#9ca3af; white-space:nowrap;">🔄 Refresh Niches</button>
                             </div>
                         </div>
 
                         <!-- Column Headers -->
-                        <div style="display:grid; grid-template-columns:auto 1fr 110px 40px; gap:8px; margin-bottom:6px; padding:0 4px;">
+                        <div style="display:grid; grid-template-columns:auto 1fr 1fr 1fr 90px 40px; gap:6px; margin-bottom:6px; padding:0 4px;">
                             <span style="font-size:11px; color:#6b7280; font-weight:600;">#</span>
                             <span style="font-size:11px; color:#6b7280; font-weight:600;">Title</span>
+                            <span style="font-size:11px; color:#6b7280; font-weight:600;">Niche</span>
+                            <span style="font-size:11px; color:#6b7280; font-weight:600;">Length</span>
                             <span style="font-size:11px; color:#6b7280; font-weight:600; text-align:center;">Engine</span>
-                            <span style="font-size:11px; color:#6b7280; font-weight:600; text-align:center;"></span>
+                            <span></span>
                         </div>
 
                         <!-- Title Rows Container -->
