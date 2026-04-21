@@ -1139,6 +1139,197 @@ def generate_script():
             'validation': result['validation']
         })
 
+
+# =============================================================================
+# BATCH SCRIPT GENERATION
+# =============================================================================
+
+_batch_jobs = {}   # job_id -> {titles, total, completed, results, status}
+_batch_lock = threading.Lock()
+
+
+def _generate_single_script(title, niche_id, length, provider, index, job_id):
+    """Thread worker — generates one script. Runs in background thread."""
+    result = {
+        'index': index,
+        'title': title,
+        'status': 'running',
+        'error': None,
+        'script': None,
+        'chars': 0,
+        'words': 0,
+        'time': 0,
+        'chunks': 0,
+        'filename': None,
+    }
+    try:
+        from script_generator_3chunk import ScriptGenerator3Chunk
+        import time as _time
+
+        t0 = _time.time()
+        gen = ScriptGenerator3Chunk()
+        out = gen.generate_script(title, niche_id, length=length, verbose=False, provider=provider)
+
+        # Save script to file
+        timestamp = int(t0)
+        safe_title = re.sub(r'[^\w\-_.]', '_', title)[:50]
+        filename = f"batch_{job_id}_{index}_{timestamp}.txt"
+        filepath = os.path.join(OUTPUT_FOLDER, filename)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(out['script'])
+
+        result.update({
+            'status': 'done',
+            'script': out['script'],
+            'chars': out['stats']['chars'],
+            'words': out['stats']['words'],
+            'time': round(_time.time() - t0, 1),
+            'chunks': out['chunks_used'],
+            'filename': filename,
+        })
+    except Exception as e:
+        result.update({'status': 'failed', 'error': str(e)})
+
+    # Mark as completed in shared dict
+    with _batch_lock:
+        _batch_jobs[job_id]['completed'] += 1
+        _batch_jobs[job_id]['results'][index] = result
+        _batch_jobs[job_id]['progress_pct'] = int(
+            _batch_jobs[job_id]['completed'] / _batch_jobs[job_id]['total'] * 100
+        )
+
+    print(f"   [{job_id[:8]}] Script {index+1}/{_batch_jobs[job_id]['total']} ({title[:40]}) → {result['status']}")
+
+
+@app.route('/api/batch-generate-scripts', methods=['POST'])
+def batch_generate_scripts():
+    """
+    Generate multiple scripts in parallel using Gemini + Claude simultaneously.
+    Titles are split evenly between the two engines for max speed.
+
+    POST body:
+    {
+      "titles": ["Title 1", "Title 2", ...],
+      "niche_id": "...",
+      "length": 60000,
+      "parallel": true   // Gemini + Claude both working at same time
+    }
+    """
+    from script_generator_3chunk import ScriptGenerator3Chunk
+    from config import Config
+
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        raw_titles = data.get('titles', [])
+        niche_id   = data.get('niche_id')
+        length     = data.get('length', Config.DEFAULT_SCRIPT_LENGTH)
+        parallel   = data.get('parallel', True)
+
+        # Parse titles — support one per line or comma-separated
+        if isinstance(raw_titles, str):
+            titles = [t.strip() for t in raw_titles.replace('\n', ',').split(',') if t.strip()]
+        else:
+            titles = [t.strip() for t in raw_titles if t.strip()]
+
+        if not titles:
+            return jsonify({'error': 'No titles provided'}), 400
+        if not niche_id:
+            return jsonify({'error': 'niche_id is required'}), 400
+        if not Config.validate_script_length(length):
+            return jsonify({
+                'error': f'Invalid length. Must be between {Config.MIN_SCRIPT_LENGTH} and {Config.MAX_SCRIPT_LENGTH}'
+            }), 400
+
+        niche = NicheManager.get_niche(niche_id)
+        if not niche:
+            return jsonify({'error': 'Niche not found'}), 404
+
+        # Check API keys
+        has_gemini = bool(Config.get_gemini_api_key())
+        has_claude = bool(Config.get_claude_api_key())
+
+        if not has_gemini and not has_claude:
+            return jsonify({'error': 'No API key configured (Gemini or Claude)'}), 500
+
+        job_id = str(uuid.uuid4())
+        total = len(titles)
+
+        # Determine engines to use
+        if parallel and has_gemini and has_claude:
+            # Split titles evenly between Gemini and Claude
+            gemini_titles = titles[::2]
+            claude_titles = titles[1::2]
+            engines = [('gemini', gemini_titles), ('claude', claude_titles)]
+            engine_note = f"Gemini ({len(gemini_titles)}) + Claude ({len(claude_titles)}) simultaneously"
+        elif has_gemini:
+            engines = [('gemini', titles)]
+            engine_note = "Gemini only (Claude not configured)"
+        else:
+            engines = [('claude', titles)]
+            engine_note = "Claude only (Gemini not configured)"
+
+        # Initialise job tracker
+        _batch_jobs[job_id] = {
+            'titles': titles,
+            'total': total,
+            'completed': 0,
+            'results': {},
+            'status': 'running',
+            'progress_pct': 0,
+            'engine_note': engine_note,
+        }
+
+        print(f"\n🚀 Batch job {job_id[:8]} — {total} scripts — {engine_note}")
+
+        # Fire one background thread per engine group
+        for engine, eng_titles in engines:
+            for i, title in enumerate(eng_titles):
+                # Real title index in the full list
+                real_idx = i * 2 if engine == 'gemini' else i * 2 + 1
+                t = threading.Thread(
+                    target=_generate_single_script,
+                    args=(title, niche_id, length, engine, real_idx, job_id)
+                )
+                t.daemon = True
+                t.start()
+
+        return jsonify({
+            'success': True,
+            'job_id': job_id,
+            'total': total,
+            'engines': engine_note,
+            'message': f'Batch started — {total} scripts queued. Poll /api/batch-status/{job_id} for progress.'
+        }), 202
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/batch-status/<job_id>', methods=['GET'])
+def batch_status(job_id):
+    """Poll batch job status and results."""
+    with _batch_lock:
+        if job_id not in _batch_jobs:
+            return jsonify({'error': 'Job not found'}), 404
+        job = _batch_jobs[job_id]
+
+        # Check if finished
+        if job['completed'] >= job['total'] and job['status'] == 'running':
+            job['status'] = 'done'
+
+        return jsonify({
+            'job_id': job_id,
+            'status': job['status'],
+            'total': job['total'],
+            'completed': job['completed'],
+            'progress_pct': job['progress_pct'],
+            'engine_note': job['engine_note'],
+            'results': job['results'],
+        })
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

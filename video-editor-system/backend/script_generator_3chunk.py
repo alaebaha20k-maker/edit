@@ -232,7 +232,9 @@ class ScriptGenerator3Chunk:
             )
 
             temp         = self._get_temperature(chunk.role)
-            chunk_tokens = min(65536, max(int(chunk.target_chars / 2 * 1.0) + 4000, 8000))
+            # Bumped token budget: 18k chunks need more headroom to prevent "too short" retries
+            # Hook (18k): ~15k tokens. Middle (18k): ~13k tokens. Well within 65k limit.
+            chunk_tokens = min(65536, max(int(chunk.target_chars / 2 * 1.0) + 6000, 12000))
 
             if provider == "claude":
                 chunk_text = self._call_api_claude(
@@ -1273,11 +1275,16 @@ OUTPUT FORMAT — strict:
                 "messages"  : [{"role": "user", "content": active_prompt}],
             }
 
-            for attempt in range(4):
+            for attempt in range(6):
                 try:
                     resp = _requests.post(
                         CLAUDE_ENDPOINT, headers=headers, json=body, timeout=(30, 900)
                     )
+                    if resp.status_code == 503:
+                        if verbose:
+                            print(f"   ⚠️  Claude proxy 503 (attempt {attempt+1}/6) — retrying in 10s...")
+                        time.sleep(10)
+                        continue
                     resp.raise_for_status()
                     data = resp.json()
                     text = (data.get("content", [{}])[0].get("text") or "").strip()
@@ -1285,11 +1292,11 @@ OUTPUT FORMAT — strict:
                 except Exception as exc:
                     err = str(exc)
                     is_rate = "429" in err or "overloaded" in err.lower() or "rate" in err.lower()
-                    if not is_rate or attempt == 3:
+                    if not is_rate or attempt == 5:
                         raise
                     wait = 30 * (attempt + 1)
                     if verbose:
-                        print(f"   ⚠️  Claude rate limit — waiting {wait}s (attempt {attempt+1}/3)...")
+                        print(f"   ⚠️  Claude rate limit — waiting {wait}s (attempt {attempt+1}/6)...")
                     time.sleep(wait)
 
             min_ok = int(target_chars * 0.70)
