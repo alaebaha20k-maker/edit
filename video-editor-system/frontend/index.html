@@ -263,14 +263,14 @@
                         <span id="batchToggleIcon" style="color:#6ee7b7; font-size:18px;">▼</span>
                     </div>
                     <p style="margin:8px 0 0 0; color:#9ca3af; font-size:12px;">
-                        Paste multiple titles (one per line). Gemini + Claude both work simultaneously — each takes half the titles for maximum speed. No browser timeout, real-time progress.
+                        Paste multiple titles (one per line). Use <strong style="color:#a5b4fc;">[gemini]</strong> or <strong style="color:#c4b5fd;">[claude]</strong> at the end of any title to force that engine. Gemini + Claude both work simultaneously — no browser timeout, real-time progress.
                     </p>
 
                     <div id="batchWriterBody" style="display:none; margin-top:16px;">
                         <div class="input-group" style="margin-top:0;">
                             <label>Video Titles <span id="batch-title-count" style="color:#9ca3af; font-weight:400;">(0 titles)</span></label>
                             <textarea id="batch-titles" rows="8" class="textarea-large"
-                                placeholder="Paste titles here — one per line&#10;Example:&#10;How to Master Day Trading in 2024&#10;Why Most Traders Lose Money (And How to Win)&#10;The Ultimate Guide to Risk Management"
+                                placeholder="Paste titles — one per line&#10;Add [gemini] or [claude] at end of line to force an engine&#10;&#10;Example:&#10;How to Master Day Trading in 2024 [gemini]&#10;Why Most Traders Lose Money [claude]&#10;The Ultimate Guide to Risk Management&#10;Crypto Trading Strategies for Beginners [gemini]"
                                 oninput="document.getElementById('batch-title-count').textContent='('+(this.value.split('\n').filter(t=>t.trim()).length)+' titles)'"></textarea>
                         </div>
                         <div class="input-group">

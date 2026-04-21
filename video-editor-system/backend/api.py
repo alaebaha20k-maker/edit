@@ -1139,6 +1139,9 @@ def generate_script():
             'validation': result['validation']
         })
 
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 # =============================================================================
 # BATCH SCRIPT GENERATION
@@ -1210,10 +1213,16 @@ def batch_generate_scripts():
     POST body:
     {
       "titles": ["Title 1", "Title 2", ...],
+      "titles_engines": ["gemini", "claude", "gemini", ...],  // optional — one per title
       "niche_id": "...",
       "length": 60000,
       "parallel": true   // Gemini + Claude both working at same time
     }
+
+    Engine assignment modes:
+    - titles_engines array provided → each title uses its specified engine
+    - parallel=true + both keys → Gemini takes even-indexed, Claude takes odd-indexed
+    - parallel=false            → all titles use the single configured engine
     """
     from script_generator_3chunk import ScriptGenerator3Chunk
     from config import Config
@@ -1227,8 +1236,9 @@ def batch_generate_scripts():
         niche_id   = data.get('niche_id')
         length     = data.get('length', Config.DEFAULT_SCRIPT_LENGTH)
         parallel   = data.get('parallel', True)
+        titles_engines = data.get('titles_engines', [])   # optional per-title engines
 
-        # Parse titles — support one per line or comma-separated
+        # Parse titles
         if isinstance(raw_titles, str):
             titles = [t.strip() for t in raw_titles.replace('\n', ',').split(',') if t.strip()]
         else:
@@ -1247,31 +1257,41 @@ def batch_generate_scripts():
         if not niche:
             return jsonify({'error': 'Niche not found'}), 404
 
-        # Check API keys
         has_gemini = bool(Config.get_gemini_api_key())
         has_claude = bool(Config.get_claude_api_key())
 
         if not has_gemini and not has_claude:
             return jsonify({'error': 'No API key configured (Gemini or Claude)'}), 500
 
+        # Resolve engine per title
+        per_title_engines = titles_engines if titles_engines else []
+        titles_with_engines = []
+        for i, title in enumerate(titles):
+            if per_title_engines and i < len(per_title_engines):
+                eng = per_title_engines[i].lower()
+            elif parallel and has_gemini and has_claude:
+                eng = 'gemini' if i % 2 == 0 else 'claude'
+            elif has_gemini:
+                eng = 'gemini'
+            else:
+                eng = 'claude'
+            titles_with_engines.append((i, title, eng))
+
         job_id = str(uuid.uuid4())
-        total = len(titles)
+        total  = len(titles)
 
-        # Determine engines to use
-        if parallel and has_gemini and has_claude:
-            # Split titles evenly between Gemini and Claude
-            gemini_titles = titles[::2]
-            claude_titles = titles[1::2]
-            engines = [('gemini', gemini_titles), ('claude', claude_titles)]
-            engine_note = f"Gemini ({len(gemini_titles)}) + Claude ({len(claude_titles)}) simultaneously"
-        elif has_gemini:
-            engines = [('gemini', titles)]
-            engine_note = "Gemini only (Claude not configured)"
-        else:
-            engines = [('claude', titles)]
-            engine_note = "Claude only (Gemini not configured)"
+        # Group by engine so Gemini threads and Claude threads can fire simultaneously
+        gemini_items = [(i, t, 'gemini') for i, t, e in titles_with_engines if e == 'gemini']
+        claude_items = [(i, t, 'claude') for i, t, e in titles_with_engines if e == 'claude']
 
-        # Initialise job tracker
+        engine_note = (
+            f"Parallel: Gemini {len(gemini_items)} + Claude {len(claude_items)}"
+            if parallel and has_gemini and has_claude
+            else f"Gemini {len(gemini_items)}"
+            if has_gemini
+            else f"Claude {len(claude_items)}"
+        )
+
         _batch_jobs[job_id] = {
             'titles': titles,
             'total': total,
@@ -1284,23 +1304,22 @@ def batch_generate_scripts():
 
         print(f"\n🚀 Batch job {job_id[:8]} — {total} scripts — {engine_note}")
 
-        # Fire one background thread per engine group
-        for engine, eng_titles in engines:
-            for i, title in enumerate(eng_titles):
-                # Real title index in the full list
-                real_idx = i * 2 if engine == 'gemini' else i * 2 + 1
-                t = threading.Thread(
-                    target=_generate_single_script,
-                    args=(title, niche_id, length, engine, real_idx, job_id)
-                )
-                t.daemon = True
-                t.start()
+        # Fire ALL threads simultaneously — Gemini group and Claude group both start at once
+        all_items = gemini_items + claude_items
+        for idx, title, engine in all_items:
+            t = threading.Thread(
+                target=_generate_single_script,
+                args=(title, niche_id, length, engine, idx, job_id)
+            )
+            t.daemon = True
+            t.start()
 
         return jsonify({
             'success': True,
             'job_id': job_id,
             'total': total,
             'engines': engine_note,
+            'titles_engines': [e for _, _, e in titles_with_engines],
             'message': f'Batch started — {total} scripts queued. Poll /api/batch-status/{job_id} for progress.'
         }), 202
 
@@ -1311,25 +1330,24 @@ def batch_generate_scripts():
 @app.route('/api/batch-status/<job_id>', methods=['GET'])
 def batch_status(job_id):
     """Poll batch job status and results."""
-    with _batch_lock:
-        if job_id not in _batch_jobs:
-            return jsonify({'error': 'Job not found'}), 404
-        job = _batch_jobs[job_id]
+    try:
+        with _batch_lock:
+            if job_id not in _batch_jobs:
+                return jsonify({'error': 'Job not found'}), 404
+            job = _batch_jobs[job_id]
 
-        # Check if finished
-        if job['completed'] >= job['total'] and job['status'] == 'running':
-            job['status'] = 'done'
+            if job['completed'] >= job['total'] and job['status'] == 'running':
+                job['status'] = 'done'
 
-        return jsonify({
-            'job_id': job_id,
-            'status': job['status'],
-            'total': job['total'],
-            'completed': job['completed'],
-            'progress_pct': job['progress_pct'],
-            'engine_note': job['engine_note'],
-            'results': job['results'],
-        })
-
+            return jsonify({
+                'job_id': job_id,
+                'status': job['status'],
+                'total': job['total'],
+                'completed': job['completed'],
+                'progress_pct': job['progress_pct'],
+                'engine_note': job['engine_note'],
+                'results': job['results'],
+            })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

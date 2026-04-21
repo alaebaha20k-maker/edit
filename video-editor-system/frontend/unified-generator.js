@@ -924,7 +924,7 @@ async function startBatchScripts() {
     const titlesRaw = document.getElementById('batch-titles').value.trim();
     const length = parseInt(document.getElementById('batch-length').value);
     const engineRadio = document.querySelector('input[name="batchEngine"]:checked');
-    const engine = engineRadio ? engineRadio.value : 'parallel';
+    const globalEngine = engineRadio ? engineRadio.value : 'parallel';
 
     if (!nicheId) {
         alert('Please select a niche first in the Script Writer section above.');
@@ -935,7 +935,26 @@ async function startBatchScripts() {
         return;
     }
 
-    const titles = titlesRaw.split('\n').map(t => t.trim()).filter(t => t);
+    // Parse titles — strip [gemini] / [claude] tags and collect per-title engine overrides
+    const titles = [];
+    const titlesEngines = [];
+    for (const rawLine of titlesRaw.split('\n')) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        const geminiMatch  = line.match(/\[gemini\]\s*$/i);
+        const claudeMatch = line.match(/\[claude\]\s*$/i);
+        if (geminiMatch) {
+            titles.push(line.slice(0, geminiMatch.index).trim());
+            titlesEngines.push('gemini');
+        } else if (claudeMatch) {
+            titles.push(line.slice(0, claudeMatch.index).trim());
+            titlesEngines.push('claude');
+        } else {
+            titles.push(line);
+            titlesEngines.push('');   // empty = use default engine mode
+        }
+    }
+
     if (titles.length === 0) {
         alert('No valid titles found.');
         return;
@@ -950,11 +969,11 @@ async function startBatchScripts() {
     document.getElementById('batch-results-list').innerHTML = '';
 
     try {
-        const parallel = engine === 'parallel';
+        const parallel = globalEngine === 'parallel';
         const resp = await fetch('/api/batch-generate-scripts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ titles, niche_id: nicheId, length, parallel })
+            body: JSON.stringify({ titles, titles_engines: titlesEngines, niche_id: nicheId, length, parallel })
         });
         const data = await resp.json();
         if (!data.success) {
