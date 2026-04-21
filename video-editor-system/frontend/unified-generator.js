@@ -903,3 +903,184 @@ function _updateEbookProgress(pct, message) {
     if (bar && pct !== null) bar.style.width = pct + '%';
     if (text && message)    text.textContent = message;
 }
+
+// =============================================================================
+// BATCH SCRIPT WRITER
+// =============================================================================
+
+let _batchJobId = null;
+let _batchPollInterval = null;
+let _batchResults = [];
+
+function toggleBatchWriter() {
+    const body = document.getElementById('batchWriterBody');
+    const icon = document.getElementById('batchToggleIcon');
+    body.style.display = body.style.display === 'none' ? 'block' : 'none';
+    icon.textContent = body.style.display === 'none' ? '▼' : '▲';
+}
+
+async function startBatchScripts() {
+    const nicheId = document.getElementById('gen-niche-select').value;
+    const titlesRaw = document.getElementById('batch-titles').value.trim();
+    const length = parseInt(document.getElementById('batch-length').value);
+    const engineRadio = document.querySelector('input[name="batchEngine"]:checked');
+    const engine = engineRadio ? engineRadio.value : 'parallel';
+
+    if (!nicheId) {
+        alert('Please select a niche first in the Script Writer section above.');
+        return;
+    }
+    if (!titlesRaw) {
+        alert('Please enter at least one title.');
+        return;
+    }
+
+    const titles = titlesRaw.split('\n').map(t => t.trim()).filter(t => t);
+    if (titles.length === 0) {
+        alert('No valid titles found.');
+        return;
+    }
+
+    // Show progress panel
+    document.getElementById('batch-progress').style.display = 'block';
+    document.getElementById('batch-start-btn').disabled = true;
+    document.getElementById('batch-download-all-btn').style.display = 'none';
+    _batchResults = [];
+    _updateBatchProgress(0, `Starting ${titles.length} scripts — engines warming up…`);
+    document.getElementById('batch-results-list').innerHTML = '';
+
+    try {
+        const parallel = engine === 'parallel';
+        const resp = await fetch('/api/batch-generate-scripts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ titles, niche_id: nicheId, length, parallel })
+        });
+        const data = await resp.json();
+        if (!data.success) {
+            _updateBatchStatus(`❌ Error: ${data.error}`);
+            document.getElementById('batch-start-btn').disabled = false;
+            return;
+        }
+
+        _batchJobId = data.job_id;
+        _updateBatchStatus(`🚀 Batch started — ${data.engines} — polling for results…`);
+        _batchPollInterval = setInterval(_pollBatchStatus, 5000);
+        _pollBatchStatus();   // immediate first poll
+
+    } catch (err) {
+        _updateBatchStatus(`❌ Error: ${err.message}`);
+        document.getElementById('batch-start-btn').disabled = false;
+    }
+}
+
+async function _pollBatchStatus() {
+    if (!_batchJobId) return;
+    try {
+        const resp = await fetch(`/api/batch-status/${_batchJobId}`);
+        const data = await resp.json();
+
+        if (data.status === 'error') {
+            clearInterval(_batchPollInterval);
+            _updateBatchStatus(`❌ ${data.error}`);
+            document.getElementById('batch-start-btn').disabled = false;
+            return;
+        }
+
+        _updateBatchProgress(data.progress_pct,
+            `Completed ${data.completed}/${data.total} — ${data.engine_note}`);
+
+        // Render per-title results
+        const list = document.getElementById('batch-results-list');
+        list.innerHTML = '';
+        const results = Object.values(data.results).sort((a, b) => a.index - b.index);
+        for (const r of results) {
+            _renderBatchResultRow(r);
+        }
+
+        if (data.status === 'done') {
+            clearInterval(_batchPollInterval);
+            _batchPollInterval = null;
+            _batchResults = results;
+            const done = results.filter(r => r.status === 'done');
+            const failed = results.filter(r => r.status === 'failed');
+            _updateBatchStatus(
+                `✅ All done! ${done.length} successful${failed.length ? `, ${failed.length} failed` : ''}`
+            );
+            if (done.length > 0) {
+                document.getElementById('batch-download-all-btn').style.display = 'inline-block';
+            }
+            document.getElementById('batch-start-btn').disabled = false;
+        }
+
+    } catch (err) {
+        console.error('Batch poll error:', err);
+    }
+}
+
+function _renderBatchResultRow(r) {
+    const list = document.getElementById('batch-results-list');
+    const div = document.createElement('div');
+    div.style.cssText = 'padding:8px 10px;border-bottom:1px solid #1f2937;font-size:12px;';
+    if (r.status === 'done') {
+        div.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="color:#6ee7b7;font-weight:600;">✅ ${r.index+1}. ${_escapeHtml(r.title)}</span>
+                <span style="color:#9ca3af;font-size:11px;">${r.chars.toLocaleString()} chars · ${r.time}s</span>
+            </div>
+            <div style="color:#9ca3af;font-size:11px;margin-top:2px;">${r.chunks} chunks · ${(r.chars/4.5).toFixed(0)} words</div>
+            <div style="margin-top:6px;"><a href="/api/download/${r.filename}" download="${r.filename}" class="btn btn-sm" style="font-size:11px;padding:3px 10px;">📥 Download</a></div>
+        `;
+    } else if (r.status === 'failed') {
+        div.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="color:#f87171;font-weight:600;">❌ ${r.index+1}. ${_escapeHtml(r.title)}</span>
+            </div>
+            <div style="color:#f87171;font-size:11px;margin-top:2px;">${_escapeHtml(r.error || 'Unknown error')}</div>
+        `;
+    } else {
+        div.innerHTML = `
+            <div style="display:flex;align-items:center;gap:8px;">
+                <span style="color:#fbbf24;">⏳ ${r.index+1}. ${_escapeHtml(r.title)}</span>
+                <span style="color:#6b7280;font-size:11px;">Generating…</span>
+            </div>
+        `;
+    }
+    list.appendChild(div);
+}
+
+function _updateBatchProgress(pct, message) {
+    const bar = document.getElementById('batch-progress-bar');
+    const text = document.getElementById('batch-status-text');
+    const pctText = document.getElementById('batch-pct-text');
+    if (bar) bar.style.width = pct + '%';
+    if (text) text.textContent = message;
+    if (pctText) pctText.textContent = pct + '%';
+}
+
+function _updateBatchStatus(message) {
+    const text = document.getElementById('batch-status-text');
+    if (text) text.textContent = message;
+}
+
+async function downloadAllBatchScripts() {
+    if (!_batchResults.length) return;
+    const done = _batchResults.filter(r => r.status === 'done' && r.filename);
+    if (!done.length) return;
+
+    // Download each script individually (browser doesn't support auto-zipping from blob without server)
+    for (const r of done) {
+        const a = document.createElement('a');
+        a.href = `/api/download/${r.filename}`;
+        a.download = r.filename;
+        a.target = '_blank';
+        a.click();
+        await new Promise(res => setTimeout(res, 300));  // small delay between downloads
+    }
+}
+
+function _escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str || '';
+    return div.innerHTML;
+}
