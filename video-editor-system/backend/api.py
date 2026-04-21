@@ -1077,23 +1077,28 @@ def generate_script():
         if not data:
             return jsonify({'error': 'No data provided'}), 400
 
-        title = data.get('title')
+        title    = data.get('title')
         niche_id = data.get('niche_id')
-        length = data.get('length', Config.DEFAULT_SCRIPT_LENGTH)  # Default to 10K
+        length   = data.get('length', Config.DEFAULT_SCRIPT_LENGTH)
+        provider = data.get('provider', 'gemini')   # "gemini" | "claude"
 
         if not title or not niche_id:
             return jsonify({'error': 'Missing required fields: title, niche_id'}), 400
 
-        # Validate length (must be between MIN and MAX)
+        # Validate length
         if not Config.validate_script_length(length):
             return jsonify({
                 'error': f'Invalid length. Must be between {Config.MIN_SCRIPT_LENGTH} and {Config.MAX_SCRIPT_LENGTH} characters'
             }), 400
 
-        # Validate API key
-        errors = Config.validate_api_keys()
-        if any('GEMINI' in e for e in errors):
-            return jsonify({'error': 'Gemini API key not configured'}), 500
+        # Validate API key for chosen provider
+        if provider == 'claude':
+            if not Config.get_claude_api_key():
+                return jsonify({'error': 'Claude API key not configured. Add it in Settings → Claude API.'}), 500
+        else:
+            errors = Config.validate_api_keys()
+            if any('GEMINI' in e for e in errors):
+                return jsonify({'error': 'Gemini API key not configured'}), 500
 
         # Get niche info
         niche = NicheManager.get_niche(niche_id)
@@ -1104,7 +1109,7 @@ def generate_script():
         print(f"\n🎬 Starting 3-chunk script generation...")
         print(f"   API calls: 3 (one per chunk)")
         generator = ScriptGenerator3Chunk()
-        result = generator.generate_script(title, niche_id, length=length, verbose=True)
+        result = generator.generate_script(title, niche_id, length=length, verbose=True, provider=provider)
 
         # SAVE SCRIPT TO FILE - Use OUTPUT_FOLDER directly (same as videos)
         timestamp = int(time.time())
@@ -2060,7 +2065,8 @@ def get_api_keys_status():
                 'inworld': mask_key(api_keys.get('inworld', '')),
                 'inworld_secret': mask_key(api_keys.get('inworld_secret', '')),
                 'pexels': mask_key(api_keys.get('pexels', '')),
-                'pixabay': mask_key(api_keys.get('pixabay', ''))
+                'pixabay': mask_key(api_keys.get('pixabay', '')),
+                'claude_key': mask_key(api_keys.get('claude_api_key', ''))
             },
             'settings_file': str(SettingsManager.SETTINGS_FILE),
             'file_exists': SettingsManager.SETTINGS_FILE.exists()
@@ -2101,6 +2107,7 @@ def save_api_keys():
         gemini_translate_2 = data.get('gemini_translate_2')
         gemini_prompts     = data.get('gemini_prompts')
         gemini_seo         = data.get('gemini_seo')
+        claude_key         = data.get('claude_key')
 
         # Debug: Log what keys we received (show length not actual value)
         print("\n🔑 Received API keys:")
@@ -2137,7 +2144,8 @@ def save_api_keys():
             gemini_translate_1=gemini_translate_1,
             gemini_translate_2=gemini_translate_2,
             gemini_prompts=gemini_prompts,
-            gemini_seo=gemini_seo
+            gemini_seo=gemini_seo,
+            claude_key=claude_key
         )
 
         # Get validation status

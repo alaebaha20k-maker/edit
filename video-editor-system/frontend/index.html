@@ -182,9 +182,31 @@
                             <option value="70000">Full Course — 70k chars (~65 min)</option>
                             <option value="80000">Documentary — 80k chars (~75 min)</option>
                             <option value="100000">Mega Documentary — 100k chars (~90 min)</option>
+                            <option value="125000">Ultra Documentary — 125k chars (~115 min)</option>
+                            <option value="150000">Epic Series — 150k chars (~140 min)</option>
+                            <option value="175000">Grand Course — 175k chars (~160 min)</option>
+                            <option value="200000">Full Masterclass — 200k chars (~185 min)</option>
+                            <option value="240000">Maximum — 240k chars (~220 min)</option>
+                            <option value="250000">Maximum+ — 250k chars (~230 min)</option>
                         </select>
                     </div>
-                    <button onclick="generateScript()" class="btn-secondary">🤖 Generate Script</button>
+                    <!-- AI Engine toggle -->
+                    <div class="input-group" style="margin-top:14px;">
+                        <label style="font-size:13px; color:#9ca3af;">AI Engine</label>
+                        <div style="display:flex; gap:10px; margin-top:6px;">
+                            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; padding:9px 16px; border-radius:8px; border:2px solid #4f46e5; background:rgba(79,70,229,0.1); flex:1; justify-content:center;" id="engineGeminiLabel">
+                                <input type="radio" name="aiEngine" value="gemini" checked onchange="updateEngineUI()" style="accent-color:#6366f1;">
+                                <span style="font-weight:600; color:#a5b4fc; font-size:13px;">🤖 Gemini 2.5 Pro</span>
+                            </label>
+                            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; padding:9px 16px; border-radius:8px; border:2px solid #4c1d95; background:rgba(76,29,149,0.1); flex:1; justify-content:center;" id="engineClaudeLabel">
+                                <input type="radio" name="aiEngine" value="claude" onchange="updateEngineUI()" style="accent-color:#a78bfa;">
+                                <span style="font-weight:600; color:#c4b5fd; font-size:13px;">🔮 Claude Sonnet</span>
+                            </label>
+                        </div>
+                        <small style="color:#6b7280; margin-top:6px; display:block;">Gemini uses Script Writer key · Claude uses the Claude API key in Settings</small>
+                    </div>
+
+                    <button onclick="generateScript()" class="btn-secondary" id="generateScriptBtn">🤖 Generate Script</button>
                 </div>
 
                 <!-- 🧬 FORMULA EXTRACTOR — build a new niche from an existing script -->
@@ -1408,6 +1430,48 @@
                     </div>
 
                     <!-- ════════════════════════════════════
+                         SECTION — Claude AI (Script Writer)
+                    ════════════════════════════════════ -->
+                    <div style="border:1px solid #7c3aed; border-left:5px solid #a78bfa; border-radius:10px; margin-bottom:24px; overflow:hidden;">
+                        <div style="background:linear-gradient(135deg,#1a0f2e,#0f0a1e); padding:14px 18px; display:flex; align-items:center; gap:12px;">
+                            <span style="font-size:22px;">🔮</span>
+                            <div style="flex:1;">
+                                <div style="font-weight:700; font-size:15px; color:#ddd6fe;">Claude AI — Script Writer</div>
+                                <div style="font-size:12px; color:#a78bfa; margin-top:2px;">Optional alternative to Gemini · Same formula system, different AI engine</div>
+                            </div>
+                        </div>
+                        <div style="padding:18px; background:#0a0714;">
+
+                            <!-- Tutorial -->
+                            <div style="background:rgba(167,139,250,0.07); border:1px solid rgba(167,139,250,0.2); border-radius:8px; padding:14px; margin-bottom:16px; font-size:13px; color:#c4b5fd; line-height:1.7;">
+                                <div style="font-weight:700; margin-bottom:8px; color:#ddd6fe;">📖 How to get your Claude API key (3-part proxy setup)</div>
+                                <div style="color:#a78bfa; font-size:12px; margin-bottom:6px;">This project uses a custom proxy — NOT the official Anthropic API directly.</div>
+                                <ol style="margin:0; padding-left:18px; color:#c4b5fd;">
+                                    <li><strong>Go to</strong> <span style="background:#1e1535; padding:2px 6px; border-radius:4px; font-family:monospace;">api.gngn.my</span> and create an account.</li>
+                                    <li><strong>Generate an API key</strong> from your dashboard — it will look like a bearer token.</li>
+                                    <li><strong>Paste the key below.</strong> It is sent as <span style="background:#1e1535; padding:2px 6px; border-radius:4px; font-family:monospace;">Authorization: Bearer YOUR_KEY</span> to <span style="background:#1e1535; padding:2px 6px; border-radius:4px; font-family:monospace;">api.gngn.my/v1/messages</span>.</li>
+                                </ol>
+                                <div style="margin-top:10px; padding:10px; background:#1a0f2e; border-radius:6px; font-family:monospace; font-size:11px; color:#818cf8;">
+                                    Endpoint: https://api.gngn.my/v1/messages<br>
+                                    Auth: Authorization: Bearer &lt;your-key&gt;<br>
+                                    Model: claude-sonnet-4-6 · Max tokens: 16,000
+                                </div>
+                            </div>
+
+                            <div style="display:flex; flex-direction:column; gap:6px;">
+                                <label style="font-size:13px; color:#a78bfa; font-weight:600;">Claude API Key (proxy)</label>
+                                <div style="display:flex; gap:8px; align-items:center;">
+                                    <input type="password" id="claudeKey" placeholder="Bearer token from api.gngn.my"
+                                        style="flex:1; background:#0f0a1e; border:1px solid #4c1d95; border-radius:6px; padding:10px 14px; color:#e0d7ff; font-family:monospace; font-size:13px;">
+                                    <button onclick="togglePassword('claudeKey')" class="btn-toggle">👁️</button>
+                                </div>
+                                <span class="hint">Used only when you select Claude as the AI engine in Script Writer.</span>
+                            </div>
+
+                        </div>
+                    </div>
+
+                    <!-- ════════════════════════════════════
                          SECTION 2 — AI Image Generation (Replicate)
                     ════════════════════════════════════ -->
                     <div style="border:1px solid #b45309; border-left:5px solid #f59e0b; border-radius:10px; margin-bottom:24px; overflow:hidden;">
@@ -2172,6 +2236,23 @@ TAGS: comma-separated, under 400 chars, match the title keywords"></textarea>
     function _updateEbookProgress(pct, message) {
         document.getElementById('ebook-progress-bar').style.width = pct + '%';
         document.getElementById('ebook-status-text').textContent  = message;
+    }
+
+    // ── AI Engine toggle ────────────────────────────────────────────────────
+    function updateEngineUI() {
+        const val    = document.querySelector('input[name="aiEngine"]:checked')?.value || 'gemini';
+        const btn    = document.getElementById('generateScriptBtn');
+        const gLabel = document.getElementById('engineGeminiLabel');
+        const cLabel = document.getElementById('engineClaudeLabel');
+        if (val === 'claude') {
+            if (btn)    { btn.textContent = '🔮 Generate with Claude'; btn.style.background = 'linear-gradient(135deg,#6d28d9,#7c3aed)'; }
+            if (gLabel) gLabel.style.borderColor = '#374151';
+            if (cLabel) cLabel.style.borderColor = '#7c3aed';
+        } else {
+            if (btn)    { btn.textContent = '🤖 Generate Script'; btn.style.background = ''; }
+            if (gLabel) gLabel.style.borderColor = '#4f46e5';
+            if (cLabel) cLabel.style.borderColor = '#374151';
+        }
     }
 
     // ── 🧬 Formula Extractor — build a niche from a long script ────────────
