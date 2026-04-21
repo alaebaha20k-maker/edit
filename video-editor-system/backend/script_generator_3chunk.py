@@ -923,29 +923,30 @@ OUTPUT FORMAT — strict:
         outline      = plan.get("chunk_section_content", {}).get(str(chunk.index), "")
         sections_label = " | ".join(sections_now) if sections_now else f"part {chunk.index} of {total_chunks}"
 
-        # ── FORMULA BLOCK — adaptive based on formula size and DNA quality ────────
+        # ── FORMULA BLOCK — adaptive based on chunk position ───────────────────
         #
-        # CASE A — formula fits in context (≤ 65K chars):
-        #   laws_block    = DNA at position-0 (organized priority summary)
-        #   formula_block = FULL raw formula also injected — guarantees zero rules missed.
-        #   DNA + raw formula together = maximum compliance. Gemini 2.5 handles this easily.
+        # CHUNK 1 (hook): Dual-inject — DNA + full raw formula.
+        #   The hook sets tone, voice, and structure for the entire script.
+        #   Raw formula in chunk 1 is essential for the opening quality.
         #
-        # CASE B — large formula (> 65K chars):
-        #   laws_block    = DNA only (raw formula too large to inject per chunk)
-        #   formula_block = EMPTY — DNA must cover everything
+        # CHUNKS 2+ (body + close): DNA only — raw formula is redundant.
+        #   The organized laws (DNA) contain every rule already extracted.
+        #   Re-injecting ~42K raw formula per middle chunk slows processing
+        #   without adding any new quality signal. Same laws, same result.
+        #
+        # CASE B — large formula (> 65K chars) OR chunk > 1:
+        #   laws_block    = DNA only
+        #   formula_block = EMPTY
         #
         # CASE C — DNA extraction failed:
         #   laws_block    = empty
-        #   formula_block = FULL raw formula — model reads it directly
+        #   formula_block = FULL raw formula
         #
-        # Why inject both for small/medium formulas: DNA compression loses specific rules.
-        # A 42K formula compressed to 3K DNA can silently drop 90% of specific instructions.
-        # Belt-and-suspenders: DNA for attention priority, raw formula for completeness.
         DNA_MIN_CHARS = 1500
-        FORMULA_DUAL_INJECT_LIMIT = 65000   # inject both DNA + raw formula below this size
 
         dna_good     = len(formula_dna) >= DNA_MIN_CHARS
-        formula_fits = full_formula and len(full_formula) <= FORMULA_DUAL_INJECT_LIMIT
+        # Raw formula only in chunk 1. Chunks 2+ get DNA only — faster, same quality.
+        raw_formula_for_chunk = full_formula if chunk.index == 1 else ""
 
         if dna_good:
             laws_block = (
@@ -960,21 +961,19 @@ OUTPUT FORMAT — strict:
                 f"  ✓ Opening laws followed?  ✓ Tone correct?  ✓ Mandatory phrases used?\n"
                 f"  ✓ Forbidden words avoided?  ✓ Structure correct?  ✓ Niche laws applied?\n\n"
             )
-            if formula_fits:
-                # Also inject full raw formula — belt-and-suspenders for medium formulas.
-                # DNA compression can miss specific phrases/rules; raw formula ensures 100% coverage.
+            if raw_formula_for_chunk:
                 formula_block = (
                     f"════════════════ COMPLETE WRITING GUIDELINES — EVERY RULE APPLIES ════════════════\n"
-                    f"The formula above is a summary. THIS is the full law. All {len(full_formula):,} characters apply.\n"
+                    f"The formula above is a summary. THIS is the full law. All {len(raw_formula_for_chunk):,} characters apply.\n"
                     f"Read every section. Every rule below is mandatory — summary above + full text here.\n"
                     f"{'─' * 68}\n"
-                    f"{full_formula}\n"
+                    f"{raw_formula_for_chunk}\n"
                     f"{'─' * 68}\n"
                     f"END OF WRITING GUIDELINES — every sentence must execute a rule from above.\n"
                     f"{'═' * 68}\n\n"
                 )
             else:
-                formula_block = ""   # Large formula: DNA only (raw too large per chunk)
+                formula_block = ""   # Middle/close chunks: DNA only — faster, same quality
 
         elif full_formula:
             # DNA extraction failed — inject the raw formula as the primary reference
