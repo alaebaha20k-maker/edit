@@ -1156,6 +1156,7 @@ def _generate_single_script(title, niche_id, length, provider, index, job_id):
     result = {
         'index': index,
         'title': title,
+        'engine': provider,
         'status': 'running',
         'error': None,
         'script': None,
@@ -1305,6 +1306,8 @@ def batch_generate_scripts():
         print(f"\n🚀 Batch job {job_id[:8]} — {total} scripts — {engine_note}")
 
         # Fire ALL threads simultaneously — Gemini group and Claude group both start at once
+        # When parallel=False: all titles go to single engine (sequential safety mode)
+        # When parallel=True:  odd=Gemini, even=Claude interleaved (max speed)
         all_items = gemini_items + claude_items
         for idx, title, engine in all_items:
             t = threading.Thread(

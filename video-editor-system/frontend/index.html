@@ -256,66 +256,77 @@
                     </div>
                 </div>
 
-                <!-- 🚀 BATCH SCRIPT WRITER — multiple titles, Gemini + Claude parallel -->
+                <!-- 🚀 BATCH SCRIPT WRITER — row-by-row with per-title engine selection -->
                 <div style="margin-top: 22px; padding: 18px; background: linear-gradient(135deg, rgba(16,185,129,0.06), rgba(6,182,212,0.04)); border: 1px solid #10b981; border-radius: 12px;">
                     <div style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;" onclick="toggleBatchWriter()">
-                        <h4 style="margin:0; color:#6ee7b7; font-size:15px;">🚀 Batch Script Writer — Multiple Titles in Parallel</h4>
+                        <h4 style="margin:0; color:#6ee7b7; font-size:15px;">🚀 Batch Script Writer</h4>
                         <span id="batchToggleIcon" style="color:#6ee7b7; font-size:18px;">▼</span>
                     </div>
-                    <p style="margin:8px 0 0 0; color:#9ca3af; font-size:12px;">
-                        Paste multiple titles (one per line). Use <strong style="color:#a5b4fc;">[gemini]</strong> or <strong style="color:#c4b5fd;">[claude]</strong> at the end of any title to force that engine. Gemini + Claude both work simultaneously — no browser timeout, real-time progress.
-                    </p>
 
                     <div id="batchWriterBody" style="display:none; margin-top:16px;">
-                        <div class="input-group" style="margin-top:0;">
-                            <label>Video Titles <span id="batch-title-count" style="color:#9ca3af; font-weight:400;">(0 titles)</span></label>
-                            <textarea id="batch-titles" rows="8" class="textarea-large"
-                                placeholder="Paste titles — one per line&#10;Add [gemini] or [claude] at end of line to force an engine&#10;&#10;Example:&#10;How to Master Day Trading in 2024 [gemini]&#10;Why Most Traders Lose Money [claude]&#10;The Ultimate Guide to Risk Management&#10;Crypto Trading Strategies for Beginners [gemini]"
-                                oninput="document.getElementById('batch-title-count').textContent='('+(this.value.split('\n').filter(t=>t.trim()).length)+' titles)'"></textarea>
-                        </div>
-                        <div class="input-group">
-                            <label>Script Length</label>
-                            <select id="batch-length" class="input-large">
-                                <option value="10000">Standard — 10k chars (~12 min)</option>
-                                <option value="30000">Extended — 30k chars (~25 min)</option>
-                                <option value="60000" selected>Master Class — 60k chars (~55 min)</option>
-                                <option value="100000">Mega Documentary — 100k chars (~90 min)</option>
-                                <option value="200000">Full Masterclass — 200k chars (~185 min)</option>
-                                <option value="240000">Maximum — 240k chars (~220 min)</option>
-                            </select>
-                        </div>
-                        <div class="input-group">
-                            <label>Engines</label>
-                            <div style="display:flex; gap:10px; margin-top:6px;">
-                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; padding:9px 16px; border-radius:8px; border:2px solid #4f46e5; background:rgba(79,70,229,0.1); flex:1; justify-content:center;" id="batchParallelLabel">
-                                    <input type="radio" name="batchEngine" value="parallel" id="batchParallelRadio" checked style="accent-color:#6366f1;">
-                                    <span style="font-weight:600; color:#a5b4fc; font-size:13px;">⚡ Gemini + Claude (Fastest)</span>
-                                </label>
-                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; padding:9px 16px; border-radius:8px; border:2px solid #4f46e5; background:rgba(79,70,229,0.1); flex:1; justify-content:center;" id="batchGeminiLabel">
-                                    <input type="radio" name="batchEngine" value="gemini" style="accent-color:#6366f1;">
-                                    <span style="font-weight:600; color:#a5b4fc; font-size:13px;">🤖 Gemini Only</span>
-                                </label>
-                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; padding:9px 16px; border-radius:8px; border:2px solid #4c1d95; background:rgba(76,29,149,0.1); flex:1; justify-content:center;" id="batchClaudeLabel">
-                                    <input type="radio" name="batchEngine" value="claude" style="accent-color:#a78bfa;">
-                                    <span style="font-weight:600; color:#c4b5fd; font-size:13px;">🔮 Claude Only</span>
-                                </label>
+
+                        <!-- Global Controls -->
+                        <div style="display:grid; grid-template-columns:1fr 1fr 180px; gap:10px; margin-bottom:14px;">
+                            <div class="input-group" style="margin:0;">
+                                <label style="font-size:12px; color:#9ca3af;">Content Niche</label>
+                                <select id="batch-niche-select" class="input-large" style="font-size:13px;">
+                                    <option value="">— Select Niche —</option>
+                                </select>
+                            </div>
+                            <div class="input-group" style="margin:0;">
+                                <label style="font-size:12px; color:#9ca3af;">Script Length</label>
+                                <select id="batch-length" class="input-large" style="font-size:13px;">
+                                    <option value="10000">Standard — 10k</option>
+                                    <option value="30000">Extended — 30k</option>
+                                    <option value="60000" selected>Master Class — 60k</option>
+                                    <option value="100000">Mega Doc — 100k</option>
+                                    <option value="200000">Full Masterclass — 200k</option>
+                                    <option value="240000">Maximum — 240k</option>
+                                </select>
+                            </div>
+                            <div class="input-group" style="margin:0;">
+                                <label style="font-size:12px; color:#9ca3af;">Delay between scripts</label>
+                                <select id="batch-delay" class="input-large" style="font-size:13px;">
+                                    <option value="0">No delay (fastest)</option>
+                                    <option value="3">3 seconds</option>
+                                    <option value="5" selected>5 seconds (safe)</option>
+                                    <option value="10">10 seconds</option>
+                                    <option value="15">15 seconds (max safety)</option>
+                                </select>
                             </div>
                         </div>
-                        <button onclick="startBatchScripts()" id="batch-start-btn" class="btn-secondary" style="background:linear-gradient(135deg,#059669,#10b981);color:#fff;font-weight:700;margin-top:10px;width:100%;">
-                            🚀 Start Batch — Generate All Scripts
-                        </button>
 
-                        <!-- Batch Progress -->
+                        <!-- Column Headers -->
+                        <div style="display:grid; grid-template-columns:auto 1fr 110px 40px; gap:8px; margin-bottom:6px; padding:0 4px;">
+                            <span style="font-size:11px; color:#6b7280; font-weight:600;">#</span>
+                            <span style="font-size:11px; color:#6b7280; font-weight:600;">Title</span>
+                            <span style="font-size:11px; color:#6b7280; font-weight:600; text-align:center;">Engine</span>
+                            <span style="font-size:11px; color:#6b7280; font-weight:600; text-align:center;"></span>
+                        </div>
+
+                        <!-- Title Rows Container -->
+                        <div id="batch-rows-container"></div>
+
+                        <!-- Add + Generate Buttons -->
+                        <div style="display:flex; gap:10px; margin-top:12px;">
+                            <button onclick="addBatchRow()" class="btn-secondary" style="flex:1; font-size:13px; padding:9px;">
+                                ➕ Add Title
+                            </button>
+                            <button onclick="startBatchScripts()" id="batch-start-btn" class="btn-secondary" style="flex:2; background:linear-gradient(135deg,#059669,#10b981);color:#fff;font-weight:700; font-size:13px; padding:9px;">
+                                🚀 Generate All Scripts
+                            </button>
+                        </div>
+
+                        <!-- Overall Progress -->
                         <div id="batch-progress" style="display:none; margin-top:16px; background:#0f0f1f; border:1px solid #10b981; border-radius:10px; padding:14px;">
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
                                 <span id="batch-status-text" style="color:#6ee7b7; font-size:13px; font-weight:600;">Starting…</span>
                                 <span id="batch-pct-text" style="color:#9ca3af; font-size:12px;">0%</span>
                             </div>
-                            <div style="background:#1a1a2e; border-radius:6px; overflow:hidden; height:8px; margin-bottom:12px;">
+                            <div style="background:#1a1a2e; border-radius:6px; overflow:hidden; height:8px;">
                                 <div id="batch-progress-bar" style="height:100%; width:0%; background:linear-gradient(90deg,#059669,#10b981); transition:width 0.4s ease;"></div>
                             </div>
-                            <div id="batch-results-list" style="max-height:300px; overflow-y:auto;"></div>
-                            <button id="batch-download-all-btn" onclick="downloadAllBatchScripts()" class="btn-success" style="display:none; margin-top:12px; width:100%;">📥 Download All Scripts (.zip)</button>
+                            <button id="batch-download-all-btn" onclick="downloadAllBatchScripts()" class="btn-success" style="display:none; margin-top:12px; width:100%;">📥 Download All Scripts</button>
                         </div>
                     </div>
                 </div>
@@ -2239,6 +2250,7 @@ TAGS: comma-separated, under 400 chars, match the title keywords"></textarea>
 
     <script src="app.js?v=20260303-vault"></script>
     <script src="capcut_editor.js?v=20260207"></script>
+    <script src="unified-generator.js?v=20260421"></script>
     <script>
     // ── Digital Create — Ebook Generator ──────────────────────────────────
     let _ebookPollTimer = null;
