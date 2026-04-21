@@ -232,7 +232,9 @@ class ScriptGenerator3Chunk:
             )
 
             temp         = self._get_temperature(chunk.role)
-            chunk_tokens = min(65536, max(int(chunk.target_chars / 2 * 1.0) + 4000, 8000))
+            # Bumped token budget: 18k chunks need more headroom to prevent "too short" retries
+            # Hook (18k): ~15k tokens. Middle (18k): ~13k tokens. Well within 65k limit.
+            chunk_tokens = min(65536, max(int(chunk.target_chars / 2 * 1.0) + 6000, 12000))
 
             if provider == "claude":
                 chunk_text = self._call_api_claude(
