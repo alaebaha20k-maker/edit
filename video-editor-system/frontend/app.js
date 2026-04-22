@@ -432,8 +432,10 @@ function _loadNichesCache() {
 }
 
 async function loadNiches() {
+    console.log('[loadNiches] starting...');
     // ── 1. Immediately show cached niches so the UI is never blank ────────────
     const cached = _loadNichesCache();
+    console.log('[loadNiches] cached count:', cached.length);
     if (cached.length > 0) {
         appState.niches = cached;
         renderNichesList(cached);
@@ -443,7 +445,9 @@ async function loadNiches() {
     // ── 2. Fetch from backend ─────────────────────────────────────────────────
     try {
         const response = await fetch('/api/niches');
+        console.log('[loadNiches] fetch response.ok:', response.ok, 'status:', response.status);
         const data = await response.json();
+        console.log('[loadNiches] data.niches count:', data.niches ? data.niches.length : 0);
 
         if (data.niches && data.niches.length > 0) {
             // Backend has data → use it and update cache
@@ -451,10 +455,11 @@ async function loadNiches() {
             renderNichesList(data.niches);
             updateNicheDropdown(data.niches);
             _saveNichesCache(data.niches);
+            console.log('[loadNiches] dropdown updated with backend data');
 
         } else if (cached.length > 0 && (!data.niches || data.niches.length === 0)) {
             // Backend empty but cache has data → auto-restore to backend
-            console.warn('Backend niches empty — restoring from localStorage cache...');
+            console.warn('[loadNiches] backend empty, restoring from cache...');
             let restored = 0;
             for (const niche of cached) {
                 try {
@@ -484,7 +489,7 @@ async function loadNiches() {
             }
         }
     } catch (error) {
-        console.error('Failed to load niches from backend:', error);
+        console.error('[loadNiches] FAILED:', error);
     }
 }
 
@@ -680,26 +685,29 @@ function renderNichesList(niches) {
 }
 
 function updateNicheDropdown(niches) {
+    console.log('[updateNicheDropdown] called with', niches ? niches.length : 0, 'niches');
     // Update settings dropdown
     const dropdown = document.getElementById('nicheSelect');
+    console.log('[updateNicheDropdown] nicheSelect element:', dropdown ? 'FOUND' : 'NOT FOUND');
     if (dropdown) {
         dropdown.innerHTML = '<option value="">-- Select a niche --</option>';
         if (niches && niches.length > 0) {
             niches.forEach(n => {
                 const selected = appState.selectedNiche === n.id ? 'selected' : '';
-                dropdown.innerHTML += `<option value="${n.id}" ${selected}>${n.name} (${n.language})</option>`;
+                dropdown.innerHTML += `<option value="${n.id}">${n.name} (${n.language})</option>`;
             });
         }
     }
 
     // ALSO update generator dropdown (for script generation page)
     const generatorDropdown = document.getElementById('generatorNicheSelect');
+    console.log('[updateNicheDropdown] generatorNicheSelect element:', generatorDropdown ? 'FOUND' : 'NOT FOUND');
     if (generatorDropdown) {
         generatorDropdown.innerHTML = '<option value="">-- Select a niche --</option>';
         if (niches && niches.length > 0) {
             niches.forEach(n => {
                 const selected = appState.selectedNiche === n.id ? 'selected' : '';
-                generatorDropdown.innerHTML += `<option value="${n.id}" ${selected}>${n.name} (${n.language})</option>`;
+                generatorDropdown.innerHTML += `<option value="${n.id}">${n.name} (${n.language})</option>`;
             });
         }
     }
