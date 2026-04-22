@@ -297,6 +297,21 @@ const loadSettings = () => {
     loadNiches();
 };
 
+// Debug: diagnose niche loading
+window._debugNiches = async () => {
+    const el = document.getElementById('generatorNicheSelect');
+    const el2 = document.getElementById('nicheSelect');
+    console.log('generatorNicheSelect element:', el ? 'FOUND' : 'NOT FOUND');
+    console.log('nicheSelect element:', el2 ? 'FOUND' : 'NOT FOUND');
+    const r = await fetch('/api/niches').catch(e => ({ ok: false, error: e }));
+    if (!r.ok) { console.error('API error:', r.error); return; }
+    const d = await r.json();
+    console.log('API returned niches count:', d.niches ? d.niches.length : 0);
+    console.log('First niche:', d.niches ? d.niches[0] : 'none');
+    if (el) { el.innerHTML = '<option value="">DEBUG: ' + d.niches.length + ' niches loaded</option>'; }
+    if (el2) { el2.innerHTML = '<option value="">DEBUG: ' + d.niches.length + ' niches loaded</option>'; }
+};
+
 const saveSettings = async () => {
     try {
         const settings = {
