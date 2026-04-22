@@ -137,6 +137,18 @@
             <!-- Step 2: Script -->
             <section class="step">
                 <h3><span class="step-number">2</span> Video Script</h3>
+
+                <!-- Niche select — always visible so the user can see / pick their niche -->
+                <div class="input-group" style="margin-bottom:14px; padding:14px; background:rgba(102,126,234,0.08); border:1px solid rgba(102,126,234,0.25); border-radius:10px;">
+                    <label style="color:#a5b4fc; font-weight:700;">🎯 Content Niche</label>
+                    <select id="generatorNicheSelect" class="input-large" style="margin-top:8px;">
+                        <option value="">-- Select a niche --</option>
+                    </select>
+                    <small style="color: #888; margin-top: 5px; display: block;">
+                        Defines the writing style &amp; formula for AI generation. Create niches in Settings.
+                    </small>
+                </div>
+
                 <div class="mode-selector">
                     <label class="radio-label">
                         <input type="radio" name="scriptMode" value="manual" checked onchange="toggleScriptMode()">
@@ -157,15 +169,6 @@
                 </div>
 
                 <div id="scriptAutoSection" style="display: none;">
-                    <div class="input-group">
-                        <label>Select Content Niche</label>
-                        <select id="generatorNicheSelect" class="input-large">
-                            <option value="">-- Select a niche --</option>
-                        </select>
-                        <small style="color: #888; margin-top: 5px; display: block;">
-                            This defines the writing style and quality for your script. Create niches in Settings.
-                        </small>
-                    </div>
                     <div class="input-group">
                         <label>Script Length</label>
                         <select id="scriptLength" class="input-large">
@@ -1233,6 +1236,15 @@
                 <button onclick="closeSettings()" class="btn-close">✕</button>
             </div>
 
+            <!-- ── Quick Niche Selector (pinned at top of Settings) ── -->
+            <div style="background:linear-gradient(135deg,rgba(102,126,234,0.15),rgba(99,102,241,0.08)); border-bottom:1px solid rgba(102,126,234,0.3); padding:14px 24px; display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+                <span style="color:#a5b4fc; font-weight:700; font-size:14px; white-space:nowrap;">🎯 Active Niche:</span>
+                <select id="nicheSelect" class="input-large" onchange="selectNiche()" style="margin:0; flex:1; min-width:220px; max-width:480px;">
+                    <option value="">-- Select a niche --</option>
+                </select>
+                <a href="#niche-management-section" onclick="document.getElementById('niche-management-section').scrollIntoView({behavior:'smooth'}); return false;" style="color:#667eea; font-size:12px; white-space:nowrap; text-decoration:none;">➕ Manage niches ↓</a>
+            </div>
+
             <div class="modal-body">
                 <!-- API Keys Tab -->
                 <div class="settings-section">
@@ -1560,19 +1572,12 @@
                 </div>
 
                 <!-- Niche Management Section -->
-                <div class="settings-section">
+                <div class="settings-section" id="niche-management-section">
                     <h3>🎯 Content Niche (Required)</h3>
-                    <p style="color: #666; margin-bottom: 15px;">Select your content category and writing style. This is required for AI generation.</p>
-
-                    <div class="input-group">
-                        <label>Select Active Niche</label>
-                        <select id="nicheSelect" class="input-large" onchange="selectNiche()">
-                            <option value="">-- Select a niche --</option>
-                        </select>
-                    </div>
+                    <p style="color: #666; margin-bottom: 15px;">Create and manage your content niches. The active niche is shown at the top of this panel.</p>
 
                     <div class="input-group" style="margin-top: 20px;">
-                        <label>Or Create New Niche</label>
+                        <label>Create New Niche</label>
                         <input type="text" id="newNicheName" placeholder="Niche name (e.g., 'Trading Psychology', 'Tech Reviews')" class="input-large">
                         <select id="newNicheLanguage" class="input-large" style="margin-top: 10px;">
                             <option value="English">English</option>
