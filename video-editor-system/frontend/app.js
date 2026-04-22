@@ -685,26 +685,29 @@ function renderNichesList(niches) {
 }
 
 function updateNicheDropdown(niches) {
+    console.log('[updateNicheDropdown] called with', niches ? niches.length : 0, 'niches');
     // Update settings dropdown
     const dropdown = document.getElementById('nicheSelect');
+    console.log('[updateNicheDropdown] nicheSelect element:', dropdown ? 'FOUND' : 'NOT FOUND');
     if (dropdown) {
         dropdown.innerHTML = '<option value="">-- Select a niche --</option>';
         if (niches && niches.length > 0) {
             niches.forEach(n => {
                 const selected = appState.selectedNiche === n.id ? 'selected' : '';
-                dropdown.innerHTML += `<option value="${n.id}" ${selected}>${n.name} (${n.language})</option>`;
+                dropdown.innerHTML += `<option value="${n.id}">${n.name} (${n.language})</option>`;
             });
         }
     }
 
     // ALSO update generator dropdown (for script generation page)
     const generatorDropdown = document.getElementById('generatorNicheSelect');
+    console.log('[updateNicheDropdown] generatorNicheSelect element:', generatorDropdown ? 'FOUND' : 'NOT FOUND');
     if (generatorDropdown) {
         generatorDropdown.innerHTML = '<option value="">-- Select a niche --</option>';
         if (niches && niches.length > 0) {
             niches.forEach(n => {
                 const selected = appState.selectedNiche === n.id ? 'selected' : '';
-                generatorDropdown.innerHTML += `<option value="${n.id}" ${selected}>${n.name} (${n.language})</option>`;
+                generatorDropdown.innerHTML += `<option value="${n.id}">${n.name} (${n.language})</option>`;
             });
         }
     }
