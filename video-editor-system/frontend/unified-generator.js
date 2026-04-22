@@ -932,7 +932,6 @@ async function toggleBatchWriter() {
 }
 
 async function loadBatchNiches() {
-    if (_batchNiches.length > 0) return;
     await reloadBatchNiches();
 }
 
@@ -941,17 +940,21 @@ async function reloadBatchNiches() {
         const resp = await fetch('/api/niches');
         const data = await resp.json();
         _batchNiches = data.niches || [];
-        // Refresh all niche dropdowns in existing rows
-        _batchNiches.forEach(n => {
-            document.querySelectorAll('[id^="batch-niche-"]').forEach(sel => {
-                if (sel.querySelector('option[value="' + n.id + '"]')) return;
-                const opt = document.createElement('option');
-                opt.value = n.id;
-                opt.textContent = n.name;
-                sel.appendChild(opt);
-            });
+        // Rebuild ALL existing niche dropdowns
+        document.querySelectorAll('[id^="batch-niche-"]').forEach(sel => {
+            const currentVal = sel.value;
+            sel.innerHTML = _buildNicheOptions(currentVal);
         });
     } catch (e) { console.error('Failed to load niches:', e); }
+}
+
+function _buildNicheOptions(selectedId) {
+    let html = '<option value="">— Niche —</option>';
+    _batchNiches.forEach(n => {
+        const sel = n.id === selectedId ? 'selected' : '';
+        html += `<option value="${n.id}" ${sel}>${n.name}</option>`;
+    });
+    return html;
 }
 
 function addBatchRow(title = '', nicheId = '', length = '60000', engine = 'gemini') {
@@ -965,7 +968,7 @@ function addBatchRow(title = '', nicheId = '', length = '60000', engine = 'gemin
     row.innerHTML = `
         <span style="font-size:13px; color:#6b7280; min-width:22px; text-align:right;">${rowNum}.</span>
         <input type="text" id="batch-title-${rowNum}" class="input-large" style="font-size:13px; padding:7px 8px;" placeholder="Video title…" value="${_escapeHtmlAttr(title)}">
-        <select id="batch-niche-${rowNum}" class="input-large" style="font-size:12px; padding:7px 4px;"></select>
+        <select id="batch-niche-${rowNum}" class="input-large" style="font-size:12px; padding:7px 4px;"><option value="">— Niche —</option></select>
         <select id="batch-length-${rowNum}" class="input-large" style="font-size:12px; padding:7px 4px;">
             <option value="10000" ${length === '10000' ? 'selected' : ''}>10k</option>
             <option value="30000" ${length === '30000' ? 'selected' : ''}>30k</option>
@@ -982,16 +985,20 @@ function addBatchRow(title = '', nicheId = '', length = '60000', engine = 'gemin
     `;
     container.appendChild(row);
 
-    // Populate niche dropdown for this row
+    // Populate niche dropdown — if niches not loaded yet, fetch them first
     const nicheSel = document.getElementById(`batch-niche-${rowNum}`);
-    nicheSel.innerHTML = '<option value="">— Niche —</option>';
-    _batchNiches.forEach(n => {
-        const opt = document.createElement('option');
-        opt.value = n.id;
-        opt.textContent = n.name;
-        if (n.id === nicheId) opt.selected = true;
-        nicheSel.appendChild(opt);
-    });
+    if (_batchNiches.length === 0) {
+        // Fetch niches then populate this row's dropdown
+        fetch('/api/niches')
+            .then(r => r.json())
+            .then(d => {
+                _batchNiches = d.niches || [];
+                nicheSel.innerHTML = _buildNicheOptions(nicheId);
+            })
+            .catch(() => { nicheSel.innerHTML = '<option value="">— Error —</option>'; });
+    } else {
+        nicheSel.innerHTML = _buildNicheOptions(nicheId);
+    }
 }
 
 function removeBatchRow(rowNum) {
@@ -1207,3 +1214,13 @@ function _escapeHtmlAttr(str) {
     return (str || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+// Auto-refresh niche dropdowns when niches are updated in Settings or other tabs
+let _lastNichesTs = parseInt(localStorage.getItem('niches_cache_updated') || '0');
+setInterval(() => {
+    const ts = parseInt(localStorage.getItem('niches_cache_updated') || '0');
+    if (ts > _lastNichesTs) {
+        _lastNichesTs = ts;
+        reloadBatchNiches();
+    }
+}, 2000);
+window.addEventListener('focus', () => { if (_batchRowCount > 0) reloadBatchNiches(); });
