@@ -5626,6 +5626,7 @@ def alae_baha_saved_settings():
                 'gemini_translate_2': api_keys.get('gemini_translate_2', ''),
                 'gemini_prompts':     api_keys.get('gemini_prompts', ''),
                 'gemini_seo':         api_keys.get('gemini_seo', ''),
+                'claude_key':         api_keys.get('claude_api_key', ''),
             },
         })
     except Exception as e:
