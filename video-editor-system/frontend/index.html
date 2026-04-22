@@ -299,6 +299,78 @@
                     <div id="scriptLibraryList"></div>
                 </div>
 
+                <!-- 🚀 BATCH SCRIPT WRITER — generate many scripts at once -->
+                <div style="margin-top: 22px; padding: 18px; background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(5,150,105,0.05)); border: 1px solid #10b981; border-radius: 12px;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;" onclick="toggleBatchWriter()">
+                        <h4 style="margin:0; color:#6ee7b7; font-size:15px;">🚀 Batch Script Writer</h4>
+                        <span id="batchWriterToggleIcon" style="color:#6ee7b7; font-size:18px;">▼</span>
+                    </div>
+                    <p style="margin:8px 0 0 0; color:#9ca3af; font-size:12px;">
+                        Paste multiple titles (one per line). Each will be generated sequentially using the selected niche formula + AI engine — perfect for bulk video production.
+                    </p>
+
+                    <div id="batchWriterBody" style="display:none; margin-top:16px;">
+                        <div class="input-group" style="margin-top:0;">
+                            <label>Content Niche (Formula)</label>
+                            <select id="batchNicheSelect" class="input-large">
+                                <option value="">-- Select a niche --</option>
+                            </select>
+                        </div>
+
+                        <div class="input-group">
+                            <label>Script Length (applies to every title)</label>
+                            <select id="batchScriptLength" class="input-large">
+                                <option value="2500">Quick Video — 2.5k chars</option>
+                                <option value="5000">Short Video — 5k chars</option>
+                                <option value="10000" selected>Standard — 10k chars</option>
+                                <option value="15000">Medium — 15k chars</option>
+                                <option value="20000">Long — 20k chars</option>
+                                <option value="30000">Extended — 30k chars</option>
+                                <option value="50000">Expert — 50k chars</option>
+                                <option value="100000">Mega — 100k chars</option>
+                            </select>
+                        </div>
+
+                        <div class="input-group">
+                            <label>AI Engine</label>
+                            <div style="display:flex; gap:10px; margin-top:6px;">
+                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; padding:9px 16px; border-radius:8px; border:2px solid #10b981; background:rgba(16,185,129,0.1); flex:1; justify-content:center;">
+                                    <input type="radio" name="batchEngine" value="gemini" checked style="accent-color:#10b981;">
+                                    <span style="font-weight:600; color:#6ee7b7; font-size:13px;">🤖 Gemini</span>
+                                </label>
+                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; padding:9px 16px; border-radius:8px; border:2px solid #4c1d95; background:rgba(76,29,149,0.1); flex:1; justify-content:center;">
+                                    <input type="radio" name="batchEngine" value="claude" style="accent-color:#a78bfa;">
+                                    <span style="font-weight:600; color:#c4b5fd; font-size:13px;">🔮 Claude</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="input-group">
+                            <label>Titles <span id="batch-count" style="color:#9ca3af; font-weight:400;">(0 titles)</span></label>
+                            <textarea id="batchTitles" rows="8" class="textarea-large"
+                                placeholder="One title per line. Example:&#10;The U.S. Government Is Hiding What's Killing People in Nevada's Abandoned Mines&#10;Why Tesla's New Battery Will Change Everything&#10;The Forgotten Town in Arizona That Made Billions"
+                                oninput="document.getElementById('batch-count').textContent='('+this.value.split('\n').filter(l=>l.trim()).length+' titles)'"></textarea>
+                        </div>
+
+                        <button onclick="runBatchGenerate()" id="batch-btn" class="btn-secondary"
+                            style="background:linear-gradient(135deg,#059669,#10b981);color:#fff;font-weight:700;">
+                            🚀 Generate All Scripts
+                        </button>
+                        <button onclick="stopBatchGenerate()" id="batch-stop-btn" class="btn-secondary"
+                            style="display:none; background:rgba(239,68,68,0.2); color:#fca5a5; margin-left:8px;">
+                            ⏹ Stop
+                        </button>
+
+                        <div id="batch-status" style="display:none; margin-top:16px; background:#0f0f1f; border:1px solid #10b981; border-radius:10px; padding:14px;">
+                            <div id="batch-status-text" style="color:#6ee7b7; font-size:13px; margin-bottom:10px;">Starting…</div>
+                            <div style="background:#1a1a2e; border-radius:6px; overflow:hidden; height:6px;">
+                                <div id="batch-progress-bar" style="height:100%; width:0%; background:linear-gradient(90deg,#059669,#10b981); transition:width 0.4s ease;"></div>
+                            </div>
+                            <div id="batch-results" style="margin-top:12px; font-size:12px;"></div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Voice Generation Section -->
                 <div id="voiceGenerationSection" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 2px solid #e0e0e0;">
                     <h4 style="margin-bottom: 15px;">🎙️ Voice Generation</h4>
@@ -2263,6 +2335,80 @@ TAGS: comma-separated, under 400 chars, match the title keywords"></textarea>
         icon.textContent   = open ? '▼'     : '▲';
     }
 
+    // ── 🚀 Batch Script Writer ──────────────────────────────────────────────
+    function toggleBatchWriter() {
+        const body = document.getElementById('batchWriterBody');
+        const icon = document.getElementById('batchWriterToggleIcon');
+        const open = body.style.display !== 'none';
+        body.style.display = open ? 'none'  : 'block';
+        icon.textContent   = open ? '▼'     : '▲';
+        // When opening, make sure the batch niche dropdown mirrors the generator's
+        if (!open) {
+            const src = document.getElementById('generatorNicheSelect');
+            const dst = document.getElementById('batchNicheSelect');
+            if (src && dst) dst.innerHTML = src.innerHTML;
+        }
+    }
+
+    let _batchStop = false;
+
+    function stopBatchGenerate() { _batchStop = true; }
+
+    async function runBatchGenerate() {
+        const nicheId  = document.getElementById('batchNicheSelect').value;
+        const length   = parseInt(document.getElementById('batchScriptLength').value, 10);
+        const provider = document.querySelector('input[name="batchEngine"]:checked')?.value || 'gemini';
+        const rawTitles = document.getElementById('batchTitles').value;
+        const titles   = rawTitles.split('\n').map(t => t.trim()).filter(t => t);
+
+        if (!nicheId)       { alert('Please select a Content Niche first.'); return; }
+        if (titles.length === 0) { alert('Please enter at least one title.'); return; }
+
+        _batchStop = false;
+        const btn     = document.getElementById('batch-btn');
+        const stopBtn = document.getElementById('batch-stop-btn');
+        btn.disabled   = true;
+        btn.textContent = '⏳ Generating…';
+        stopBtn.style.display = 'inline-block';
+        document.getElementById('batch-status').style.display = 'block';
+        const results = document.getElementById('batch-results');
+        results.innerHTML = '';
+
+        const success = [];
+        const failed  = [];
+
+        for (let i = 0; i < titles.length; i++) {
+            if (_batchStop) { break; }
+            const title = titles[i];
+            const pct = Math.round((i / titles.length) * 100);
+            document.getElementById('batch-progress-bar').style.width = pct + '%';
+            document.getElementById('batch-status-text').textContent =
+                `Script ${i+1}/${titles.length}: ${title.substring(0, 80)}…`;
+
+            try {
+                const resp = await fetch('/api/generate-script', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, niche_id: nicheId, length, provider })
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'Generation failed');
+                success.push({ title, chars: (data.script || '').length, filename: data.filename });
+                results.innerHTML += `<div style="color:#6ee7b7; padding:4px 0;">✅ [${i+1}] ${title.substring(0,60)} — ${(data.script||'').length.toLocaleString()} chars</div>`;
+            } catch (e) {
+                failed.push({ title, error: e.message });
+                results.innerHTML += `<div style="color:#fca5a5; padding:4px 0;">❌ [${i+1}] ${title.substring(0,60)} — ${e.message}</div>`;
+            }
+        }
+
+        document.getElementById('batch-progress-bar').style.width = '100%';
+        document.getElementById('batch-status-text').textContent =
+            `✅ Done — ${success.length} succeeded, ${failed.length} failed${_batchStop ? ' (stopped by user)' : ''}`;
+        btn.disabled   = false;
+        btn.textContent = '🚀 Generate All Scripts';
+        stopBtn.style.display = 'none';
+    }
+
     let _fxPollTimer = null;
 
     async function extractFormula() {
@@ -2307,9 +2453,15 @@ TAGS: comma-separated, under 400 chars, match the title keywords"></textarea>
                 } else if (d.status === 'done') {
                     clearInterval(_fxPollTimer);
                     _updateFxProgress(100, `✅ Formula ready (${(d.formula_chars || 0).toLocaleString()} chars). Niche added.`);
-                    // Refresh the niche dropdown so the new formula is selectable
-                    if (typeof loadNichesForGenerator === 'function') {
-                        loadNichesForGenerator(d.niche_id);
+                    // Refresh ALL niche dropdowns + settings list (Video Script, Batch, Settings list)
+                    if (typeof loadNiches === 'function') {
+                        await loadNiches();
+                        // Preselect the new niche in the Video Script dropdown
+                        const sel = document.getElementById('generatorNicheSelect');
+                        if (sel && d.niche_id) sel.value = d.niche_id;
+                        // Also preselect in Batch Script Writer
+                        const bSel = document.getElementById('batchNicheSelect');
+                        if (bSel && d.niche_id) bSel.value = d.niche_id;
                     } else {
                         _refreshGeneratorNicheSelect(d.niche_id);
                     }
