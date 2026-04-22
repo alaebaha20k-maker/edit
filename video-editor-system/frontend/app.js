@@ -407,7 +407,10 @@ async function resetAutoImagesFormula() {
 const NICHES_CACHE_KEY = 'video_tool_niches_cache';
 
 function _saveNichesCache(niches) {
-    try { localStorage.setItem(NICHES_CACHE_KEY, JSON.stringify(niches)); } catch(_) {}
+    try {
+        localStorage.setItem(NICHES_CACHE_KEY, JSON.stringify(niches));
+        localStorage.setItem('niches_cache_updated', Date.now().toString());
+    } catch(_) {}
 }
 function _loadNichesCache() {
     try { return JSON.parse(localStorage.getItem(NICHES_CACHE_KEY) || '[]'); } catch(_) { return []; }

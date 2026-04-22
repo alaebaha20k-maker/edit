@@ -908,69 +908,177 @@ function _updateEbookProgress(pct, message) {
 // BATCH SCRIPT WRITER
 // =============================================================================
 
+let _batchRowCount = 0;
 let _batchJobId = null;
 let _batchPollInterval = null;
 let _batchResults = [];
+let _batchNiches = [];
 
-function toggleBatchWriter() {
+async function toggleBatchWriter() {
     const body = document.getElementById('batchWriterBody');
     const icon = document.getElementById('batchToggleIcon');
-    body.style.display = body.style.display === 'none' ? 'block' : 'none';
-    icon.textContent = body.style.display === 'none' ? '▼' : '▲';
+    const isOpen = body.style.display !== 'none';
+    body.style.display = isOpen ? 'none' : 'block';
+    icon.textContent = isOpen ? '▼' : '▲';
+    if (!isOpen) {
+        // Load niches then add initial rows
+        await loadBatchNiches();
+        if (_batchRowCount === 0) {
+            addBatchRow();
+            addBatchRow();
+            addBatchRow();
+        }
+    }
+}
+
+async function loadBatchNiches() {
+    await reloadBatchNiches();
+}
+
+async function reloadBatchNiches() {
+    try {
+        const resp = await fetch('/api/niches');
+        const data = await resp.json();
+        _batchNiches = data.niches || [];
+        // Rebuild ALL existing niche dropdowns
+        document.querySelectorAll('[id^="batch-niche-"]').forEach(sel => {
+            const currentVal = sel.value;
+            sel.innerHTML = _buildNicheOptions(currentVal);
+        });
+    } catch (e) { console.error('Failed to load niches:', e); }
+}
+
+function _buildNicheOptions(selectedId) {
+    let html = '<option value="">— Niche —</option>';
+    _batchNiches.forEach(n => {
+        const sel = n.id === selectedId ? 'selected' : '';
+        html += `<option value="${n.id}" ${sel}>${n.name}</option>`;
+    });
+    return html;
+}
+
+function addBatchRow(title = '', nicheId = '', length = '60000', engine = 'gemini') {
+    _batchRowCount++;
+    const container = document.getElementById('batch-rows-container');
+    const rowNum = _batchRowCount;
+
+    const row = document.createElement('div');
+    row.id = `batch-row-${rowNum}`;
+    row.style.cssText = 'display:grid; grid-template-columns:auto 1fr 1fr 1fr 90px 40px; gap:6px; margin-bottom:6px; align-items:center;';
+    row.innerHTML = `
+        <span style="font-size:13px; color:#6b7280; min-width:22px; text-align:right;">${rowNum}.</span>
+        <input type="text" id="batch-title-${rowNum}" class="input-large" style="font-size:13px; padding:7px 8px;" placeholder="Video title…" value="${_escapeHtmlAttr(title)}">
+        <select id="batch-niche-${rowNum}" class="input-large" style="font-size:12px; padding:7px 4px;"><option value="">— Niche —</option></select>
+        <select id="batch-length-${rowNum}" class="input-large" style="font-size:12px; padding:7px 4px;">
+            <option value="10000" ${length === '10000' ? 'selected' : ''}>10k</option>
+            <option value="30000" ${length === '30000' ? 'selected' : ''}>30k</option>
+            <option value="60000" ${length === '60000' ? 'selected' : ''}>60k</option>
+            <option value="100000" ${length === '100000' ? 'selected' : ''}>100k</option>
+            <option value="200000" ${length === '200000' ? 'selected' : ''}>200k</option>
+            <option value="240000" ${length === '240000' ? 'selected' : ''}>240k</option>
+        </select>
+        <select id="batch-eng-${rowNum}" class="input-large" style="font-size:12px; padding:7px 4px;">
+            <option value="gemini" ${engine === 'gemini' ? 'selected' : ''}>🤖 Gemini</option>
+            <option value="claude" ${engine === 'claude' ? 'selected' : ''}>🔮 Claude</option>
+        </select>
+        <button onclick="removeBatchRow(${rowNum})" style="background:none; border:none; color:#ef4444; cursor:pointer; font-size:18px; padding:4px; text-align:center;" title="Remove">×</button>
+    `;
+    container.appendChild(row);
+
+    // Populate niche dropdown — if niches not loaded yet, fetch them first
+    const nicheSel = document.getElementById(`batch-niche-${rowNum}`);
+    if (_batchNiches.length === 0) {
+        // Fetch niches then populate this row's dropdown
+        fetch('/api/niches')
+            .then(r => r.json())
+            .then(d => {
+                _batchNiches = d.niches || [];
+                nicheSel.innerHTML = _buildNicheOptions(nicheId);
+            })
+            .catch(() => { nicheSel.innerHTML = '<option value="">— Error —</option>'; });
+    } else {
+        nicheSel.innerHTML = _buildNicheOptions(nicheId);
+    }
+}
+
+function removeBatchRow(rowNum) {
+    const row = document.getElementById(`batch-row-${rowNum}`);
+    if (row) row.remove();
 }
 
 async function startBatchScripts() {
-    const nicheId = document.getElementById('gen-niche-select').value;
-    const titlesRaw = document.getElementById('batch-titles').value.trim();
-    const length = parseInt(document.getElementById('batch-length').value);
-    const engineRadio = document.querySelector('input[name="batchEngine"]:checked');
-    const engine = engineRadio ? engineRadio.value : 'parallel';
+    const delaySec = parseInt(document.getElementById('batch-delay').value);
 
-    if (!nicheId) {
-        alert('Please select a niche first in the Script Writer section above.');
-        return;
-    }
-    if (!titlesRaw) {
-        alert('Please enter at least one title.');
-        return;
+    // Collect all rows — each row has its own niche + length + engine
+    const rows = document.querySelectorAll('[id^="batch-row-"]');
+    const titles = [];
+    const titlesNiches = [];
+    const titlesLengths = [];
+    const titlesEngines = [];
+
+    for (const row of rows) {
+        const id = row.id.replace('batch-row-', '');
+        const titleInput  = document.getElementById(`batch-title-${id}`);
+        const nicheSelect = document.getElementById(`batch-niche-${id}`);
+        const lengthSelect = document.getElementById(`batch-length-${id}`);
+        const engSelect   = document.getElementById(`batch-eng-${id}`);
+        if (!titleInput || !nicheSelect || !lengthSelect || !engSelect) continue;
+        const title = titleInput.value.trim();
+        if (!title) continue;
+        titles.push(title);
+        titlesNiches.push(nicheSelect.value);
+        titlesLengths.push(parseInt(lengthSelect.value));
+        titlesEngines.push(engSelect.value);
     }
 
-    const titles = titlesRaw.split('\n').map(t => t.trim()).filter(t => t);
     if (titles.length === 0) {
-        alert('No valid titles found.');
+        alert('Please add at least one title with a niche selected.');
         return;
     }
 
-    // Show progress panel
+    const missingNiche = titlesNiches.some(n => !n);
+    if (missingNiche) {
+        alert('Please select a Content Niche for every row before generating.');
+        return;
+    }
+
     document.getElementById('batch-progress').style.display = 'block';
     document.getElementById('batch-start-btn').disabled = true;
     document.getElementById('batch-download-all-btn').style.display = 'none';
     _batchResults = [];
-    _updateBatchProgress(0, `Starting ${titles.length} scripts — engines warming up…`);
-    document.getElementById('batch-results-list').innerHTML = '';
+    _updateBatchProgressUI(0, `Starting ${titles.length} scripts — ${delaySec}s delay between each…`);
+    document.getElementById('batch-rows-container').style.opacity = '0.6';
 
     try {
-        const parallel = engine === 'parallel';
         const resp = await fetch('/api/batch-generate-scripts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ titles, niche_id: nicheId, length, parallel })
+            body: JSON.stringify({
+                titles,
+                titles_niches: titlesNiches,
+                titles_lengths: titlesLengths,
+                titles_engines: titlesEngines,
+                parallel: false,
+                delay_seconds: delaySec,
+            })
         });
         const data = await resp.json();
         if (!data.success) {
-            _updateBatchStatus(`❌ Error: ${data.error}`);
+            _updateBatchStatus('❌ Error: ' + data.error);
             document.getElementById('batch-start-btn').disabled = false;
+            document.getElementById('batch-rows-container').style.opacity = '1';
             return;
         }
 
         _batchJobId = data.job_id;
-        _updateBatchStatus(`🚀 Batch started — ${data.engines} — polling for results…`);
-        _batchPollInterval = setInterval(_pollBatchStatus, 5000);
-        _pollBatchStatus();   // immediate first poll
+        _updateBatchStatus('🚀 Batch started — polling for live results…');
+        _batchPollInterval = setInterval(_pollBatchStatus, 4000);
+        _pollBatchStatus();
 
     } catch (err) {
-        _updateBatchStatus(`❌ Error: ${err.message}`);
+        _updateBatchStatus('❌ Error: ' + err.message);
         document.getElementById('batch-start-btn').disabled = false;
+        document.getElementById('batch-rows-container').style.opacity = '1';
     }
 }
 
@@ -980,23 +1088,22 @@ async function _pollBatchStatus() {
         const resp = await fetch(`/api/batch-status/${_batchJobId}`);
         const data = await resp.json();
 
-        if (data.status === 'error') {
+        if (data.error) {
             clearInterval(_batchPollInterval);
-            _updateBatchStatus(`❌ ${data.error}`);
+            _updateBatchStatus('❌ ' + data.error);
             document.getElementById('batch-start-btn').disabled = false;
+            document.getElementById('batch-rows-container').style.opacity = '1';
             return;
         }
 
-        _updateBatchProgress(data.progress_pct,
-            `Completed ${data.completed}/${data.total} — ${data.engine_note}`);
+        const pct = data.progress_pct || 0;
+        _updateBatchProgressUI(pct, `Completed ${data.completed}/${data.total} — ${data.engine_note}`);
 
-        // Render per-title results
-        const list = document.getElementById('batch-results-list');
-        list.innerHTML = '';
-        const results = Object.values(data.results).sort((a, b) => a.index - b.index);
-        for (const r of results) {
-            _renderBatchResultRow(r);
-        }
+        // Update each row individually
+        const results = Object.values(data.results || {});
+        results.forEach(r => {
+            _updateBatchRowUI(r.index, r);
+        });
 
         if (data.status === 'done') {
             clearInterval(_batchPollInterval);
@@ -1004,52 +1111,72 @@ async function _pollBatchStatus() {
             _batchResults = results;
             const done = results.filter(r => r.status === 'done');
             const failed = results.filter(r => r.status === 'failed');
-            _updateBatchStatus(
-                `✅ All done! ${done.length} successful${failed.length ? `, ${failed.length} failed` : ''}`
-            );
+            _updateBatchStatus('✅ All done! ' + done.length + ' successful' + (failed.length ? ', ' + failed.length + ' failed' : ''));
+            document.getElementById('batch-start-btn').disabled = false;
+            document.getElementById('batch-rows-container').style.opacity = '1';
             if (done.length > 0) {
                 document.getElementById('batch-download-all-btn').style.display = 'inline-block';
             }
-            document.getElementById('batch-start-btn').disabled = false;
         }
-
     } catch (err) {
         console.error('Batch poll error:', err);
     }
 }
 
-function _renderBatchResultRow(r) {
-    const list = document.getElementById('batch-results-list');
-    const div = document.createElement('div');
-    div.style.cssText = 'padding:8px 10px;border-bottom:1px solid #1f2937;font-size:12px;';
+function _updateBatchRowUI(index, r) {
+    const row = document.getElementById(`batch-row-${index + 1}`);
+    if (!row) return;
+    const engSel = document.getElementById(`batch-eng-${index + 1}`);
+    if (engSel) engSel.disabled = true;
+
     if (r.status === 'done') {
-        div.innerHTML = `
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-                <span style="color:#6ee7b7;font-weight:600;">✅ ${r.index+1}. ${_escapeHtml(r.title)}</span>
-                <span style="color:#9ca3af;font-size:11px;">${r.chars.toLocaleString()} chars · ${r.time}s</span>
+        row.style.background = 'rgba(16,185,129,0.08)';
+        row.style.borderRadius = '6px';
+        row.style.border = '1px solid rgba(16,185,129,0.3)';
+        row.style.padding = '6px 8px';
+        row.innerHTML = `
+            <span style="font-size:13px; color:#6ee7b7; min-width:22px; text-align:right;">✅</span>
+            <div>
+                <div style="font-size:13px; color:#6ee7b7; font-weight:600;">${_escapeHtml(r.title)}</div>
+                <div style="font-size:11px; color:#9ca3af; margin-top:2px;">${r.chars.toLocaleString()} chars · ${r.time}s · ${r.chunks} chunks</div>
             </div>
-            <div style="color:#9ca3af;font-size:11px;margin-top:2px;">${r.chunks} chunks · ${(r.chars/4.5).toFixed(0)} words</div>
-            <div style="margin-top:6px;"><a href="/api/download/${r.filename}" download="${r.filename}" class="btn btn-sm" style="font-size:11px;padding:3px 10px;">📥 Download</a></div>
+            <span style="font-size:11px; color:#10b981; text-align:center;">${r.chars.toLocaleString()} chars</span>
+            <button onclick="removeBatchRow(${index + 1})" style="background:none; border:none; color:#ef4444; cursor:pointer; font-size:18px; padding:4px;">×</button>
         `;
     } else if (r.status === 'failed') {
-        div.innerHTML = `
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-                <span style="color:#f87171;font-weight:600;">❌ ${r.index+1}. ${_escapeHtml(r.title)}</span>
+        row.style.background = 'rgba(239,68,68,0.06)';
+        row.style.borderRadius = '6px';
+        row.style.border = '1px solid rgba(239,68,68,0.3)';
+        row.style.padding = '6px 8px';
+        row.innerHTML = `
+            <span style="font-size:13px; color:#f87171; min-width:22px; text-align:right;">❌</span>
+            <div>
+                <div style="font-size:13px; color:#f87171; font-weight:600;">${_escapeHtml(r.title)}</div>
+                <div style="font-size:11px; color:#f87171; margin-top:2px;">${_escapeHtml(r.error || 'Unknown error')}</div>
             </div>
-            <div style="color:#f87171;font-size:11px;margin-top:2px;">${_escapeHtml(r.error || 'Unknown error')}</div>
+            <span></span>
+            <button onclick="removeBatchRow(${index + 1})" style="background:none; border:none; color:#ef4444; cursor:pointer; font-size:18px; padding:4px;">×</button>
         `;
     } else {
-        div.innerHTML = `
-            <div style="display:flex;align-items:center;gap:8px;">
-                <span style="color:#fbbf24;">⏳ ${r.index+1}. ${_escapeHtml(r.title)}</span>
-                <span style="color:#6b7280;font-size:11px;">Generating…</span>
+        const engLabel = r.engine === 'claude' ? '🔮' : '🤖';
+        const engName  = r.engine === 'claude' ? 'Claude' : 'Gemini';
+        row.style.background = 'rgba(251,191,36,0.06)';
+        row.style.borderRadius = '6px';
+        row.style.border = '1px solid rgba(251,191,36,0.2)';
+        row.style.padding = '6px 8px';
+        row.innerHTML = `
+            <span style="font-size:13px; color:#fbbf24; min-width:22px; text-align:right;">⏳</span>
+            <div>
+                <div style="font-size:13px; color:#fbbf24; font-weight:600;">${_escapeHtml(r.title)}</div>
+                <div style="font-size:11px; color:#6b7280; margin-top:2px;">${engLabel} ${engName} — Generating…</div>
             </div>
+            <span style="font-size:11px; color:#6b7280; text-align:center;">⏳</span>
+            <span></span>
         `;
     }
-    list.appendChild(div);
 }
 
-function _updateBatchProgress(pct, message) {
+function _updateBatchProgressUI(pct, message) {
     const bar = document.getElementById('batch-progress-bar');
     const text = document.getElementById('batch-status-text');
     const pctText = document.getElementById('batch-pct-text');
@@ -1067,20 +1194,33 @@ async function downloadAllBatchScripts() {
     if (!_batchResults.length) return;
     const done = _batchResults.filter(r => r.status === 'done' && r.filename);
     if (!done.length) return;
-
-    // Download each script individually (browser doesn't support auto-zipping from blob without server)
     for (const r of done) {
         const a = document.createElement('a');
-        a.href = `/api/download/${r.filename}`;
+        a.href = '/api/download/' + r.filename;
         a.download = r.filename;
         a.target = '_blank';
         a.click();
-        await new Promise(res => setTimeout(res, 300));  // small delay between downloads
+        await new Promise(res => setTimeout(res, 300));
     }
 }
 
 function _escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str || '';
-    return div.innerHTML;
+    const d = document.createElement('div');
+    d.textContent = str || '';
+    return d.innerHTML;
 }
+
+function _escapeHtmlAttr(str) {
+    return (str || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Auto-refresh niche dropdowns when niches are updated in Settings or other tabs
+let _lastNichesTs = parseInt(localStorage.getItem('niches_cache_updated') || '0');
+setInterval(() => {
+    const ts = parseInt(localStorage.getItem('niches_cache_updated') || '0');
+    if (ts > _lastNichesTs) {
+        _lastNichesTs = ts;
+        reloadBatchNiches();
+    }
+}, 2000);
+window.addEventListener('focus', () => { if (_batchRowCount > 0) reloadBatchNiches(); });
