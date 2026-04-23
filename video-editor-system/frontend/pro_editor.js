@@ -39,43 +39,72 @@ async function proUpload(fileList) {
     const files = Array.from(fileList || []);
     if (!files.length) return;
     proSetStatus(`📤 Uploading ${files.length} file(s)…`);
+
     for (const f of files) {
         try {
-            const fd = new FormData(); fd.append('file', f);
-            const r = await fetch('/api/upload', { method: 'POST', body: fd });
-            const j = await r.json();
-            if (!j.success) { proSetStatus('❌ Upload failed: ' + (j.error || 'unknown')); continue; }
-            const path = j.path || j.filepath || j.file_path || j.filename;
-            // ffprobe for metadata
-            const meta = await fetch('/api/editor/ffprobe', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ path: path })
-            }).then(r => r.json()).catch(() => ({}));
             const isImage = f.type.startsWith('image/');
             const isAudio = f.type.startsWith('audio/');
+            const fileType = isImage ? 'image' : (isAudio ? 'audio' : 'video');
+
+            const fd = new FormData();
+            fd.append('file', f);
+            fd.append('type', fileType);   // ← required by /api/upload
+
+            const r = await fetch('/api/upload', { method: 'POST', body: fd });
+            const j = await r.json();
+            if (!j.success) {
+                proSetStatus(`❌ Upload failed for "${f.name}": ${j.error || 'unknown'}`);
+                continue;
+            }
+            const path = j.path || j.unique_filename || j.filename;
+            proSetStatus(`⏳ Reading metadata: ${f.name}…`);
+
+            // ffprobe for metadata
+            const metaResp = await fetch('/api/editor/ffprobe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ path })
+            });
+            const meta = metaResp.ok ? await metaResp.json() : {};
+
             proState.media.push({
-                path: meta.path || path,
+                path: (meta.success && meta.path) ? meta.path : path,
                 name: f.name,
-                type: isImage ? 'image' : (isAudio ? 'audio' : 'video'),
-                duration: meta.duration || (isImage ? 5 : 0) || 0,
-                width:    meta.width || 0,
-                height:   meta.height || 0,
-                fps:      meta.fps || 0,
+                type: fileType,
+                duration: (meta.success && meta.duration) ? meta.duration : (isImage ? 5 : 10),
+                width:     meta.width  || 0,
+                height:    meta.height || 0,
+                fps:       meta.fps    || 30,
                 has_audio: !!meta.has_audio,
             });
-        } catch (e) { proSetStatus('❌ ' + e.message); }
+            proSetStatus(`✅ Added: ${f.name}`);
+            proRenderMedia();   // update library after each file
+        } catch (e) {
+            proSetStatus(`❌ Error with "${f.name}": ${e.message}`);
+        }
     }
-    proSetStatus(`✅ Library: ${proState.media.length} asset(s)`);
+    proSetStatus(`✅ Library: ${proState.media.length} asset(s) — click an item to add it to the timeline.`);
     proRenderMedia();
 }
 
 function proOnDrop(ev) {
-    ev.preventDefault();
-    proUpload(ev.dataTransfer.files);
-    proProSel('proDropZone').classList.remove('pro-drop-active');
+    ev.preventDefault(); ev.stopPropagation();
+    const dz = proProSel('proDropZone');
+    if (dz) dz.classList.remove('pro-drop-active');
+    const files = ev.dataTransfer.files;
+    if (files && files.length) proUpload(files);
 }
-function proOnDragOver(ev) { ev.preventDefault(); proProSel('proDropZone').classList.add('pro-drop-active'); }
-function proOnDragLeave(ev) { proProSel('proDropZone').classList.remove('pro-drop-active'); }
+function proOnDragOver(ev) {
+    ev.preventDefault(); ev.stopPropagation();
+    const dz = proProSel('proDropZone');
+    if (dz) dz.classList.add('pro-drop-active');
+}
+function proOnDragLeave(ev) {
+    // only clear when leaving the drop-zone itself (not a child element)
+    const dz = proProSel('proDropZone');
+    if (!dz) return;
+    if (!dz.contains(ev.relatedTarget)) dz.classList.remove('pro-drop-active');
+}
 
 // ── add clip from media ─────────────────────────────────────────────────────
 function proAddFromMedia(idx) {
