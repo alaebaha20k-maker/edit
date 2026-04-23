@@ -158,6 +158,70 @@ function proRender() {
     proRenderRuler();
     proRenderInspector();
     proRenderSummary();
+    proRenderPreview();
+}
+
+// ── preview: shows the selected clip's source in the player ────────────────
+function proRenderPreview() {
+    const clip = proGetSelectedClip();
+    const vid = proProSel('proPreviewVideo');
+    const img = proProSel('proPreviewImage');
+    const ph  = proProSel('proPreviewPlaceholder');
+    const badge = proProSel('proPreviewBadge');
+    if (!vid || !img || !ph) return;
+
+    if (!clip || !clip.source) {
+        vid.style.display = 'none'; vid.src = '';
+        img.style.display = 'none'; img.src = '';
+        ph.style.display = 'block';
+        if (badge) badge.style.display = 'none';
+        return;
+    }
+    ph.style.display = 'none';
+    const tr = proGetTrackOfClip(clip.id);
+    const ttype = tr ? tr.type : '';
+    const src = '/api/preview-video/' + encodeURIComponent((clip.source || '').split('/').pop());
+
+    if (clip.is_image || ttype === 'text') {
+        vid.style.display = 'none'; vid.pause(); vid.src = '';
+        if (ttype === 'text') {
+            img.style.display = 'none'; img.src = '';
+            ph.style.display = 'block';
+            ph.innerHTML = `<div style="font-size:40px;">🔤</div>
+                <div style="font-size:${Math.min(48, (clip.props?.font_size||48))}px; color:${clip.props?.color||'white'}; margin-top:12px; font-weight:700;">
+                    ${(clip.props?.text||'').replace(/</g,'&lt;')||'(empty text)'}
+                </div>`;
+        } else {
+            img.style.display = 'block';
+            if (img.dataset.srcSet !== src) { img.src = src; img.dataset.srcSet = src; }
+        }
+    } else {
+        img.style.display = 'none';
+        vid.style.display = 'block';
+        if (vid.dataset.srcSet !== src) { vid.src = src; vid.dataset.srcSet = src; }
+        // Seek to trim_in when (re)loading
+        const seek = Math.max(0, parseFloat(clip.trim_in || 0));
+        const applySeek = () => { try { vid.currentTime = seek; } catch(_) {} };
+        if (vid.readyState >= 1) applySeek();
+        else vid.addEventListener('loadedmetadata', applySeek, { once: true });
+    }
+    if (badge) {
+        const icon = clip.is_image ? '🖼️' : (ttype === 'text' ? '🔤' : (ttype === 'audio' ? '🎵' : '🎬'));
+        const name = ttype === 'text' ? 'Text' : (clip.source || '').split('/').pop();
+        badge.style.display = 'block';
+        badge.textContent = `${icon} ${name} · ${clip.duration.toFixed(2)}s`;
+    }
+}
+
+// ── fit zoom: size the timeline to fill the available width ───────────────
+function proFitZoom() {
+    const scroll = proProSel('proTimelineScroll');
+    if (!scroll) return;
+    const total = Math.max(proTimelineDuration() + 2, 10);
+    const trackHeadW = 100;       // sticky track-head width
+    const available = Math.max(400, scroll.clientWidth - trackHeadW - 24);
+    proState.pxPerSec = Math.max(10, Math.min(400, Math.floor(available / total)));
+    proRender();
 }
 
 function proRenderMedia() {
@@ -468,3 +532,10 @@ window.proPlan = proPlan;
 window.proExport = proExport;
 window.proUpdateClip = proUpdateClip;
 window.proUpdateProp = proUpdateProp;
+window.proFitZoom = proFitZoom;
+
+// ── init on load ─────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    // first paint so the track rows are visible immediately when the tab is open
+    try { proRender(); } catch (_) {}
+});
