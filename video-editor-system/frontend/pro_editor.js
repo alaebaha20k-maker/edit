@@ -14,7 +14,7 @@ const proState = {
         { id: 'a0', type: 'audio',   name: '🎵 Audio',   clips: [] },
     ],
     media: [],            // uploaded assets: {path, name, type, duration, w, h, has_audio}
-    pxPerSec: 40,         // timeline zoom
+    pxPerSec: 80,         // timeline zoom
     playhead: 0,
     selectedClipId: null,
     draggingClip: null,   // { id, mode:'move'|'trim-right'|'trim-left', startX, origStart, origDuration, origTrimOut }
@@ -39,6 +39,7 @@ async function proUpload(fileList) {
     const files = Array.from(fileList || []);
     if (!files.length) return;
     proSetStatus(`📤 Uploading ${files.length} file(s)…`);
+    const wasEmpty = proState.media.length === 0;
 
     for (const f of files) {
         try {
@@ -85,6 +86,7 @@ async function proUpload(fileList) {
     }
     proSetStatus(`✅ Library: ${proState.media.length} asset(s) — click an item to add it to the timeline.`);
     proRenderMedia();
+    if (wasEmpty && proState.media.length > 0) setTimeout(proFitZoom, 100);
 }
 
 function proOnDrop(ev) {
@@ -129,6 +131,7 @@ function proAddFromMedia(idx) {
         start,
         duration: dur,
         trim_in: 0,
+        name: m.name,
         trim_out: dur,
         is_image: m.type === 'image',
         props: m.type === 'image'
@@ -209,7 +212,7 @@ function proRenderPreview() {
     ph.style.display = 'none';
     const tr = proGetTrackOfClip(clip.id);
     const ttype = tr ? tr.type : '';
-    const src = '/api/preview-video/' + encodeURIComponent((clip.source || '').split('/').pop());
+    const src = '/api/preview-video/' + encodeURIComponent((clip.source || '').split(/[\\/]/).pop());
 
     if (clip.is_image || ttype === 'text') {
         vid.style.display = 'none'; vid.pause(); vid.src = '';
@@ -236,7 +239,7 @@ function proRenderPreview() {
     }
     if (badge) {
         const icon = clip.is_image ? '🖼️' : (ttype === 'text' ? '🔤' : (ttype === 'audio' ? '🎵' : '🎬'));
-        const name = ttype === 'text' ? 'Text' : (clip.source || '').split('/').pop();
+        const name = ttype === 'text' ? 'Text' : (clip.name || (clip.source || '').split(/[\\/]/).pop());
         badge.style.display = 'block';
         badge.textContent = `${icon} ${name} · ${clip.duration.toFixed(2)}s`;
     }
@@ -295,19 +298,20 @@ function proRenderTracks() {
     const total = Math.max(proTimelineDuration() + 5, 20);
     const width = total * proState.pxPerSec;
     wrap.style.width = width + 'px';
+    const phLeft = proState.playhead * proState.pxPerSec;
     wrap.innerHTML = proState.tracks.map(tr => {
         const clips = tr.clips.map(c => {
             const left = c.start * proState.pxPerSec;
-            const w = Math.max(30, c.duration * proState.pxPerSec);
+            const w = Math.max(32, c.duration * proState.pxPerSec);
             const sel = proState.selectedClipId === c.id ? ' pro-clip-selected' : '';
-            const label = tr.type === 'text'
-                ? `🔤 ${(c.props?.text || '').substring(0, 18)}`
-                : `${(c.source || '').split('/').pop().substring(0, 18)}`;
+            const rawLabel = tr.type === 'text'
+                ? `🔤 ${(c.props?.text || '').substring(0, 22)}`
+                : (c.name || (c.source || '').split(/[\\/]/).pop()).substring(0, 22);
             const color = proClipColor(tr.type);
             return `<div class="pro-clip${sel}" data-id="${c.id}"
                 onmousedown="proClipMouseDown(event,'${c.id}','move')"
                 style="left:${left}px; width:${w}px; background:${color};">
-                <span class="pro-clip-label">${label}</span>
+                <span class="pro-clip-label">${rawLabel}</span>
                 <span class="pro-clip-handle pro-clip-handle-l" onmousedown="event.stopPropagation(); proClipMouseDown(event,'${c.id}','trim-left')"></span>
                 <span class="pro-clip-handle pro-clip-handle-r" onmousedown="event.stopPropagation(); proClipMouseDown(event,'${c.id}','trim-right')"></span>
             </div>`;
@@ -316,7 +320,7 @@ function proRenderTracks() {
             <div class="pro-track-head">${tr.name}</div>
             <div class="pro-track-body" onclick="proTrackClick(event,'${tr.id}')" style="width:${width}px;">${clips}</div>
         </div>`;
-    }).join('');
+    }).join('') + `<div id="proPlayhead" class="pro-playhead" style="left:${phLeft}px;"></div>`;
 }
 
 function proClipColor(type) {
