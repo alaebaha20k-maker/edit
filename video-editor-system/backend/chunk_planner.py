@@ -1,25 +1,21 @@
 #!/usr/bin/env python3
 """
-Chunk Planner - Dynamic chunking for ALL script lengths (1k – 100k chars).
+Chunk Planner - Dynamic chunking for ALL script lengths (1k – 240k chars).
 
 Strategy for every length:
-  - Hook  : 20 % of total, capped at 8 000 chars (min 2 000)
-  - Close : 15 % of total, capped at 8 000 chars (min 1 500)
+  - Hook  : 20 % of total, capped at 14 000 chars (min 2 000)
+  - Close : 15 % of total, capped at 14 000 chars (min 1 500)
   - Middle: remainder split into chunks of at most MAX_CHUNK_SIZE chars
 
-Keeping every chunk ≤ 8 000 chars makes the model reliably fill its target
-and stay well inside Gemini's output-token limit, so the final script always
-reaches the requested length without needing many extension retries.
+Keeping every chunk ≤ 14 000 chars means fewer sequential API calls,
+faster total generation time, and still well within Gemini's output limits.
 
-The niche formula (Writing Guidelines) is injected into EVERY chunk so
-100 % of the formula is applied regardless of total length chosen.
-
-API-call count examples:
+API-call count:
   10 000 chars →  3 chunks
-  30 000 chars →  5–6 chunks
-  60 000 chars →  9–10 chunks
-  80 000 chars → 12–13 chunks
- 100 000 chars → 15–16 chunks  (all within 20 calls/min quota)
+  30 000 chars →  4–5 chunks
+  60 000 chars →  6–7 chunks
+ 100 000 chars →  9 chunks
+ 240 000 chars → 18 chunks
 """
 
 import math
@@ -38,7 +34,7 @@ class ChunkConfig:
 
 
 # Every chunk is kept at or below this size so the model fills it reliably.
-MAX_CHUNK_SIZE = 8_000
+MAX_CHUNK_SIZE = 14_000
 
 
 class ChunkPlanner:
@@ -58,8 +54,8 @@ class ChunkPlanner:
         """Return a list of ChunkConfig objects (always ≥ 3)."""
 
         # --- hook & close sizes (proportional, capped) ---
-        hook_size  = max(2_000, min(int(self.total_chars * 0.20), 8_000))
-        close_size = max(1_500, min(int(self.total_chars * 0.15), 8_000))
+        hook_size  = max(2_000, min(int(self.total_chars * 0.20), 14_000))
+        close_size = max(1_500, min(int(self.total_chars * 0.15), 14_000))
 
         # Guard: for very short targets keep hook+close within budget
         if hook_size + close_size >= self.total_chars:

@@ -241,6 +241,7 @@ function _applyApiKeysToForm(api_keys) {
     setField('geminiTranslate2Key', api_keys.gemini_translate_2);
     setField('geminiPromptsKey',    api_keys.gemini_prompts);
     setField('geminiSeoKey',        api_keys.gemini_seo);
+    setField('claudeKey',           api_keys.claude_key);
 }
 
 const loadSettings = () => {
@@ -296,6 +297,21 @@ const loadSettings = () => {
     loadNiches();
 };
 
+// Debug: diagnose niche loading
+window._debugNiches = async () => {
+    const el = document.getElementById('generatorNicheSelect');
+    const el2 = document.getElementById('nicheSelect');
+    console.log('generatorNicheSelect element:', el ? 'FOUND' : 'NOT FOUND');
+    console.log('nicheSelect element:', el2 ? 'FOUND' : 'NOT FOUND');
+    const r = await fetch('/api/niches').catch(e => ({ ok: false, error: e }));
+    if (!r.ok) { console.error('API error:', r.error); return; }
+    const d = await r.json();
+    console.log('API returned niches count:', d.niches ? d.niches.length : 0);
+    console.log('First niche:', d.niches ? d.niches[0] : 'none');
+    if (el) { el.innerHTML = '<option value="">DEBUG: ' + d.niches.length + ' niches loaded</option>'; }
+    if (el2) { el2.innerHTML = '<option value="">DEBUG: ' + d.niches.length + ' niches loaded</option>'; }
+};
+
 const saveSettings = async () => {
     try {
         const settings = {
@@ -317,7 +333,8 @@ const saveSettings = async () => {
                 gemini_translate_1: document.getElementById('geminiTranslate1Key')?.value || '',
                 gemini_translate_2: document.getElementById('geminiTranslate2Key')?.value || '',
                 gemini_prompts:     document.getElementById('geminiPromptsKey')?.value || '',
-                gemini_seo:         document.getElementById('geminiSeoKey')?.value || ''
+                gemini_seo:         document.getElementById('geminiSeoKey')?.value || '',
+                claude_key:         document.getElementById('claudeKey')?.value || ''
             },
             title_formulas: appState.titleFormulas || [],
             script_formulas: appState.scriptFormulas || [],
@@ -351,7 +368,8 @@ const saveSettings = async () => {
                     gemini_translate_1: settings.api_keys.gemini_translate_1,
                     gemini_translate_2: settings.api_keys.gemini_translate_2,
                     gemini_prompts: settings.api_keys.gemini_prompts,
-                    gemini_seo: settings.api_keys.gemini_seo
+                    gemini_seo: settings.api_keys.gemini_seo,
+                    claude_key: settings.api_keys.claude_key
                 })
             });
             if (!response.ok) console.warn('Failed to save API keys to backend');
@@ -404,15 +422,20 @@ async function resetAutoImagesFormula() {
 const NICHES_CACHE_KEY = 'video_tool_niches_cache';
 
 function _saveNichesCache(niches) {
-    try { localStorage.setItem(NICHES_CACHE_KEY, JSON.stringify(niches)); } catch(_) {}
+    try {
+        localStorage.setItem(NICHES_CACHE_KEY, JSON.stringify(niches));
+        localStorage.setItem('niches_cache_updated', Date.now().toString());
+    } catch(_) {}
 }
 function _loadNichesCache() {
     try { return JSON.parse(localStorage.getItem(NICHES_CACHE_KEY) || '[]'); } catch(_) { return []; }
 }
 
 async function loadNiches() {
+    console.log('[loadNiches] starting...');
     // ── 1. Immediately show cached niches so the UI is never blank ────────────
     const cached = _loadNichesCache();
+    console.log('[loadNiches] cached count:', cached.length);
     if (cached.length > 0) {
         appState.niches = cached;
         renderNichesList(cached);
@@ -422,7 +445,9 @@ async function loadNiches() {
     // ── 2. Fetch from backend ─────────────────────────────────────────────────
     try {
         const response = await fetch('/api/niches');
+        console.log('[loadNiches] fetch response.ok:', response.ok, 'status:', response.status);
         const data = await response.json();
+        console.log('[loadNiches] data.niches count:', data.niches ? data.niches.length : 0);
 
         if (data.niches && data.niches.length > 0) {
             // Backend has data → use it and update cache
@@ -430,10 +455,11 @@ async function loadNiches() {
             renderNichesList(data.niches);
             updateNicheDropdown(data.niches);
             _saveNichesCache(data.niches);
+            console.log('[loadNiches] dropdown updated with backend data');
 
         } else if (cached.length > 0 && (!data.niches || data.niches.length === 0)) {
             // Backend empty but cache has data → auto-restore to backend
-            console.warn('Backend niches empty — restoring from localStorage cache...');
+            console.warn('[loadNiches] backend empty, restoring from cache...');
             let restored = 0;
             for (const niche of cached) {
                 try {
@@ -463,7 +489,7 @@ async function loadNiches() {
             }
         }
     } catch (error) {
-        console.error('Failed to load niches from backend:', error);
+        console.error('[loadNiches] FAILED:', error);
     }
 }
 
@@ -659,26 +685,29 @@ function renderNichesList(niches) {
 }
 
 function updateNicheDropdown(niches) {
+    console.log('[updateNicheDropdown] called with', niches ? niches.length : 0, 'niches');
     // Update settings dropdown
     const dropdown = document.getElementById('nicheSelect');
+    console.log('[updateNicheDropdown] nicheSelect element:', dropdown ? 'FOUND' : 'NOT FOUND');
     if (dropdown) {
         dropdown.innerHTML = '<option value="">-- Select a niche --</option>';
         if (niches && niches.length > 0) {
             niches.forEach(n => {
                 const selected = appState.selectedNiche === n.id ? 'selected' : '';
-                dropdown.innerHTML += `<option value="${n.id}" ${selected}>${n.name} (${n.language})</option>`;
+                dropdown.innerHTML += `<option value="${n.id}">${n.name} (${n.language})</option>`;
             });
         }
     }
 
     // ALSO update generator dropdown (for script generation page)
     const generatorDropdown = document.getElementById('generatorNicheSelect');
+    console.log('[updateNicheDropdown] generatorNicheSelect element:', generatorDropdown ? 'FOUND' : 'NOT FOUND');
     if (generatorDropdown) {
         generatorDropdown.innerHTML = '<option value="">-- Select a niche --</option>';
         if (niches && niches.length > 0) {
             niches.forEach(n => {
                 const selected = appState.selectedNiche === n.id ? 'selected' : '';
-                generatorDropdown.innerHTML += `<option value="${n.id}" ${selected}>${n.name} (${n.language})</option>`;
+                generatorDropdown.innerHTML += `<option value="${n.id}">${n.name} (${n.language})</option>`;
             });
         }
     }
@@ -1048,13 +1077,16 @@ async function generateScript() {
             throw new Error('Please select a content niche first. Create niches in Settings.');
         }
 
-        // 3-CHUNK MODE (Backend handles chunking with niche guidelines)
+        // Detect chosen AI engine
+        const engineRadio = document.querySelector('input[name="aiEngine"]:checked');
+        const provider    = engineRadio ? engineRadio.value : 'gemini';
+        const engineLabel = provider === 'claude' ? '🔮 Claude Sonnet' : '🤖 Gemini 2.5 Pro';
+
         if (resultBox) {
-            resultBox.innerHTML = `<p>🤖 Generating script (3-Chunk Mode)...</p>
-                <p style="color: #888; font-size: 0.9em;">Using niche writing guidelines. Please wait...</p>`;
+            resultBox.innerHTML = `<p>${engineLabel} — Generating script (3-Chunk Mode)…</p>
+                <p style="color:#888;font-size:0.9em;">Using niche writing guidelines. Please wait…</p>`;
         }
 
-        // Update last generation time BEFORE making the call
         appState.lastGenerationTime = Date.now();
 
             const response = await fetch('/api/generate-script', {
@@ -1063,7 +1095,8 @@ async function generateScript() {
                 body: JSON.stringify({
                     title: title,
                     niche_id: selectedNicheId,
-                    length: selectedLength
+                    length: selectedLength,
+                    provider: provider
                 })
             });
 

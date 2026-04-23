@@ -1077,23 +1077,28 @@ def generate_script():
         if not data:
             return jsonify({'error': 'No data provided'}), 400
 
-        title = data.get('title')
+        title    = data.get('title')
         niche_id = data.get('niche_id')
-        length = data.get('length', Config.DEFAULT_SCRIPT_LENGTH)  # Default to 10K
+        length   = data.get('length', Config.DEFAULT_SCRIPT_LENGTH)
+        provider = data.get('provider', 'gemini')   # "gemini" | "claude"
 
         if not title or not niche_id:
             return jsonify({'error': 'Missing required fields: title, niche_id'}), 400
 
-        # Validate length (must be between MIN and MAX)
+        # Validate length
         if not Config.validate_script_length(length):
             return jsonify({
                 'error': f'Invalid length. Must be between {Config.MIN_SCRIPT_LENGTH} and {Config.MAX_SCRIPT_LENGTH} characters'
             }), 400
 
-        # Validate API key
-        errors = Config.validate_api_keys()
-        if any('GEMINI' in e for e in errors):
-            return jsonify({'error': 'Gemini API key not configured'}), 500
+        # Validate API key for chosen provider
+        if provider == 'claude':
+            if not Config.get_claude_api_key():
+                return jsonify({'error': 'Claude API key not configured. Add it in Settings → Claude API.'}), 500
+        else:
+            errors = Config.validate_api_keys()
+            if any('GEMINI' in e for e in errors):
+                return jsonify({'error': 'Gemini API key not configured'}), 500
 
         # Get niche info
         niche = NicheManager.get_niche(niche_id)
@@ -1104,7 +1109,7 @@ def generate_script():
         print(f"\n🎬 Starting 3-chunk script generation...")
         print(f"   API calls: 3 (one per chunk)")
         generator = ScriptGenerator3Chunk()
-        result = generator.generate_script(title, niche_id, length=length, verbose=True)
+        result = generator.generate_script(title, niche_id, length=length, verbose=True, provider=provider)
 
         # SAVE SCRIPT TO FILE - Use OUTPUT_FOLDER directly (same as videos)
         timestamp = int(time.time())
@@ -1134,6 +1139,214 @@ def generate_script():
             'validation': result['validation']
         })
 
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# =============================================================================
+# BATCH SCRIPT GENERATION
+# =============================================================================
+
+_batch_jobs = {}   # job_id -> {titles, total, completed, results, status}
+_batch_lock = threading.Lock()
+
+
+def _generate_single_script(title, niche_id, length, provider, index, job_id):
+    """Thread worker — generates one script. Runs in background thread."""
+    result = {
+        'index': index,
+        'title': title,
+        'niche_id': niche_id,
+        'length': length,
+        'engine': provider,
+        'status': 'running',
+        'error': None,
+        'script': None,
+        'chars': 0,
+        'words': 0,
+        'time': 0,
+        'chunks': 0,
+        'filename': None,
+    }
+    try:
+        from script_generator_3chunk import ScriptGenerator3Chunk
+        import time as _time
+
+        t0 = _time.time()
+        gen = ScriptGenerator3Chunk()
+        out = gen.generate_script(title, niche_id, length=length, verbose=False, provider=provider)
+
+        # Save script to file
+        timestamp = int(t0)
+        safe_title = re.sub(r'[^\w\-_.]', '_', title)[:50]
+        filename = f"batch_{job_id}_{index}_{timestamp}.txt"
+        filepath = os.path.join(OUTPUT_FOLDER, filename)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(out['script'])
+
+        result.update({
+            'status': 'done',
+            'script': out['script'],
+            'chars': out['stats']['chars'],
+            'words': out['stats']['words'],
+            'time': round(_time.time() - t0, 1),
+            'chunks': out['chunks_used'],
+            'filename': filename,
+        })
+    except Exception as e:
+        result.update({'status': 'failed', 'error': str(e)})
+
+    # Mark as completed in shared dict
+    with _batch_lock:
+        _batch_jobs[job_id]['completed'] += 1
+        _batch_jobs[job_id]['results'][index] = result
+        _batch_jobs[job_id]['progress_pct'] = int(
+            _batch_jobs[job_id]['completed'] / _batch_jobs[job_id]['total'] * 100
+        )
+
+    print(f"   [{job_id[:8]}] Script {index+1}/{_batch_jobs[job_id]['total']} ({title[:40]}) → {result['status']}")
+
+
+@app.route('/api/batch-generate-scripts', methods=['POST'])
+def batch_generate_scripts():
+    """
+    Generate multiple scripts — each with its own niche, length, and engine.
+    Each title is processed independently with its own settings.
+
+    POST body:
+    {
+      "titles": ["Title 1", "Title 2", ...],
+      "titles_niches": ["niche_id_1", "niche_id_2", ...],
+      "titles_lengths": [60000, 100000, ...],
+      "titles_engines": ["gemini", "claude", ...],
+      "parallel": false,       // false = one-by-one with delay (safe)
+      "delay_seconds": 5,
+    }
+    """
+    from config import Config
+
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        raw_titles       = data.get('titles', [])
+        titles_niches    = data.get('titles_niches', [])
+        titles_lengths   = data.get('titles_lengths', [])
+        titles_engines   = data.get('titles_engines', [])
+        parallel         = data.get('parallel', False)
+        delay_seconds    = int(data.get('delay_seconds', 5))
+
+        # Parse titles
+        if isinstance(raw_titles, str):
+            titles = [t.strip() for t in raw_titles.replace('\n', ',').split(',') if t.strip()]
+        else:
+            titles = [t.strip() for t in raw_titles if t.strip()]
+
+        if not titles:
+            return jsonify({'error': 'No titles provided'}), 400
+
+        # Validate all rows have niche + length
+        for i, title in enumerate(titles):
+            nid   = titles_niches[i] if i < len(titles_niches) else None
+            nlen  = titles_lengths[i] if i < len(titles_lengths) else Config.DEFAULT_SCRIPT_LENGTH
+            neng  = titles_engines[i] if i < len(titles_engines) else 'gemini'
+
+            if not nid:
+                return jsonify({'error': f'Missing niche for title: "{title}"'}), 400
+            niche = NicheManager.get_niche(nid)
+            if not niche:
+                return jsonify({'error': f'Niche not found for title: "{title}"'}), 404
+            if not Config.validate_script_length(nlen):
+                return jsonify({
+                    'error': f'Invalid length {nlen} for title: "{title}". '
+                              f'Must be between {Config.MIN_SCRIPT_LENGTH} and {Config.MAX_SCRIPT_LENGTH}.'
+                }), 400
+
+        has_gemini = bool(Config.get_gemini_api_key())
+        has_claude = bool(Config.get_claude_api_key())
+        if not has_gemini and not has_claude:
+            return jsonify({'error': 'No API key configured (Gemini or Claude)'}), 500
+
+        # Build full per-title data list
+        titles_full = []
+        for i, title in enumerate(titles):
+            nid  = titles_niches[i] if i < len(titles_niches) else None
+            nlen = titles_lengths[i] if i < len(titles_lengths) else Config.DEFAULT_SCRIPT_LENGTH
+            neng = titles_engines[i].lower() if i < len(titles_engines) else 'gemini'
+
+            # Fallback to available engine if chosen engine not available
+            if neng == 'claude' and not has_claude:
+                neng = 'gemini'
+            elif neng == 'gemini' and not has_gemini:
+                neng = 'claude'
+
+            titles_full.append({'index': i, 'title': title, 'niche_id': nid, 'length': nlen, 'engine': neng})
+
+        job_id = str(uuid.uuid4())
+        total  = len(titles_full)
+        gemini_count = sum(1 for t in titles_full if t['engine'] == 'gemini')
+        claude_count = sum(1 for t in titles_full if t['engine'] == 'claude')
+
+        engine_note = f"Gemini {gemini_count} + Claude {claude_count}"
+
+        _batch_jobs[job_id] = {
+            'titles': titles,
+            'titles_full': titles_full,
+            'total': total,
+            'completed': 0,
+            'results': {},
+            'status': 'running',
+            'progress_pct': 0,
+            'engine_note': engine_note,
+            'delay_seconds': delay_seconds,
+        }
+
+        print(f"\n🚀 Batch job {job_id[:8]} — {total} scripts — {engine_note} — {delay_seconds}s delay")
+
+        # Fire all threads simultaneously — Gemini + Claude both work at same time
+        for item in titles_full:
+            t = threading.Thread(
+                target=_generate_single_script,
+                args=(item['title'], item['niche_id'], item['length'], item['engine'],
+                      item['index'], job_id)
+            )
+            t.daemon = True
+            t.start()
+
+        return jsonify({
+            'success': True,
+            'job_id': job_id,
+            'total': total,
+            'engines': engine_note,
+            'message': f'Batch started — {total} scripts queued. {delay_seconds}s delay between each.'
+        }), 202
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/batch-status/<job_id>', methods=['GET'])
+def batch_status(job_id):
+    """Poll batch job status and results."""
+    try:
+        with _batch_lock:
+            if job_id not in _batch_jobs:
+                return jsonify({'error': 'Job not found'}), 404
+            job = _batch_jobs[job_id]
+
+            if job['completed'] >= job['total'] and job['status'] == 'running':
+                job['status'] = 'done'
+
+            return jsonify({
+                'job_id': job_id,
+                'status': job['status'],
+                'total': job['total'],
+                'completed': job['completed'],
+                'progress_pct': job['progress_pct'],
+                'engine_note': job['engine_note'],
+                'results': job['results'],
+            })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -2060,7 +2273,8 @@ def get_api_keys_status():
                 'inworld': mask_key(api_keys.get('inworld', '')),
                 'inworld_secret': mask_key(api_keys.get('inworld_secret', '')),
                 'pexels': mask_key(api_keys.get('pexels', '')),
-                'pixabay': mask_key(api_keys.get('pixabay', ''))
+                'pixabay': mask_key(api_keys.get('pixabay', '')),
+                'claude_key': mask_key(api_keys.get('claude_api_key', ''))
             },
             'settings_file': str(SettingsManager.SETTINGS_FILE),
             'file_exists': SettingsManager.SETTINGS_FILE.exists()
@@ -2101,6 +2315,7 @@ def save_api_keys():
         gemini_translate_2 = data.get('gemini_translate_2')
         gemini_prompts     = data.get('gemini_prompts')
         gemini_seo         = data.get('gemini_seo')
+        claude_key         = data.get('claude_key')
 
         # Debug: Log what keys we received (show length not actual value)
         print("\n🔑 Received API keys:")
@@ -2137,7 +2352,8 @@ def save_api_keys():
             gemini_translate_1=gemini_translate_1,
             gemini_translate_2=gemini_translate_2,
             gemini_prompts=gemini_prompts,
-            gemini_seo=gemini_seo
+            gemini_seo=gemini_seo,
+            claude_key=claude_key
         )
 
         # Get validation status
