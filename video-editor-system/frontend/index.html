@@ -22,7 +22,7 @@
     <nav id="sidebar">
         <button class="nav-btn active" onclick="showTab('dashboard')" data-tab="dashboard">
             <span class="nav-icon">📋</span>
-            <span class="nav-text">Dashboard</span>
+            <span class="nav-text">Owner Dashboard</span>
         </button>
         <button class="nav-btn" onclick="showTab('generator')" data-tab="generator">
             <span class="nav-icon">🎬</span>
@@ -365,6 +365,78 @@
                 <div id="scriptLibrarySection" style="display:none; margin-top: 18px; padding: 16px; background: rgba(99,102,241,0.06); border: 1px solid #374151; border-radius: 10px;">
                     <h4 style="margin-bottom: 12px; color: #a5b4fc; font-size: 14px;">📚 Script Library</h4>
                     <div id="scriptLibraryList"></div>
+                </div>
+
+                <!-- 🚀 BATCH SCRIPT WRITER — generate many scripts at once -->
+                <div style="margin-top: 22px; padding: 18px; background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(5,150,105,0.05)); border: 1px solid #10b981; border-radius: 12px;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;" onclick="toggleBatchWriter()">
+                        <h4 style="margin:0; color:#6ee7b7; font-size:15px;">🚀 Batch Script Writer</h4>
+                        <span id="batchWriterToggleIcon" style="color:#6ee7b7; font-size:18px;">▼</span>
+                    </div>
+                    <p style="margin:8px 0 0 0; color:#9ca3af; font-size:12px;">
+                        Paste multiple titles (one per line). Each will be generated sequentially using the selected niche formula + AI engine — perfect for bulk video production.
+                    </p>
+
+                    <div id="batchWriterBody" style="display:none; margin-top:16px;">
+                        <div class="input-group" style="margin-top:0;">
+                            <label>Content Niche (Formula)</label>
+                            <select id="batchNicheSelect" class="input-large">
+                                <option value="">-- Select a niche --</option>
+                            </select>
+                        </div>
+
+                        <div class="input-group">
+                            <label>Script Length (applies to every title)</label>
+                            <select id="batchScriptLength" class="input-large">
+                                <option value="2500">Quick Video — 2.5k chars</option>
+                                <option value="5000">Short Video — 5k chars</option>
+                                <option value="10000" selected>Standard — 10k chars</option>
+                                <option value="15000">Medium — 15k chars</option>
+                                <option value="20000">Long — 20k chars</option>
+                                <option value="30000">Extended — 30k chars</option>
+                                <option value="50000">Expert — 50k chars</option>
+                                <option value="100000">Mega — 100k chars</option>
+                            </select>
+                        </div>
+
+                        <div class="input-group">
+                            <label>AI Engine</label>
+                            <div style="display:flex; gap:10px; margin-top:6px;">
+                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; padding:9px 16px; border-radius:8px; border:2px solid #10b981; background:rgba(16,185,129,0.1); flex:1; justify-content:center;">
+                                    <input type="radio" name="batchEngine" value="gemini" checked style="accent-color:#10b981;">
+                                    <span style="font-weight:600; color:#6ee7b7; font-size:13px;">🤖 Gemini</span>
+                                </label>
+                                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; padding:9px 16px; border-radius:8px; border:2px solid #4c1d95; background:rgba(76,29,149,0.1); flex:1; justify-content:center;">
+                                    <input type="radio" name="batchEngine" value="claude" style="accent-color:#a78bfa;">
+                                    <span style="font-weight:600; color:#c4b5fd; font-size:13px;">🔮 Claude</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="input-group">
+                            <label>Titles <span id="batch-count" style="color:#9ca3af; font-weight:400;">(0 titles)</span></label>
+                            <textarea id="batchTitles" rows="8" class="textarea-large"
+                                placeholder="One title per line. Example:&#10;The U.S. Government Is Hiding What's Killing People in Nevada's Abandoned Mines&#10;Why Tesla's New Battery Will Change Everything&#10;The Forgotten Town in Arizona That Made Billions"
+                                oninput="document.getElementById('batch-count').textContent='('+this.value.split('\n').filter(l=>l.trim()).length+' titles)'"></textarea>
+                        </div>
+
+                        <button onclick="runBatchGenerate()" id="batch-btn" class="btn-secondary"
+                            style="background:linear-gradient(135deg,#059669,#10b981);color:#fff;font-weight:700;">
+                            🚀 Generate All Scripts
+                        </button>
+                        <button onclick="stopBatchGenerate()" id="batch-stop-btn" class="btn-secondary"
+                            style="display:none; background:rgba(239,68,68,0.2); color:#fca5a5; margin-left:8px;">
+                            ⏹ Stop
+                        </button>
+
+                        <div id="batch-status" style="display:none; margin-top:16px; background:#0f0f1f; border:1px solid #10b981; border-radius:10px; padding:14px;">
+                            <div id="batch-status-text" style="color:#6ee7b7; font-size:13px; margin-bottom:10px;">Starting…</div>
+                            <div style="background:#1a1a2e; border-radius:6px; overflow:hidden; height:6px;">
+                                <div id="batch-progress-bar" style="height:100%; width:0%; background:linear-gradient(90deg,#059669,#10b981); transition:width 0.4s ease;"></div>
+                            </div>
+                            <div id="batch-results" style="margin-top:12px; font-size:12px;"></div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Voice Generation Section -->
@@ -1167,175 +1239,75 @@
         <!-- MR BAHA EDITOR TAB - CAPCUT STYLE -->
         <!-- ============================================ -->
         <div id="tab-editor" class="tab-content">
-            <h2>✂️ MR BAHA Editor</h2>
-            <p class="subtitle">CapCut-style timeline • Drag edges to trim • Click Split • Instant editing • Export creates final video</p>
-
-            <!-- Video Preview Area -->
-            <section style="margin-bottom: 20px;">
-                <div style="background: #000; border-radius: 10px; overflow: hidden; position: relative; height: 400px; display: flex; align-items: center; justify-content: center;">
-                    <video id="editorVideoPreview" style="width: 100%; height: 100%; object-fit: contain; display: none;"></video>
-                    <canvas id="editorCanvasPreview" style="width: 100%; height: 100%; object-fit: contain; display: none;"></canvas>
-                    <div id="editorPlaceholder" style="color: #666; font-size: 18px; text-align: center;">
-                        <div style="font-size: 48px; margin-bottom: 10px;">📹</div>
-                        <div>Upload videos to start editing</div>
-                    </div>
-
-                    <!-- Play/Pause Button -->
-                    <button id="editorPlayBtn" onclick="capcutTogglePlay()" style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); width: 60px; height: 60px; border-radius: 50%; background: rgba(102, 126, 234, 0.9); border: 3px solid white; color: white; font-size: 24px; cursor: pointer; display: none; transition: all 0.2s; box-shadow: 0 4px 12px rgba(0,0,0,0.5);" onmouseover="this.style.background='rgba(118, 75, 162, 0.95)'" onmouseout="this.style.background='rgba(102, 126, 234, 0.9)'">
-                        ▶️
-                    </button>
-
-                    <div id="editorTimeDisplay" style="position: absolute; top: 15px; right: 15px; background: rgba(0,0,0,0.8); padding: 8px 15px; border-radius: 5px; font-family: monospace; font-size: 14px; display: none;">
-                        00:00:00
-                    </div>
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
+                <div>
+                    <h2 style="margin:0;">✂️ MR BAHA Editor <span style="font-size:14px; color:#a5b4fc; font-weight:500;">· Pro</span></h2>
+                    <p class="subtitle" style="margin:4px 0 0;">Multi-layer timeline · Video / Overlay / Text / Audio · Smart FFmpeg export (stream-copy when possible, filter_complex when needed)</p>
                 </div>
-            </section>
-
-            <!-- Upload Section -->
-            <section style="margin-bottom: 20px;">
-                <div id="timelineDropZone" style="border: 2px dashed #667eea; border-radius: 10px; padding: 20px; text-align: center; background: rgba(102, 126, 234, 0.05); cursor: pointer;" ondragover="capcutDragOver(event)" ondrop="capcutDropFiles(event)" onclick="document.getElementById('capcutFileInput').click()">
-                    <div style="font-size: 16px; font-weight: bold; margin-bottom: 5px;">📁 Upload Videos/Images</div>
-                    <div style="font-size: 13px; color: #aaa;">Drag and drop or click to browse</div>
-                    <input type="file" id="capcutFileInput" accept="video/*,image/*" multiple style="display: none;" onchange="capcutSelectFiles(event)">
-                </div>
-            </section>
-
-            <!-- Toolbar -->
-            <section style="margin-bottom: 15px;">
-                <div style="display: flex; gap: 10px; align-items: center; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; flex-wrap: wrap;">
-                    <button onclick="capcutSplitAtPlayhead()" class="btn-tool" style="display: flex; align-items: center; gap: 5px;" title="Split clip at playhead (Ctrl+B)">
-                        ✂️ Split
-                    </button>
-                    <button onclick="capcutDeleteSelected()" class="btn-tool btn-danger" style="display: flex; align-items: center; gap: 5px;" title="Delete selected clips (Delete)">
-                        🗑️ Delete
-                    </button>
-                    <button onclick="capcutInsertFilesAtPlayhead()" class="btn-tool" style="display: flex; align-items: center; gap: 5px; background: rgba(102, 126, 234, 0.3);" title="Insert video/image at playhead position">
-                        ➕ Insert
-                    </button>
-                    <button onclick="capcutMergeAllClips()" class="btn-tool" style="display: flex; align-items: center; gap: 5px; background: rgba(34, 197, 94, 0.3);" title="Remove ALL gaps - merge all clips together">
-                        🔗 Merge All
-                    </button>
-                    <div style="width: 1px; height: 30px; background: rgba(255,255,255,0.2);"></div>
-                    <button onclick="capcutUndo()" class="btn-tool" style="display: flex; align-items: center; gap: 5px;" title="Undo (Ctrl+Z)">
-                        ↶ Undo
-                    </button>
-                    <button onclick="capcutRedo()" class="btn-tool" style="display: flex; align-items: center; gap: 5px;" title="Redo (Ctrl+Y)">
-                        ↷ Redo
-                    </button>
-                    <div style="flex: 1;"></div>
-                    <span id="capcutStatusText" style="font-size: 13px; color: #aaa;">Ready • 0 clips</span>
-                    <div style="width: 1px; height: 30px; background: rgba(255,255,255,0.2);"></div>
-                    <span style="font-size: 12px; color: #aaa;">Zoom:</span>
-                    <button onclick="capcutZoomOut()" class="btn-secondary" style="padding: 5px 10px;" title="Zoom out (Ctrl + -)">🔍-</button>
-                    <button onclick="capcutZoomReset()" class="btn-secondary" style="padding: 5px 12px;" title="Reset zoom (Ctrl + 1)">1x</button>
-                    <button onclick="capcutZoomIn()" class="btn-secondary" style="padding: 5px 10px;" title="Zoom in (Ctrl + +)">🔍+</button>
-                    <button onclick="capcutZoomToFit()" class="btn-secondary" style="padding: 5px 10px;" title="Fit to timeline (Ctrl + 0)">📐 Fit</button>
-                    <div style="width: 1px; height: 30px; background: rgba(255,255,255,0.2);"></div>
-                    <span id="capcutRippleIndicator" style="font-size: 11px; padding: 4px 8px; background: rgba(102, 126, 234, 0.3); border-radius: 3px; cursor: pointer;" onclick="capcutRippleMode = !capcutRippleMode; showNotification(capcutRippleMode ? 'RIPPLE ON' : 'RIPPLE OFF', 'info'); this.textContent = capcutRippleMode ? '✅ RIPPLE' : '❌ RIPPLE'; this.style.background = capcutRippleMode ? 'rgba(102, 126, 234, 0.3)' : 'rgba(100,100,100,0.3)';" title="Toggle Ripple Mode (R key)">✅ RIPPLE</span>
-                    <span id="capcutSnapIndicator" style="font-size: 11px; padding: 4px 8px; background: rgba(102, 126, 234, 0.3); border-radius: 3px; cursor: pointer;" onclick="capcutSnapEnabled = !capcutSnapEnabled; showNotification(capcutSnapEnabled ? 'SNAP ON' : 'SNAP OFF', 'info'); this.textContent = capcutSnapEnabled ? '🧲 SNAP' : '❌ SNAP'; this.style.background = capcutSnapEnabled ? 'rgba(102, 126, 234, 0.3)' : 'rgba(100,100,100,0.3)';" title="Toggle Snapping (S key)">🧲 SNAP</span>
-                </div>
-                <div style="margin-top: 10px; padding: 10px; background: rgba(102, 126, 234, 0.1); border-radius: 5px; font-size: 11px; color: #aaa;">
-                    <strong>💡 PRO TIPS:</strong>
-                    Ctrl+Wheel=Zoom • Shift+Arrow=Frame • R=Ripple • S=Snap • I=Insert • Drag-drop inserts at playhead (Shift=append) •
-                    <strong>ZOOM:</strong> 0.01x (hours) to 500x (frames)
-                </div>
-            </section>
-
-            <!-- Timeline Area -->
-            <section style="background: rgba(0,0,0,0.3); border-radius: 10px; padding: 15px;">
-                <!-- Time Markers -->
-                <div id="capcutTimeMarkers" style="position: relative; height: 25px; margin-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.1);">
-                    <!-- Dynamically generated time markers -->
-                </div>
-
-                <!-- Timeline Container -->
-                <div id="capcutTimelineContainer" style="position: relative; min-height: 100px; background: rgba(0,0,0,0.2); border-radius: 5px; overflow-x: auto; overflow-y: hidden;">
-                    <!-- Playhead -->
-                    <div id="capcutPlayhead" style="position: absolute; top: -25px; bottom: 0; width: 2px; background: #ff0000; z-index: 100; display: none; left: 0px;">
-                        <div style="position: absolute; top: 20px; left: -6px; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 10px solid #ff0000; pointer-events: auto; cursor: grab;"></div>
-                        <div style="position: absolute; top: 30px; left: -8px; width: 16px; height: 16px; background: #ff0000; border: 2px solid white; border-radius: 50%; cursor: grab;"></div>
-                    </div>
-
-                    <!-- Clips Track -->
-                    <div id="capcutTrack" style="position: relative; min-height: 100px; padding: 10px 5px;">
-                        <div id="capcutEmptyMessage" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #666; font-size: 14px; pointer-events: none;">
-                            Timeline is empty - upload videos above
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Export Section -->
-            <section style="margin-top: 20px; background: rgba(102, 126, 234, 0.05); padding: 20px; border-radius: 10px;">
-                <h3 style="margin: 0 0 15px 0;">🎯 Export Video</h3>
-                <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
-                    <div style="flex: 1; min-width: 200px;">
-                        <label style="display: block; margin-bottom: 5px; font-size: 13px; color: #aaa;">Quality:</label>
-                        <select id="capcutExportQuality" class="input-medium">
-                            <option value="720">720p HD</option>
-                            <option value="1080">1080p Full HD</option>
+                <div style="display:flex; gap:6px; align-items:center;">
+                    <label style="font-size:11px; color:#888;">Preset
+                        <select id="proPreset" style="margin-left:4px; padding:5px 6px; background:#1a1a2e; color:#e2e2f0; border:1px solid #333; border-radius:5px; font-size:11px;">
+                            <option value="ultrafast">ultrafast</option>
+                            <option value="veryfast" selected>veryfast</option>
+                            <option value="fast">fast</option>
+                            <option value="medium">medium</option>
+                            <option value="slow">slow</option>
                         </select>
-                    </div>
-                    <button onclick="capcutExport()" class="btn-primary btn-large" id="capcutExportBtn" style="min-width: 200px;">🚀 Export Final Video</button>
+                    </label>
+                    <label style="font-size:11px; color:#888;">CRF
+                        <input id="proCrf" type="number" min="14" max="32" value="23" style="width:48px; margin-left:4px; padding:5px 6px; background:#1a1a2e; color:#e2e2f0; border:1px solid #333; border-radius:5px; font-size:11px;">
+                    </label>
+                    <button onclick="proPlan()" class="btn-tool" style="font-size:12px;" title="Dry-run: shows which mode will be used">🔍 Plan</button>
+                    <button onclick="proExport()" id="proExportBtn" class="btn-primary" style="padding:8px 18px;">🚀 Export</button>
                 </div>
-                <div id="capcutExportProgress" style="display: none; margin-top: 20px; padding: 20px; background: rgba(0,0,0,0.3); border-radius: 10px;">
-                    <div style="margin-bottom: 10px; font-weight: bold;" id="capcutExportStatus">Initializing export...</div>
-                    <div style="width: 100%; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden;">
-                        <div id="capcutExportBar" style="height: 100%; background: linear-gradient(90deg, #667eea, #764ba2); width: 0%; transition: width 0.3s;"></div>
-                    </div>
-                    <div style="margin-top: 10px; font-size: 13px; color: #aaa;" id="capcutExportPercent">0%</div>
-                </div>
-            </section>
+            </div>
 
-            <!-- ════════════════════════════════════════════════════════════
-                 🎬 PRO MULTI-TRACK EDITOR — smart FFmpeg export
-                 ════════════════════════════════════════════════════════════ -->
-            <section style="margin-top: 28px; border: 2px solid #8b5cf6; border-radius: 14px; overflow: hidden;">
-                <div onclick="proToggle()" style="cursor:pointer; padding:16px 20px; background:linear-gradient(135deg,#4c1d95,#6d28d9); display:flex; align-items:center; justify-content:space-between;">
-                    <div>
-                        <h3 style="margin:0; color:#e9d5ff; font-size:18px;">🎬 Pro Multi-Track Editor</h3>
-                        <p style="margin:4px 0 0; color:#c4b5fd; font-size:12px;">Layers • Overlay • Text • Audio mix • Smart FFmpeg export (copy / concat / filter_complex)</p>
+            <!-- Main 3-column layout: Library | Preview+Timeline | Inspector -->
+            <div style="display:grid; grid-template-columns: 260px 1fr 280px; gap:10px; align-items:flex-start;">
+
+                <!-- LEFT — Media library + drop zone -->
+                <div style="background:#0d0d17; border:1px solid #222; border-radius:10px; padding:10px;">
+                    <div id="proDropZone"
+                         ondragover="proOnDragOver(event)" ondragleave="proOnDragLeave(event)" ondrop="proOnDrop(event)"
+                         onclick="document.getElementById('proFileInput').click()"
+                         style="border:2px dashed #8b5cf6; border-radius:8px; padding:14px; text-align:center; cursor:pointer; background:rgba(139,92,246,0.05);">
+                        <div style="font-size:13px; font-weight:700; color:#e9d5ff;">📁 Drop media</div>
+                        <div style="font-size:10px; color:#888; margin-top:3px;">Video · Image · Audio</div>
+                        <input type="file" id="proFileInput" multiple accept="video/*,image/*,audio/*" style="display:none;" onchange="proUpload(this.files)">
                     </div>
-                    <span id="proEditorToggleIcon" style="font-size:20px; color:#e9d5ff;">▼</span>
+                    <div style="font-size:10px; color:#666; margin:10px 0 4px; padding:0 4px; letter-spacing:1px;">LIBRARY</div>
+                    <div id="proMediaList" style="max-height:440px; overflow-y:auto;"></div>
                 </div>
-                <div id="proEditorBody" style="display:none; padding:18px; background:rgba(0,0,0,0.25);">
-                    <!-- Drop zone / media library -->
-                    <div style="display:grid; grid-template-columns: 280px 1fr; gap:14px; margin-bottom:14px;">
-                        <div>
-                            <div id="proDropZone"
-                                 ondragover="proOnDragOver(event)" ondragleave="proOnDragLeave(event)" ondrop="proOnDrop(event)"
-                                 onclick="document.getElementById('proFileInput').click()"
-                                 style="border:2px dashed #8b5cf6; border-radius:10px; padding:16px; text-align:center; cursor:pointer; background:rgba(139,92,246,0.05);">
-                                <div style="font-size:14px; font-weight:700;">📁 Drop media here</div>
-                                <div style="font-size:11px; color:#aaa;">Videos · Images · Audio</div>
-                                <input type="file" id="proFileInput" multiple accept="video/*,image/*,audio/*" style="display:none;" onchange="proUpload(this.files)">
-                            </div>
-                            <div style="margin-top:10px; max-height:300px; overflow-y:auto; background:rgba(0,0,0,0.3); border-radius:8px; padding:6px;">
-                                <div style="font-size:11px; color:#888; padding:4px 6px;">LIBRARY</div>
-                                <div id="proMediaList"></div>
-                            </div>
+
+                <!-- CENTER — Preview + Timeline -->
+                <div style="min-width:0;">
+                    <!-- Preview -->
+                    <div style="background:#000; border:1px solid #222; border-radius:10px; overflow:hidden; position:relative; height:300px; display:flex; align-items:center; justify-content:center;">
+                        <video id="proPreviewVideo" controls style="width:100%; height:100%; object-fit:contain; display:none;"></video>
+                        <img id="proPreviewImage" style="max-width:100%; max-height:100%; object-fit:contain; display:none;">
+                        <div id="proPreviewPlaceholder" style="color:#555; text-align:center;">
+                            <div style="font-size:40px;">📺</div>
+                            <div style="font-size:13px; margin-top:6px;">Select a clip on the timeline to preview</div>
                         </div>
-                        <!-- Inspector on right -->
-                        <div id="proInspector" style="background:rgba(0,0,0,0.3); border-radius:8px; padding:14px; min-height:80px;">
-                            <div style="color:#666; font-size:12px;">Select a clip to edit its properties.</div>
-                        </div>
+                        <div id="proPreviewBadge" style="position:absolute; top:10px; left:10px; background:rgba(0,0,0,0.7); color:#e9d5ff; padding:4px 10px; border-radius:5px; font-size:11px; font-family:monospace; display:none;"></div>
                     </div>
 
                     <!-- Toolbar -->
-                    <div style="display:flex; gap:6px; align-items:center; padding:8px; background:rgba(0,0,0,0.3); border-radius:8px; flex-wrap:wrap; margin-bottom:10px;">
+                    <div style="margin-top:10px; display:flex; gap:6px; align-items:center; padding:8px 10px; background:#0d0d17; border:1px solid #222; border-radius:10px; flex-wrap:wrap;">
                         <button onclick="proAddTextClip()" class="btn-tool">🔤 Add Text</button>
                         <button onclick="proSplitAtPlayhead()" class="btn-tool">✂️ Split</button>
                         <button onclick="proDeleteSelected()" class="btn-tool btn-danger">🗑️ Delete</button>
-                        <span style="width:1px; height:22px; background:#444; margin:0 6px;"></span>
+                        <span style="width:1px; height:20px; background:#333; margin:0 4px;"></span>
                         <button onclick="proZoom(0.7)" class="btn-tool">🔍-</button>
                         <button onclick="proZoom(1.5)" class="btn-tool">🔍+</button>
+                        <button onclick="proFitZoom()" class="btn-tool">Fit</button>
                         <span style="flex:1;"></span>
-                        <span id="proSummary" style="color:#aaa; font-size:12px;">0 clip(s)</span>
+                        <span id="proSummary" style="color:#aaa; font-size:11px; font-family:monospace;">0 clip(s)</span>
                     </div>
 
                     <!-- Timeline -->
-                    <div style="background:#0d0d17; border-radius:8px; overflow:hidden; border:1px solid #222;">
-                        <div class="pro-timeline-scroll">
+                    <div style="margin-top:10px; background:#0d0d17; border:1px solid #222; border-radius:10px; overflow:hidden;">
+                        <div class="pro-timeline-scroll" id="proTimelineScroll">
                             <div id="proTimelineRuler" class="pro-ruler"></div>
                             <div id="proTracksWrap" class="pro-tracks-wrap">
                                 <div id="proPlayhead" class="pro-playhead"></div>
@@ -1343,40 +1315,25 @@
                         </div>
                     </div>
 
-                    <!-- Export controls -->
-                    <div style="margin-top:14px; padding:14px; background:rgba(139,92,246,0.08); border:1px solid #6d28d9; border-radius:10px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-                        <label style="font-size:12px; color:#c4b5fd;">Preset
-                            <select id="proPreset" style="margin-left:6px; padding:6px 8px; background:#1a1a2e; color:#e2e2f0; border:1px solid #444; border-radius:6px;">
-                                <option value="ultrafast">ultrafast (fastest)</option>
-                                <option value="veryfast" selected>veryfast</option>
-                                <option value="fast">fast</option>
-                                <option value="medium">medium (balanced)</option>
-                                <option value="slow">slow (best quality)</option>
-                            </select>
-                        </label>
-                        <label style="font-size:12px; color:#c4b5fd;">CRF
-                            <input id="proCrf" type="number" min="14" max="32" value="23" style="width:60px; margin-left:6px; padding:6px 8px; background:#1a1a2e; color:#e2e2f0; border:1px solid #444; border-radius:6px;">
-                        </label>
-                        <button onclick="proPlan()" class="btn-tool" title="Dry-run: shows which mode will be used">🔍 Preview Plan</button>
-                        <span style="flex:1;"></span>
-                        <button onclick="proExport()" id="proExportBtn" class="btn-primary" style="padding:10px 20px;">🚀 Export Video</button>
-                    </div>
-
-                    <!-- Status + Progress -->
-                    <div id="proStatus" style="margin-top:10px; font-size:13px; color:#a5b4fc; font-family:monospace;">Ready.</div>
-                    <div id="proProgressBox" style="display:none; margin-top:8px;">
-                        <div style="width:100%; height:8px; background:rgba(255,255,255,0.08); border-radius:4px; overflow:hidden;">
+                    <!-- Status + progress -->
+                    <div id="proStatus" style="margin-top:10px; font-size:12px; color:#a5b4fc; font-family:monospace;">Ready. Drop files on the left to start.</div>
+                    <div id="proProgressBox" style="display:none; margin-top:6px;">
+                        <div style="width:100%; height:6px; background:rgba(255,255,255,0.08); border-radius:3px; overflow:hidden;">
                             <div id="proProgressBar" style="height:100%; width:0%; background:linear-gradient(90deg,#8b5cf6,#ec4899); transition:width 0.3s;"></div>
                         </div>
-                        <a id="proDownloadLink" style="display:none; margin-top:8px; color:#8b5cf6; text-decoration:none;" target="_blank"></a>
+                        <a id="proDownloadLink" style="display:none; margin-top:6px; color:#8b5cf6; text-decoration:none; font-size:12px;" target="_blank"></a>
                     </div>
-
-                    <details style="margin-top:10px;">
-                        <summary style="cursor:pointer; color:#888; font-size:12px;">🛠️ Debug (FFmpeg command / log)</summary>
-                        <pre id="proDebugLog" style="margin-top:6px; max-height:260px; overflow:auto; background:#0a0a14; color:#8cf; padding:10px; border-radius:6px; font-size:11px; white-space:pre-wrap;"></pre>
+                    <details style="margin-top:8px;">
+                        <summary style="cursor:pointer; color:#666; font-size:11px;">🛠️ Debug · FFmpeg command / log</summary>
+                        <pre id="proDebugLog" style="margin-top:5px; max-height:200px; overflow:auto; background:#06060c; color:#8cf; padding:8px; border-radius:6px; font-size:10px; white-space:pre-wrap;"></pre>
                     </details>
                 </div>
-            </section>
+
+                <!-- RIGHT — Inspector -->
+                <div id="proInspector" style="background:#0d0d17; border:1px solid #222; border-radius:10px; padding:12px; min-height:460px;">
+                    <div style="color:#666; font-size:12px;">Select a clip to edit its properties.</div>
+                </div>
+            </div>
         </div>
         <!-- OUTPUT FILES TAB -->
         <!-- ============================================ -->
@@ -2333,8 +2290,7 @@ TAGS: comma-separated, under 400 chars, match the title keywords"></textarea>
         }
     </script>
 
-    <script src="app.js?v=20260422c"></script>
-    <script src="capcut_editor.js?v=20260207"></script>
+    <script src="app.js?v=20260422f"></script>
     <script src="pro_editor.js?v=20260423"></script>
     <script>
     // ── Digital Create — Ebook Generator ──────────────────────────────────
@@ -2425,6 +2381,80 @@ TAGS: comma-separated, under 400 chars, match the title keywords"></textarea>
         icon.textContent   = open ? '▼'     : '▲';
     }
 
+    // ── 🚀 Batch Script Writer ──────────────────────────────────────────────
+    function toggleBatchWriter() {
+        const body = document.getElementById('batchWriterBody');
+        const icon = document.getElementById('batchWriterToggleIcon');
+        const open = body.style.display !== 'none';
+        body.style.display = open ? 'none'  : 'block';
+        icon.textContent   = open ? '▼'     : '▲';
+        // When opening, make sure the batch niche dropdown mirrors the generator's
+        if (!open) {
+            const src = document.getElementById('generatorNicheSelect');
+            const dst = document.getElementById('batchNicheSelect');
+            if (src && dst) dst.innerHTML = src.innerHTML;
+        }
+    }
+
+    let _batchStop = false;
+
+    function stopBatchGenerate() { _batchStop = true; }
+
+    async function runBatchGenerate() {
+        const nicheId  = document.getElementById('batchNicheSelect').value;
+        const length   = parseInt(document.getElementById('batchScriptLength').value, 10);
+        const provider = document.querySelector('input[name="batchEngine"]:checked')?.value || 'gemini';
+        const rawTitles = document.getElementById('batchTitles').value;
+        const titles   = rawTitles.split('\n').map(t => t.trim()).filter(t => t);
+
+        if (!nicheId)       { alert('Please select a Content Niche first.'); return; }
+        if (titles.length === 0) { alert('Please enter at least one title.'); return; }
+
+        _batchStop = false;
+        const btn     = document.getElementById('batch-btn');
+        const stopBtn = document.getElementById('batch-stop-btn');
+        btn.disabled   = true;
+        btn.textContent = '⏳ Generating…';
+        stopBtn.style.display = 'inline-block';
+        document.getElementById('batch-status').style.display = 'block';
+        const results = document.getElementById('batch-results');
+        results.innerHTML = '';
+
+        const success = [];
+        const failed  = [];
+
+        for (let i = 0; i < titles.length; i++) {
+            if (_batchStop) { break; }
+            const title = titles[i];
+            const pct = Math.round((i / titles.length) * 100);
+            document.getElementById('batch-progress-bar').style.width = pct + '%';
+            document.getElementById('batch-status-text').textContent =
+                `Script ${i+1}/${titles.length}: ${title.substring(0, 80)}…`;
+
+            try {
+                const resp = await fetch('/api/generate-script', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, niche_id: nicheId, length, provider })
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'Generation failed');
+                success.push({ title, chars: (data.script || '').length, filename: data.filename });
+                results.innerHTML += `<div style="color:#6ee7b7; padding:4px 0;">✅ [${i+1}] ${title.substring(0,60)} — ${(data.script||'').length.toLocaleString()} chars</div>`;
+            } catch (e) {
+                failed.push({ title, error: e.message });
+                results.innerHTML += `<div style="color:#fca5a5; padding:4px 0;">❌ [${i+1}] ${title.substring(0,60)} — ${e.message}</div>`;
+            }
+        }
+
+        document.getElementById('batch-progress-bar').style.width = '100%';
+        document.getElementById('batch-status-text').textContent =
+            `✅ Done — ${success.length} succeeded, ${failed.length} failed${_batchStop ? ' (stopped by user)' : ''}`;
+        btn.disabled   = false;
+        btn.textContent = '🚀 Generate All Scripts';
+        stopBtn.style.display = 'none';
+    }
+
     let _fxPollTimer = null;
 
     async function extractFormula() {
@@ -2469,9 +2499,15 @@ TAGS: comma-separated, under 400 chars, match the title keywords"></textarea>
                 } else if (d.status === 'done') {
                     clearInterval(_fxPollTimer);
                     _updateFxProgress(100, `✅ Formula ready (${(d.formula_chars || 0).toLocaleString()} chars). Niche added.`);
-                    // Refresh the niche dropdown so the new formula is selectable
-                    if (typeof loadNichesForGenerator === 'function') {
-                        loadNichesForGenerator(d.niche_id);
+                    // Refresh ALL niche dropdowns + settings list (Video Script, Batch, Settings list)
+                    if (typeof loadNiches === 'function') {
+                        await loadNiches();
+                        // Preselect the new niche in the Video Script dropdown
+                        const sel = document.getElementById('generatorNicheSelect');
+                        if (sel && d.niche_id) sel.value = d.niche_id;
+                        // Also preselect in Batch Script Writer
+                        const bSel = document.getElementById('batchNicheSelect');
+                        if (bSel && d.niche_id) bSel.value = d.niche_id;
                     } else {
                         _refreshGeneratorNicheSelect(d.niche_id);
                     }

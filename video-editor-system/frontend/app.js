@@ -711,6 +711,17 @@ function updateNicheDropdown(niches) {
             });
         }
     }
+
+    // ALSO update Batch Script Writer dropdown
+    const batchDropdown = document.getElementById('batchNicheSelect');
+    if (batchDropdown) {
+        batchDropdown.innerHTML = '<option value="">-- Select a niche --</option>';
+        if (niches && niches.length > 0) {
+            niches.forEach(n => {
+                batchDropdown.innerHTML += `<option value="${n.id}">${n.name} (${n.language})</option>`;
+            });
+        }
+    }
 }
 
 // =============================================================================
@@ -4092,6 +4103,8 @@ function formatTime(seconds) {
 document.addEventListener('DOMContentLoaded', () => {
     // Load settings from localStorage
     loadSettings();
+    // Also call loadNiches directly to ensure it runs
+    loadNiches();
 
     // Sync manual scriptInput textarea → videoData + library (debounced)
     const scriptInputEl = document.getElementById('scriptInput');
