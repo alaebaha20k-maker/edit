@@ -1153,6 +1153,97 @@
                     <div style="margin-top: 10px; font-size: 13px; color: #aaa;" id="capcutExportPercent">0%</div>
                 </div>
             </section>
+
+            <!-- ════════════════════════════════════════════════════════════
+                 🎬 PRO MULTI-TRACK EDITOR — smart FFmpeg export
+                 ════════════════════════════════════════════════════════════ -->
+            <section style="margin-top: 28px; border: 2px solid #8b5cf6; border-radius: 14px; overflow: hidden;">
+                <div onclick="proToggle()" style="cursor:pointer; padding:16px 20px; background:linear-gradient(135deg,#4c1d95,#6d28d9); display:flex; align-items:center; justify-content:space-between;">
+                    <div>
+                        <h3 style="margin:0; color:#e9d5ff; font-size:18px;">🎬 Pro Multi-Track Editor</h3>
+                        <p style="margin:4px 0 0; color:#c4b5fd; font-size:12px;">Layers • Overlay • Text • Audio mix • Smart FFmpeg export (copy / concat / filter_complex)</p>
+                    </div>
+                    <span id="proEditorToggleIcon" style="font-size:20px; color:#e9d5ff;">▼</span>
+                </div>
+                <div id="proEditorBody" style="display:none; padding:18px; background:rgba(0,0,0,0.25);">
+                    <!-- Drop zone / media library -->
+                    <div style="display:grid; grid-template-columns: 280px 1fr; gap:14px; margin-bottom:14px;">
+                        <div>
+                            <div id="proDropZone"
+                                 ondragover="proOnDragOver(event)" ondragleave="proOnDragLeave(event)" ondrop="proOnDrop(event)"
+                                 onclick="document.getElementById('proFileInput').click()"
+                                 style="border:2px dashed #8b5cf6; border-radius:10px; padding:16px; text-align:center; cursor:pointer; background:rgba(139,92,246,0.05);">
+                                <div style="font-size:14px; font-weight:700;">📁 Drop media here</div>
+                                <div style="font-size:11px; color:#aaa;">Videos · Images · Audio</div>
+                                <input type="file" id="proFileInput" multiple accept="video/*,image/*,audio/*" style="display:none;" onchange="proUpload(this.files)">
+                            </div>
+                            <div style="margin-top:10px; max-height:300px; overflow-y:auto; background:rgba(0,0,0,0.3); border-radius:8px; padding:6px;">
+                                <div style="font-size:11px; color:#888; padding:4px 6px;">LIBRARY</div>
+                                <div id="proMediaList"></div>
+                            </div>
+                        </div>
+                        <!-- Inspector on right -->
+                        <div id="proInspector" style="background:rgba(0,0,0,0.3); border-radius:8px; padding:14px; min-height:80px;">
+                            <div style="color:#666; font-size:12px;">Select a clip to edit its properties.</div>
+                        </div>
+                    </div>
+
+                    <!-- Toolbar -->
+                    <div style="display:flex; gap:6px; align-items:center; padding:8px; background:rgba(0,0,0,0.3); border-radius:8px; flex-wrap:wrap; margin-bottom:10px;">
+                        <button onclick="proAddTextClip()" class="btn-tool">🔤 Add Text</button>
+                        <button onclick="proSplitAtPlayhead()" class="btn-tool">✂️ Split</button>
+                        <button onclick="proDeleteSelected()" class="btn-tool btn-danger">🗑️ Delete</button>
+                        <span style="width:1px; height:22px; background:#444; margin:0 6px;"></span>
+                        <button onclick="proZoom(0.7)" class="btn-tool">🔍-</button>
+                        <button onclick="proZoom(1.5)" class="btn-tool">🔍+</button>
+                        <span style="flex:1;"></span>
+                        <span id="proSummary" style="color:#aaa; font-size:12px;">0 clip(s)</span>
+                    </div>
+
+                    <!-- Timeline -->
+                    <div style="background:#0d0d17; border-radius:8px; overflow:hidden; border:1px solid #222;">
+                        <div class="pro-timeline-scroll">
+                            <div id="proTimelineRuler" class="pro-ruler"></div>
+                            <div id="proTracksWrap" class="pro-tracks-wrap">
+                                <div id="proPlayhead" class="pro-playhead"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Export controls -->
+                    <div style="margin-top:14px; padding:14px; background:rgba(139,92,246,0.08); border:1px solid #6d28d9; border-radius:10px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                        <label style="font-size:12px; color:#c4b5fd;">Preset
+                            <select id="proPreset" style="margin-left:6px; padding:6px 8px; background:#1a1a2e; color:#e2e2f0; border:1px solid #444; border-radius:6px;">
+                                <option value="ultrafast">ultrafast (fastest)</option>
+                                <option value="veryfast" selected>veryfast</option>
+                                <option value="fast">fast</option>
+                                <option value="medium">medium (balanced)</option>
+                                <option value="slow">slow (best quality)</option>
+                            </select>
+                        </label>
+                        <label style="font-size:12px; color:#c4b5fd;">CRF
+                            <input id="proCrf" type="number" min="14" max="32" value="23" style="width:60px; margin-left:6px; padding:6px 8px; background:#1a1a2e; color:#e2e2f0; border:1px solid #444; border-radius:6px;">
+                        </label>
+                        <button onclick="proPlan()" class="btn-tool" title="Dry-run: shows which mode will be used">🔍 Preview Plan</button>
+                        <span style="flex:1;"></span>
+                        <button onclick="proExport()" id="proExportBtn" class="btn-primary" style="padding:10px 20px;">🚀 Export Video</button>
+                    </div>
+
+                    <!-- Status + Progress -->
+                    <div id="proStatus" style="margin-top:10px; font-size:13px; color:#a5b4fc; font-family:monospace;">Ready.</div>
+                    <div id="proProgressBox" style="display:none; margin-top:8px;">
+                        <div style="width:100%; height:8px; background:rgba(255,255,255,0.08); border-radius:4px; overflow:hidden;">
+                            <div id="proProgressBar" style="height:100%; width:0%; background:linear-gradient(90deg,#8b5cf6,#ec4899); transition:width 0.3s;"></div>
+                        </div>
+                        <a id="proDownloadLink" style="display:none; margin-top:8px; color:#8b5cf6; text-decoration:none;" target="_blank"></a>
+                    </div>
+
+                    <details style="margin-top:10px;">
+                        <summary style="cursor:pointer; color:#888; font-size:12px;">🛠️ Debug (FFmpeg command / log)</summary>
+                        <pre id="proDebugLog" style="margin-top:6px; max-height:260px; overflow:auto; background:#0a0a14; color:#8cf; padding:10px; border-radius:6px; font-size:11px; white-space:pre-wrap;"></pre>
+                    </details>
+                </div>
+            </section>
         </div>
         <!-- OUTPUT FILES TAB -->
         <!-- ============================================ -->
@@ -2069,6 +2160,7 @@ TAGS: comma-separated, under 400 chars, match the title keywords"></textarea>
 
     <script src="app.js?v=20260303-vault"></script>
     <script src="capcut_editor.js?v=20260207"></script>
+    <script src="pro_editor.js?v=20260423"></script>
     <script>
     // ── Digital Create — Ebook Generator ──────────────────────────────────
     let _ebookPollTimer = null;
