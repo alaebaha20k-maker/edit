@@ -1332,3 +1332,127 @@ button:active {
 #capcutTimelineContainer:hover {
     background: rgba(0,0,0,0.25);
 }
+
+/* =============================================================================
+   PRO MULTI-TRACK EDITOR
+   ============================================================================= */
+#proDropZone.pro-drop-active { background: rgba(139,92,246,0.18); border-color: #c4b5fd; }
+
+.pro-media-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px; margin: 4px 0;
+    background: rgba(139,92,246,0.08);
+    border: 1px solid rgba(139,92,246,0.25);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.pro-media-item:hover {
+    background: rgba(139,92,246,0.22);
+    border-color: #8b5cf6;
+    transform: translateX(2px);
+}
+
+.pro-timeline-scroll {
+    position: relative;
+    overflow-x: auto;
+    overflow-y: hidden;
+    max-height: 360px;
+}
+.pro-ruler {
+    position: relative;
+    height: 26px;
+    background: #111121;
+    border-bottom: 1px solid #222;
+}
+.pro-tick {
+    position: absolute; top: 0; bottom: 0; border-left: 1px solid #333;
+}
+.pro-tick span {
+    position: absolute; left: 4px; top: 4px;
+    font-size: 10px; color: #888; font-family: monospace;
+}
+
+.pro-tracks-wrap { position: relative; }
+
+.pro-track {
+    display: flex;
+    border-bottom: 1px solid #1a1a2a;
+    min-height: 56px;
+}
+.pro-track-head {
+    width: 100px; min-width: 100px;
+    padding: 10px 8px;
+    background: #15152a;
+    color: #a5b4fc;
+    font-size: 12px; font-weight: 700;
+    border-right: 1px solid #222;
+    position: sticky; left: 0; z-index: 2;
+}
+.pro-track-body {
+    position: relative;
+    flex: 1;
+    min-height: 56px;
+    background: repeating-linear-gradient(
+        90deg, #0d0d17, #0d0d17 50px,
+        #10101c 50px, #10101c 100px);
+    cursor: crosshair;
+}
+
+.pro-clip {
+    position: absolute;
+    top: 6px; bottom: 6px;
+    border-radius: 5px;
+    overflow: hidden;
+    color: white;
+    font-size: 11px;
+    cursor: grab;
+    user-select: none;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    transition: box-shadow 0.15s, transform 0.08s;
+}
+.pro-clip:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0,0,0,0.55); }
+.pro-clip-selected { outline: 2px solid #fbbf24; outline-offset: -1px; z-index: 5; }
+.pro-clip-label {
+    position: absolute; left: 10px; top: 6px; right: 12px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    pointer-events: none; font-weight: 600;
+}
+.pro-clip-handle {
+    position: absolute; top: 0; bottom: 0; width: 8px;
+    background: rgba(255,255,255,0.25);
+    cursor: ew-resize;
+}
+.pro-clip-handle-l { left: 0; border-top-left-radius: 5px; border-bottom-left-radius: 5px; }
+.pro-clip-handle-r { right: 0; border-top-right-radius: 5px; border-bottom-right-radius: 5px; }
+.pro-clip-handle:hover { background: rgba(251,191,36,0.7); }
+
+.pro-playhead {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 2px;
+    background: #ef4444;
+    pointer-events: none;
+    z-index: 10;
+    box-shadow: 0 0 8px rgba(239,68,68,0.6);
+    margin-left: 100px;    /* offset for track heads */
+}
+
+.pro-inspector-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+.pro-inspector-grid label {
+    display: flex; flex-direction: column; gap: 4px;
+    font-size: 11px; color: #aaa;
+}
+.pro-inspector-grid input {
+    padding: 6px 8px;
+    background: #1a1a2e;
+    color: #e2e2f0;
+    border: 1px solid #2a2a44;
+    border-radius: 5px;
+    font-size: 12px;
+}
+.pro-inspector-grid input:focus { border-color: #8b5cf6; outline: none; }

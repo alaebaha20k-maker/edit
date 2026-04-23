@@ -6833,81 +6833,161 @@ def ebook_download(job_id):
 
 
 # =============================================================================
-# 🧬 FORMULA EXTRACTOR — Extract a writing formula from a long script and save
-#     it as a Content Niche selectable in the Script Writer.
+# PRO MULTI-LAYER EDITOR — smart export (copy / concat / filter_complex)
 # =============================================================================
+_PRO_JOBS: dict = {}  # job_id -> {status, progress, output, log, error}
 
-_formula_jobs: dict = {}
 
-
-@app.route('/api/niches/extract-from-script', methods=['POST'])
-def extract_formula_from_script():
-    """
-    Start a formula-extraction job in a background thread.
-    Body: { name, language, script }
-    Returns: { job_id, status: "running" }
-    """
+def _pro_run_job(job_id: str, timeline: dict, out_path: str,
+                 preset: str = 'ultrafast', crf: int = 23):
     import threading
-    import uuid
+    from smart_exporter import plan_export, run_export
 
-    data = request.get_json() or {}
-    name     = (data.get('name')     or '').strip()
-    language = (data.get('language') or 'English').strip()
-    script   = (data.get('script')   or '').strip()
-
-    if not name:                              return jsonify({'error': 'name is required'}), 400
-    if not script:                            return jsonify({'error': 'script is required'}), 400
-    if len(script) < 500:                     return jsonify({'error': 'script too short (min 500 chars)'}), 400
-    if len(script) > 250_000:                 return jsonify({'error': 'script too long (max 250,000 chars)'}), 400
-
-    errors = Config.validate_api_keys()
-    if any('GEMINI' in e for e in errors):
-        return jsonify({'error': 'Gemini API key not configured'}), 500
-
-    job_id = str(uuid.uuid4())[:8]
-    _formula_jobs[job_id] = {
-        'status'  : 'running',
-        'progress': 0,
-        'message' : 'Queued…',
-        'niche_id': None,
-        'error'   : None,
-    }
-
-    def _cb(pct, msg):
-        _formula_jobs[job_id]['progress'] = pct
-        _formula_jobs[job_id]['message']  = msg
-
-    def _run():
+    def _work():
+        job = _PRO_JOBS[job_id]
         try:
-            from formula_extractor import FormulaExtractor
-            from niche_manager      import NicheManager
+            workdir = os.path.join(os.path.dirname(out_path), f'_pro_tmp_{job_id[:8]}')
+            plan = plan_export(timeline, out_path, workdir, preset=preset, crf=crf)
+            job['mode'] = plan.mode
+            job['status'] = 'running'
+            job['progress'] = 10
+            ok, log = run_export(plan)
+            job['log'] = log[-4000:]
+            if ok:
+                job['status'] = 'done'
+                job['progress'] = 100
+                job['output'] = os.path.basename(out_path)
+            else:
+                job['status'] = 'error'
+                job['error'] = (log.splitlines()[-1] if log else 'Export failed')
+            # cleanup workdir best-effort
+            try:
+                if os.path.isdir(workdir):
+                    for f in os.listdir(workdir):
+                        try: os.remove(os.path.join(workdir, f))
+                        except Exception: pass
+                    os.rmdir(workdir)
+            except Exception: pass
+        except Exception as e:
+            job['status'] = 'error'
+            job['error'] = str(e)
 
-            formula = FormulaExtractor().extract(
-                script=script, name=name, language=language, progress_cb=_cb,
-            )
-            niche = NicheManager.create_niche(
-                name=name, language=language, writing_guidelines=formula
-            )
-            _formula_jobs[job_id]['status']        = 'done'
-            _formula_jobs[job_id]['niche_id']      = niche['id']
-            _formula_jobs[job_id]['formula_chars'] = len(formula)
-            print(f"[formula] job {job_id}  ✅  niche {niche['id']} ({len(formula):,} chars)")
-        except Exception as exc:
-            _formula_jobs[job_id]['status'] = 'error'
-            _formula_jobs[job_id]['error']  = str(exc)
-            print(f"[formula] job {job_id}  ❌  {exc}")
-
-    threading.Thread(target=_run, daemon=True).start()
-    return jsonify({'success': True, 'job_id': job_id, 'status': 'running'})
+    t = threading.Thread(target=_work, daemon=True); t.start()
 
 
-@app.route('/api/niches/extract-status/<job_id>', methods=['GET'])
-def formula_extract_status(job_id):
-    """Poll progress / result of a formula-extraction job."""
-    job = _formula_jobs.get(job_id)
-    if not job:
-        return jsonify({'error': 'job not found'}), 404
-    return jsonify(dict(job))
+@app.route('/api/editor/pro-plan', methods=['POST'])
+def pro_plan_export():
+    """Dry-run: returns which mode would be used + the generated command(s)."""
+    try:
+        from smart_exporter import plan_export
+        data = request.get_json() or {}
+        timeline = data.get('timeline') or {}
+        out_path = os.path.join(OUTPUT_FOLDER, 'pro_preview.mp4')
+        workdir = os.path.join(OUTPUT_FOLDER, '_pro_tmp_preview')
+        plan = plan_export(timeline, out_path, workdir,
+                           preset=data.get('preset', 'ultrafast'),
+                           crf=int(data.get('crf', 23)))
+        return jsonify({
+            'success': True,
+            'mode': plan.mode,
+            'debug': plan.debug,
+            'num_inputs': len(plan.final_cmd),  # rough proxy
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/editor/pro-export', methods=['POST'])
+def pro_export():
+    """Start a Pro multi-layer export job.
+
+    Body: { timeline: {...}, preset: 'ultrafast', crf: 23, filename: 'optional.mp4' }
+    Returns: { success, job_id }
+    """
+    try:
+        data = request.get_json() or {}
+        timeline = data.get('timeline') or {}
+        if not (timeline.get('tracks') or []):
+            return jsonify({'success': False, 'error': 'timeline.tracks is required'}), 400
+        filename = data.get('filename') or f'pro_export_{uuid.uuid4().hex[:8]}.mp4'
+        if not filename.lower().endswith('.mp4'):
+            filename += '.mp4'
+        out_path = os.path.join(OUTPUT_FOLDER, filename)
+        job_id = uuid.uuid4().hex
+        _PRO_JOBS[job_id] = {
+            'status': 'queued', 'progress': 0, 'output': None,
+            'log': '', 'error': None, 'mode': None,
+        }
+        _pro_run_job(job_id, timeline, out_path,
+                     preset=data.get('preset', 'ultrafast'),
+                     crf=int(data.get('crf', 23)))
+        return jsonify({'success': True, 'job_id': job_id, 'filename': filename})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/editor/pro-status/<job_id>', methods=['GET'])
+def pro_export_status(job_id: str):
+    j = _PRO_JOBS.get(job_id)
+    if not j:
+        return jsonify({'success': False, 'error': 'unknown job_id'}), 404
+    return jsonify({
+        'success': True,
+        'status': j['status'],
+        'progress': j.get('progress', 0),
+        'mode': j.get('mode'),
+        'output': j.get('output'),
+        'error': j.get('error'),
+        'log_tail': (j.get('log') or '')[-2000:],
+    })
+
+
+@app.route('/api/editor/ffprobe', methods=['POST'])
+def pro_ffprobe():
+    """Lightweight metadata probe for Pro editor (duration, w/h, fps, audio, codec)."""
+    try:
+        data = request.get_json() or {}
+        path = data.get('path') or ''
+        if not path: return jsonify({'success': False, 'error': 'path required'}), 400
+        # resolve path: could be absolute, or basename inside upload/output folders
+        candidates = [path]
+        for base in [UPLOAD_FOLDER, OUTPUT_FOLDER]:
+            candidates.append(os.path.join(base, os.path.basename(path)))
+        abs_path = next((p for p in candidates if os.path.exists(p)), None)
+        if not abs_path:
+            return jsonify({'success': False, 'error': 'file not found'}), 404
+        cmd = [
+            'ffprobe', '-v', 'error', '-print_format', 'json',
+            '-show_format', '-show_streams', abs_path,
+        ]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if r.returncode != 0:
+            return jsonify({'success': False, 'error': r.stderr[-500:]}), 500
+        import json as _json
+        info = _json.loads(r.stdout or '{}')
+        vstream = next((s for s in info.get('streams', []) if s.get('codec_type') == 'video'), None)
+        astream = next((s for s in info.get('streams', []) if s.get('codec_type') == 'audio'), None)
+        fmt = info.get('format') or {}
+        fps = 0.0
+        if vstream:
+            r_fps = vstream.get('r_frame_rate') or '0/1'
+            try:
+                num, den = r_fps.split('/')
+                fps = float(num) / float(den) if float(den) else 0.0
+            except Exception: pass
+        return jsonify({
+            'success': True,
+            'path': abs_path,
+            'duration': float(fmt.get('duration', 0) or 0),
+            'width': int(vstream.get('width', 0)) if vstream else 0,
+            'height': int(vstream.get('height', 0)) if vstream else 0,
+            'fps': round(fps, 3),
+            'video_codec': (vstream or {}).get('codec_name'),
+            'audio_codec': (astream or {}).get('codec_name'),
+            'has_audio': bool(astream),
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 if __name__ == '__main__':
