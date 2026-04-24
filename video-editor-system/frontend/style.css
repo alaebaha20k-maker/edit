@@ -1352,6 +1352,18 @@ button:active {
     border-color: #8b5cf6;
     transform: translateX(2px);
 }
+.pro-media-bg-btn {
+    background: linear-gradient(135deg, #475569, #334155);
+    color: #e2e8f0;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    padding: 4px 7px;
+    font-size: 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    margin-left: 4px;
+}
+.pro-media-bg-btn:hover { background: linear-gradient(135deg, #64748b, #475569); }
 
 .pro-timeline-scroll {
     position: relative;

@@ -340,6 +340,128 @@ def upload_file():
         return jsonify({'error': str(e)}), 500
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Chunked upload — supports very large files (5GB, 12GB, …) by assembling
+# client-side chunks. Each chunk is small enough to fit under MAX_CONTENT_LENGTH
+# and keeps memory pressure low.
+# ─────────────────────────────────────────────────────────────────────────────
+CHUNK_UPLOAD_DIR = os.path.join(TEMP_FOLDER, 'chunks')
+ensure_directory_exists(CHUNK_UPLOAD_DIR)
+
+
+@app.route('/api/upload/chunk', methods=['POST'])
+def upload_chunk():
+    """
+    Receive one chunk of a large upload. When the final chunk arrives,
+    assemble all chunks into a single file under UPLOAD_FOLDER and respond
+    with the same shape as /api/upload.
+
+    Form fields:
+        upload_id:    opaque id chosen by client (8..64 [A-Za-z0-9_-])
+        chunk_index:  int, 0-based
+        total_chunks: int
+        filename:     original file name (used for extension only)
+        type:         'video' | 'image' | 'audio'
+        file:         chunk bytes
+    """
+    try:
+        upload_id = (request.form.get('upload_id') or '').strip()
+        if not re.match(r'^[A-Za-z0-9_-]{8,64}$', upload_id):
+            return jsonify({'error': 'invalid upload_id'}), 400
+
+        try:
+            chunk_index = int(request.form.get('chunk_index', -1))
+            total_chunks = int(request.form.get('total_chunks', 0))
+        except ValueError:
+            return jsonify({'error': 'chunk_index/total_chunks must be integers'}), 400
+
+        if chunk_index < 0 or total_chunks <= 0 or chunk_index >= total_chunks:
+            return jsonify({'error': 'invalid chunk_index/total_chunks'}), 400
+
+        filename = request.form.get('filename', '')
+        file_type = (request.form.get('type') or '').lower()
+        if file_type not in ('video', 'image', 'audio'):
+            return jsonify({'error': 'Invalid file type'}), 400
+        if not allowed_file(filename, file_type):
+            return jsonify({'error': f'Invalid file format for {file_type}'}), 400
+
+        if 'file' not in request.files:
+            return jsonify({'error': 'No chunk data'}), 400
+        chunk = request.files['file']
+
+        chunk_dir = os.path.join(CHUNK_UPLOAD_DIR, upload_id)
+        ensure_directory_exists(chunk_dir)
+        chunk_path = os.path.join(chunk_dir, f'chunk_{chunk_index:06d}.part')
+        chunk.save(chunk_path)
+
+        received = sorted(f for f in os.listdir(chunk_dir) if f.startswith('chunk_'))
+        if len(received) < total_chunks:
+            return jsonify({
+                'success': True,
+                'complete': False,
+                'chunks_received': len(received),
+                'total_chunks': total_chunks,
+            })
+
+        # All chunks present — assemble
+        file_id = str(uuid.uuid4())
+        sfn = secure_filename(filename) or f'{file_id}.bin'
+        file_ext = sfn.rsplit('.', 1)[1].lower() if '.' in sfn else 'bin'
+        unique_filename = f'{file_id}.{file_ext}'
+        final_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+
+        BUF = 4 * 1024 * 1024  # 4 MB streaming buffer — keeps RAM low
+        with open(final_path, 'wb') as outf:
+            for name in received:
+                p = os.path.join(chunk_dir, name)
+                with open(p, 'rb') as inf:
+                    while True:
+                        buf = inf.read(BUF)
+                        if not buf:
+                            break
+                        outf.write(buf)
+
+        for name in received:
+            try: os.remove(os.path.join(chunk_dir, name))
+            except Exception: pass
+        try: os.rmdir(chunk_dir)
+        except Exception: pass
+
+        return jsonify({
+            'success': True,
+            'complete': True,
+            'file_id': file_id,
+            'filename': sfn,
+            'unique_filename': unique_filename,
+            'path': final_path,
+            'size': get_file_size(final_path),
+            'type': file_type,
+            'chunks_received': len(received),
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/upload/chunk-abort', methods=['POST'])
+def upload_chunk_abort():
+    """Cancel an in-progress chunked upload and remove any partial chunks."""
+    try:
+        upload_id = (request.form.get('upload_id') or '').strip()
+        if not re.match(r'^[A-Za-z0-9_-]{8,64}$', upload_id):
+            return jsonify({'error': 'invalid upload_id'}), 400
+        chunk_dir = os.path.join(CHUNK_UPLOAD_DIR, upload_id)
+        if os.path.isdir(chunk_dir):
+            for name in os.listdir(chunk_dir):
+                try: os.remove(os.path.join(chunk_dir, name))
+                except Exception: pass
+            try: os.rmdir(chunk_dir)
+            except Exception: pass
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/process', methods=['POST'])
 def process_video():
     """
