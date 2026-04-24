@@ -95,12 +95,14 @@ def decide_export_mode(timeline: Dict[str, Any]) -> str:
     overlay_tracks = _tracks_by_type(timeline, 'overlay')
     text_tracks = _tracks_by_type(timeline, 'text')
     audio_tracks = _tracks_by_type(timeline, 'audio')
+    background_tracks = _tracks_by_type(timeline, 'background')
 
-    # Any overlay / text / extra audio track = render
+    # Any background / overlay / text / extra audio track = render
+    has_bg_clips = any(t.get('clips') for t in background_tracks)
     has_overlay_clips = any(t.get('clips') for t in overlay_tracks)
     has_text_clips = any(t.get('clips') for t in text_tracks)
     has_extra_audio = any(t.get('clips') for t in audio_tracks)
-    if has_overlay_clips or has_text_clips or has_extra_audio:
+    if has_bg_clips or has_overlay_clips or has_text_clips or has_extra_audio:
         return 'render'
 
     if len(video_tracks) == 0:
@@ -243,14 +245,40 @@ def build_render(timeline: Dict[str, Any], out_path: str,
     total = max(_timeline_duration(timeline), 0.1)
 
     g = FilterGraph()
-
-    # ── base canvas: black for the whole duration ─────────────────────────
-    base_in = g.add_input(f'color=c=black:s={W}x{H}:r={FPS}:d={total:.3f}')
-    # This input uses -f lavfi. We'll signal that via extra_input_flags.
-    extra: List[List[str]] = [['-f', 'lavfi']]
-    base = g.in_v(base_in)
-
+    extra: List[List[str]] = []
     audio_labels: List[str] = []
+
+    # ── base canvas: background track (image/video) OR black lavfi ────────
+    bg_clips: List[Dict[str, Any]] = []
+    for t in _tracks_by_type(timeline, 'background'):
+        bg_clips.extend(t.get('clips') or [])
+
+    if bg_clips:
+        # Use the first background clip as the canvas; stretched/looped to
+        # cover the entire timeline duration.
+        bgc = bg_clips[0]
+        bg_src = bgc['source']
+        bg_is_image = bool(bgc.get('is_image'))
+
+        if bg_is_image:
+            idx = g.add_input(bg_src)
+            extra.append(['-loop', '1', '-t', f'{total:.3f}', '-framerate', str(FPS)])
+        else:
+            idx = g.add_input(bg_src)
+            # -stream_loop -1 loops the video if it's shorter than the timeline
+            extra.append(['-stream_loop', '-1'])
+
+        base = g.in_v(idx)
+        if not bg_is_image:
+            # Trim to exact total duration so downstream overlays don't
+            # see an infinite-length stream.
+            base = g.trim(base, 'v', 0, total)
+        # Fill the whole canvas (crop-to-cover, no letterbox).
+        base = g.scale_cover(base, W, H)
+    else:
+        base_in = g.add_input(f'color=c=black:s={W}x{H}:r={FPS}:d={total:.3f}')
+        extra.append(['-f', 'lavfi'])
+        base = g.in_v(base_in)
 
     # ── video + overlay tracks ────────────────────────────────────────────
     # Lower-index video tracks render FIRST (below), higher-index on top.
@@ -280,11 +308,20 @@ def build_render(timeline: Dict[str, Any], out_path: str,
             v = g.trim(v_src, 'v', tin, tout) if not is_image else v_src
             v = _apply_clip_props(g, v, clip)
 
-            # Fit into canvas (overlay tracks may be smaller → scale by scale factor)
+            # Main-video clips: fit-to-canvas by default, BUT respect manual
+            # scale/x/y when the user wants to shrink the main video to show
+            # a background behind it.
             if track.get('type') == 'video':
-                # Fit-to-canvas with letterbox
-                v = g.scale(v, W, H, force_aspect=True)
-                v = g.pad(v, W, H)
+                manual_scale = (props.get('scale') is not None
+                                and float(props.get('scale') or 1.0) != 1.0)
+                manual_pos = (int(props.get('x') or 0) != 0
+                              or int(props.get('y') or 0) != 0)
+                if not manual_scale and not manual_pos:
+                    # Fit-to-canvas with letterbox (default behaviour).
+                    v = g.scale(v, W, H, force_aspect=True)
+                    v = g.pad(v, W, H)
+                # Otherwise keep the clip's scaled native size and position
+                # it via overlay x/y below.
 
             # delay on timeline
             start = float(clip.get('start', 0))
