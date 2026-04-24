@@ -8,6 +8,7 @@
 
 const proState = {
     tracks: [
+        { id: 'b0', type: 'background', name: '🎨 Background', clips: [] },
         { id: 'v0', type: 'video',   name: '🎬 Video',   clips: [] },
         { id: 'o0', type: 'overlay', name: '🖼️ Overlay', clips: [] },
         { id: 't0', type: 'text',    name: '🔤 Text',    clips: [] },
@@ -35,6 +36,67 @@ function proToggle() {
 }
 
 // ── upload ──────────────────────────────────────────────────────────────────
+// Chunked upload for large files. Each chunk is ~20 MB — keeps memory low
+// both in the browser and in Flask, and works around any single-POST limits.
+const PRO_CHUNK_SIZE = 20 * 1024 * 1024;          // 20 MB per chunk
+const PRO_SMALL_UPLOAD_MAX = 50 * 1024 * 1024;    // files ≤ 50 MB use /api/upload
+
+function proDetectType(f) {
+    const isImage = (f.type || '').startsWith('image/');
+    const isAudio = (f.type || '').startsWith('audio/');
+    if (isImage) return 'image';
+    if (isAudio) return 'audio';
+    // fallback by extension if f.type is missing (some browsers for big files)
+    const ext = (f.name.split('.').pop() || '').toLowerCase();
+    if (['jpg','jpeg','jfif','png','bmp','gif','tiff','webp'].includes(ext)) return 'image';
+    if (['mp3','wav','aac','m4a','ogg','flac'].includes(ext)) return 'audio';
+    return 'video';
+}
+
+function proRandId() {
+    return 'up_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+}
+
+async function proUploadChunked(f, fileType) {
+    const uploadId = proRandId();
+    const totalChunks = Math.max(1, Math.ceil(f.size / PRO_CHUNK_SIZE));
+    const sizeMB = (f.size / 1024 / 1024).toFixed(1);
+    for (let i = 0; i < totalChunks; i++) {
+        const start = i * PRO_CHUNK_SIZE;
+        const end = Math.min(f.size, start + PRO_CHUNK_SIZE);
+        const blob = f.slice(start, end);
+        const fd = new FormData();
+        fd.append('upload_id', uploadId);
+        fd.append('chunk_index', String(i));
+        fd.append('total_chunks', String(totalChunks));
+        fd.append('filename', f.name);
+        fd.append('type', fileType);
+        fd.append('file', blob);
+
+        const pct = Math.round(((i) / totalChunks) * 100);
+        proSetStatus(`📤 ${f.name} (${sizeMB} MB) — chunk ${i + 1}/${totalChunks} · ${pct}%`);
+
+        let j;
+        try {
+            const r = await fetch('/api/upload/chunk', { method: 'POST', body: fd });
+            j = await r.json();
+        } catch (e) {
+            // Best-effort abort
+            try {
+                const fd2 = new FormData(); fd2.append('upload_id', uploadId);
+                await fetch('/api/upload/chunk-abort', { method: 'POST', body: fd2 });
+            } catch (_) {}
+            throw new Error(`network error on chunk ${i + 1}: ${e.message}`);
+        }
+        if (!j.success) throw new Error(j.error || `chunk ${i + 1} failed`);
+        if (i === totalChunks - 1) {
+            if (!j.complete) throw new Error('server did not assemble final file');
+            return j;  // {success, complete, file_id, path, unique_filename, ...}
+        }
+    }
+    throw new Error('unreachable');
+}
+
 async function proUpload(fileList) {
     const files = Array.from(fileList || []);
     if (!files.length) return;
@@ -43,16 +105,19 @@ async function proUpload(fileList) {
 
     for (const f of files) {
         try {
-            const isImage = f.type.startsWith('image/');
-            const isAudio = f.type.startsWith('audio/');
-            const fileType = isImage ? 'image' : (isAudio ? 'audio' : 'video');
+            const fileType = proDetectType(f);
+            let j;
 
-            const fd = new FormData();
-            fd.append('file', f);
-            fd.append('type', fileType);   // ← required by /api/upload
+            if (f.size > PRO_SMALL_UPLOAD_MAX) {
+                j = await proUploadChunked(f, fileType);
+            } else {
+                const fd = new FormData();
+                fd.append('file', f);
+                fd.append('type', fileType);
+                const r = await fetch('/api/upload', { method: 'POST', body: fd });
+                j = await r.json();
+            }
 
-            const r = await fetch('/api/upload', { method: 'POST', body: fd });
-            const j = await r.json();
             if (!j.success) {
                 proSetStatus(`❌ Upload failed for "${f.name}": ${j.error || 'unknown'}`);
                 continue;
@@ -141,6 +206,62 @@ function proAddFromMedia(idx) {
     proRender();
 }
 
+// Add selected media as the BACKGROUND. Only one background clip is kept.
+// Duration auto-stretches to match the timeline content length.
+function proAddAsBackground(idx) {
+    const m = proState.media[idx]; if (!m) return;
+    if (m.type === 'audio') {
+        proSetStatus('❌ Audio cannot be used as a visual background.');
+        return;
+    }
+    const track = proState.tracks.find(t => t.type === 'background');
+    if (!track) return;
+    const contentDur = proContentDuration();   // excludes background
+    const dur = Math.max(contentDur, m.duration || 10, 5);
+    track.clips = [{
+        id: proUid(),
+        source: m.path,
+        name: m.name,
+        start: 0,
+        duration: dur,
+        trim_in: 0,
+        trim_out: dur,
+        is_image: m.type === 'image',
+        props: {},
+    }];
+    proSetStatus(`🎨 Background: ${m.name} (stretched to ${dur.toFixed(1)}s)`);
+    proRender();
+}
+
+// Returns the length of the timeline, ignoring the background track.
+function proContentDuration() {
+    let end = 0;
+    for (const t of proState.tracks) {
+        if (t.type === 'background') continue;
+        for (const c of t.clips) end = Math.max(end, c.start + c.duration);
+    }
+    return end;
+}
+
+// Keep the background clip's duration in sync with the rest of the timeline.
+function proStretchBackground() {
+    const bg = proState.tracks.find(t => t.type === 'background');
+    if (!bg || !bg.clips.length) return;
+    const contentDur = proContentDuration();
+    if (contentDur <= 0) return;
+    const c = bg.clips[0];
+    if (c.is_image) {
+        c.duration = contentDur;
+        c.trim_out = contentDur;
+    } else {
+        // For video backgrounds: stretch timeline length; the backend uses
+        // -stream_loop -1 so the source loops underneath.
+        c.duration = contentDur;
+        // trim_out stays at source length — backend trims to total duration
+    }
+    c.start = 0;
+}
+
 function proAddTextClip() {
     const track = proState.tracks.find(t => t.type === 'text'); if (!track) return;
     const start = proState.playhead;
@@ -185,6 +306,7 @@ function proSplitAtPlayhead() {
 
 // ── rendering ───────────────────────────────────────────────────────────────
 function proRender() {
+    proStretchBackground();   // keep background in sync with content length
     proRenderMedia();
     proRenderTracks();
     proRenderRuler();
@@ -266,12 +388,16 @@ function proRenderMedia() {
         const icon = m.type === 'image' ? '🖼️' : (m.type === 'audio' ? '🎵' : '🎬');
         const dur = m.duration ? `${m.duration.toFixed(1)}s` : '';
         const res = (m.width && m.height) ? `${m.width}×${m.height}` : '';
+        const bgBtn = m.type === 'audio' ? '' :
+            `<button class="pro-media-bg-btn" title="Set as timeline background"
+                onclick="event.stopPropagation(); proAddAsBackground(${i})">🎨 BG</button>`;
         return `<div class="pro-media-item" onclick="proAddFromMedia(${i})" title="Click to add to timeline">
             <div style="font-size:18px;">${icon}</div>
             <div style="flex:1; min-width:0;">
                 <div style="font-size:12px; color:#e2e2f0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${m.name}</div>
                 <div style="font-size:10px; color:#888;">${dur} ${res}</div>
             </div>
+            ${bgBtn}
         </div>`;
     }).join('');
 }
@@ -324,7 +450,8 @@ function proRenderTracks() {
 }
 
 function proClipColor(type) {
-    return type === 'video' ? 'linear-gradient(135deg,#4f46e5,#6366f1)'
+    return type === 'background' ? 'linear-gradient(135deg,#475569,#334155)'
+        : type === 'video' ? 'linear-gradient(135deg,#4f46e5,#6366f1)'
         : type === 'overlay' ? 'linear-gradient(135deg,#ec4899,#db2777)'
         : type === 'text' ? 'linear-gradient(135deg,#f59e0b,#d97706)'
         : 'linear-gradient(135deg,#10b981,#059669)';
@@ -361,12 +488,22 @@ function proRenderInspector() {
         fields.push(`<label>Trim In (s)<input type="number" step="0.1" value="${clip.trim_in || 0}" onchange="proUpdateClip('${clip.id}','trim_in',parseFloat(this.value))"></label>`);
         fields.push(`<label>Trim Out (s)<input type="number" step="0.1" value="${clip.trim_out || (clip.trim_in||0) + clip.duration}" onchange="proUpdateClip('${clip.id}','trim_out',parseFloat(this.value))"></label>`);
     }
-    if (ttype === 'overlay' || ttype === 'text') {
-        fields.push(`<label>X<input type="text" value="${p.x ?? 0}" onchange="proUpdateProp('${clip.id}','x',this.value)"></label>`);
-        fields.push(`<label>Y<input type="text" value="${p.y ?? 0}" onchange="proUpdateProp('${clip.id}','y',this.value)"></label>`);
+    if (ttype === 'overlay' || ttype === 'text' || ttype === 'video') {
+        fields.push(`<label>X (px)<input type="text" value="${p.x ?? 0}" onchange="proUpdateProp('${clip.id}','x',this.value)"></label>`);
+        fields.push(`<label>Y (px)<input type="text" value="${p.y ?? 0}" onchange="proUpdateProp('${clip.id}','y',this.value)"></label>`);
     }
-    if (ttype === 'overlay') {
-        fields.push(`<label>Scale<input type="number" step="0.05" value="${p.scale ?? 1}" onchange="proUpdateProp('${clip.id}','scale',parseFloat(this.value))"></label>`);
+    if (ttype === 'overlay' || ttype === 'video') {
+        fields.push(`<label>Scale<input type="number" step="0.05" min="0.05" max="4" value="${p.scale ?? 1}" onchange="proUpdateProp('${clip.id}','scale',parseFloat(this.value))"></label>`);
+    }
+    if (ttype === 'video') {
+        fields.push(`<label style="grid-column: span 2;">
+            <button onclick="proFitToCanvas('${clip.id}')" class="btn-tool" style="width:100%;">📐 Fit to canvas (reset scale/pos)</button>
+        </label>`);
+    }
+    if (ttype === 'background') {
+        fields.push(`<label style="grid-column: span 2; color:#a5b4fc;">
+            Background auto-stretches to match timeline content.
+        </label>`);
     }
     if (ttype === 'text') {
         fields.push(`<label style="grid-column: span 2;">Text<input type="text" value="${(p.text || '').replace(/"/g,'&quot;')}" onchange="proUpdateProp('${clip.id}','text',this.value)"></label>`);
@@ -404,6 +541,18 @@ function proUpdateClip(id, key, v) {
 function proUpdateProp(id, key, v) {
     for (const t of proState.tracks)
         for (const c of t.clips) if (c.id === id) { c.props = c.props || {}; c.props[key] = v; }
+    proRender();
+}
+function proFitToCanvas(id) {
+    for (const t of proState.tracks) {
+        for (const c of t.clips) {
+            if (c.id !== id) continue;
+            c.props = c.props || {};
+            delete c.props.scale;
+            delete c.props.x;
+            delete c.props.y;
+        }
+    }
     proRender();
 }
 
@@ -555,6 +704,8 @@ window.proOnDrop = proOnDrop;
 window.proOnDragOver = proOnDragOver;
 window.proOnDragLeave = proOnDragLeave;
 window.proAddFromMedia = proAddFromMedia;
+window.proAddAsBackground = proAddAsBackground;
+window.proFitToCanvas = proFitToCanvas;
 window.proAddTextClip = proAddTextClip;
 window.proDeleteSelected = proDeleteSelected;
 window.proSplitAtPlayhead = proSplitAtPlayhead;

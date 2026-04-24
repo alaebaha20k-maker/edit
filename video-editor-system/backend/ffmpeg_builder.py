@@ -107,6 +107,15 @@ class FilterGraph:
         self._filters.append(f'{src}pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color={color}{out}')
         return out
 
+    def scale_cover(self, src: str, w: int, h: int) -> str:
+        """Scale + center-crop so the output exactly fills w×h (no letterbox)."""
+        scaled = f'[{self._labels.next("v")}]'
+        self._filters.append(
+            f'{src}scale={w}:{h}:force_original_aspect_ratio=increase{scaled}')
+        out = f'[{self._labels.next("v")}]'
+        self._filters.append(f'{scaled}crop={w}:{h}{out}')
+        return out
+
     def crop(self, src: str, w: int, h: int, x: int = 0, y: int = 0) -> str:
         out = f'[{self._labels.next("v")}]'
         self._filters.append(f'{src}crop={w}:{h}:{x}:{y}{out}')
