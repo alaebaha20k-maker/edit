@@ -6956,6 +6956,125 @@ def ebook_download(job_id):
 
 
 # =============================================================================
+# BUNDLE GENERATOR — multi-ebook async parallel system
+# =============================================================================
+_bundle_jobs: dict = {}  # job_id -> {status, progress, message, result, error}
+
+
+@app.route('/api/ebook/generate-bundle', methods=['POST'])
+def bundle_generate():
+    """
+    Start a bundle generation job in a background thread.
+    Body: { topic, details, num_ebooks, pages_per_ebook, audience?, tone? }
+    Returns: { success, job_id, status: "running" }
+    """
+    import threading as _th
+
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    topic            = (data.get('topic') or '').strip()
+    details          = (data.get('details') or topic).strip()
+    num_ebooks       = int(data.get('num_ebooks') or 3)
+    pages_per_ebook  = int(data.get('pages_per_ebook') or 30)
+    audience         = (data.get('audience') or 'general').strip()
+    tone             = (data.get('tone') or 'expert').strip()
+
+    if not topic:
+        return jsonify({'error': 'topic is required'}), 400
+    if num_ebooks < 1 or num_ebooks > 20:
+        return jsonify({'error': 'num_ebooks must be 1-20'}), 400
+    if pages_per_ebook < 5 or pages_per_ebook > 500:
+        return jsonify({'error': 'pages_per_ebook must be 5-500'}), 400
+
+    errors = Config.validate_api_keys()
+    if any('GEMINI' in e for e in errors):
+        return jsonify({'error': 'Gemini API key not configured'}), 500
+
+    job_id = str(uuid.uuid4())[:8]
+    _bundle_jobs[job_id] = {
+        'status'  : 'running',
+        'progress': 3,
+        'message' : 'Starting…',
+        'result'  : None,
+        'error'   : None,
+    }
+
+    def _progress_cb(pct: int, msg: str) -> None:
+        _bundle_jobs[job_id]['progress'] = pct
+        _bundle_jobs[job_id]['message']  = msg
+
+    def _run() -> None:
+        try:
+            from bundle_generator import BundleGenerator
+            gen    = BundleGenerator()
+            result = gen.generate_bundle(
+                bundle_topic      = topic,
+                product_details   = details,
+                num_ebooks        = num_ebooks,
+                pages_per_ebook   = pages_per_ebook,
+                audience          = audience,
+                tone              = tone,
+                verbose           = True,
+                progress_callback = _progress_cb,
+            )
+            _bundle_jobs[job_id]['status']   = 'done'
+            _bundle_jobs[job_id]['progress'] = 100
+            _bundle_jobs[job_id]['message']  = '✅ Bundle ready!'
+            _bundle_jobs[job_id]['result']   = result
+        except Exception as exc:
+            _bundle_jobs[job_id]['status']  = 'error'
+            _bundle_jobs[job_id]['error']   = str(exc)
+            _bundle_jobs[job_id]['message'] = f'❌ {exc}'
+            print(f"[bundle] job {job_id} failed: {exc}")
+
+    _th.Thread(target=_run, daemon=True).start()
+    return jsonify({'success': True, 'job_id': job_id, 'status': 'running'})
+
+
+@app.route('/api/ebook/bundle-status/<job_id>', methods=['GET'])
+def bundle_status(job_id):
+    """Poll for bundle job status."""
+    job = _bundle_jobs.get(job_id)
+    if not job:
+        return jsonify({'error': 'Job not found'}), 404
+    resp = {
+        'success' : True,
+        'status'  : job['status'],
+        'progress': job['progress'],
+        'message' : job['message'],
+    }
+    if job['status'] == 'done' and job.get('result'):
+        resp['download_url'] = f'/api/ebook/bundle-download/{job_id}'
+        result = job['result']
+        resp['num_ebooks']    = result.get('num_ebooks', 0)
+        resp['total_words']   = result.get('total_words', 0)
+        resp['elapsed']       = result.get('elapsed', 0)
+    elif job['status'] == 'error':
+        resp['error'] = job['error']
+    return jsonify(resp)
+
+
+@app.route('/api/ebook/bundle-download/<job_id>', methods=['GET'])
+def bundle_download(job_id):
+    """Download the finished bundle ZIP."""
+    job = _bundle_jobs.get(job_id)
+    if not job or job['status'] != 'done':
+        return jsonify({'error': 'Not ready'}), 404
+    result   = job.get('result', {})
+    zip_path = result.get('zip_path', '')
+    if not zip_path or not os.path.exists(zip_path):
+        return jsonify({'error': 'File not found'}), 404
+    return send_file(
+        zip_path,
+        as_attachment=True,
+        download_name=os.path.basename(zip_path),
+        mimetype='application/zip',
+    )
+
+
+# =============================================================================
 # PRO MULTI-LAYER EDITOR — smart export (copy / concat / filter_complex)
 # =============================================================================
 _PRO_JOBS: dict = {}  # job_id -> {status, progress, output, log, error}
