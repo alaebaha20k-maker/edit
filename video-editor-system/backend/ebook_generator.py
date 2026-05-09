@@ -157,7 +157,10 @@ class EbookGenerator:
         prompt = f"""You are an expert researcher and ebook planner.
 
 EBOOK TITLE: "{title}"
-USER REQUEST: {details}
+
+PRODUCT DETAILS (this is the single source of truth — every chapter, example, and angle must serve this):
+{details}
+
 TARGET: {pages} pages (~{pages * WORDS_PER_PAGE:,} words), {n_chaps} chapters
 
 YOUR JOB — TWO PARTS:
@@ -197,8 +200,9 @@ OUTPUT FORMAT — use this exact XML:
 
 Rules:
 - Research must be factual, specific, and deep — no generic filler
+- EVERY chapter must stay anchored to the PRODUCT DETAILS above — no drifting into generic content
 - Chapter titles must be compelling and specific, not generic
-- Each chapter must have a clear purpose and angle
+- Each chapter must have a clear purpose and angle that serves the product details
 - All {n_chaps} chapter tags must be present"""
 
         if verbose:
@@ -298,9 +302,11 @@ Rules:
 
         prompt = f"""You are an expert ebook writer. Write one complete chapter with exceptional quality.
 
+═══════════════════ PRODUCT BRIEF (anchor everything to this) ═══════════════════
+{details}
+
 ═══════════════════ EBOOK CONTEXT ═══════════════════
 EBOOK TITLE: "{ebook_title}"
-TOPIC/PURPOSE: {details}
 
 ═══════════════════ RESEARCH BASE ═══════════════════
 {research[:3000]}

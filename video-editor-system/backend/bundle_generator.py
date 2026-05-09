@@ -119,15 +119,21 @@ class BundleGenerator:
         audience: str = "general",
         tone: str = "expert",
         verbose: bool = True,
+        progress_callback: Optional[callable] = None,
     ) -> Dict:
         """
         Orchestrate the full bundle generation. Synchronous entry point — runs
         the async pipeline inside a new event loop.
 
+        Args:
+            progress_callback: Optional ``(pct: int, message: str) -> None``
+                called at each phase boundary so callers can track progress
+                without polling verbose terminal output.
+
         Returns a dict with keys: zip_path, bundle_dir, num_ebooks,
         total_words, total_chapters, elapsed.
         """
-        num_ebooks    = max(1, min(20, num_ebooks))
+        num_ebooks      = max(1, min(20, num_ebooks))
         pages_per_ebook = max(5, min(500, pages_per_ebook))
 
         if verbose:
@@ -144,6 +150,7 @@ class BundleGenerator:
             self._generate_async(
                 bundle_topic, product_details, num_ebooks,
                 pages_per_ebook, audience, tone, verbose, start,
+                progress_callback,
             )
         )
         return result
@@ -162,19 +169,29 @@ class BundleGenerator:
         tone: str,
         verbose: bool,
         wall_start: float,
+        progress_callback: Optional[callable] = None,
     ) -> Dict:
         sem = asyncio.Semaphore(MAX_CONCURRENT_CALLS)
+
+        def _report(pct: int, msg: str) -> None:
+            if progress_callback:
+                try:
+                    progress_callback(pct, msg)
+                except Exception:
+                    pass
 
         # ── Phase 0: Bundle Planner ───────────────────────────────────────────
         t0 = time.time()
         if verbose:
             print("📋 Phase 0/4 — Planning bundle …")
+        _report(5, "📋 Planning bundle…")
         bundle_plan = await asyncio.to_thread(
             self._plan_bundle_sync,
             bundle_topic, product_details, num_ebooks, audience, tone,
         )
         if verbose:
             print(f"   ✅ {time.time()-t0:.0f}s — \"{bundle_plan['name']}\"\n")
+        _report(15, f"✅ Plan: \"{bundle_plan['name']}\"")
 
         n_chaps          = self._eg._chapter_count(pages_per_ebook)
         words_target     = pages_per_ebook * WORDS_PER_PAGE
@@ -184,17 +201,21 @@ class BundleGenerator:
         t1 = time.time()
         if verbose:
             print(f"🔍 Phase 1/4 — Researching all {num_ebooks} ebooks in parallel …")
+        _report(20, f"🔍 Researching {num_ebooks} ebooks in parallel…")
         outlines: List[Dict] = await asyncio.gather(*[
             self._research_one_async(sem, eb, product_details, pages_per_ebook, n_chaps)
             for eb in bundle_plan["ebooks"]
         ])
         if verbose:
             print(f"   ✅ {time.time()-t1:.0f}s\n")
+        _report(35, f"✅ Research done — {num_ebooks} outlines ready")
 
         # ── Phase 2: Write all chapters (flat gather, Semaphore gating) ───────
         t2 = time.time()
+        total_chaps_to_write = num_ebooks * n_chaps
         if verbose:
-            print(f"✍️  Phase 2/4 — Writing {num_ebooks * n_chaps} chapters across {num_ebooks} ebooks ({MAX_CONCURRENT_CALLS} parallel) …")
+            print(f"✍️  Phase 2/4 — Writing {total_chaps_to_write} chapters across {num_ebooks} ebooks ({MAX_CONCURRENT_CALLS} parallel) …")
+        _report(38, f"✍️  Writing {total_chaps_to_write} chapters…")
         progress = _Progress(num_ebooks, n_chaps, verbose)
         progress.init_rows()
 
@@ -207,11 +228,13 @@ class BundleGenerator:
                     self._write_chapter_async(
                         sem, ei, ci, eb_plan, outline, chap_plan,
                         words_per_chap, n_chaps, progress,
+                        product_details=product_details,
                     )
                 )
         flat_results: List[Dict] = await asyncio.gather(*tasks)
         if verbose:
             print(f"   ✅ {time.time()-t2:.0f}s\n")
+        _report(74, "✅ All chapters written")
 
         # Reassemble chapters per ebook (sorted by chap_idx)
         ebooks_chapters: List[List[Dict]] = [[] for _ in range(num_ebooks)]
@@ -224,6 +247,7 @@ class BundleGenerator:
         t3 = time.time()
         if verbose:
             print("📄 Phase 3/4 — Building PDFs …")
+        _report(78, f"📄 Building {num_ebooks} PDFs…")
         output_dir = Path(Config.BUNDLE_OUTPUT_DIR) / self._slug(bundle_plan["name"])
         output_dir.mkdir(parents=True, exist_ok=True)
         (output_dir / "ebooks").mkdir(exist_ok=True)
@@ -239,11 +263,13 @@ class BundleGenerator:
         pdf_results: List[Dict] = await asyncio.gather(*pdf_tasks)
         if verbose:
             print(f"   ✅ {time.time()-t3:.0f}s\n")
+        _report(90, "✅ PDFs built")
 
         # ── Phase 4: Package ──────────────────────────────────────────────────
         t4 = time.time()
         if verbose:
             print("📦 Phase 4/4 — Packaging bundle …")
+        _report(93, "📦 Packaging ZIP…")
         from bundle_packager import BundlePackager
         packager = BundlePackager()
         pkg = await asyncio.to_thread(
@@ -256,6 +282,7 @@ class BundleGenerator:
         )
         if verbose:
             print(f"   ✅ {time.time()-t4:.0f}s\n")
+        _report(98, "✅ Bundle packaged")
 
         elapsed     = time.time() - wall_start
         total_words = sum(r["word_count"] for r in pdf_results)
@@ -294,13 +321,16 @@ class BundleGenerator:
         prompt = f"""You are a professional ebook bundle strategist.
 
 BUNDLE TOPIC: "{bundle_topic}"
-PRODUCT DETAILS: {product_details}
+
+PRODUCT DETAILS (this is the single source of truth — every ebook concept must serve this):
+{product_details}
+
 NUMBER OF EBOOKS: {num_ebooks}
 TARGET AUDIENCE: {audience}
 TONE: {tone}
 
 YOUR JOB:
-Design a cohesive, commercially compelling ebook bundle. Each ebook must:
+Design a cohesive, commercially compelling ebook bundle where EVERY ebook is anchored to the product details above. Each ebook must:
 - Cover a DISTINCT angle — NO overlap in content, examples, or approach
 - Complement the others so buying the bundle delivers far more value than any single ebook
 - Have a compelling, specific title that signals unique value
@@ -423,10 +453,11 @@ Rules:
         words_per_chap: int,
         n_chaps: int,
         progress: _Progress,
+        product_details: str = "",
     ) -> Dict:
         """Write one chapter with exponential backoff retry; returns a result dict."""
         prompt = self._build_chapter_prompt(
-            eb_plan, outline, chap_plan, chap_idx + 1, n_chaps, words_per_chap,
+            eb_plan, outline, chap_plan, chap_idx + 1, n_chaps, words_per_chap, product_details,
         )
         max_tokens = min(65536, max(int(words_per_chap / 0.75) + 2000, 4000))
         text = ""
@@ -470,6 +501,7 @@ Rules:
         chapter_index: int,
         total_chapters: int,
         words_target: int,
+        product_details: str = "",
     ) -> str:
         """Build the chapter writing prompt (mirrors EbookGenerator._write_chapter)."""
         chap_title = chap_plan["title"]
@@ -487,8 +519,14 @@ Rules:
             f"MID CHAPTER {chapter_index}/{total_chapters}: deepen the topic, add proof and examples, escalate value."
         )
 
-        return f"""You are an expert ebook writer. Write one complete chapter with exceptional quality.
+        product_brief_block = (
+            f"\n═══════════════════ PRODUCT BRIEF (anchor everything to this) ═══════════════════\n"
+            f"{product_details}\n"
+            if product_details else ""
+        )
 
+        return f"""You are an expert ebook writer. Write one complete chapter with exceptional quality.
+{product_brief_block}
 ═══════════════════ EBOOK CONTEXT ═══════════════════
 EBOOK TITLE: "{eb_plan['title']}"
 SUBTITLE: {eb_plan.get('subtitle','')}
