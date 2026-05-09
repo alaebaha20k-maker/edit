@@ -321,6 +321,14 @@ QUALITY RULES (mandatory for every paragraph):
   ✓ ESCALATION: Each section goes deeper than the last
   ✓ READABLE: Short punchy paragraphs (3-5 sentences). Vary sentence length.
   ✓ EXPERT VOICE: Write like someone who knows this topic deeply — not like a textbook
+  ✓ OPENING HOOK: The very first paragraph must grab the reader — a striking fact, bold claim, or vivid scenario.
+  ✓ CLOSING LINE: End the chapter with a single memorable, forward-driving sentence — make the reader want more.
+
+MARKDOWN FORMATTING (the PDF renderer uses these):
+  • Section headings: use ## Heading Title (3-5 sections per chapter, on their own line)
+  • Pull-quotes / key insights: use > Your insight here (1-2 per chapter, on their own line, make them punchy)
+  • Bullet lists: ONLY when listing 3+ parallel items; max once per chapter; use - item
+  • Do NOT use # (H1) — chapter titles are added automatically by the system.
 
 STYLE: Direct, authoritative, practical. Like a knowledgeable mentor sharing real insights.
 FORBIDDEN: "In this chapter", "As we discussed", "It is important to note", generic filler phrases
@@ -338,7 +346,8 @@ Before writing, verify:
 ═══════════════════ LENGTH ═══════════════════
 TARGET: {words_target} words (minimum {int(words_target * 0.9)}, maximum {int(words_target * 1.1)})
 Write the complete chapter text. Start directly with the chapter content.
-Do NOT write chapter titles or headers in the text — those are added by the PDF builder.
+Do NOT write the chapter title itself (e.g. "Chapter 1: ...") — it's added by the system.
+Section headings INSIDE the chapter (## Heading) are correct and expected.
 
 WRITE THE CHAPTER NOW:"""
 
