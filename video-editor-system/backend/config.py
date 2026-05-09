@@ -220,6 +220,11 @@ class Config:
     IMAGES_PER_VIDEO = 6
     IMAGE_DURATION_SECONDS = 5.0  # Duration for each image in video
 
+    # Bundle generation settings
+    MAX_CONCURRENT_CHAPTERS = 8   # Gemini calls in flight simultaneously
+    MAX_CONCURRENT_EBOOKS   = 3   # Ebooks whose chapters are being written at once
+    BUNDLE_OUTPUT_DIR       = "output/bundles"
+
     # Script generation settings - FULL RANGE SUPPORT
     # Any length from 1,000 to 240,000 characters
     MIN_SCRIPT_LENGTH = 1000       # Minimum: ~1 min video (Shorts)
