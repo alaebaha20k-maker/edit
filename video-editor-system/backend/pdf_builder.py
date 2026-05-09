@@ -117,9 +117,10 @@ def _draw_cover(canvas, doc):
     c = canvas
     W, H = PAGE_W, PAGE_H
 
-    title    = getattr(doc, "_cover_title",    "Ebook")
-    subtitle = getattr(doc, "_cover_subtitle", "")
-    n_chaps  = getattr(doc, "_cover_n_chaps",  0)
+    title       = getattr(doc, "_cover_title",       "Ebook")
+    subtitle    = getattr(doc, "_cover_subtitle",    "")
+    n_chaps     = getattr(doc, "_cover_n_chaps",     0)
+    bundle_name = getattr(doc, "_cover_bundle_name", "")
 
     # ── Deep navy background ──────────────────────────────────────────────────
     c.setFillColor(NAVY)
@@ -160,8 +161,15 @@ def _draw_cover(canvas, doc):
     c.setFillColor(GOLD)
     c.rect(0, 14 * mm, 5, H - 14 * mm, fill=1, stroke=0)
 
-    # ── Horizontal rule ABOVE title ───────────────────────────────────────────
+    # ── Bundle name (small caps, above title) ────────────────────────────────
     rule_top = H * 0.68
+    if bundle_name:
+        c.setFont("Helvetica-Bold", 8)
+        c.setFillColor(GOLD_LIGHT)
+        bn_upper = bundle_name.upper()[:60]
+        c.drawString(ML + 10, rule_top + 10 * mm, bn_upper)
+
+    # ── Horizontal rule ABOVE title ───────────────────────────────────────────
     c.setStrokeColor(GOLD)
     c.setLineWidth(0.7)
     c.line(ML + 10, rule_top, ML + 10 + 85 * mm, rule_top)
@@ -600,6 +608,7 @@ class EbookPDFBuilder:
         subtitle: str,
         chapters: List[Dict],
         output_path: Path,
+        bundle_name: str = "",
     ) -> Path:
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -611,13 +620,14 @@ class EbookPDFBuilder:
             topMargin=MT + 6 * mm,   # extra top margin for running header
             bottomMargin=MB,
         )
-        doc.ebook_title      = title[:58]
-        doc._cover_title     = title
-        doc._cover_subtitle  = subtitle
-        doc._cover_n_chaps   = len(chapters)
-        doc._current_chapter = ""
-        doc._opener_num      = 1
-        doc._opener_title    = ""
+        doc.ebook_title          = title[:58]
+        doc._cover_title         = title
+        doc._cover_subtitle      = subtitle
+        doc._cover_n_chaps       = len(chapters)
+        doc._cover_bundle_name   = bundle_name
+        doc._current_chapter     = ""
+        doc._opener_num          = 1
+        doc._opener_title        = ""
 
         body_frame = RLFrame(ML, MB, TW, PAGE_H - MT - MB - 6*mm, id="body")
 
