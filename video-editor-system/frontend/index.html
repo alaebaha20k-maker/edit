@@ -1354,52 +1354,152 @@
         <!-- ============================================ -->
         <div id="tab-digital-create" class="tab-content">
             <h2>📚 Digital Create</h2>
-            <p class="subtitle">Generate high-quality AI-powered ebooks as professional PDFs using Gemini 2.5 Pro</p>
+            <p class="subtitle">Generate professional AI-powered ebooks — single PDF or a complete bundle ZIP — using Gemini 2.5 Pro</p>
 
-            <section class="step">
-                <h3><span class="step-number">1</span> Ebook Title</h3>
-                <input type="text" id="ebook-title" class="input-field"
-                    placeholder="e.g. Toyota Models — Problems & Solutions" style="width:100%;box-sizing:border-box;">
-            </section>
-
-            <section class="step">
-                <h3><span class="step-number">2</span> Details / Topics</h3>
-                <textarea id="ebook-details" class="input-field" rows="5"
-                    placeholder="Describe what you want in the ebook. Be specific: topics, sections, depth level, target audience, key questions to answer..."
-                    style="width:100%;box-sizing:border-box;resize:vertical;"></textarea>
-            </section>
-
-            <section class="step">
-                <h3><span class="step-number">3</span> Number of Pages</h3>
-                <select id="ebook-pages" class="input-field" style="width:220px;">
-                    <option value="20">20 pages</option>
-                    <option value="30">30 pages</option>
-                    <option value="50" selected>50 pages</option>
-                    <option value="75">75 pages</option>
-                    <option value="100">100 pages</option>
-                    <option value="150">150 pages</option>
-                    <option value="200">200 pages</option>
-                </select>
-            </section>
-
-            <section class="step">
-                <button onclick="generateEbook()" class="btn-primary" id="ebook-generate-btn"
-                    style="padding:14px 36px;font-size:16px;font-weight:700;">
-                    📚 Generate Ebook
+            <!-- Mode Toggle -->
+            <div style="display:flex; gap:10px; margin-bottom:24px;">
+                <button id="dc-mode-single" onclick="dcSetMode('single')"
+                    class="btn-primary" style="padding:10px 24px; font-size:14px;">
+                    📚 Single Ebook
                 </button>
-            </section>
+                <button id="dc-mode-bundle" onclick="dcSetMode('bundle')"
+                    class="btn-tool" style="padding:10px 24px; font-size:14px;">
+                    📦 Ebook Bundle
+                </button>
+            </div>
 
-            <div id="ebook-status" style="display:none; margin-top:24px;">
-                <div style="background:#1a1a2e; border:1px solid #4f46e5; border-radius:12px; padding:20px;">
-                    <div id="ebook-status-text" style="color:#c7d2fe; font-size:14px; margin-bottom:12px;">Starting...</div>
-                    <div style="background:#0f0f1f; border-radius:6px; overflow:hidden; height:8px;">
-                        <div id="ebook-progress-bar" style="height:100%; width:0%; background:linear-gradient(90deg,#6366f1,#8b5cf6); transition:width 0.5s ease;"></div>
+            <!-- ─── SINGLE EBOOK ─── -->
+            <div id="dc-single">
+                <section class="step">
+                    <h3><span class="step-number">1</span> Ebook Title</h3>
+                    <input type="text" id="ebook-title" class="input-field"
+                        placeholder="e.g. Toyota Models — Problems & Solutions" style="width:100%;box-sizing:border-box;">
+                </section>
+                <section class="step">
+                    <h3><span class="step-number">2</span> Details / Topics</h3>
+                    <textarea id="ebook-details" class="input-field" rows="4"
+                        placeholder="Describe what you want: topics, depth, target audience, key questions…"
+                        style="width:100%;box-sizing:border-box;resize:vertical;"></textarea>
+                </section>
+                <section class="step">
+                    <h3><span class="step-number">3</span> Pages</h3>
+                    <select id="ebook-pages" class="input-field" style="width:220px;">
+                        <option value="20">20 pages</option>
+                        <option value="30">30 pages</option>
+                        <option value="50" selected>50 pages</option>
+                        <option value="75">75 pages</option>
+                        <option value="100">100 pages</option>
+                        <option value="150">150 pages</option>
+                        <option value="200">200 pages</option>
+                    </select>
+                </section>
+                <section class="step">
+                    <button onclick="generateEbook()" class="btn-primary" id="ebook-generate-btn"
+                        style="padding:14px 36px;font-size:16px;font-weight:700;">
+                        📚 Generate Ebook
+                    </button>
+                </section>
+                <div id="ebook-status" style="display:none; margin-top:24px;">
+                    <div style="background:#1a1a2e; border:1px solid #4f46e5; border-radius:12px; padding:20px;">
+                        <div id="ebook-status-text" style="color:#c7d2fe; font-size:14px; margin-bottom:12px;">Starting...</div>
+                        <div style="background:#0f0f1f; border-radius:6px; overflow:hidden; height:8px;">
+                            <div id="ebook-progress-bar" style="height:100%; width:0%; background:linear-gradient(90deg,#6366f1,#8b5cf6); transition:width 0.5s ease;"></div>
+                        </div>
+                        <div id="ebook-download-link" style="margin-top:16px; display:none;">
+                            <a id="ebook-download-a" href="#" download
+                                style="display:inline-block; background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff; padding:12px 28px; border-radius:8px; text-decoration:none; font-weight:700; font-size:15px;">
+                                ⬇️ Download PDF
+                            </a>
+                        </div>
                     </div>
-                    <div id="ebook-download-link" style="margin-top:16px; display:none;">
-                        <a id="ebook-download-a" href="#" download
-                            style="display:inline-block; background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff; padding:12px 28px; border-radius:8px; text-decoration:none; font-weight:700; font-size:15px;">
-                            ⬇️ Download PDF
-                        </a>
+                </div>
+            </div>
+
+            <!-- ─── BUNDLE ─── -->
+            <div id="dc-bundle" style="display:none;">
+                <section class="step">
+                    <h3><span class="step-number">1</span> Bundle Topic</h3>
+                    <input type="text" id="bundle-topic" class="input-field"
+                        placeholder="e.g. AI Side Hustles for Beginners" style="width:100%;box-sizing:border-box;">
+                </section>
+
+                <section class="step">
+                    <h3><span class="step-number">2</span> Product Details</h3>
+                    <textarea id="bundle-details" class="input-field" rows="3"
+                        placeholder="Who is this for? What's the main goal? Any specific angles, niches, or outcomes?"
+                        style="width:100%;box-sizing:border-box;resize:vertical;"></textarea>
+                </section>
+
+                <section class="step">
+                    <h3><span class="step-number">3</span> Bundle Settings</h3>
+                    <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-end;">
+                        <label style="font-size:13px; color:#a5b4fc; display:flex; flex-direction:column; gap:6px;">
+                            Number of ebooks
+                            <select id="bundle-count" class="input-field" style="width:160px;">
+                                <option value="2">2 ebooks</option>
+                                <option value="3" selected>3 ebooks</option>
+                                <option value="4">4 ebooks</option>
+                                <option value="5">5 ebooks</option>
+                                <option value="7">7 ebooks</option>
+                                <option value="10">10 ebooks</option>
+                            </select>
+                        </label>
+                        <label style="font-size:13px; color:#a5b4fc; display:flex; flex-direction:column; gap:6px;">
+                            Pages per ebook
+                            <select id="bundle-pages" class="input-field" style="width:160px;">
+                                <option value="15">15 pages</option>
+                                <option value="20">20 pages</option>
+                                <option value="30" selected>30 pages</option>
+                                <option value="50">50 pages</option>
+                                <option value="75">75 pages</option>
+                                <option value="100">100 pages</option>
+                            </select>
+                        </label>
+                        <label style="font-size:13px; color:#a5b4fc; display:flex; flex-direction:column; gap:6px;">
+                            Target audience
+                            <input type="text" id="bundle-audience" class="input-field"
+                                placeholder="e.g. beginners, busy parents…" style="width:200px;" value="general">
+                        </label>
+                        <label style="font-size:13px; color:#a5b4fc; display:flex; flex-direction:column; gap:6px;">
+                            Tone
+                            <select id="bundle-tone" class="input-field" style="width:160px;">
+                                <option value="expert" selected>Expert</option>
+                                <option value="friendly expert">Friendly Expert</option>
+                                <option value="conversational">Conversational</option>
+                                <option value="academic">Academic</option>
+                                <option value="motivational">Motivational</option>
+                            </select>
+                        </label>
+                    </div>
+                    <p style="color:#666; font-size:11px; margin-top:10px;">
+                        Each ebook is auto-differentiated — different angle, voice, and examples.
+                        The AI ensures no overlap between ebooks in the bundle.
+                    </p>
+                </section>
+
+                <section class="step">
+                    <button onclick="generateBundle()" class="btn-primary" id="bundle-generate-btn"
+                        style="padding:14px 36px;font-size:16px;font-weight:700; background:linear-gradient(135deg,#7c3aed,#4f46e5);">
+                        📦 Generate Bundle
+                    </button>
+                </section>
+
+                <div id="bundle-status" style="display:none; margin-top:24px;">
+                    <div style="background:#1a1a2e; border:1px solid #7c3aed; border-radius:12px; padding:20px;">
+                        <div id="bundle-status-text" style="color:#c7d2fe; font-size:14px; margin-bottom:4px;">Starting...</div>
+                        <div style="color:#666; font-size:11px; font-family:monospace; margin-bottom:12px;">
+                            Phase progress updates every few seconds. Large bundles take 3-10 minutes.
+                        </div>
+                        <div style="background:#0f0f1f; border-radius:6px; overflow:hidden; height:10px;">
+                            <div id="bundle-progress-bar" style="height:100%; width:0%; background:linear-gradient(90deg,#7c3aed,#4f46e5,#6366f1); transition:width 0.6s ease;"></div>
+                        </div>
+                        <div id="bundle-download-link" style="margin-top:18px; display:none;">
+                            <a id="bundle-download-a" href="#" download
+                                style="display:inline-block; background:linear-gradient(135deg,#7c3aed,#4f46e5); color:#fff; padding:13px 32px; border-radius:8px; text-decoration:none; font-weight:700; font-size:15px; margin-right:12px;">
+                                ⬇️ Download Bundle ZIP
+                            </a>
+                            <span id="bundle-meta" style="color:#888; font-size:12px;"></span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2353,6 +2453,77 @@ TAGS: comma-separated, under 400 chars, match the title keywords"></textarea>
     function _updateEbookProgress(pct, message) {
         document.getElementById('ebook-progress-bar').style.width = pct + '%';
         document.getElementById('ebook-status-text').textContent  = message;
+    }
+
+    // ── Digital Create — Bundle Generator ─────────────────────────────────
+    let _bundlePollTimer = null;
+
+    function dcSetMode(mode) {
+        document.getElementById('dc-single').style.display = mode === 'single' ? 'block' : 'none';
+        document.getElementById('dc-bundle').style.display = mode === 'bundle' ? 'block' : 'none';
+        document.getElementById('dc-mode-single').className = mode === 'single' ? 'btn-primary' : 'btn-tool';
+        document.getElementById('dc-mode-bundle').className = mode === 'bundle' ? 'btn-primary' : 'btn-tool';
+    }
+
+    async function generateBundle() {
+        const topic    = document.getElementById('bundle-topic').value.trim();
+        const details  = document.getElementById('bundle-details').value.trim();
+        const count    = parseInt(document.getElementById('bundle-count').value, 10);
+        const pages    = parseInt(document.getElementById('bundle-pages').value, 10);
+        const audience = document.getElementById('bundle-audience').value.trim() || 'general';
+        const tone     = document.getElementById('bundle-tone').value;
+
+        if (!topic) { alert('Please enter a bundle topic.'); return; }
+
+        document.getElementById('bundle-generate-btn').disabled = true;
+        document.getElementById('bundle-status').style.display = 'block';
+        document.getElementById('bundle-download-link').style.display = 'none';
+        _updateBundleProgress(5, 'Starting bundle generation with Gemini 2.5 Pro...');
+
+        try {
+            const resp = await fetch('/api/ebook/generate-bundle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ topic, details, num_ebooks: count, pages_per_ebook: pages, audience, tone })
+            });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error || 'Failed to start');
+            _pollBundleStatus(data.job_id);
+        } catch(e) {
+            _updateBundleProgress(0, '❌ Error: ' + e.message);
+            document.getElementById('bundle-generate-btn').disabled = false;
+        }
+    }
+
+    function _pollBundleStatus(jobId) {
+        if (_bundlePollTimer) clearInterval(_bundlePollTimer);
+        _bundlePollTimer = setInterval(async () => {
+            try {
+                const r = await fetch('/api/ebook/bundle-status/' + jobId);
+                const d = await r.json();
+                if (d.status === 'running') {
+                    _updateBundleProgress(d.progress || 10, d.message || 'Generating...');
+                } else if (d.status === 'done') {
+                    clearInterval(_bundlePollTimer);
+                    const meta = d.num_ebooks ? ` (${d.num_ebooks} ebooks · ${(d.total_words||0).toLocaleString()} words)` : '';
+                    _updateBundleProgress(100, '✅ Bundle ready!' + meta);
+                    const dlLink = document.getElementById('bundle-download-link');
+                    const dlA    = document.getElementById('bundle-download-a');
+                    dlA.href = d.download_url;
+                    dlLink.style.display = 'block';
+                    document.getElementById('bundle-generate-btn').disabled = false;
+                } else if (d.status === 'error') {
+                    clearInterval(_bundlePollTimer);
+                    _updateBundleProgress(0, '❌ ' + (d.error || 'Bundle generation failed'));
+                    document.getElementById('bundle-generate-btn').disabled = false;
+                }
+            } catch(e) { /* network glitch, keep polling */ }
+        }, 3000);
+    }
+
+    function _updateBundleProgress(pct, message) {
+        document.getElementById('bundle-progress-bar').style.width = pct + '%';
+        document.getElementById('bundle-status-text').textContent  = message;
     }
 
     // ── AI Engine toggle ────────────────────────────────────────────────────
