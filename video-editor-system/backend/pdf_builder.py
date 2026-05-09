@@ -48,11 +48,29 @@ _FONT_MAP = {
     "Serif-Bold":   "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
     "Serif-Italic": "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Italic.ttf",
 }
+_serif_ok = True
 for _name, _path in _FONT_MAP.items():
     try:
         pdfmetrics.registerFont(TTFont(_name, _path))
     except Exception:
-        pass   # Fallback gracefully to Helvetica if unavailable
+        _serif_ok = False
+
+if _serif_ok:
+    try:
+        pdfmetrics.registerFontFamily(
+            "Serif",
+            normal="Serif",
+            bold="Serif-Bold",
+            italic="Serif-Italic",
+            boldItalic="Serif-Bold",
+        )
+    except Exception:
+        _serif_ok = False
+
+# Safe font aliases — fall back to built-in Helvetica if DejaVu not available
+F_SERIF       = "Serif"        if _serif_ok else "Helvetica"
+F_SERIF_BOLD  = "Serif-Bold"   if _serif_ok else "Helvetica-Bold"
+F_SERIF_ITAL  = "Serif-Italic" if _serif_ok else "Helvetica-Oblique"
 
 try:
     pdfmetrics.registerFontFamily(
@@ -192,10 +210,10 @@ def _draw_cover(canvas, doc):
 
     # ── Title (serif font) ────────────────────────────────────────────────────
     c.setFillColor(WHITE)
-    title_lines = _wrap_canvas(title, "Serif-Bold", 27, TW * 0.79, c)
+    title_lines = _wrap_canvas(title, F_SERIF_BOLD, 27, TW * 0.79, c)
     y = rule_top - 12
     for ln in title_lines:
-        c.setFont("Serif-Bold", 27)
+        c.setFont(F_SERIF_BOLD, 27)
         c.drawString(ML + 10, y, ln)
         y -= 33
 
@@ -209,8 +227,8 @@ def _draw_cover(canvas, doc):
 
     # ── Subtitle ─────────────────────────────────────────────────────────────
     c.setFillColor(HexColor("#7B9EC0"))
-    c.setFont("Serif-Italic", 10)
-    sub_lines = _wrap_canvas(subtitle, "Serif-Italic", 10, TW * 0.77, c)
+    c.setFont(F_SERIF_ITAL, 10)
+    sub_lines = _wrap_canvas(subtitle, F_SERIF_ITAL, 10, TW * 0.77, c)
     for sl in sub_lines[:5]:
         c.drawString(ML + 10, y, sl)
         y -= 14
@@ -272,10 +290,10 @@ def _draw_chapter_opener(canvas, doc):
 
     # Chapter title (large, serif)
     c.setFillColor(WHITE)
-    title_lines = _wrap_canvas(title, "Serif-Bold", 26, W - ML - MR - 20, c)
+    title_lines = _wrap_canvas(title, F_SERIF_BOLD, 26, W - ML - MR - 20, c)
     y = H * 0.60 - 24
     for ln in title_lines:
-        c.setFont("Serif-Bold", 26)
+        c.setFont(F_SERIF_BOLD, 26)
         c.drawString(ML + 6, y, ln)
         y -= 34
 
@@ -323,7 +341,7 @@ def _body_cb(canvas, doc):
     c.line(ML, MB * 0.85, PAGE_W - MR, MB * 0.85)
 
     # Footer: book title left, page number right
-    c.setFont("Serif-Italic", 7.5)
+    c.setFont(F_SERIF_ITAL, 7.5)
     c.setFillColor(MUTED)
     c.drawString(ML, MB * 0.48, getattr(doc, "ebook_title", "")[:52])
 
@@ -363,7 +381,7 @@ class _TOCHeader(Flowable):
         c.rect(0, 0, 5, self.H, fill=1, stroke=0)
         c.setFillColor(INDIGO)
         c.rect(0, 0, aw, 2, fill=1, stroke=0)
-        c.setFont("Serif-Bold", 16)
+        c.setFont(F_SERIF_BOLD, 16)
         c.setFillColor(WHITE)
         c.drawString(14, 6.5 * mm, "Table of Contents")
 
@@ -445,7 +463,7 @@ class _PullQuote(Flowable):
         c.setFillColor(INDIGO)
         c.rect(0, 0, 4, h, fill=1, stroke=0)
         # Serif quote mark
-        c.setFont("Serif-Bold", 28)
+        c.setFont(F_SERIF_BOLD, 28)
         c.setFillColor(HexColor("#C0C8F0"))
         c.drawString(10, h - 10 * mm, "\u201c")
         # Paragraph
@@ -586,7 +604,7 @@ def _drop_cap(text: str, styles: dict) -> List:
         return []
     cap_style = ParagraphStyle(
         "DropCap",
-        fontName="Serif-Bold",
+        fontName=F_SERIF_BOLD,
         fontSize=42,
         leading=42,
         textColor=INDIGO,
@@ -816,7 +834,7 @@ class EbookPDFBuilder:
             ),
             "quote": ParagraphStyle(
                 "Quote",
-                fontName="Serif-Italic",
+                fontName=F_SERIF_ITAL,
                 fontSize=10.5,
                 leading=16,
                 textColor=HexColor("#2C3A6B"),
@@ -830,7 +848,7 @@ class EbookPDFBuilder:
             ),
             "toc_num": ParagraphStyle(
                 "TocNum",
-                fontName="Serif-Bold",
+                fontName=F_SERIF_BOLD,
                 fontSize=12,
                 leading=15,
                 textColor=GOLD,
