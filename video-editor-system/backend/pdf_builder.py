@@ -54,6 +54,17 @@ for _name, _path in _FONT_MAP.items():
     except Exception:
         pass   # Fallback gracefully to Helvetica if unavailable
 
+try:
+    pdfmetrics.registerFontFamily(
+        "Serif",
+        normal="Serif",
+        bold="Serif-Bold",
+        italic="Serif-Italic",
+        boldItalic="Serif-Bold",
+    )
+except Exception:
+    pass
+
 # ── Palette ────────────────────────────────────────────────────────────────────
 NAVY        = HexColor("#080E1C")
 NAVY_MID    = HexColor("#0F1828")
@@ -668,7 +679,7 @@ class EbookPDFBuilder:
         for i, chap in enumerate(chapters, 1):
             safe = _esc(chap["title"][:70])
             num_p = Paragraph(
-                f'<font color="#C9950A" size="12"><b>{i:02d}</b></font>',
+                f'<font color="#C9950A" size="12">{i:02d}</font>',
                 styles["toc_num"],
             )
             title_p = Paragraph(safe, styles["toc_title"])
