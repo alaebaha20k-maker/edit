@@ -228,6 +228,7 @@ class BundleGenerator:
                     self._write_chapter_async(
                         sem, ei, ci, eb_plan, outline, chap_plan,
                         words_per_chap, n_chaps, progress,
+                        product_details=product_details,
                     )
                 )
         flat_results: List[Dict] = await asyncio.gather(*tasks)
@@ -320,13 +321,16 @@ class BundleGenerator:
         prompt = f"""You are a professional ebook bundle strategist.
 
 BUNDLE TOPIC: "{bundle_topic}"
-PRODUCT DETAILS: {product_details}
+
+PRODUCT DETAILS (this is the single source of truth — every ebook concept must serve this):
+{product_details}
+
 NUMBER OF EBOOKS: {num_ebooks}
 TARGET AUDIENCE: {audience}
 TONE: {tone}
 
 YOUR JOB:
-Design a cohesive, commercially compelling ebook bundle. Each ebook must:
+Design a cohesive, commercially compelling ebook bundle where EVERY ebook is anchored to the product details above. Each ebook must:
 - Cover a DISTINCT angle — NO overlap in content, examples, or approach
 - Complement the others so buying the bundle delivers far more value than any single ebook
 - Have a compelling, specific title that signals unique value
@@ -449,10 +453,11 @@ Rules:
         words_per_chap: int,
         n_chaps: int,
         progress: _Progress,
+        product_details: str = "",
     ) -> Dict:
         """Write one chapter with exponential backoff retry; returns a result dict."""
         prompt = self._build_chapter_prompt(
-            eb_plan, outline, chap_plan, chap_idx + 1, n_chaps, words_per_chap,
+            eb_plan, outline, chap_plan, chap_idx + 1, n_chaps, words_per_chap, product_details,
         )
         max_tokens = min(65536, max(int(words_per_chap / 0.75) + 2000, 4000))
         text = ""
@@ -496,6 +501,7 @@ Rules:
         chapter_index: int,
         total_chapters: int,
         words_target: int,
+        product_details: str = "",
     ) -> str:
         """Build the chapter writing prompt (mirrors EbookGenerator._write_chapter)."""
         chap_title = chap_plan["title"]
@@ -513,8 +519,14 @@ Rules:
             f"MID CHAPTER {chapter_index}/{total_chapters}: deepen the topic, add proof and examples, escalate value."
         )
 
-        return f"""You are an expert ebook writer. Write one complete chapter with exceptional quality.
+        product_brief_block = (
+            f"\n═══════════════════ PRODUCT BRIEF (anchor everything to this) ═══════════════════\n"
+            f"{product_details}\n"
+            if product_details else ""
+        )
 
+        return f"""You are an expert ebook writer. Write one complete chapter with exceptional quality.
+{product_brief_block}
 ═══════════════════ EBOOK CONTEXT ═══════════════════
 EBOOK TITLE: "{eb_plan['title']}"
 SUBTITLE: {eb_plan.get('subtitle','')}
