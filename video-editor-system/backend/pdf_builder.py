@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 import copy
+import xml.etree.ElementTree as _ET
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
@@ -146,13 +147,40 @@ def _esc(t: str) -> str:
 
 
 def _inline_md(text: str) -> str:
-    """Convert inline markdown to ReportLab XML: **bold**, *italic*."""
+    """Convert inline markdown to ReportLab XML: **bold**, *italic*.
+
+    Triple markers (***) are processed before double (**) so that nested
+    bold+italic patterns are handled correctly.  Single-marker patterns use
+    a character class [^*<>] / [^_<>] to prevent matching across already-
+    inserted XML tags, which previously caused malformed nesting like
+    <b><i></b></i> that crashed ReportLab's XML parser.
+    """
     t = _esc(text)
-    t = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', t)
-    t = re.sub(r'__(.+?)__',     r'<b>\1</b>', t)
-    t = re.sub(r'\*(.+?)\*',     r'<i>\1</i>', t)
-    t = re.sub(r'_(.+?)_',       r'<i>\1</i>', t)
+    # Bold+italic — triple markers MUST come before double
+    t = re.sub(r'\*{3}(.+?)\*{3}', r'<b><i>\1</i></b>', t)
+    t = re.sub(r'_{3}(.+?)_{3}',   r'<b><i>\1</i></b>', t)
+    # Bold
+    t = re.sub(r'\*{2}(.+?)\*{2}', r'<b>\1</b>', t)
+    t = re.sub(r'_{2}(.+?)_{2}',   r'<b>\1</b>', t)
+    # Italic — [^*<>] / [^_<>] stops the match at any existing XML tag
+    # boundary, so it can never produce cross-nested tags
+    t = re.sub(r'(?<!\*)\*(?!\*)([^*<>]+?)(?<!\*)\*(?!\*)', r'<i>\1</i>', t)
+    t = re.sub(r'(?<!_)_(?!_)([^_<>]+?)(?<!_)_(?!_)',       r'<i>\1</i>', t)
+    # Final safety: parse result as XML; strip all markup if it's still malformed
+    try:
+        _ET.fromstring(f'<r>{t}</r>')
+    except _ET.ParseError:
+        t = re.sub(r'<[^>]+>', '', t)
     return t
+
+
+def _safe_para(xml_text: str, style) -> "Paragraph":
+    """Build a Paragraph, falling back to plain text if XML is malformed."""
+    try:
+        return Paragraph(xml_text, style)
+    except Exception:
+        plain = re.sub(r'<[^>]+>', '', xml_text)
+        return Paragraph(plain, style)
 
 
 def _letter_space(text: str, font: str, size: float, spacing: float, c, x: float, y: float) -> None:
@@ -567,7 +595,7 @@ class _PullQuote(Flowable):
 
     def wrap(self, aw, ah):
         self._aw   = aw
-        self._para = Paragraph(_inline_md(self._text), self._style)
+        self._para = _safe_para(_inline_md(self._text), self._style)
         pw, ph     = self._para.wrap(aw - 22, ah)
         self._ph   = ph
         return (aw, ph + 9 * mm)
@@ -594,7 +622,7 @@ class _CalloutBox(Flowable):
 
     def wrap(self, aw, ah):
         self._aw   = aw
-        self._para = Paragraph(_inline_md(self._text), self._style)
+        self._para = _safe_para(_inline_md(self._text), self._style)
         pw, ph     = self._para.wrap(aw - 20, ah)
         self._ph   = ph
         return (aw, ph + 14 * mm)
@@ -711,7 +739,7 @@ def _drop_cap(text: str, styles: dict) -> List:
         textColor=INDIGO,
     )
     cap_para  = Paragraph(_esc(text[0]), cap_style)
-    rest_para = Paragraph(_inline_md(text[1:]), styles["body"])
+    rest_para = _safe_para(_inline_md(text[1:]), styles["body"])
     cap_w  = 20 * mm
     rest_w = TW - cap_w - 2 * mm
     t = Table([[cap_para, rest_para]], colWidths=[cap_w, rest_w])
@@ -861,12 +889,12 @@ class EbookPDFBuilder:
             elif btype == T_H2:
                 flush()
                 out.append(Spacer(1, 3 * mm))
-                pending.append(Paragraph(_inline_md(text), styles["h2"]))
+                pending.append(_safe_para(_inline_md(text), styles["h2"]))
                 pending.append(Spacer(1, 2 * mm))
 
             elif btype in (T_BULLET, T_NUMBERED):
                 icon = "▸" if btype == T_BULLET else "◆"
-                pending.append(Paragraph(
+                pending.append(_safe_para(
                     f'<font color="#4A5BE0" size="9">{icon}</font>  {_inline_md(text)}',
                     styles["bullet"],
                 ))
@@ -893,7 +921,7 @@ class EbookPDFBuilder:
                     out += _drop_cap(text, styles)
                     is_first = False
                 else:
-                    out.append(Paragraph(_inline_md(text), styles["body"]))
+                    out.append(_safe_para(_inline_md(text), styles["body"]))
                     out.append(Spacer(1, 4 * mm))
 
         flush()
