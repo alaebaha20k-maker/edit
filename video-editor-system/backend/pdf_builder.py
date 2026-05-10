@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 import copy
+import xml.etree.ElementTree as _ET
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
@@ -165,6 +166,11 @@ def _inline_md(text: str) -> str:
     # boundary, so it can never produce cross-nested tags
     t = re.sub(r'(?<!\*)\*(?!\*)([^*<>]+?)(?<!\*)\*(?!\*)', r'<i>\1</i>', t)
     t = re.sub(r'(?<!_)_(?!_)([^_<>]+?)(?<!_)_(?!_)',       r'<i>\1</i>', t)
+    # Final safety: parse result as XML; strip all markup if it's still malformed
+    try:
+        _ET.fromstring(f'<r>{t}</r>')
+    except _ET.ParseError:
+        t = re.sub(r'<[^>]+>', '', t)
     return t
 
 
