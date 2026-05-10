@@ -6883,9 +6883,10 @@ def ebook_generate():
     if not data:
         return jsonify({'error': 'No data provided'}), 400
 
-    title   = (data.get('title') or '').strip()
-    details = (data.get('details') or '').strip()
-    pages   = int(data.get('pages') or 50)
+    title    = (data.get('title') or '').strip()
+    details  = (data.get('details') or '').strip()
+    pages    = int(data.get('pages') or 50)
+    language = (data.get('language') or 'English').strip() or 'English'
 
     if not title:
         return jsonify({'error': 'title is required'}), 400
@@ -6903,6 +6904,7 @@ def ebook_generate():
         'status'  : 'running',
         'title'   : title,
         'pages'   : pages,
+        'language': language,
         'progress': 'Starting research…',
         'result'  : None,
         'error'   : None,
@@ -6912,7 +6914,8 @@ def ebook_generate():
         try:
             from ebook_generator import EbookGenerator
             gen    = EbookGenerator()
-            result = gen.generate(title=title, details=details, pages=pages, verbose=True)
+            result = gen.generate(title=title, details=details, pages=pages,
+                                  language=language, verbose=True)
             _ebook_jobs[job_id]['status'] = 'done'
             _ebook_jobs[job_id]['result'] = result
         except Exception as exc:
@@ -6980,6 +6983,7 @@ def bundle_generate():
     pages_per_ebook  = int(data.get('pages_per_ebook') or 30)
     audience         = (data.get('audience') or 'general').strip()
     tone             = (data.get('tone') or 'expert').strip()
+    language         = (data.get('language') or 'English').strip() or 'English'
 
     if not topic:
         return jsonify({'error': 'topic is required'}), 400
@@ -7016,6 +7020,7 @@ def bundle_generate():
                 pages_per_ebook   = pages_per_ebook,
                 audience          = audience,
                 tone              = tone,
+                language          = language,
                 verbose           = True,
                 progress_callback = _progress_cb,
             )

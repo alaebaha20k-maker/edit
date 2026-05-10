@@ -42,6 +42,7 @@ class BundlePackager:
         bundle_plan: Dict,
         pdf_results: List[Dict],
         output_dir: Path,
+        language: str = "English",
         verbose: bool = True,
     ) -> Dict:
         """
@@ -67,7 +68,7 @@ class BundlePackager:
             print(f"   📋 manifest.json written ({len(pdf_results)} ebooks)")
 
         # ── README.md  (1 Gemini call) ───────────────────────────────────────
-        readme_text = self._generate_readme(bundle_plan, pdf_results)
+        readme_text = self._generate_readme(bundle_plan, pdf_results, language)
         readme_path = output_dir / "README.md"
         readme_path.write_text(readme_text, encoding="utf-8")
         if verbose:
@@ -125,13 +126,15 @@ class BundlePackager:
     # README (Gemini)
     # =========================================================================
 
-    def _generate_readme(self, bundle_plan: Dict, pdf_results: List[Dict]) -> str:
+    def _generate_readme(self, bundle_plan: Dict, pdf_results: List[Dict], language: str = "English") -> str:
+        from ebook_generator import _language_block
         ebook_lines = "\n".join(
             f"  {r['ebook_num']}. **{r['title']}** — {r['subtitle']}"
             for r in sorted(pdf_results, key=lambda x: x["ebook_num"])
         )
+        lang_block = _language_block(language)
         prompt = f"""Write a professional, compelling bundle README (200-400 words) in Markdown.
-
+{lang_block}
 BUNDLE: {bundle_plan['name']}
 POSITIONING: {bundle_plan.get('positioning','')}
 
