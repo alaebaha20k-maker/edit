@@ -118,6 +118,7 @@ class BundleGenerator:
         pages_per_ebook: int,
         audience: str = "general",
         tone: str = "expert",
+        language: str = "English",
         verbose: bool = True,
         progress_callback: Optional[callable] = None,
     ) -> Dict:
@@ -135,6 +136,7 @@ class BundleGenerator:
         """
         num_ebooks      = max(1, min(20, num_ebooks))
         pages_per_ebook = max(5, min(500, pages_per_ebook))
+        language        = (language or "English").strip() or "English"
 
         if verbose:
             print(f"\n{'='*65}")
@@ -142,6 +144,7 @@ class BundleGenerator:
             print(f"{'='*65}")
             print(f"Ebooks  : {num_ebooks}  ·  Pages each: {pages_per_ebook}")
             print(f"Audience: {audience}  ·  Tone: {tone}")
+            print(f"Language: {language}")
             print(f"Model   : {WRITE_MODEL}")
             print(f"{'='*65}\n")
 
@@ -149,8 +152,8 @@ class BundleGenerator:
         result = asyncio.run(
             self._generate_async(
                 bundle_topic, product_details, num_ebooks,
-                pages_per_ebook, audience, tone, verbose, start,
-                progress_callback,
+                pages_per_ebook, audience, tone, language,
+                verbose, start, progress_callback,
             )
         )
         return result
@@ -167,6 +170,7 @@ class BundleGenerator:
         pages_per_ebook: int,
         audience: str,
         tone: str,
+        language: str,
         verbose: bool,
         wall_start: float,
         progress_callback: Optional[callable] = None,
@@ -187,7 +191,7 @@ class BundleGenerator:
         _report(5, "📋 Planning bundle…")
         bundle_plan = await asyncio.to_thread(
             self._plan_bundle_sync,
-            bundle_topic, product_details, num_ebooks, audience, tone,
+            bundle_topic, product_details, num_ebooks, audience, tone, language,
         )
         if verbose:
             print(f"   ✅ {time.time()-t0:.0f}s — \"{bundle_plan['name']}\"\n")
@@ -203,7 +207,7 @@ class BundleGenerator:
             print(f"🔍 Phase 1/4 — Researching all {num_ebooks} ebooks in parallel …")
         _report(20, f"🔍 Researching {num_ebooks} ebooks in parallel…")
         outlines: List[Dict] = await asyncio.gather(*[
-            self._research_one_async(sem, eb, product_details, pages_per_ebook, n_chaps)
+            self._research_one_async(sem, eb, product_details, pages_per_ebook, n_chaps, language)
             for eb in bundle_plan["ebooks"]
         ])
         if verbose:
@@ -229,6 +233,7 @@ class BundleGenerator:
                         sem, ei, ci, eb_plan, outline, chap_plan,
                         words_per_chap, n_chaps, progress,
                         product_details=product_details,
+                        language=language,
                     )
                 )
         flat_results: List[Dict] = await asyncio.gather(*tasks)
@@ -278,6 +283,7 @@ class BundleGenerator:
             bundle_plan      = bundle_plan,
             pdf_results      = pdf_results,
             output_dir       = output_dir,
+            language         = language,
             verbose          = verbose,
         )
         if verbose:
@@ -316,10 +322,13 @@ class BundleGenerator:
         num_ebooks: int,
         audience: str,
         tone: str,
+        language: str = "English",
     ) -> Dict:
         """One Gemini call → bundle blueprint with N differentiated ebook concepts."""
+        from ebook_generator import _language_block
+        lang_block = _language_block(language)
         prompt = f"""You are a professional ebook bundle strategist.
-
+{lang_block}
 BUNDLE TOPIC: "{bundle_topic}"
 
 PRODUCT DETAILS (this is the single source of truth — every ebook concept must serve this):
@@ -427,6 +436,7 @@ Rules:
         product_details: str,
         pages: int,
         n_chaps: int,
+        language: str = "English",
     ) -> Dict:
         """Research + outline for one ebook (runs in threadpool, gated by sem)."""
         async with sem:
@@ -435,7 +445,7 @@ Rules:
                 eb_plan["title"],
                 f"{product_details}\n\nEBOOK ANGLE: {eb_plan['angle']}\n"
                 f"UNIQUE VALUE PROP: {eb_plan['unique_value']}",
-                pages, n_chaps, False,
+                pages, n_chaps, language, False,
             )
 
     # =========================================================================
@@ -454,10 +464,12 @@ Rules:
         n_chaps: int,
         progress: _Progress,
         product_details: str = "",
+        language: str = "English",
     ) -> Dict:
         """Write one chapter with exponential backoff retry; returns a result dict."""
         prompt = self._build_chapter_prompt(
-            eb_plan, outline, chap_plan, chap_idx + 1, n_chaps, words_per_chap, product_details,
+            eb_plan, outline, chap_plan, chap_idx + 1, n_chaps, words_per_chap,
+            product_details, language,
         )
         max_tokens = min(65536, max(int(words_per_chap / 0.75) + 2000, 4000))
         text = ""
@@ -502,8 +514,10 @@ Rules:
         total_chapters: int,
         words_target: int,
         product_details: str = "",
+        language: str = "English",
     ) -> str:
         """Build the chapter writing prompt (mirrors EbookGenerator._write_chapter)."""
+        from ebook_generator import _language_block
         chap_title = chap_plan["title"]
         key_points = " | ".join(chap_plan.get("key_points", [])) or "Cover topic thoroughly"
         brief      = chap_plan.get("brief", "")
@@ -519,6 +533,7 @@ Rules:
             f"MID CHAPTER {chapter_index}/{total_chapters}: deepen the topic, add proof and examples, escalate value."
         )
 
+        lang_block = _language_block(language)
         product_brief_block = (
             f"\n═══════════════════ PRODUCT BRIEF (anchor everything to this) ═══════════════════\n"
             f"{product_details}\n"
@@ -526,7 +541,7 @@ Rules:
         )
 
         return f"""You are an expert ebook writer. Write one complete chapter with exceptional quality.
-{product_brief_block}
+{lang_block}{product_brief_block}
 ═══════════════════ EBOOK CONTEXT ═══════════════════
 EBOOK TITLE: "{eb_plan['title']}"
 SUBTITLE: {eb_plan.get('subtitle','')}
