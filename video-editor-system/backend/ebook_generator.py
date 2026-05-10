@@ -37,6 +37,30 @@ WORDS_PER_PAGE = 350
 MAX_TOKENS_PER_CHAPTER = 65536
 
 
+def _language_block(language: str) -> str:
+    """Build a strong language directive for prompts.
+    Returns an empty string for English (default), avoids prompt clutter."""
+    lang = (language or "English").strip()
+    if not lang or lang.lower() == "english":
+        return ""
+    return f"""
+═══════════════════ LANGUAGE — CRITICAL ═══════════════════
+WRITE EVERY WORD IN {lang.upper()}.
+This includes: chapter titles, headings, body paragraphs, bullets, pull-quotes,
+callouts, and ALL prose. Even if the input brief is in English, your entire
+output must be in {lang}.
+
+Quality rules for {lang}:
+  ✓ Native fluency — write as a native {lang} writer would, not as a translation
+  ✓ Idioms, sentence rhythm, and cultural references must feel natural to native readers
+  ✓ Use the correct typography conventions of {lang} (quotation marks, dashes, spacing)
+  ✓ Match the formality level appropriate for a professional ebook in {lang}
+  ✓ Do NOT mix English words unless they are universally accepted technical terms
+
+XML output tags (when present) stay in English; only the CONTENT inside tags is in {lang}.
+"""
+
+
 class EbookGenerator:
 
     def __init__(self):
@@ -54,6 +78,7 @@ class EbookGenerator:
         title: str,
         details: str,
         pages: int,
+        language: str = "English",
         verbose: bool = True,
     ) -> Dict:
         start = time.time()
@@ -61,12 +86,14 @@ class EbookGenerator:
         pages   = max(5, min(pages, 500))
         n_chaps = self._chapter_count(pages)
         words_target = pages * WORDS_PER_PAGE
+        language = (language or "English").strip() or "English"
 
         if verbose:
             print(f"\n{'='*65}")
             print(f"📚 EBOOK GENERATION — CHUNK ARCHITECTURE")
             print(f"{'='*65}")
             print(f"Title    : {title}")
+            print(f"Language : {language}")
             print(f"Pages    : {pages}  (~{words_target:,} words)")
             print(f"Chapters : {n_chaps}")
             print(f"Model    : {WRITE_MODEL}")
@@ -75,7 +102,7 @@ class EbookGenerator:
         # ── Phase 1: Research & Outline ────────────────────────────────────
         if verbose:
             print("🔍 PHASE 1 — Research & outline…")
-        outline = self._research_and_outline(title, details, pages, n_chaps, verbose)
+        outline = self._research_and_outline(title, details, pages, n_chaps, language, verbose)
         if verbose:
             print(f"   ✅ {len(outline['chapters'])} chapters planned\n")
 
@@ -98,6 +125,7 @@ class EbookGenerator:
                 total_chapters=n_chaps,
                 words_target=words_per_chapter,
                 previous_summary=prev_summary,
+                language=language,
                 verbose=verbose,
             )
             chapters.append({"title": chap_plan["title"], "content": text})
@@ -152,10 +180,12 @@ class EbookGenerator:
         details: str,
         pages: int,
         n_chaps: int,
-        verbose: bool,
+        language: str = "English",
+        verbose: bool = True,
     ) -> Dict:
+        lang_block = _language_block(language)
         prompt = f"""You are an expert researcher and ebook planner.
-
+{lang_block}
 EBOOK TITLE: "{title}"
 
 PRODUCT DETAILS (this is the single source of truth — every chapter, example, and angle must serve this):
@@ -277,7 +307,8 @@ Rules:
         total_chapters: int,
         words_target: int,
         previous_summary: str,
-        verbose: bool,
+        language: str = "English",
+        verbose: bool = True,
     ) -> str:
         chap_title  = chapter_plan["title"]
         key_points  = " | ".join(chapter_plan.get("key_points", [])) or "Cover topic thoroughly"
@@ -300,8 +331,9 @@ Rules:
             if previous_summary else ""
         )
 
+        lang_block = _language_block(language)
         prompt = f"""You are an expert ebook writer. Write one complete chapter with exceptional quality.
-
+{lang_block}
 ═══════════════════ PRODUCT BRIEF (anchor everything to this) ═══════════════════
 {details}
 
