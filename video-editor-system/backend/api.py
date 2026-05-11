@@ -6070,6 +6070,9 @@ Apply it without exception — every image must feel like it belongs to the same
 {style_dna}
 ════════════════════════════════════════════════════════════════════════════════
 {prev_section}
+⚠️  LANGUAGE RULE — NON-NEGOTIABLE: ALL prompts MUST be written in ENGLISH only.
+The script may be in any language — IGNORE the script's language. Extract the visual meaning and write every prompt in English. Never use any other language in the output.
+
 TASK: Write EXACTLY {chunk_size} long, professional image prompts covering scenes {chunk_start}–{chunk_end} of {total_count} total.
 Follow the script CHRONOLOGICALLY. Scene {chunk_start} = earlier in the script, scene {chunk_end} = later.
 Each prompt covers ONE distinct visual moment extracted from that section of the script.
