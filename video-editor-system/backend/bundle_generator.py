@@ -331,18 +331,33 @@ class BundleGenerator:
 {lang_block}
 BUNDLE TOPIC: "{bundle_topic}"
 
-PRODUCT DETAILS (this is the single source of truth — every ebook concept must serve this):
+══════════════════════════════════════════════════════════════
+PRODUCT DETAILS — READ EVERY WORD BEFORE DOING ANYTHING ELSE:
+══════════════════════════════════════════════════════════════
 {product_details}
+══════════════════════════════════════════════════════════════
+
+MANDATORY ANALYSIS before planning:
+Extract from the Product Details:
+  • Every specific product, model, brand, item, or service mentioned
+  • The target audience (who they are, their level, situation)
+  • The core problem(s) they face
+  • The specific outcomes they want
+  • Any numbers, specs, constraints, or requirements listed
+Every ebook concept below MUST address specific items you identified above.
 
 NUMBER OF EBOOKS: {num_ebooks}
 TARGET AUDIENCE: {audience}
 TONE: {tone}
 
 YOUR JOB:
-Design a cohesive, commercially compelling ebook bundle where EVERY ebook is anchored to the product details above. Each ebook must:
-- Cover a DISTINCT angle — NO overlap in content, examples, or approach
+Design a cohesive, commercially compelling ebook bundle where EVERY ebook concept is
+built from the specific Product Details above — not generic industry content.
+Each ebook must:
+- Cover a DISTINCT angle drawn from the Product Details — NO overlap in content or approach
+- Reference specific items from the Product Details in its title/angle
 - Complement the others so buying the bundle delivers far more value than any single ebook
-- Have a compelling, specific title that signals unique value
+- Have a compelling, specific title that signals concrete value from those details
 
 OUTPUT FORMAT — return ONLY this XML, no other text:
 
@@ -535,8 +550,15 @@ Rules:
 
         lang_block = _language_block(language)
         product_brief_block = (
-            f"\n═══════════════════ PRODUCT BRIEF (anchor everything to this) ═══════════════════\n"
+            f"\n══════════════════════════════════════════════════════════════\n"
+            f"PRODUCT DETAILS — ANCHOR EVERY PARAGRAPH TO THIS:\n"
+            f"══════════════════════════════════════════════════════════════\n"
             f"{product_details}\n"
+            f"══════════════════════════════════════════════════════════════\n"
+            f"BEFORE WRITING: Re-read the Product Details above. Every example, tip, fact,\n"
+            f"and recommendation must be directly relevant to the specific product, audience,\n"
+            f"situation, and outcomes described there. If Product Details names specific items\n"
+            f"(products, models, specs, goals) — reference them by name, not generically.\n"
             if product_details else ""
         )
 
