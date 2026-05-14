@@ -636,29 +636,39 @@
 
                 <!-- IMAGE / VIDEO single-mode controls -->
                 <div id="pgSingleModeWrap">
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 18px;">
-                        <div class="input-group" style="margin:0;" id="pgImageStyleWrap">
-                            <label>Image Style</label>
-                            <select id="pgStyleSelect" class="input-large">
-                                <option value="">-- Loading styles… --</option>
-                            </select>
-                        </div>
-                        <div class="input-group" style="margin:0; display:none;" id="pgVideoStyleWrap">
-                            <label>Video Style</label>
-                            <select id="pgVideoStyleSelect" class="input-large">
-                                <option value="">-- Loading styles… --</option>
-                            </select>
-                        </div>
+
+                    <!-- Image style — free-form text (used as visual DNA for every prompt) -->
+                    <div id="pgImageStyleWrap" style="margin-bottom:14px;">
+                        <label style="font-weight:600; display:block; margin-bottom:6px;">
+                            🎨 Image Style
+                            <span style="color:#888; font-weight:400; font-size:12px;"> — visual DNA applied to every prompt</span>
+                        </label>
+                        <textarea id="pgStyleText" rows="3"
+                            placeholder="Describe your style… e.g.: Cinematic 35mm film photography, warm golden-hour tones, shallow depth of field, Kodak Portra film grain, moody dramatic shadows, rich earth tones, photorealistic, hyperdetailed, National Geographic quality"
+                            style="width:100%; font-size:13px; line-height:1.55; resize:vertical; min-height:76px; padding:10px 12px; background:#0d0d1a; border:1px solid #374151; border-radius:8px; color:#e2e8f0; font-family:inherit; box-sizing:border-box;"></textarea>
+                        <small style="color:#888; margin-top:4px; display:block;">Be specific — lighting, mood, camera lens, color palette, artistic style. This text is embedded in every prompt.</small>
+                    </div>
+
+                    <!-- Video style dropdown (only visible in video mode) -->
+                    <div class="input-group" style="margin-bottom:14px; display:none;" id="pgVideoStyleWrap">
+                        <label>Video Style</label>
+                        <select id="pgVideoStyleSelect" class="input-large">
+                            <option value="">-- Loading styles… --</option>
+                        </select>
+                    </div>
+
+                    <!-- Scene count + generate button side by side -->
+                    <div style="display:grid; grid-template-columns:160px 1fr; gap:12px; align-items:end;">
                         <div class="input-group" style="margin:0;">
                             <label>Number of Scenes</label>
                             <input type="number" id="pgCount" value="20" min="1" max="200" class="input-medium" style="width:100%;">
-                            <small style="color:#888; margin-top:4px; display:block;">Each prompt = one script scene · chunks of 15</small>
+                            <small style="color:#888; margin-top:4px; display:block;">1 prompt per scene</small>
                         </div>
+                        <button onclick="generatePromptsOnly()" id="pgGenerateBtn"
+                            style="font-size:15px; padding:12px; background:linear-gradient(135deg,#8b5cf6,#6d28d9); color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:600;">
+                            🎨 Generate Image Prompts
+                        </button>
                     </div>
-                    <button onclick="generatePromptsOnly()" id="pgGenerateBtn"
-                        style="width:100%; font-size:15px; padding:12px; background:linear-gradient(135deg,#8b5cf6,#6d28d9); color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:600;">
-                        🎨 Generate Image Prompts
-                    </button>
                 </div>
 
                 <!-- MIXED mode controls -->

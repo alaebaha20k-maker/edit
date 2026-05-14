@@ -69,6 +69,18 @@ class VideoAssembler:
         subprocess.run(cmd, capture_output=True, check=True, timeout=30)
         return str(cached_path)
 
+    def _audio_codec_flags(self, audio_path: str) -> list:
+        """
+        Return FFmpeg audio codec flags for the given file.
+        WAV files carry raw PCM which is incompatible with MP4 on most players
+        (shows as 'ipcm'); re-encode those to AAC.  All other formats can be
+        stream-copied.
+        """
+        ext = os.path.splitext(audio_path)[1].lower()
+        if ext in ('.wav', '.aiff', '.aif', '.pcm', '.raw'):
+            return ['-c:a', 'aac', '-b:a', '192k']
+        return ['-c:a', 'copy']
+
     def _get_audio_duration_ffprobe(self, audio_path: str) -> float:
         """Get audio duration using ffprobe"""
         cmd = [
@@ -266,7 +278,7 @@ class VideoAssembler:
                     '-map', '0:v:0',
                     '-map', '1:a:0',
                     '-c:v', 'copy',
-                    '-c:a', 'copy',
+                    *self._audio_codec_flags(voice_path),
                     '-shortest',
                     '-movflags', '+faststart',
                     output_path
@@ -390,7 +402,7 @@ class VideoAssembler:
                         '-g', '300',
                         '-tune', 'stillimage',
                         '-x264-params', 'keyint=300:scenecut=-1:rc-lookahead=1:me_range=4',
-                        '-c:a', 'copy',  # 🔥 ALWAYS copy!
+                        *self._audio_codec_flags(voice_path),
                         '-shortest',
                         '-pix_fmt', 'yuv420p',
                         '-threads', '0',
@@ -647,7 +659,7 @@ class VideoAssembler:
                 '-map', '0:v',
                 '-map', '1:a',
                 '-c:v', 'copy',
-                '-c:a', 'copy',
+                *self._audio_codec_flags(voice_path),
                 '-shortest',
                 '-movflags', '+faststart',
                 output_path

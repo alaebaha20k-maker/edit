@@ -188,52 +188,69 @@ class EbookGenerator:
 {lang_block}
 EBOOK TITLE: "{title}"
 
-PRODUCT DETAILS (this is the single source of truth — every chapter, example, and angle must serve this):
+══════════════════════════════════════════════════════════════
+PRODUCT DETAILS — READ EVERY WORD BEFORE DOING ANYTHING ELSE:
+══════════════════════════════════════════════════════════════
 {details}
+══════════════════════════════════════════════════════════════
+
+STEP 0 — MANDATORY FULL ANALYSIS (do this mentally before writing anything):
+Read the Product Details above TWICE. Extract and note every:
+  • Specific product name, model, brand, item, or service mentioned
+  • Target audience traits (age, experience level, situation, location, budget)
+  • Core problem(s) the reader has right now
+  • Specific outcomes or results they want to achieve
+  • Tone, style, or format requirements
+  • Any numbers, specs, timeframes, or constraints mentioned
+  • Any topics, subtopics, or subjects explicitly listed
+Every single item you identified MUST appear in the research and chapters below.
+Nothing from the Product Details can be ignored or glossed over.
 
 TARGET: {pages} pages (~{pages * WORDS_PER_PAGE:,} words), {n_chaps} chapters
 
 YOUR JOB — TWO PARTS:
 
 PART A — DEEP RESEARCH:
-Do a comprehensive research brief on this topic. Include:
-- Key facts, statistics, data points
-- Common problems/solutions (if applicable)
-- Expert insights and best practices
-- Real-world examples and case studies
-- Most important things the reader must know
-Write this as a detailed research summary (minimum 800 words).
+Do a comprehensive research brief laser-focused on the Product Details above. Include:
+- Key facts, statistics, and data points SPECIFIC to what was described
+- Every specific product, model, spec, or item mentioned — research it in detail
+- The exact problems and solutions that match the audience described
+- Expert insights, best practices, and real-world examples directly relevant to the details
+- Most important things THAT specific reader must know
+Write this as a detailed research summary (minimum 800 words). Generic filler is forbidden.
 
 PART B — CHAPTER OUTLINE:
-Create exactly {n_chaps} chapters. For each chapter provide:
-- Chapter title (specific, compelling)
-- 3-5 key points to cover
-- Specific facts/examples to include from your research
+Create exactly {n_chaps} chapters. Each chapter must cover a specific element from the Product Details.
+For each chapter provide:
+- Chapter title (specific, compelling — references something concrete from the Product Details)
+- 3-5 key points to cover (tied directly to Product Details items)
+- Specific facts/examples from your research (no generic placeholders)
 - Target angle (educational, practical, analytical, etc.)
 
 OUTPUT FORMAT — use this exact XML:
 
 <research>
-[Your detailed research summary here — minimum 800 words]
+[Your detailed research summary here — minimum 800 words, no generic filler]
 </research>
 
 <chapters>
 <chapter>
 <number>1</number>
-<title>[Chapter title]</title>
+<title>[Chapter title — specific, references the product/audience from Product Details]</title>
 <key_points>[Point 1 | Point 2 | Point 3 | ...]</key_points>
-<content_brief>[What to write — specific, actionable]</content_brief>
-<facts>[Key facts/stats/examples to include]</facts>
+<content_brief>[What to write — specific to Product Details, actionable]</content_brief>
+<facts>[Key facts/stats/examples directly relevant to Product Details]</facts>
 </chapter>
 [repeat for all {n_chaps} chapters]
 </chapters>
 
 Rules:
-- Research must be factual, specific, and deep — no generic filler
-- EVERY chapter must stay anchored to the PRODUCT DETAILS above — no drifting into generic content
-- Chapter titles must be compelling and specific, not generic
-- Each chapter must have a clear purpose and angle that serves the product details
-- All {n_chaps} chapter tags must be present"""
+- Research must be specific to the Product Details — no generic industry content
+- EVERY chapter must use specific items from the Product Details — not a single chapter can be generic
+- Chapter titles must name something concrete from the product/audience
+- Every key_point must tie to a specific item from the Product Details
+- All {n_chaps} chapter tags must be present
+- ZERO tolerance for generic filler — if it could be about any product, rewrite it"""
 
         if verbose:
             print(f"   📤 Research call ({len(prompt):,} chars)…")
@@ -334,8 +351,16 @@ Rules:
         lang_block = _language_block(language)
         prompt = f"""You are an expert ebook writer. Write one complete chapter with exceptional quality.
 {lang_block}
-═══════════════════ PRODUCT BRIEF (anchor everything to this) ═══════════════════
+══════════════════════════════════════════════════════════════
+PRODUCT DETAILS — ANCHOR EVERY PARAGRAPH TO THIS:
+══════════════════════════════════════════════════════════════
 {details}
+══════════════════════════════════════════════════════════════
+BEFORE WRITING: Re-read the Product Details above. Every example, tip, fact, and
+recommendation you write must be directly relevant to the specific product, audience,
+situation, and outcomes described there. Generic advice that ignores these details is
+forbidden. If Product Details mentions specific items (products, specs, names, models,
+goals) — reference them by name, not generically.
 
 ═══════════════════ EBOOK CONTEXT ═══════════════════
 EBOOK TITLE: "{ebook_title}"

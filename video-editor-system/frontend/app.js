@@ -2944,12 +2944,13 @@ async function generatePromptsOnly() {
         return;
     }
 
-    const isVideo     = _pgMode === 'video';
-    const styleId     = document.getElementById('pgStyleSelect')?.value;
-    const vidStyleId  = document.getElementById('pgVideoStyleSelect')?.value;
+    const isVideo        = _pgMode === 'video';
+    const imageStyleText = (document.getElementById('pgStyleText')?.value || '').trim();
+    const vidStyleId     = document.getElementById('pgVideoStyleSelect')?.value;
 
-    if (!isVideo && !styleId) {
-        showNotification('⚠️ Please select an image style', 'warning');
+    if (!isVideo && !imageStyleText) {
+        showNotification('⚠️ Please describe your Image Style before generating', 'warning');
+        document.getElementById('pgStyleText')?.focus();
         return;
     }
     if (isVideo && !vidStyleId) {
@@ -2964,8 +2965,8 @@ async function generatePromptsOnly() {
 
     progressBox.style.display = 'block';
     progressBox.style.borderLeftColor = isVideo ? '#dc2626' : '#8b5cf6';
-    progressBox.innerHTML = `<p>${isVideo ? '🎬' : '🎨'} Generating <strong>${count}</strong> ${isVideo ? 'video' : 'image'} prompts with Director Gemini…<br>
-        <small style="color:#888;">${count > 15 ? 'Sending in chunks of 15 — please wait' : 'Single call — almost done'}</small></p>`;
+    progressBox.innerHTML = `<p>${isVideo ? '🎬' : '🎨'} Generating <strong>${count}</strong> ${isVideo ? 'video' : 'image'} prompts…<br>
+        <small style="color:#888;">${count > 15 ? 'Sending in chunks — please wait' : 'Almost done…'}</small></p>`;
     resultSection.style.display = 'none';
     if (outputEl) outputEl.value = '';
 
@@ -2973,9 +2974,9 @@ async function generatePromptsOnly() {
         const body = {
             script,
             count,
-            mode: _pgMode,
-            style_id:       styleId,
-            video_style_id: vidStyleId,
+            mode:             _pgMode,
+            image_style_text: imageStyleText,
+            video_style_id:   vidStyleId,
         };
 
         const response = await fetch('/api/generate-prompts-only', {
@@ -2992,7 +2993,8 @@ async function generatePromptsOnly() {
 
         const text = data.prompts.join('\n\n');
         if (outputEl) outputEl.value = text;
-        if (countLabel) countLabel.textContent = `(${data.prompts.length} prompts · ${data.style_name})`;
+        const styleHint = data.style_name || imageStyleText.slice(0, 40) + (imageStyleText.length > 40 ? '…' : '');
+        if (countLabel) countLabel.textContent = `(${data.prompts.length} prompts · ${styleHint})`;
 
         progressBox.innerHTML = `<p style="color:#22c55e;">✅ ${data.prompts.length} ${isVideo ? 'video' : 'image'} prompts generated!</p>`;
         resultSection.style.display = 'block';

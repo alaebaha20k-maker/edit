@@ -6041,81 +6041,70 @@ def generate_prompts_only():
 
     # ---- IMAGE prompt builder ------------------------------------------------
     def build_image_prompt(script_segment, style, chunk_start, chunk_size, total_count, prev_prompts=None):
-        style_name        = style.get('name', 'Cinematic')
-        style_desc        = style.get('description', '')
-        style_formula_raw = style.get('style_formula', '').strip()
-        visual_rules      = style.get('visual_rules', [])
-        negative_rules    = style.get('negative_rules', [])
-        composition       = style.get('composition', '')
-        lighting          = style.get('lighting', '')
-        color_palette     = style.get('color_palette', [])
+        chunk_end  = chunk_start + chunk_size - 1
 
-        color_palette_text = ', '.join(color_palette) if color_palette else 'rich, vivid colors'
-        chunk_end = chunk_start + chunk_size - 1
+        # Style DNA — prefer free-form text (style_formula) over assembled parts
+        style_dna = style.get('style_formula', '').strip()
+        if not style_dna:
+            parts = []
+            if style.get('description'):   parts.append(style['description'])
+            if style.get('visual_rules'):  parts.append('Visual: ' + ' | '.join(style['visual_rules']))
+            if style.get('composition'):   parts.append('Composition: ' + style['composition'])
+            if style.get('lighting'):      parts.append('Lighting: ' + style['lighting'])
+            if style.get('color_palette'): parts.append('Colors: ' + ', '.join(style['color_palette']))
+            style_dna = '\n'.join(parts) or 'Cinematic, photorealistic, professional photography, 8K resolution'
 
-        # Build style DNA — the mandatory visual fingerprint for EVERY prompt
-        if style_formula_raw:
-            style_dna = style_formula_raw
-        else:
-            dna_parts = [style_desc] if style_desc else []
-            if visual_rules:
-                dna_parts.append('Visual: ' + ' | '.join(visual_rules))
-            if composition:
-                dna_parts.append(f'Composition: {composition}')
-            if lighting:
-                dna_parts.append(f'Lighting: {lighting}')
-            if color_palette_text:
-                dna_parts.append(f'Colors: {color_palette_text}')
-            style_dna = '\n'.join(dna_parts)
-
-        negative_text = ''
-        if negative_rules:
-            negative_text = '\nNEVER include: ' + ', '.join(negative_rules)
-
-        # Previously generated prompts — tell AI what subjects were already covered
         prev_section = ''
         if prev_prompts:
-            previews = '\n'.join(f'- {p[:120]}' for p in prev_prompts[-6:])
-            prev_section = f"""
-ALREADY GENERATED — do NOT repeat these subjects or environments:
-{previews}
-"""
+            previews = '\n'.join(f'  • {p[:130]}' for p in prev_prompts[-6:])
+            prev_section = (
+                f'\nALREADY GENERATED — do NOT repeat these subjects, environments, or angles:\n{previews}\n'
+            )
 
-        formula_rendered = _auto_images_formula.format_map(_SafeDict(
-            n_images=chunk_size,
-            style_name=style_name,
-            lighting=lighting,
-            composition=composition,
-            color_palette=color_palette_text,
-        ))
+        return f"""You are a master AI image prompt engineer. Your prompts are used directly in Midjourney, Flux Pro, and Stable Diffusion XL.
 
-        return f"""You are a professional image prompt writer for AI image generators (Flux, Midjourney, SDXL).
+══════════════════════════════ MANDATORY STYLE DNA ══════════════════════════════
+Every single prompt you write MUST incorporate this visual style as its foundation.
+Apply it without exception — every image must feel like it belongs to the same visual world:
 
-════════════════ STYLE CORE — {style_name} ════════════════
-This is the MANDATORY visual DNA. Every single prompt you write MUST reflect this style.
-Apply these parameters as the foundation of every prompt without exception:
-
-{style_dna}{negative_text}
-══════════════════════════════════════════════════════════
-
-TASK: Generate EXACTLY {chunk_size} image prompts covering scenes {chunk_start}–{chunk_end} of {total_count} total.
-Each prompt = one distinct visual scene extracted from the script segment below.
-ALL prompts in ENGLISH. Follow the script CHRONOLOGICALLY. Each prompt covers a different moment.
+{style_dna}
+════════════════════════════════════════════════════════════════════════════════
 {prev_section}
-═══════════════ SCRIPT SEGMENT (scenes {chunk_start}–{chunk_end}) ═══════════════
+⚠️  LANGUAGE RULE — NON-NEGOTIABLE: ALL prompts MUST be written in ENGLISH only.
+The script may be in any language — IGNORE the script's language. Extract the visual meaning and write every prompt in English. Never use any other language in the output.
+
+TASK: Write EXACTLY {chunk_size} long, professional image prompts covering scenes {chunk_start}–{chunk_end} of {total_count} total.
+Follow the script CHRONOLOGICALLY. Scene {chunk_start} = earlier in the script, scene {chunk_end} = later.
+Each prompt covers ONE distinct visual moment extracted from that section of the script.
+
+══════════════════════════════ SCRIPT SECTION ══════════════════════════════
 {script_segment}
-═══════════════════════════════════════════════════════════════════
+════════════════════════════════════════════════════════════════════════════
 
-{formula_rendered}
+PROMPT ENGINEERING — each prompt MUST include ALL of these elements (60–100 words each):
 
-OUTPUT RULES:
-1. EXACTLY {chunk_size} prompts separated by ONE blank line between each.
-2. NO numbering, NO labels, NO preamble, NO explanation.
-3. Each prompt = ONE continuous paragraph. NO line breaks inside a prompt.
-4. Every prompt MUST embed the {style_name} style parameters above as its visual core.
-5. Every prompt MUST end with: --no text, no captions, no watermarks, no labels
-6. Every scene DISTINCT — different subject, angle, or environment from all others.
-OUTPUT ONLY THE {chunk_size} PROMPTS. NOTHING ELSE."""
+  ① MAIN SUBJECT — hyper-specific (NOT "person" but "weathered 55-year-old mechanic with oil-stained hands and wire-rim glasses")
+  ② ACTION / STATE — what is happening at this exact script moment?
+  ③ ENVIRONMENT — full setting: indoor/outdoor, architecture, objects, textures, background details
+  ④ LIGHTING — source, quality, direction, color temperature ("single candle from the left, warm amber rim light")
+  ⑤ MOOD / ATMOSPHERE — the emotional feeling the image must convey
+  ⑥ CAMERA — shot type (extreme close-up, wide shot, aerial, eye-level), lens (35mm, 85mm, 24mm fisheye), depth of field
+  ⑦ STYLE TAGS — embed the MANDATORY STYLE DNA above + quality markers (photorealistic, 8K, hyperdetailed, cinematic, etc.)
+  ⑧ NEGATIVE — end every prompt with: --no text --no watermarks --no UI elements --no captions
+
+QUALITY BAR:
+  ✅ Rich, specific, immersive — a cinematographer could shoot it from your description
+  ✅ Each scene is visually DISTINCT from all others (different subject, angle, lighting setup)
+  ❌ Never generic ("beautiful landscape", "happy person", "city view")
+  ❌ Never fewer than 60 words per prompt
+
+OUTPUT FORMAT — follow exactly:
+  • {chunk_size} prompts total
+  • ONE blank line between prompts
+  • NO numbering, NO labels, NO "Scene X:", NO preamble, NO explanation
+  • Each prompt = ONE solid paragraph, NO internal line breaks
+
+OUTPUT ONLY THE {chunk_size} PROMPTS. NOTHING ELSE. START IMMEDIATELY."""
 
     # ---- VIDEO prompt builder ------------------------------------------------
     def build_video_prompt(script_segment, style, chunk_start, chunk_size, total_count, prev_prompts=None):
@@ -6175,11 +6164,12 @@ OUTPUT ONLY THE {chunk_size} PROMPTS. NOTHING ELSE."""
 
     try:
         data = request.get_json() or {}
-        script         = data.get('script', '').strip()
-        mode           = data.get('mode', 'image')           # 'image' or 'video'
-        style_id       = data.get('style_id', 'cinematic')
-        video_style_id = data.get('video_style_id', 'cinematic_video')
-        count          = int(data.get('count', 20))
+        script           = data.get('script', '').strip()
+        mode             = data.get('mode', 'image')
+        image_style_text = data.get('image_style_text', '').strip()
+        style_id         = data.get('style_id', 'cinematic')
+        video_style_id   = data.get('video_style_id', 'cinematic_video')
+        count            = int(data.get('count', 20))
 
         if not script:
             return jsonify({'error': 'Script is required'}), 400
@@ -6202,9 +6192,21 @@ OUTPUT ONLY THE {chunk_size} PROMPTS. NOTHING ELSE."""
                 return jsonify({'error': f'Video style not found: {video_style_id}'}), 404
             prompt_builder = build_video_prompt
         else:
-            style = AutoImagesStyleManager.get_style(style_id)
-            if not style:
-                return jsonify({'error': f'Image style not found: {style_id}'}), 404
+            if image_style_text:
+                # Free-form style text supplied by user — use it directly as style DNA
+                style = {
+                    'name':          'Custom',
+                    'style_formula': image_style_text,
+                    'visual_rules':  [],
+                    'negative_rules': [],
+                    'composition':   '',
+                    'lighting':      '',
+                    'color_palette': [],
+                }
+            else:
+                style = AutoImagesStyleManager.get_style(style_id)
+                if not style:
+                    return jsonify({'error': f'Image style not found: {style_id}'}), 404
             prompt_builder = build_image_prompt
 
         all_prompts = []
