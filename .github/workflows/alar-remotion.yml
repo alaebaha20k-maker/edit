@@ -1,0 +1,37 @@
+name: ALAR — Real Remotion Render + Offline Runtime
+on:
+  push:
+    branches: [harry/alar-remotion-runtime-20261021]
+    paths: ['alar-remotion/**', '.github/workflows/alar-remotion.yml']
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: alar-remotion
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: alar-remotion/package-lock.json
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install Chrome for Remotion
+        run: npx remotion browser ensure
+      - name: Render with Remotion CLI (not FFmpeg effects)
+        run: npm run render
+      - name: Package dependencies for Linux offline work
+        run: tar -czf alar-remotion-linux-x64.tar.gz node_modules package.json package-lock.json src README.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alar-remotion-test-render
+          path: alar-remotion/out/alar-test.mp4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alar-remotion-linux-offline
+          path: alar-remotion/alar-remotion-linux-x64.tar.gz
